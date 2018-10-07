@@ -1,0 +1,606 @@
+<pre class='metadata'>
+Title: out_ptr - a scalable output pointer abstraction
+Shortname: D1132
+Revision: 1
+Audience: LEWG, LWG
+Status: D
+Group: WG21
+URL: 
+!Current Source: <a href="https://github.com/ThePhD/out_ptr/blob/master/papers/source/d1132.bs">github.com/ThePhD/out_ptr/blob/master/papers/source/d1132.bs</a>
+!Current: <a href="https://rawgit.com/ThePhD/out_ptr/master/papers/d1132.html">https://rawgit.com/ThePhD/out_ptr/out_ptr/papers/d1132.html</a>
+!Implementation: <a href="https://github.com/ThePhD/out_ptr">https://github.com/ThePhD/out_ptr</a>
+!Reply To: <a href="mailto:phdofthehouse@gmail.com">JeanHeyd Meneide</a> | <a href="https://twitter.com/thephantomderp">@thephantomderp</a>
+Repository: ThePhD/out_ptr
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: Todor Buyukliev, tbuyukliev@vmware.com
+Editor: Isabella Muerte, isabella.muerte@target.com
+Abstract: out_ptr is an abstraction to bring both C APIs and smart pointers back into the promised land by creating a temporary pointer-to-pointer that updates the smart pointer when it destructs.
+Date: 2018-08-11
+Markup Shorthands: markdown yes, biblio yes, markup yes
+</pre>
+
+<pre class=include>
+path: wording_style.bs
+</pre>
+
+
+
+# Revision History # {#changelog}
+
+
+## Revision 0 ## {#changelog-r0}
+
+    Initial release.
+
+
+## Revision 1 ## {#changelog-r1}
+
+    Add wording. Incorporate wording feedback. Eliminate CTAD design. Add a few more words about implementation experience.
+
+
+
+# Motivation # {#motivation}
+
+We have very good tools for handling unique and shared resource semantics, alongside more coming with [[p0468|Intrusive Smart Pointers]]. Independently between several different companies, studios, and shops -- from VMWare and Microsoft to small game development startups -- a common type has been implemented. It has many names: `ptrptr`, `OutPtr`, `PtrToPtr`, `out_ptr`, [[wrl-comptrref|WRL::ComPtrRef]] and even [[ccomptr|unary operator& on CComPtr]]. It is universally focused on one task: making it so a smart pointer can be passed as a parameter to a function which uses an output pointer parameter in C API functions (e.g., `my_type**`).
+
+This paper is a culmination of a private survey of types from the industry to propose a common, future-proof, high-performance `out_ptr` type that is easy to use. It makes interop with pointer types a little bit simpler and easier for everyone who has ever wanted something like `my_c_function( &my_unique );` to behave properly.
+
+In short: it's a thing convertible to a `T**` that updates the smart pointer it is created with when it goes out of scope.
+
+
+
+# Design Considerations # {#design}
+
+The core of `out_ptr`'s (and `inout_ptr`'s) design revolves around avoiding the mistakes of the past, preventing continual modification of new smart pointers and outside smart pointers's interfaces to perform the same task, and enabling some degree of performance efficiency without having to wrap every C API function.
+
+
+## Synopsis ## {#design-synopsis}
+
+The function template's full specification is:
+
+```c++
+namespace std {
+	template <class Pointer, class Smart, class... Args>
+	auto out_ptr(Smart& s, Args&&... args) noexcept
+	-> out_ptr_t<Smart, Pointer, Args...>;
+	
+	template <class Smart, class... Args>
+	auto out_ptr(Smart& s, Args&&... args) noexcept 
+	-> decltype(out_ptr<PointerOf<Smart>>(s, std::forward<Args>(args)...));
+
+	template <class Pointer, class Smart, class... Args>
+	auto inout_ptr(Smart& s, Args&&... args) noexcept
+	-> inout_ptr_t<Smart, Pointer, Args...>;
+	
+	template <class Smart, class... Args>
+	auto inout_ptr(Smart& s, Args&&... args) noexcept 
+	-> decltype(inout_ptr<PointerOf<Smart>>(s, std::forward<Args>(args)...));
+}
+```
+
+Where `PointerOf` is the `::pointer` type, then `::element_type*`, then `class std::pointer_traits<Smart>::element_type*` in that order. The return type `out_ptr_t` and its sister type `inout_ptr_t` are templated types and must at-minimum have the following:
+
+```c++
+template <class Smart, class Pointer, class... Args>
+struct out_ptr_t {
+	out_ptr_t(Smart&, Args...);
+	~out_ptr_t () noexcept;
+	operator Pointer* () noexcept;
+	operator void** () noexcept;
+};
+
+template <class Smart, class Pointer, class... Args>
+struct inout_ptr_t {
+	inout_ptr_t(Smart&, Args...);
+	~inout_ptr_t () noexcept;
+	operator Pointer* () noexcept;
+	operator void** () noexcept;
+};
+```
+
+We specify "at minimum" because we expect users to override this type for their own shared, unique, handle-alike, reference-counting, and etc. smart pointers. The destructor of `~out_ptr_t()` calls `.reset()` on the stored smart pointer of type `Smart` with the stored pointer of type `Pointer` and arguments stored as `Args...`. `~inout_ptr_t()` does the same, but with the additional caveat that the constructor for `inout_ptr_t(Smart&, Args&&...)` also calls `.release()`, so that a `reset` doesn't double-delete a pointer that the expected re-allocating API used with `inout_ptr` already handles.
+
+
+## Header and Feature Macro ## {#design-feature}
+
+The target header is `<memory>`. The desired feature is `__cpp_lib_out_ptr`. See [[#wording-feature]] for further discussion about other potential targets.
+
+
+## Overview ## {#design-overview}
+
+`out_ptr`/`inout_ptr` are free functions meant to be used for C APIs:
+
+```c++
+error_num c_api_create_handle(int seed_value, int** p_handle);
+error_num c_api_re_create_handle(int seed_value, int** p_handle);
+void c_api_delete_handle(int* handle);
+
+struct resource_deleter {
+	void operator()( int* handle ) {
+		c_api_delete_handle(handle);
+	}
+};
+```
+
+Given a smart pointer, it can be used like so:
+
+```c++
+std::unique_ptr<int, resource_deleter> resource(nullptr);
+error_num err = c_api_create_handle(
+	24, std::out_ptr(resource)
+);
+if (err == C_API_ERROR_CONDITION) {
+	// handle errors
+}
+// resource.get() the out-value from the C API function
+```
+
+Or, in the re-create (reallocation) case:
+
+```c++
+std::unique_ptr<int, resource_deleter> resource(nullptr);
+error_num err = c_api_re_create_handle(
+	24, std::inout_ptr(resource)
+);
+if (err == C_API_ERROR_CONDITION) {
+	// handle errors
+}
+// resource.get() the out-value from the C API function
+```
+
+
+## Safety ## {#design-safety}
+
+This implementation uses a pack of `...Args` in the signature of `out_ptr` to allow it to be used with other types whose `.reset()` functions may require more than just the pointer value to form a valid and proper smart pointer. This is the case with `std::shared_ptr` and `boost::shared_ptr`:
+
+```c++
+std::shared_ptr<int> resource(nullptr);
+error_num err = c_api_create_handle(
+	24, std::out_ptr(resource, resource_deleter{})
+);
+if (err == C_API_ERROR_CONDITION) {
+	// handle errors
+}
+// resource.get() the out-value from 
+// the C API function
+```
+
+Additional arguments past the smart pointer stored in `out_ptr`'s implementation-defined return type will perfectly forward these to whatever `.reset()` or equivalent implementation requires them. If the underlying pointer does not require such things, it may be ignored or discarded (optionally, with a compiler error using a static assert that the argument will be ignored for the given type of smart pointer).
+
+Of importance here is to note that `std::shared_ptr` can and will overwrite any custom deleter present when called with just `.reset(some_pointer);`. Therefore, we make it a compiler error to not pass in a second argument when using `std::shared_ptr` without a deleter:
+
+```c++
+std::shared_ptr<int> resource(nullptr);
+error_num err = c_api_create_handle(
+	42, std::out_ptr(resource)
+); // ERROR: deleter was changed 
+   // to an equivalent of 
+   // std::default_delete!
+```
+
+It is likely the intent of the programmer to also pass the fictional `c_api_delete_handle` function to this: the above constraint allows us to avoid such programmer mistakes.
+
+
+## Casting Support ## {#design-casting}
+
+There are also many APIs (COM-style APIs, base-class handle APIs, type-erasure APIs) where the initialization requires that the type passed to the function is of some fundamental (`void**`) or base type that does not reflect what is stored exactly in the pointer. Therefore, it is necessary to sometimes specify what the underlying type `out_ptr` uses is stored as.
+
+It is also important to note that going in the *opposite* direction is also highly desirable, especially in the case of doing API-hiding behind an e.g. `void*` implementation. `out_ptr` supports both scenarios with an optional template argument to the function call.
+
+For example, consider this DirectX Graphics Infrastructure Interface (DXGI) function on `IDXGIFactory6`:
+
+```c++
+HRESULT EnumAdapterByGpuPreference(
+	UINT Adapter, 
+	DXGI_GPU_PREFERENCE GpuPreference, 
+	REFIID riid, 
+	void** ppvAdapter
+);
+```
+
+Using `out_ptr`, it becomes trivial to interface with it using an exemplary `std::unique_ptr<IDXGIAdapter, ComDeleter> adapter`:
+
+```c++
+HRESULT result = dxgi_factory.
+EnumAdapterByGpuPreference(0, 
+	DXGI_GPU_PREFERENCE_MINIMUM_POWER, 
+	IID_IDXGIAdapter, 
+	std::out_ptr<void*>(adapter)
+);
+if (FAILED(result)) {
+	// handle errors
+}
+// adapter.get() contains strongly-typed pointer
+```
+
+No manual casting, `.release()` fiddling, or `.reset()` is required: the returned type from `out_ptr` handles that.
+
+
+## Reallocation Support ## {#design-realloc}
+
+In some cases, a function given a valid handle/pointer will delete that pointer on your behalf before performing an allocation in the same pointer. In these cases, just `.reset()` is entirely redundant and dangerous because it will delete a pointer that it does not own. Therefore, there is a second abstraction called `inout_ptr`, so aptly named because it is both an input (to be deleted) and an output (to be allocated post-delete). `inout_ptr`'s semantics are exactly like `out_ptr`'s, just with the additional requirement that it calls `.release()` on the smart pointer upon constructing the temporary `inout_ptr_t`.
+
+This can be heavily optimized in the case of `unique_ptr`, but to do so from the outside requires Undefined Behavior or modification of the standard library. See [[#perf-inout_ptr]] for further explication.
+
+
+
+# Implementation Experience # {#experience}
+
+This library has been brewed at many companies in their private implementations, and implementations in the wild are scattered throughout code bases with no unifying type. As noted in [[#motivation]], Microsoft has implemented this in `WRL::ComPtrRef`. Its earlier iteration -- `CComPtr` -- simply overrode `operator&`. We assume they prefer the former after having forced the need with `CComPtr` for `std::addressof`. VMWare has a type that much more closely matches the specification in this paper, titled `Vtl::OutPtr`. The primary author of this paper wrote and used `out_ptr` for over 5 years in their code base working primarily with graphics APIs such as DirectX and OpenGL, and more recently Vulkan. They have also seen a similar abstraction in the places they have interned at.
+
+The primary author of [[p0468]] in pre-r0 days also implemented an overloaded `operator&` to handle interfacing with C APIs, but was quickly talked out of actually proposing it when doing the proposal. That author has joined in on this paper to continue to voice the need to make it easier to work with C APIs without having to wrap the function.
+
+Given that many companies, studios and individuals have all invented the same type independently of one another, we believe this is a strong indicator of agreement on an existing practice that should see a proposal to the standard.
+
+A [full implementation with UB and friendly optimizations is available in the repository](https://github.com/ThePhD/out_ptr/blob/master/include/phd/detail/base_out_ptr_impl.hpp). The type has been privately used in many projects over the last four years, and this public implementation is already seeing use at companies today. It has been particularly helpful with many COM APIs, and the re-allocation support in `inout_ptr` has been useful for FFMPEG's functions which feature reallocation support in their functions (e.g., `avformat_open_input`).
+
+
+## Why Not Wrap It? ## {#experience-wrapping}
+
+A common point raised while using this abstraction is to simply "wrap the target function". We believe this to be a non-starter in many cases: there are thousands of C API functions and even the most dedicated of tools have trouble producing lean wrappers around them. This tends to work for one-off functions, but suffers scalability problems very quickly.
+
+Templated intermediate wrapper functions which take a function, perfectly forwards arguments, and attempts to generate e.g. a `unique_ptr` for the first argument and contain the boiler plate within itself also causes problems. Asides from the (perhaps minor) concern that such a wrapping function disrupts any auto-completion or tooling, the issue arises that C libraries -- even within themselves -- do not agree on where to place the `some_c_type**` parameter and detecting it properly to write a generic function to automagically do it is hard. Even within the C standard library, some functions have output parameters in the beginning and others have it at the end. The disparity grows when users pick up libraries outside the standard.
+
+
+
+# Performance # {#perf}
+
+Many C programmers in our various engineering shops and companies have taken note that manually re-initializing a `unique_ptr` when internally the pointer value is already present has a measurable performance impact. 
+
+Teams eager to squeeze out performance realize they can only do this by relying on type-punning shenanigans to extract the actual value out of `unique_ptr`: this is expressly undefined behavior. However, if an implementation of `out_ptr` could be friended or shipped by the standard library, it can be implemented without performance penalty.
+
+Below are some graphs indicating the performance metrics of the code. 5 categories were measured:
+
+- "c_code": handwritten C code, which does not use this idiom
+- "clever": uses UB to alias the pointer value stored in `std::unique_ptr`
+- "friendly": modifies VC++'s, libc++'s, and libstdc++'s `std::unique_ptr`s to allow the implementation to friend the `out_ptr` implementation, to access the internals without UB
+- "manual": does the work by-hand using reset/release from a `std::unique_ptr`
+- "simple": a `out_ptr` implementation that naively resets
+
+The full JSON data for these benchmarks is available [in the repository](https://github.com/ThePhD/out_ptr/blob/master/benchmark_results/ptrptr_benchmarks.json), as well as all of the code necessary to run the benchmarks across all platforms with a simple CMake build system.
+
+## For `std::out_ptr` ## {#perf-out_ptr}
+
+You can observe two graphs for two common `unique_ptr` usage scenarios, which are using the pointer locally and discarding it ("local"), and resetting a pre-existing pointer ("reset") for just an output pointer:
+
+<pre class=include>
+path: local out.bs
+</pre>
+
+<pre class=include>
+path: reset out.bs
+</pre>
+
+## For `std::inout_ptr` ## {#perf-inout_ptr}
+
+The speed increase here is even more dramatic: reseating the pointer through `.release()` and `.reset()` is much more expensive than simply aliasing a `std::unique_ptr` directly. Places such as VMWare have to perform Undefined Behavior to get this level of performance with `inout_ptr`: it would be much more prudent to allow both standard library vendors and users to be able to achieve this performance without hacks, tricks, and other I-promise-it-works-I-swear pledges.
+
+<pre class=include>
+path: local inout.bs
+</pre>
+
+<pre class=include>
+path: reset inout.bs
+</pre>
+
+# Bikeshed # {#bikeshed}
+
+As with every proposal, naming, conventions and other tidbits not related to implementation are important. This section is for pinning down all the little details to make it suitable for the standard.
+
+## Alternative Specification ## {#bikeshed-specification} 
+
+The authors of this proposal know of two ways to specify this proposal's goals.
+
+The first way is to specify both functions `out_ptr` and `inout_ptr` as factories, and then have their types named differently, such as `out_ptr_t` and `inout_ptr_t`. The factory functions and their implementation will be fixed in place, and users would be able to (partially) specialize and customize `std::out_ptr_t` and `std::inout_ptr_t` for types external to the stdlib for maximum performance tweaking and interop with types like `boost::shared_ptr`, `my_lib::local_shared_ptr`, and others. This is the direction this proposal takes.
+
+The second way is to specify the class names to be `std::out_ptr` / `std::inout_ptr`, and then used Template Argument Deduction for Class Templates from C++17 to give a function-like appearance to their usage. Users can still specialize for types external to the standard library. This approach is more Modern C++-like, but contains a caveat.
+
+Part of this specification is that you can specify the stored pointer for the underlying implementation of `out_ptr` as shown in [[#design-casting]]. Template Argument Deduction for Class Templates does not allow partial specialization (and for good reason, see the interesting example of `std::tuple<int, int>{1, 2, 3}`). The "Deduction Guides" (or CTAD) approach would accommodate [[#design-casting]] using functions with a more explicit names, such as `out_ptr_cast<void*>( ... );` and `inout_ptr_cast<void*>( ... );`.
+
+The authors have settled on the approach in [[#design-synopsis]]. We believe this is the most robust and easiest to use: singular names tend to be easier to teach and use for both programmers and tools.
+
+## Naming ## {#bikeshed-naming}
+
+Naming is hard, and therefore we provide a few names to duke it out in the Bikeshed Arena:
+
+For the `out_ptr` part:
+
+- out_ptr
+- c_ptr
+- c_out_ptr
+- out_c_ptr
+- alloc_c_ptr
+- out_smart
+- ptrptr
+- ptr_to_ptr
+- ptr_to_smart
+- ptr_ref
+
+For the `inout_ptr` part:
+
+- inout_ptr
+- c_in_ptr
+- c_inout_ptr
+- inout_c_ptr
+- realloc_c_ptr
+- inout_smart,
+- realloc_ptr_to_ptr
+- realloc_ptr_to_smart
+- realloc_ptr_ref
+
+As a pairing, `out_ptr` and `inout_ptr` are the most cromulent and descriptive in the authors' opinions. The type names would follow suit as `out_ptr_t` and `inout_ptr_t`. However, there is an argument for having a name that more appropriately captures the purpose of these abstractions. Therefore, `c_out_ptr` and `c_inout_ptr` would be even better, and the shortest would be `c_ptr` and `c_in_ptr`.
+
+# Wording # {#wording}
+
+The following wording is for the Library section, relative to [[n4762]]. This feature will go in the `<memory>` header, and is added to §19.11 [**utilities.smartptr**], at the end as subsection 9.
+
+## Proposed Feature Test Macro and Header ## {#wording-feature}
+
+This should be available with the rest of the smart pointers, and thusly be included by simply including `<memory>`. If there is a desire for more fine-grained control, then we recommend the header `<out_ptr>` (subject to change based on bikeshed painting above). There has been some expressed desire for wanting to provide more fine-grained control of what entities the standard library produces when including headers: this paper does not explicitly propose adding such headers or doing such work, merely making a recommendation if this direction is desired by WG21.
+
+The proposed feature test macro for this is `__cpp_lib_out_ptr`. The exposure of `__cpp_lib_out_ptr` denotes the existence of both `inout_ptr` and `out_ptr`, as well as its customization points `out_ptr_t` and `inout_ptr_t`. 
+
+## Intent ## {#wording-intent}
+
+The intent of this wording is to allow implementers the freedom to implement the return type from `out_ptr` as they so choose, so long as the following criteria is met:
+
+- the return type is of the name `inout_ptr_t`/`out_ptr_t` and is a template with 3 template parameters;
+- the destructor of `inout_ptr_t`/`out_ptr_t` properly re-seats the pointer owned/stored by whatever smart/fancy pointer is passed as the first argument to `out_ptr`;
+- the proper implicit conversion operators are added to the type,
+- the standard library implementation itself does not specialize `inout_ptr_t`/`out_ptr_t`'s templates, either fully or partially, so that the user can override the behavior of these templates as they so choose;
+- `std::shared_ptr` used with the `out_ptr` or `inout_ptr` functions will produce a diagnostic if it is called without a second argument meant to be passed as the deleter to a `.reset()` call; and
+- `std::shared_ptr` used with `inout_ptr_t` will always result in a diagnostic because it is impossible to completely release the resource from its shared ownership.
+
+The goals of the wording are to not restrict implementation strategies (e.g., a `friend` implementation as benchmarked above for `unique_ptr`, or maybe a UB/IB implementation as also documented above). It is also explicitly meant to error for smart pointers whose `.reset()` call may reset the stored deleter (á la `boost::shared_ptr`/`std::shared_ptr`) and to catch programmer errors.
+
+## Proposed Wording ## {#wording-library}
+
+Add to §19.10.2 Header `<memory>` synopsis [**memory.syn**] the `out_ptr`, `inout_ptr`, `out_ptr_t` and `inout_ptr_t` functions and types:
+
+<blockquote>
+<ins>
+// 19.11.9, out_ptr_t
+template <class >
+
+// 19.11.10, out_ptr
+template <class Pointer, class Smart, class... Args>
+	auto out_ptr(Smart& s, Args&&... args) noexcept
+	-> out_ptr_t<Smart, Pointer, Args...>;
+	
+template <class Smart, class... Args>
+	auto out_ptr(Smart& s, Args&&... args) noexcept 
+	-> decltype(out_ptr<PointerOf<Smart>>(s, std::forward<Args>(args)...));
+
+// 19.11.11, inout_ptr_t
+
+// 19.11.12, inout_ptr
+template <class Pointer, class Smart, class... Args>
+	inout_ptr_t<Smart, Pointer, Args...> inout_ptr(Smart& s, Args&&... args) noexcept;
+	
+template <class Smart, class... Args>
+	auto inout_ptr(Smart& s, Args&&... args) noexcept 
+	-> decltype(inout_ptr<PointerOf<Smart>>(s, std::forward<Args>(args)...));
+
+</ins>
+</blockquote>
+
+Insert §19.11.9 [**utilities.smartptr.out_ptr_t**]:
+
+<blockquote>
+<ins>19.11.9 **Class Template** `out_ptr_t` [**utilities.smartptr.out_ptr_t**]</ins>
+
+<p><ins><sup>1</sup> *out_ptr_t* is a type used with smart pointers ([**utilities.smartptr**]) and types which are designed on the same principles to interoperate easily with functions that use output pointer parameters. [ Note — For example, a function of the form `void foo(void**)` — end note ].</ins></p>
+
+<ins>
+<xmp highlight="C++">
+namespace std {
+
+	template <class Smart, class Pointer, class... Args>
+	struct out_ptr_t {
+		// 19.11.9.2, constructors
+		out_ptr_t(Smart&, Args&&...) noexcept;
+
+		// 19.11.9.2, destructors
+		~out_ptr_t() noexcept;
+
+		// 19.11.9.3, conversion operators
+		operator Pointer*() noexcept;
+		operator void**() noexcept;
+	};
+
+}
+</xmp>
+</ins>
+
+<p><ins><sup>2</sup> Constraints: if this class is instantiated where `Smart` is a specialization of `std::shared_ptr`, then `Args` shall not be empty. `Pointer` shall satisfy `NullablePointer`.</ins></p>
+
+<p><ins><sup>3</sup> [ *Note:* It is typically a user error to reset a `std::shared_ptr` without specifying a deleter, as `std::shared_ptr` will happily replace a custom deleter with the default deleter upon usage of `.reset()`, as specified in [**util.smartptr.shared.mod**]/2-3. — *end Note* ]</ins></p>
+
+<p><ins>19.11.9.1 Constructors [**util.smartptr.out_ptr_t.ctor**]</ins></p>
+
+<p><ins><xmp highlight="C++">out_ptr_t(Smart& s, Args&&... args) noexcept;</xmp></ins></p>
+
+<p><ins><sup>4</sup> Effects: constructs an object of `out_ptr_t` and stores the arguments to be used for the destructor. Behaves as-if it stores a pointer *p* of type `Pointer`, the passed-in arguments, and a reference of type `Smart&`.</ins></p>
+
+<p><ins>19.11.9.2 Destructors [**util.smartptr.out_ptr_t.dtor**]</ins></p>
+
+<p><ins><xmp highlight="C++">~out_ptr_t() noexcept;</xmp></ins></p>
+
+<p><ins><sup>5</sup> Let `SP` be `Smart::pointer` if `Smart::pointer` exists, or `std::add_pointer_t<class Smart::element_type>` if `Smart::element_type` exists, or `std::add_pointer_t<class std::pointer_traits<Smart>::element_type>` in that order.</ins></p>
+
+<p><ins><sup>6</sup> Effects: reset the pointer stored in the stored `Smart` reference *s*, if the stored pointer *p* is not null using the provided arguments. Equivalent to: `if (p != nullptr) { s.reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` or `if (p != nullptr) { s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></p>
+
+<p><ins>19.11.9.3 Conversions [**util.smartptr.out_ptr_t.conv**]</ins></p>
+
+<p><ins>
+<xmp highlight="C++">
+operator Pointer*() noexcept;
+operator void**() noexcept;
+</xmp>
+</ins></p>
+		
+<ins><sup>7</sup> Effects: returns a pointer to the stored pointer inside the class.</ins>
+
+<ins><sup>8</sup> Constraints: the second conversion operator to `void**` shall not exist if `Pointer` is equivalent to type `void*`</ins>
+</blockquote>
+
+Insert §19.11.10 [**utilities.smartptr.out_ptr**]:
+
+<blockquote>
+<p><ins>19.11.10 **Function Template** `out_ptr` [**utilities.smartptr.out_ptr**]</ins><p>
+
+<p><ins><sup>1</sup> *out_ptr* is a function template that produces an object of type *out_ptr_t* (**[utilities.smartptr.out_ptr_t]**).</ins></p>
+
+<ins>
+<xmp highlight="C++">
+namespace std {
+
+	template <class Pointer, class Smart, class... Args>
+	auto out_ptr(Smart& s, Args&&... args) noexcept
+	-> out_ptr_t<Smart, Pointer, Args...>;
+
+	template <class Smart, class... Args>
+	auto out_ptr(Smart& s, Args&&... args) noexcept
+	-> decltype(out_ptr<PointerOf<Smart>>(s, std::forward<Args>(args)...));
+
+}
+</xmp>
+</ins>
+
+<p><ins><sup>2</sup> Let `PointerOf<Smart>` be `class Smart::pointer` if `Smart::pointer` type exists, or `std::add_pointer_t<class Smart::element_type>` if a `Smart::element_type` type exists, or `std::add_pointer_t<class std::pointer_traits<Smart>::element_type>` in that order.</ins></p>
+
+<p><ins><sup>3</sup> Effects: second overload forwards all arguments to the first overload with the addition that the first template parameter is specified as `PointerOf<Smart>`. The first overload create a type `out_ptr_t` with the template arguments `Pointer`, `Smart`, and `Args...` and forwards all arguments to the `out_ptr_t` constructor [util.smartptr.outptr.ctor].</ins></p>
+</blockquote>
+
+
+Insert §19.11.11 [**utilities.smartptr.inout_ptr_t**]:
+
+<blockquote>
+<ins>19.11.11 **Class Template** `inout_ptr_t` [**utilities.smartptr.inout_ptr_t**]</ins>
+
+<p><ins><sup>1</sup> *inout_ptr_t* is a type used with smart pointers ([**utilities.smartptr**]) and types which are designed on the same principles to interoperate easily with functions that use output pointer parameters. [ Note — For example, a function of the form `void foo(void**)`. This differs from *out_ptr_t* in that it expects the function will delete a valid pointer. — end note ]</ins></p>
+
+<ins>
+<xmp highlight="C++">
+namespace std {
+
+	template <class Smart, class Pointer, class... Args>
+	struct inout_ptr_t {
+		// 19.11.9.2, constructors
+		inout_ptr_t(Smart&, Args&&...) noexcept;
+
+		// 19.11.9.2, destructors
+		~inout_ptr_t() noexcept;
+
+		// 19.11.9.3, conversion operators
+		operator Pointer*() noexcept;
+		operator void**() noexcept;
+	};
+
+}
+</xmp>
+</ins>
+
+<p><ins>19.11.11.1 Constructors [**util.smartptr.inout_ptr_t.ctor**]</ins></p>
+
+<p><ins><xmp highlight="C++">inout_ptr_t(Smart& s, Args&&... args) noexcept;</xmp></ins></p>
+
+<p><ins><sup>2</sup> Effects: constructs an object of `inout_ptr_t` and stores the arguments `Args&&...` to be used for the destructor. Behaves as-if it stores a pointer *p* of type `Pointer` from the passed in `s` by calling `s.release()`, the passed-in arguments, and a reference of type `Smart&`.</ins></p>
+
+<p><ins><sup>3</sup> Contraints: the type `Smart` shall not be a specialization of `std::shared_ptr`.</ins></p>
+
+<p><ins>19.11.11.2 Destructors [**util.smartptr.inout_ptr_t.dtor**]</ins></p>
+
+<p><ins><xmp highlight="C++">~inout_ptr_t() noexcept;</xmp></ins></p>
+
+<p><ins><sup>4</sup> Let `SP` be `Smart::pointer` if `Smart::pointer` exists, or `std::add_pointer_t<class Smart::element_type>` if `Smart::element_type` exists, or `std::add_pointer_t<class std::pointer_traits<Smart>::element_type>` in that order.</ins></p>
+
+<p><ins><sup>5</sup> Effects: reset the pointer stored in the stored `Smart` reference *s*, if the stored pointer *p* is not null using the provided arguments. Equivalent to: `if (p != nullptr) { s.reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` or `if (p != nullptr) { s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></p>
+
+<p><ins>19.11.11.3 Conversions [**util.smartptr.inout_ptr_t.conv**]</ins></p>
+
+<p><ins>
+<xmp highlight="C++">
+operator Pointer*() noexcept;
+operator void**() noexcept;
+</xmp>
+</ins></p>
+		
+<ins><sup>6</sup> Effects: returns a pointer to the stored pointer inside the class.</ins>
+
+<ins><sup>7</sup> Constraints: the second conversion operator to `void**` shall not exist if `Pointer` is equivalent to type `void*`</ins>
+</blockquote>
+
+
+Insert §19.11.12 [**utilities.smartptr.inout_ptr**]:
+
+<blockquote>
+<p><ins>19.11.12 **Function Template** `inout_ptr` [**utilities.smartptr.inout_ptr**]</ins></o>
+
+<p><ins><sup>1</sup> *inout_ptr* is a function template that produces an object of type *inout_ptr_t* (**[utilities.smartptr.inout_ptr_t]**).</ins></p>
+
+<ins>
+<xmp highlight="C++">
+namespace std {
+
+	template <class Pointer, class Smart, class... Args>
+	auto inout_ptr(Smart& s, Args&&... args) noexcept
+	-> inout_ptr_t<Smart, Pointer, Args...>;
+
+	template <class Smart, class... Args>
+	auto inout_ptr(Smart& s, Args&&... args) noexcept 
+	-> decltype(inout_ptr<PointerOf<Smart>>(s, std::forward<Args>(args)...));
+
+}
+</xmp>
+</ins>
+
+<p><ins><sup>2</sup> Let `PointerOf<Smart>` be `class Smart::pointer` if `Smart::pointer` type exists, or `std::add_pointer_t<class Smart::element_type>` if a `Smart::element_type` type exists, or `std::add_pointer_t<class std::pointer_traits<Smart>::element_type>` in that order.</ins></p>
+
+<p><ins><sup>3</sup> Effects: second overload forwards all arguments to the first overload with the addition that the first template parameter is specified as `PointerOf<Smart>`. The first overload create a type `inout_ptr_t` with the template arguments `Pointer`, `Smart`, and `Args...` and forwards all arguments to the `inout_ptr_t` constructor [util.smartptr.outptr.ctor].</ins></p>
+</blockquote>
+
+
+# Acknowledgements # {#acknowledgements}
+
+Thank you to Lounge&lt;C++&gt;'s Cicada, melak47, rmf, and Puppy for reporting their initial experiences with such an abstraction nearly 5 years ago and helping JeanHeyd Meneide implement the first version of this.
+
+Thank you to Mark Zeren for help in this investigation and analysis of the performance of smart pointers.
+
+<pre class=biblio>
+{
+	"ccomptr": {
+		"authors": [
+			"Microsoft"
+		],
+		"title": "CComPtr::operator& Operator",
+		"href": "https://msdn.microsoft.com/en-us/library/31k6d0k7.aspx",
+		"date": "2015"
+	},
+	"wrl-comptrref": {
+		"authors": [
+			"Microsoft"
+		],
+		"title": "ComPtrRef Class",
+		"href": "https://docs.microsoft.com/en-us/cpp/windows/comptrref-class",
+		"date": "November 4th, 2016"
+	},
+	"n4762": {
+		"authors": [
+			"ISO/IEC JTC1/SC22/WG21 - The C++ Standards Committee",
+			"Richard Smith"
+		],
+		"title": "N4750 - Working Draft, Standard for Programming Language C++",
+		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/n4762.pdf",
+		"date": "May 7th, 2018"
+	},
+	"p0468": {
+		"authors": [
+			"Isabella Muerte"
+		],
+		"title": "A Proposal to Add an Intrusive Smart Pointer to the C++ Standard Library",
+		"href": "http://wg21.link/p0468",
+		"date": "October 15th, 2016"
+	}
+}
+</pre>

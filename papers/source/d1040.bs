@@ -1,0 +1,661 @@
+<pre class='metadata'>
+Title: std::embed
+Shortname: P1040
+Revision: 2
+Audience: EWG, LEWG
+Status: P
+Group: WG21
+URL: 
+!Current Source: <a href="https://github.com/ThePhD/embed/blob/master/papers/source/d1040.bs">github.com/ThePhD/embed/blob/master/papers/source/d1040.bs</a>
+!Current: <a href="https://rawgit.com/ThePhD/embed/master/papers/d1040.html">https://rawgit.com/ThePhD/embed/master/papers/d1040.html</a>
+!Implementation: <a href="https://github.com/ThePhD/embed-implementation">https://github.com/ThePhD/embed-implementation</a>
+Repository: ThePhD/embed
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+!Reply To: <a href="phdofthehouse@gmail.com">JeanHeyd Meneide</a>, <a href="https://twitter.com/thephantomderp">@thephantomderp</a>
+Abstract: A proposal for a function that allows pulling resources at compile-time into a program.
+
+Date: 2018-10-2
+Markup Shorthands: markdown yes, biblio yes, markup yes
+</pre>
+
+# Revision History # {#changelog}
+
+## Revision 2 ## {#changelog-r2}
+
+	Destroy `embed_options` and `alignment` options: if the function is materialized only at compile-time through `constexpr` or the upcoming "immediate functions" (`constexpr!`), there is no reason to make this part of the function. Instead, the user can choose their own alignment when they pin this down into a std::array or some form of C array storage.
+	
+## Revision 1 ## {#changelog-r1}
+
+	Create future directions section, follow up on Library Evolution Working Group comments.
+
+	Change `std::embed_options::null_terminated` to `std::embed_options::null_terminate`.
+    
+	Add more code demonstrating the old way and motivating examples.
+
+	Incorporate LEWG feedback, particularly alignment requirements illuminated by Odin Holmes and Niall Douglass. Add a feature macro on top of having `__has_include( <embed> )`.
+
+## Revision 0 ## {#changelog-r0}
+
+    Initial release.
+
+# Motivation # {#motivation}
+
+> I'm very keen on std::embed. I've been hand-embedding data in executables for NEARLY FORTY YEARS now. — <cite>Guy "Hatcat" Davidson, June 15, 2018</cite>
+
+Every C and C++ programmer -- at some point -- attempts to `#include` large chunks of non-C++ data into their code. Of course, `#include` expects the format of the data to be source code, and thusly the program fails with spectacular lexer errors. Thusly, many different tools and practices were adapted to handle this, as far back as 1995 with the `xxd` tool. Many industries need such functionality, including (but hardly limited to):
+
+- Financial Development
+	- representing coefficients and numeric constants for performance-critical algorithms;
+- Game Development
+	- assets that do not change at runtime, such as icons, fixed textures and other data
+	- Shader and scripting code;
+- Embedded Development
+	- storing large chunks of binary, such as firmware, in a well-compressed format
+	- placing data in memory on chips and systems that do not have an operating system or file system;
+- Application Development
+	- compressed binary blobs representing data
+	- non-C++ script code that is not changed at runtime; and
+- Server Development
+	- configuration parameters which are known at build-time and are baked in to set limits and give compile-time information to tweak performance under certain loads
+	- SSL/TLS Certificates hard-coded into your executable (requiring a rebuild and potential authorization before deploying new certificates).
+
+In the pursuit of this goal, these tools have proven to have inadequacies and contribute poorly to the C++ development cycle as it continues to scale up for larger and better low-end devices and high-performance machines, bogging developers down with menial build tasks and trying to cover-up disappointing differences between platforms.
+
+MongoDB has been kind enough to share some of their code [[#appendix-mongo|below]]. Other companies have had their example code anonymized or simply not included directly out of shame for the things they need to do to support their workflows. The author thanks MongoDB for their courage and their support for `std::embed`.
+
+The request for some form of `#include_string` or similar dates back quite a long time, with one of the oldest stack overflow questions asked-and-answered about it dating back nearly 10 years. Predating even that is a plethora of mailing list posts and forum posts asking how to get script code and other things that are not likely to change into the binary.
+
+This paper proposes `<embed>` to make this process much more efficient, portable, and streamlined. Here's an example of the ideal:
+
+<xmp highlight="C++">
+#include <embed>
+
+int main (int, char*[]) {
+	constexpr std::span<const std::byte> fxaa_binary = std::embed( "fxaa.spirv" );
+	
+	// assert this is a SPIRV file, compile-time	
+	static_assert( fxaa_binary[0] == 0x03 && fxaa_binary[1] == 0x02
+		&& fxaa_binary[2] == 0x23 && fxaa_binary[3] == 0x07
+		, "given wrong SPIRV data, check rebuild or check the binaries!" )
+
+	auto context = make_vulkan_context();
+
+	// data kept around and made available for binary
+	// to use at runtime
+	auto fxaa_shader = make_shader( context, fxaa_binary );
+
+	for (;;) {
+		// ...
+		// and we're off!
+		// ...
+	}
+
+	return 0;
+}
+</xmp>
+
+# Scope and Impact # {#scope}
+
+`constexpr span<const byte> embed( string_view resource_identifier )` is an extension to the language proposed entirely as a library construct. The goal is to have it implemented with compiler intrinsics, builtins, or other suitable mechanisms. It does not affect the language. The proposed header to expose this functionality is `<embed>`, making the feature entirely-opt-in by checking if either the proposed feature test macro or header exists.
+
+# Design Decisions # {#design}
+
+`<embed>` avoids using the preprocessor or defining new string literal syntax like its predecessors, preferring the use of a free function in the `std` namespace. `<embed>`'s design is derived heavily from community feedback plus the rejection of the prior art up to this point, as well as the community needs demonstrated by existing practice and their pit falls.
+
+## Current Practice ## {#design-practice}
+
+Here, we examine current practice, their benefits, and their pitfalls. There are a few cross-platform (and not-so-cross-platform) paths for getting data into an executable.
+
+### Manual Work ### {#design-practice-manual}
+
+Many developers also hand-wrap their files in (raw) string literals, or similar to massage their data -- binary or not -- into a conforming representation that can be parsed at source code:
+
+0. Have a file `data.json` with some data, for example:
+
+<xmp>{ "Hello": "World!" }</xmp>
+
+1. Mangle that file with raw string literals, and save it as `raw_include_data.h`:
+
+<xmp>R"json({ "Hello": "World!" })json"</xmp>
+
+2. Include it into a variable, optionally made `constexpr`, and use it in the program:
+
+<xmp>
+#include <iostream>
+#include <string_view>
+
+int main() {
+	constexpr std::string_view json_view =
+#include "raw_include_data.h"
+		;
+		
+	// { "Hello": "World!" }
+	std::cout << json_view << std::endl;
+	return 0;
+}
+</xmp>
+
+This happens often in the case of people who have not yet taken the "add a build step" mantra to heart. The biggest problem is that the above C++-ready source file is no longer valid in as its original representation, meaning the file as-is cannot be passed to any validation tools, schema checkers, or otherwise. This hurts the portability and interop story of C++ with other tools and languages.
+
+Furthermore, if the string literal is too big vendors such as VC++ will hard error [[nonius-visual-c-error|the build (example from Nonius, benchmarking framework)]].
+
+### Processing Tools ### {#design-practice-tools}
+
+Other developers use pre-processors for data that can't be easily hacked into a C++ source-code appropriate state (e.g., binary). The most popular one is `xxd -i my_data.bin`, which outputs an array in a file which developers then include. This is problematic because it turns binary data in C++ source. In many cases, this results in a larger file due to having to restructure the data to fit grammar requirements. It also results in needing an extra build step, which throws any programmer immediately at the mercy of build tools and project management. An example and further analysis can be found in the [[#appendix-tools]] and the [[#appendix-mongo]] section.
+
+### `ld`, resource files, and other vendor-specific link-time tools ### {#design-practice-vendor}
+
+Resource files and other "link time" or post-processing measures have one benefit over the previous method: they are fast to perform in terms of compilation time. A example can be seen in the [[#appendix-ld]] section.
+
+### The `incbin` tool ### {#design.practice.incbin}
+
+There is a tool called [[incbin]] which is a 3rd party attempt at pulling files in at "assembly time". Its approach is incredibly similar to `ld`, with the caveat that files must be shipped with their binary. It unfortnately falls prey to the same problems of cross-platform woes when dealing with VC++, requiring additional pre-processing to work out in full.
+
+## Prior Art ## {#design-prior}
+
+There has been a lot of discussion over the years in many arenas, from Stack Overflow to mailing lists to meetings with the Committee itself. The latest advancements that had been brought to WG21's attention was [[p0373r0|p0373r0 - File String Literals]]. It proposed the syntax `F"my_file.txt"` and `bF"my_file.txt"`, with a few other amenities, to load files at compilation time. The following is an analysis of the previous proposal.
+
+### Literal-Based, constexpr ### {#design-prior-literal}
+
+A user could reasonably assign (or want to assign) the resulting array to a `constexpr` variable as its expected to be handled like most other string literals. This allowed some degree of compile-time reflection. It is entirely helpful that such file contents be assigned to constexpr: e.g., string literals of JSON being loaded at compile time to be parsed by Ben Deane and Jason Turner in their CppCon 2017 talk, [[constexpr-all-the-things|constexpr All The Things]].
+
+### Literal-Based, Null Terminated (?) ### {#design-prior-null}
+
+It is unclear whether the resulting array of characters or bytes was to be null terminated. The usage and expression imply that it will be, due to its string-like appearance. However, is adding an additional null terminator fitting for desired usage? From the existing tools and practice (e.g., `xxd -i` or linking a data-dumped object file), the answer is no: but the syntax `bF"hello.txt"` makes the answer seem like a "yes". This is confusing: either the user should be given an explicit choice or the feature should be entirely opt-in.
+
+### Encoding ### {#design-prior-encoding}
+
+Because the proposal used a string literal, several questions came up as to the actual encoding of the returned information. The author gave both `bF"my_file.txt"` and `F"my_file.txt"` to separate binary versus string-based arrays of returns. Not only did this conflate issues with expectations in the previous section, it also became a heavily contested discussion on both the mailing list group discussion of the original proposal and in the paper itself. This is likely one of the biggest pitfalls between separating "binary" data from "string" data: imbuing an object with string-like properties at translation time provide for all the same hairy questions around source/execution character set and the contents of a literal.
+
+## Design Goals ## {#design-goals}
+
+Because of the aforementioned reasons, it seems more prudent to take a "compiler intrinsic"/"magic function" approach. The function takes the form:
+
+<xmp>
+constexpr span<const byte> embed( 
+	string_view resource_identifier
+);
+</xmp>
+
+`resource_identifier` is a `string_view` processed in an implementation-defined manner to find and pull resources into C++ at constexpr time. The most obvious source will be the file system, with the intention of having this evaluated as a core constant expression. We do not attempt to restrict the `string_view` to a specific subset: whatever the implementation accepts (typically expected to be a relative or absolute file path, but can be other identification scheme), the implementation should use.
+
+### Implementation Defined ### {#design-goals-impldefn}
+
+Calls such as `std::embed( "my_file.txt" );`, `std::embed( "data.dll" );`, and `std::embed( "vertices.bin" );` are meant to be evaluated in a `constexpr` context (with "core constant expressions" only), where the behavior is implementation-defined. The function has unspecified behavior when evaluated in a non-constexpr context (with the expectation that the implementation will provide a failing diagnostic in these cases). This is similar to how include paths work, albeit `#include` interacts with the programmer through the preprocessor.
+
+There is precedent for specifying library features that are implemented only through compile-time compiler intrinsics (`type_traits`, `source_location`, and similar utilities). Core -- for other proposals such as [[p0466r1|p0466r1 - Layout-compatibility and Pointer-interconvertibility Traits ]] -- indicated their preference in using a `constexpr` magic function implemented by intrinsic in the standard library over some form of `template <auto X> thing { /* implementation specified */ value; };` construct. However, it is important to note that [[p0466r1]] proposes type traits, where as this has entirely different functionality, and so its reception and opinions may be different.
+
+As `std::embed` is meant to exist at compile-time only, it may be prudent to rely on [[p1073r0|p1073r0 - immediate (constexpr!) functions]]. However, these are only design decisions to more clearly express the intent of the paper. This paper does not explicitly rely on [[p1073r0]] at this time.
+
+### Binary Only ### {#design-goals-binary}
+
+Creating two separate forms or options for loading data that is meant to be a "string" always fuels controversy and debate about what the resulting contents should be. The problem is sidestepped entirely by demanding that the resource loaded by `std::embed` represents the bytes exactly as they come from the resource. This prevents encoding confusion, conversion issues, and other pitfalls related to trying to match the user's idea of "string" data or non-binary formats. Data is received exactly as it is from the resource as defined by the implementation, whether it is a supposed text file or otherwise. `std::embed( "my_text_file.txt" )` and `std::embed( "my_binary_file.bin" )` behave exactly the same concerning their treatment of the resource.
+
+### Constexpr Compatibility ### {#design-goals-constexpr}
+
+The entire implementation must be usable in a `constexpr` context. It is not just for the purposes of processing the data at compile time, but because it matches existing implementations that store strings and huge array literals into a variable via `#include`. These variables can be `constexpr`: to not have a constexpr implementation is to leave many of the programmers who utilize this behavior without a proper standardized tool.
+
+# Help Requested # {#help}
+
+The author of this proposal is extremely new to writing standardese. While the author has read other papers and consumed the standard, there is a definite need for help and any guidance and direction is certainly welcome. The author expects that this paper may undergo several revisions and undertake quite a few moments of "bikeshedding".
+
+## Feeling Underrepresented? ## {#help-represent}
+
+The author has consulted dozens of C++ users in each of the Text Processing, Video Game, Financial, Server, Embedded and Desktop Application development subspaces. The author has also queried the opinions of Academia. The author feels this paper adequately covers many use cases, existing practice and prior art. If there is a use case or a problem not being adequately addressed by this proposal, the author encourages anyone and everyone to reach out to have their voice heard.
+
+## Bikeshedding ## {#help-bikshed}
+
+### Alternative Names ### {#help-bikeshed-alternative}
+
+Some people feel that `embed` is not a good name for this function. Therefore, here are some alternative names contribute by the community, in order of very good to very terrible:
+
+- `embed`
+- `embed_resource`
+- `slurp`
+- `constexpr_read`
+- `static_read`
+- `static_resource`
+- `static_include`
+- `cfsread`
+
+### Answered Questions ### {#help-bikeshed-answered}
+
+> Is `std::vector<std::byte>` in `constexpr` format better as a return value (i.e., do we depend on Louis Dionne, Roger Orr, and Daveed Vandevoorde's work in [[p0784r3]], [[p1002r0]], [[p1004r0]] and [[p1023r0]])?
+
+No, but can be persuaded otherwise. Do not want to lock this feature down as a dependency to these other papers in-flight.
+
+> Is it desireable to make `std::embed` templated so it can return other kinds of views / types at constexpr time, since the standard does not yet have a concept of a constexpr `reinterpret_cast` or `std::bless` + `std::launder`?
+
+Yes.
+
+> Should `std::embedded` ([[p1040r0|std::embed revision 0]]) just be replaced with `std::span`?
+
+Yes. `std::span` covers all of the use cases here, is `constexpr`, and makes the most sense. `std::array<const byte, N>` cannot be returned because `N` cannot be named until it is deduced by the actual value being returned. It is a poor interface to force the user to always `decltype` or `auto` the return. (LEWG confirmed.)
+
+> Should the return `std::span` be const-qualified, as in `std::span<const std::byte>`?
+
+Yes. (LEWG confirmed.)
+
+> What is the lookup scheme for files and other resources?
+
+Implementation defined. We expect compilers to expose an option similar to `--embed-paths=...`, `/EMBEDPATH:...`, or whatever tickles the implementer's fancy. (LEWG confirmed.)
+
+> Pulling in large data files on every compile might be expensive?
+
+We fully expect implementations to employ techniques already in use for compilation dependency tracking to ensure this is not a frequent problem past the first compilation.
+
+> Is this more suitable for WG14 (the standards C committee) rather than WG21 (the standards C++ committee)?
+
+The author does not think that the C standards committee will be the best place for some feature of this variety at this time. All of the typical solutions that would work in C were rejected previously (preprocessor or special literal). Indication has shown that the C standards committee might be able to support this idea and come up with a better design than WG21 or provide more fine-grained mechanisms for it, but there is no evidence that they are either interested or have the time. (Raised in LEWG, confirmed in general post-LEWG discussion.)
+
+> Is a magic library function in a header the most desirable?
+
+Other proposals for other avenues have fallen flat and not garnered enough support. Preprocessor directives are rountinely discouraged in multiple LEWG, EWG and discussion at conferences. Many individuals want this to work with `constexpr` nicely so they can confirm other compile-time computation. The only dissent to this so far is with people who use `distcc` and `icecream`, who find that the preprocessing done by these tools will not have the `std::embed` contents embedded.
+
+Icecream's team has been contacted about this. They have advised the use of `ICECC_EXTRA_FILES` to solve this problem. As brought to my attention by `icecream` users, however, the `ICECC_EXTRA_FILES` option is notoriously incomplete/unsatisfactory in its implementation.
+
+This brings up the question: do we change std::embed to work before Phase 7 of compilation as some kind of preprocessing directive because `icecc` and `distcc` have incomplete/unfinished implementations? My current feeling is that `icecc` and `distcc` should improve their implementation of `*_EXTRA_FILES`. Contorting `std::embed` into a preprocessor directive that will receive much greater Strongly Against opposition from everyone in the Language group is very much a non-starter.
+
+
+
+
+# Changes to the Standard # {#wording}
+
+Wording changes are relative to [[n4762]].
+
+## Intent ## {#wording-intent}
+
+The intent of the wording is to provide a function that has implementation-defined behavior but returns the specified constexpr span representing the bytes of the resource the passed-in string_view represents. The wording also explicitly disallows the usage of the function outside of a core constant expression, meaning it is ill-formed if it is attempted to be used at not-constexpr time (std::embed calls should not show up as a function in the final executable).
+
+## Proposed Feature Test Macro ## {#wording-feature}
+
+The proposed feature test macro is `__cpp_lib_embed`.
+
+## Proposed Wording ## {#wording-proposed}
+
+Append to §16.3.1 General [**support.limits.general**]'s **Table 35** one additional entry:
+
+<blockquote>
+<table>
+<tr>
+	<th>Macro name</th>
+	<th>Value</th>
+</tr>
+<tr>
+	<td><ins>__cpp_lib_embed</ins></td>
+	<td><ins>201811L</ins></td>
+</tr>
+</table>
+</blockquote>
+
+Append to §19.1 General [**utilities.general**]'s **Table 38** one additional entry:
+
+<blockquote>
+<table>
+<tr>
+	<th></th>
+	<th>Subclause</th>
+	<th>Header(s)</th>
+</tr>
+<tr>
+	<td><ins>19.20</ins></td>
+	<td><ins>Compile-time Resources</ins></td>
+	<td><ins>&lt;embed&gt;</ins></td>
+</tr>
+</table>
+</blockquote>
+
+Add a new section §19.20 Compile-time Resources [**const.res**]:
+
+<blockquote>
+<ins>
+**19.20 Compile-time Resources** [**const.res**]
+
+**19.20.1** In general [**const.res.general**]
+
+Compile-time resources allow the library implementation to retrieve data into a program from implementation-defined sources.
+
+**19.20.2** Header `embed` synopsis [**embed.syn**]
+
+```
+namespace std {
+	constexpr span<const byte> embed( string_view resource_identifier ) noexcept;
+}
+```
+
+**19.20.3** Function `embed` [**embed.embed**]
+
+```
+namespace std {
+	constexpr span<const byte> embed( string_view resource_identifier ) noexcept;
+}
+```
+
+<!--
+```
+namespace std {
+	template <typename T = byte>
+	constexpr span<const T> embed( string_view resource_identifier ) noexcept;
+}
+```
+-->
+<sup>1</sup> Returns: A contiguous sequence of bytes representing the implementation-defined resource.
+
+<sup>2</sup> Remarks: Accepts a `string_view` whose contents provide an implementation-defined description of a resource. If the implementation cannot find the resource specified, the implementation shall error. [Note— Implementations should provide a mechanism similar to e.g. include paths. — End Note]
+
+<sup>3</sup> If this function is called and cannot be evaluated as a §7.7 core constant expression [**expr.const**], then the program is ill-formed.
+
+<!--
+<sup>4</sup> Constraints: `T` shall satisfy `std::is_trivial_v<T>`. [Note— This constraint is for answering how non-trivial constructors and destructors cannot be used validly here. — End Note].
+-->
+</ins>
+</blockquote>
+
+# Future Direction # {#future}
+
+Many developers in all spaces are concerned that `constexpr` does not allow `reinterpret_cast` to be used. This means that the bytes cannot be viewed -- at `constexpr` time -- as more complex entities. There are 2 directions to solve this problem. This paper proposes neither of the fixes at this time.
+
+The first is to word a `bit_cast`, `reinterpret_cast`, and/or `std::bless` that can work on this memory at constexpr time. The second is to use a more blunt hammer and simply template `std::embed`, specifying it as follows:
+
+<xmp>
+template <typename T = std::byte> 
+constexpr span<const T> embed( 
+	string_view resource_identifier
+);
+</xmp>
+
+This would supply the data and view it as a type `T`. However, this brings up questions of destructors and similar for when the data goes away. It also gets in the way of caching. Is it possible for an implementation to cache the retrieved storage based solely on `resource_identifier` since a destructor could run over the data? If destructors or constructors are run based on type `T` then the data cannot be the same between template instantions even with the same `resource_identifier`.
+
+A way to help with this would be to `static_assert(std::is_trivial_v<T>)` and not have to worry about such problems. The good news is that such a templated transformation can be applied to `std::embed` at a later date with no API breakage, provided the templated arguments are defaulted in the function.
+
+We do not propose any of these future directions at this time.
+
+
+
+# Appendix # {#appendix}
+
+## Sadness ## {#appendix-sadness}
+
+Other techniques used include pre-processing data, link-time based tooling, and assembly-time runtime loading. They are detailed below, for a complete picture of today's sad landscape of options.
+
+### Pre-Processing Tools Sadness ### {#appendix-tools}
+
+1. Run the tool over the data (`xxd -i xxd_data.bin > xxd_data.h`) to obtain the generated file (`xxd_data.h`):
+
+<xmp highlight="C++">
+unsigned char xxd_data_bin[] = {
+  0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x2c, 0x20, 0x57, 0x6f, 0x72, 0x6c, 0x64,
+  0x0a
+};
+unsigned int xxd_data_bin_len = 13;
+</xmp>
+
+2. Compile `main.cpp`:
+
+<xmp highlight="C++">
+#include <iostream>
+#include <string_view>
+
+// prefix as constexpr,
+// even if it generates some warnings in g++/clang++
+constexpr
+#include "xxd_data.h"
+;
+
+template <typename T, std::size_t N>
+constexpr std::size_t array_size(const T (&)\[N]) {
+    return N;
+}
+
+int main() {
+    static_assert(xxd_data_bin[0] == 'H');
+    static_assert(array_size(xxd_data_bin) == 13);
+
+    std::string_view data_view(
+        reinterpret_cast<const char*>(xxd_data_bin),
+        array_size(xxd_data_bin));
+    std::cout << data_view << std::endl; // Hello, World!
+    return 0;
+}
+</xmp>
+
+Others still use python or other small scripting languages as part of their build process, outputting data in the exact C++ format that they require.
+
+There are problems with the `xxd -i` or similar tool-based approach. Lexing and Parsing data-as-source-code adds an enormous overhead to actually reading and making that data available.
+
+Binary data as C(++) arrays provide the overhead of having to comma-delimit every single byte present, it also requires that the compiler verify every entry in that array is a valid literal or entry according to the C++ language.
+
+This scales poorly with larger files, and build times suffer for any non-trivial binary file, especially when it scales into Megabytes in size (e.g., firmware and similar).
+
+### `python` Sadness ### {#appendix-mongo}
+
+Other companies are forced to create their own ad-hoc tools to embed data and files into their C++ code. MongoDB uses a [custom python script](https://github.com/mongodb/mongo/blob/master/site_scons/site_tools/jstoh.py), just to get their data into C++:
+
+<xmp>
+import os
+import sys
+
+def jsToHeader(target, source):
+    outFile = target
+    h = [
+        '#include "mongo/base/string_data.h"',
+        '#include "mongo/scripting/engine.h"',
+        'namespace mongo {',
+        'namespace JSFiles{',
+    ]
+    def lineToChars(s):
+        return ','.join(str(ord(c)) for c in (s.rstrip() + '\n')) + ','
+    for s in source:
+        filename = str(s)
+        objname = os.path.split(filename)[1].split('.')[0]
+        stringname = '_jscode_raw_' + objname
+
+        h.append('constexpr char ' + stringname + "[] = {")
+
+        with open(filename, 'r') as f:
+            for line in f:
+                h.append(lineToChars(line))
+
+        h.append("0};")
+        # symbols aren't exported w/o this
+        h.append('extern const JSFile %s;' % objname)
+        h.append('const JSFile %s = { "%s", StringData(%s, sizeof(%s) - 1) };' %
+                 (objname, filename.replace('\\', '/'), stringname, stringname))
+
+    h.append("} // namespace JSFiles")
+    h.append("} // namespace mongo")
+    h.append("")
+
+    text = '\n'.join(h)
+
+    with open(outFile, 'wb') as out:
+        try:
+            out.write(text)
+        finally:
+            out.close()
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 3:
+        print "Must specify [target] [source] "
+        sys.exit(1)
+    jsToHeader(sys.argv[1], sys.argv[2:])
+</xmp>
+
+MongoDB were brave enough to share their code with me and make public the things they have to do: other companies have shared many similar concerns, but do not have the same bravery. We thank MongoDB for sharing.
+
+### `ld` Sadness ### {#appendix-ld}
+
+A full, compilable example (except on Visual C++):
+
+0. Have a file ld_data.bin with the contents `Hello, World!`.
+
+1. Run `ld -r binary -o ld_data.o ld_data.bin`.
+
+2. Compile the following `main.cpp` with `c++ -std=c++17 ld_data.o main.cpp`:
+
+<xmp highlight="C++">
+#include <iostream>
+#include <string_view>
+
+#ifdef __APPLE__
+#include <mach-o/getsect.h>
+
+#define DECLARE_LD(NAME) extern const unsigned char _section$__DATA__##NAME[];
+#define LD_NAME(NAME) _section$__DATA__##NAME
+#define LD_SIZE(NAME) (getsectbyname("__DATA", "__" #NAME)->size)
+
+#elif (defined __MINGW32__) /* mingw */
+
+#define DECLARE_LD(NAME)                                 \
+	extern const unsigned char binary_##NAME##_start[]; \
+	extern const unsigned char binary_##NAME##_end[];
+#define LD_NAME(NAME) binary_##NAME##_start
+#define LD_SIZE(NAME) ((binary_##NAME##_end) - (binary_##NAME##_start))
+
+#else /* gnu/linux ld */
+
+#define DECLARE_LD(NAME)                                  \
+	extern const unsigned char _binary_##NAME##_start[]; \
+	extern const unsigned char _binary_##NAME##_end[];
+#define LD_NAME(NAME) _binary_##NAME##_start
+#define LD_SIZE(NAME) ((_binary_##NAME##_end) - (_binary_##NAME##_start))
+#endif
+
+DECLARE_LD(ld_data_bin);
+
+int main() {
+	// impossible
+	//static_assert(xxd_data_bin[0] == 'H');
+	std::string_view data_view(
+		reinterpret_cast<const char*>(LD_NAME(ld_data_bin)), 
+		LD_SIZE(ld_data_bin)
+	);
+	std::cout << data_view << std::endl; // Hello, World!
+	return 0;
+}
+</xmp>
+
+This scales a little bit better in terms of raw compilation time but is shockingly OS, vendor and platform specific in ways that novice developers would not be able to handle fully. The macros are required to erase differences, lest subtle differences in name will destroy one's ability to use these macros effectively. We ommitted the code for handling VC++ resource files because it is excessively verbose than what is present here.
+
+N.B.: Because these declarations are `extern`, the values in the array cannot be accessed at compilation/translation-time.
+
+
+
+# Acknowledgements # {#acknowledgements}
+
+A big thank you to Andrew Tomazos for replying to the author's e-mails about the prior art. Thank you to Arthur O'Dwyer for providing the author with incredible insight into the Committee's previous process for how they interpreted the Prior Art.
+
+A special thank you to Agustín Bergé for encouraging the author to talk to the creator of the Prior Art and getting started on this. Thank you to Tom Honermann for direction and insight on how to write a paper and apply for a proposal.
+
+Thank you to Arvid Gerstmann for helping the author understand and use the link-time tools.
+
+Thank you to Tony Van Eerd for valuable advice in improving the main text of this paper.
+
+Thank you to Lilly (Cpplang Slack, @lillypad) for the valuable bikeshed and hole-poking in original designs, alongside Ben Craig who very thoroughly explained his woes when trying to embed large firmware images into a C++ program for deployment into production.
+
+For all this hard work, it is the author's hope to carry this into C++. It would be the author's distinct honor to make development cycles easier and better with the programming language we work in and love. ♥
+
+<pre class=biblio>
+{
+	"n4762": {
+		"authors": [
+			"ISO/IEC JTC1/SC22/WG21 - The C++ Standards Committee",
+			"Richard Smith"
+		],
+		"title": "N4762 - Working Draft, Standard for Programming Language C++",
+		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/n4762.pdf",
+		"date": "May 7th, 2018"
+	},
+	"constexpr-all-the-things": {
+		"authors": [
+			"Ben Deane",
+			"Jason Turner"
+		],
+		"title": "constexpr All The Things: CppCon 2017",
+		"href": "https://www.youtube.com/watch?v=PJwd4JLYJJY",
+		"date": "September 25th, 2017"
+	},
+	"nonius-visual-c-error": {
+		"authors": [
+			"R. Martinho Fernandes"
+		],
+		"href": "https://github.com/libnonius/nonius/blob/devel/include/nonius/reporters/html_reporter.h%2B%2B#L42",
+		"title": "nonius generated HTML Reporter",
+		"date": "September 1st, 2016"
+	},
+	"incbin": {
+		"authors": [
+			"Dale Weiler (graphitemaster)"
+		],
+		"title": "incbin: load files at 'assembly' time",
+		"href": "https://github.com/graphitemaster/incbin"
+	},
+	"p1073r0": {
+		"authors": [
+			"Richard Smith",
+			"Andrew Sutton",
+			"Daveed Vandevoorde"
+		],
+		"href": "https://wg21.link/p1073r0",
+		"title": "constexpr! functions",
+		"status": "P",
+		"publisher": "WG21",
+		"date": "May 5th, 2018"
+	},
+	"p0784r3": {
+		"authors": [
+			"Louis Dionne", 
+			"Richard Smith", 
+			"Nina Ranns", 
+			"Daveed Vandevoorde"
+		],
+		"href": "https://wg21.link/p0784r3",
+		"title": "More constexpr containers",
+		"status": "P",
+		"publisher": "WG21",
+		"date": "May 4th, 2018"
+	},
+	"p1040r0": {
+		"authors": [
+			"JeanHeyd Meneide"
+		],
+		"href": "https://wg21.link/p1040r0",
+		"title": "std::embed",
+		"status": "P",
+		"publisher": "WG21",
+		"date": "May 5th, 2018"
+	},
+	"p1002r0": {
+		"authors": [
+			"Louis Dionne"
+		],
+		"href": "https://wg21.link/p1002r0",
+		"title": "try-catch blocks in constexpr functions",
+		"status": "P",
+		"publisher": "WG21",
+		"date": "May 5th, 2018"
+	},
+	"p1004r0": {
+		"authors": [
+			"Louis Dionne", 
+			"Daveed Vandevoorde"
+		],
+		"href": "https://wg21.link/p1004r0",
+		"title": "Making std::vector constexpr",
+		"status": "P",
+		"publisher": "WG21",
+		"date": "May 5th, 2018"
+	},
+	"p1023r0": {
+		"authors": [
+			"Roger Orr"
+		],
+		"href": "https://wg21.link/p1023r0",
+		"title": "constexpr comparison operators for std::array",
+		"status": "P",
+		"publisher": "WG21",
+		"date": "May 5th, 2018"
+	}
+}
+</pre>

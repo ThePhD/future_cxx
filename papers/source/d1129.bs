@@ -1,0 +1,569 @@
+<pre class='metadata'>
+Title: T&amp; doesn't exist, but optional&lt;T&amp;&gt; should
+Shortname: D1129
+Revision: 0
+Audience: LEWG, LWG
+Status: D
+Group: WG21
+URL: 
+!Current Source: <a href="https://github.com/ThePhD/optional/blob/master/papers/source/d1129.bs">github.com/ThePhD/optional/blob/master/papers/source/d1129.bs</a>
+!Current: <a href="https://rawgit.com/ThePhD/optional/master/papers/d1129.html">https://rawgit.com/ThePhD/optional/papers/d1129.html</a>
+!Reply To: <a href="mailto:phdofthehouse@gmail.com">JeanHeyd Meneide</a>, <a href="https://twitter.com/thephantomderp">@ThePhD</a>
+Repository: ThePhD/optional
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Abstract: 
+Date: 2018-09-22
+Markup Shorthands: markdown yes, biblio yes, markup yes
+</pre>
+
+<pre class=include>
+path: wording_style.bs
+</pre>
+
+# Revision History # {#changelog}
+
+
+## Revision 0 ## {#changelog-r0}
+
+		Initial release.
+
+
+
+# Overview # {#overview}
+
+
+## The Great Big Table of Behaviors ## {#overview-behavior}
+
+Below is a succint synopsis of the options presented in this paper and their comparison with known solutions and alternative implementations. It does not include the totality of the optional API surface, but has the most exemplary pieces. A key for the symbols:
+
+✔️ - Succeeds
+
+🚫 - Compile-Time Error
+
+❌ - Runtime Error
+
+❓ - Implementation Inconsistency (between engaged/unengaged states, runtime behaviors, etc.)
+
+ <table>
+	<tr>
+		<th colspan="6">optional behaviors</th>
+	</tr>
+	<tr>
+		<th>Operation</th>
+		<th>T</th>
+		<th>std::reference_wrapper&lt;T&gt;</th>
+		<th>*Proposed:*<br/>[[#solutions-conservative|T& conservative]]</th>
+		<th>[[#solutions-rebind|T& rebind]]</th>
+		<th>[[#traps-assign-through|T& assign through]]</th>
+	</tr>
+	<tr>
+		<td>exemplary implementation(s)</td>
+		<td>✔️<br/>std::optional<br/>[[martinmoene-optional|nonstd::optional]]<br/>[[llvm-optional|llvm::Optional]]<br/>[[folly-optional|folly::Optional]]</td>
+		<td>✔️<br/>std::optional<br/>[[martinmoene-optional|nonstd::optional]]<br/>[[llvm-optional|llvm::Optional]]<br/>[[folly-optional|folly::Optional]]</td>
+		<td>✔️<br/>[[akrzemi-optional|std::experimental::optional]]<br/>[[sol2|sol::optional]]</td>
+		<td>✔️<br/>[[boost-optional|boost::optional]]<br/>[[llama-optional|tl::optional]]<br/>[[foonathan-optional|ts::optional_ref]]</td>
+		<td>🚫<br/>...?</td>
+	</tr>
+	<tr>
+		<td>`optional(const optional&)`</td>
+		<td>✔️<br/>copy constructs `T` (disengaged: nothing)</td>
+		<td>✔️<br/>binds reference (disengaged: nothing)</td>
+		<td>✔️<br/>binds reference (disengaged: nothing)</td>
+		<td>✔️<br/>binds reference (disengaged: nothing)</td>
+		<td>✔️<br/>binds reference (disengaged: nothing)</td>
+	</tr>
+	<tr>
+		<td>`optional(optional&&)`</td>
+		<td>✔️<br/>move constructs `T` (disengaged: nothing)</td>
+		<td>✔️<br/>binds reference (disengaged: nothing)</td>
+		<td>✔️<br/>binds reference (disengaged: nothing)</td>
+		<td>✔️<br/>binds reference (disengaged: nothing)</td>
+		<td>✔️<br/>binds reference (disengaged: nothing)</td>
+	</tr>
+	<tr>
+		<td>`optional(T&)`</td>
+		<td>✔️<br/>(copy) constructs `T`</td>
+		<td>✔️<br/>binds reference</td>
+		<td>✔️<br/>binds reference</td>
+		<td>✔️<br/>binds reference</td>
+		<td>✔️<br/>binds reference</td>
+	</tr>
+	<tr>
+		<td>`optional(T&&)`</td>
+		<td>✔️<br/>(move) constructs `T`</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>🚫<br/>compile-time error</td>
+	</tr>
+	<tr>
+		<td>`operator=(T&)`<br/>*engaged*</td>
+		<td>✔️<br/>overwrites `T`</td>
+		<td>✔️<br/>rebinds data</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>✔️<br/>rebinds data</td>
+		<td>✔️ <sub>❓</sub><br/>overwrites data</td>
+	</tr>
+	<tr>
+		<td>`operator=(T&)`<br/>*disengaged*</td>
+		<td>️✔️<br/>overwrites data</td>
+		<td>✔️<br/>rebinds data (overwrites reference wrapper)</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>✔️<br/>rebinds data</td>
+		<td>✔️ <sub>❓</sub><br/>rebinds data</td>
+	</tr>
+	<tr>
+		<td>`operator=(T&&)`<br/>*engaged*</td>
+		<td>✔️<br/>move-assigns `T`</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>🚫 or ✔️ <sub>❓</sub><br/>compile-time error, or overwrite data?</td>
+	</tr>
+	<tr>
+		<td>`operator=(T&&)`<br/>*disengaged*</td>
+		<td>✔️<br/>constructs `T`</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>🚫 or ❌ <sub>❓</sub><br/>compile-time error, or runtime shenanigans?</td>
+	</tr>
+	<tr>
+		<td>`operator=(T&)`<br/>*engaged*</td>
+		<td>✔️<br/>overwrites `T`</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>✔️<br/>rewrites data</td>
+		<td>✔️ <sub>❓</sub><br/>overwrites data</td>
+	</tr>
+	<tr>
+		<td>`operator=(optional<T>&)`<br/>*disengaged*</td>
+		<td>️✔️<br/>overwrites data</td>
+		<td>✔️<br/>overwrites data</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>✔️<br/>rewrites data</td>
+		<td>✔️ <sub>❓</sub><br/>rebinds data</td>
+	</tr>
+	<tr>
+		<td>`operator=(optional<T>&&)`<br/>*engaged;*<br>*arg engaged*</td>
+		<td>✔️<br/>move assign `T`</td>
+		<td>✔️<br/>rebind data</td>
+		<td>✔️<br/>rebind data</td>
+		<td>✔️<br/>rebind data</td>
+		<td>✔️ <sub>❓</sub><br/>move? copy? assign `T`</td>
+	</tr>
+	<tr>
+		<td>`operator=(optional<T>&&)`<br/>*disengaged;*<br>*arg engaged*</td>
+		<td>✔️<br/>move construct `T`</td>
+		<td>✔️<br/>rebind data</td>
+		<td>✔️<br/>rebind data</td>
+		<td>✔️<br/>rebind data</td>
+		<td>✔️ <sub>❓</sub><br/>rebind data</td>
+	</tr>
+	<tr>
+		<td>`operator=(optional<T>&&)`<br/>*engaged;*<br>*arg disengaged*</td>
+		<td>✔️<br/>disengage `T`</td>
+		<td>✔️<br/>disengage `T`</td>
+		<td>✔️<br/>disengage `T`</td>
+		<td>✔️<br/>disengage `T`</td>
+		<td>✔️<br/>disengage `T`</td>
+	</tr>
+	<tr>
+		<td>`operator=(optional<T>&&)`<br/>*disengaged;*<br>*arg disengaged*</td>
+		<td>✔️<br/>nothing</td>
+		<td>✔️<br/>nothing</td>
+		<td>✔️<br/>nothing</td>
+		<td>✔️<br/>nothing</td>
+		<td>✔️<br/>nothing</td>
+	</tr>
+	<tr>
+		<td>`*my_op = value`<br/>*engaged*</td>
+		<td>✔️<br/>copy assigns `T`</td>
+		<td>✔️<br/>copy assigns `T`</td>
+		<td>✔️<br/>copy assigns `T`</td>
+		<td>✔️<br/>copy assigns `T`</td>
+		<td>✔️<br/>copy assigns `T`</td>
+	</tr>
+	<tr>
+		<td>`*my_op = value`<br/>*disengaged*</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+	</tr>
+	<tr>
+		<td>`*my_op = std::move(value)`<br/>*engaged*</td>
+		<td>✔️<br/>move assigns `T`</td>
+		<td>✔️<br/>move assigns `T`</td>
+		<td>✔️<br/>move assigns `T`</td>
+		<td>✔️<br/>move assigns `T`</td>
+		<td>✔️<br/>move assigns `T`</td>
+	</tr>
+	<tr>
+		<td>`*my_op = std::move(value)`<br/>*disengaged*</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+	</tr>
+	<tr>
+		<td>`(*my_op).some_member()`<br/>*engaged*</td>
+		<td>✔️<br/>calls `some_member()`</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>✔️<br/>calls `some_member()`</td>
+		<td>✔️<br/>calls `some_member()`</td>
+		<td>✔️<br/>calls `some_member()`</td>
+	</tr>
+	<tr>
+		<td>`(*my_op).some_member()`<br/>*disengaged*</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+	</tr>
+</table>
+
+
+
+# Motivation # {#motivation}
+
+Originally, `std::optional<T>` -- where `T` denotes the name of a type -- contained a specialization to work with regular references, `std::optional<T&>`. When some of the semantics for references were called into question with respect to assign-through semantics  (assign into the value or rebind the optional) and how comparisons would be performed, the debate stopped early and no full consensus was reached. Rather than remove just the operator or modify comparison operators, the entirety of `std::optional<T&>` was removed entirely. 
+
+This left many codebases in an interesting limbo: previous implementations and external implementations
+
+
+## Stuck in the Past ## {#motivation-past}
+
+A very large hole is left in many codebases that desire to wrap their non-null optional returns from `T*` to `T&`. It has prevented many code bases from migrating from the most popular optional implementations available pre-standardization, such as [[akrzemi-optional|akrzemi/optional]] and [[boost-optional|Boost.Optional]]. It has also prevented adoption in other modern codebases for where the difference between `T*`, `optional<T&>`, and `optional<std::reference_wrapper<T>>` alongside programmer intent is significant and non-ignorable, especially in the case of porting code that used to use `boost::optional`. Many of these programmers have decided to either take the very painful route of transitioning, or to simply declare it a non-starter and just use boost.
+
+This has forced many library authors in need of a vocabulary "optional" to have to add preprocessor-based switches to use different kinds of optional implementations. For a vocabuliary type, `optional` contains an incredibly high fragmentation of implementations: it would behoove C++ to seriously consider taking the best of these designs and accruing them into a single place.
+
+
+## Surveying the Present ## {#motivation-present}
+
+It has been over half a decade since `std::optional` was slated to end up in the standard, even if it only reached the International Standard in C++17. Now that C++ has come this far, this paper is going to take a survey of the landscape and of the many implementations of `optional` in order to analyze use cases and experience.
+B
+The ultimate goal of this proposal is to provide an optional reference to the standard, preferably under the spelling `std::optional<T&>`. This paper will use the analysis of the use cases and experience in order to present this case, each of the paths forward, and which path is the most suitable for going forward.
+
+In furthering this goal, a survey of 110 developers from all experience levels and professional/hobbyist tracks. While there are public implementations of `std::optional` in various flavors and names, it is also important to capture private interests. Several e-mails were sent out as well, and this proposal will attempt to succinctly describe both those and the survey. While the e-mails are kept anonymous and confidential (as that is the condition upon which I have accepted private communications in order to assuage the concerns of employees). Names have been purged from the data and it has been cleaned up: this is mostly to protect the innocent.
+
+
+## Impact for the Future ## {#motivation-future}
+
+The question of references being used in vocabulary types is not just for `optional`: all sorts of basic types where references might find their way in because of wrappers and transporting types such as `std::variant`, `std::tuple`, `std::expected`, and others have brought the question forward. *It should be carefully considered that the intention is that the decision here will rest the case furthermore considering other vocabulary types, and the decision made here will *, *except* the case of `std::tuple` where our fate has already been decided by `std::tie`.
+
+The author of this paper plans to extend the decision made here to other necessary vocabulary types: it is important to keep this in mind.
+
+
+## Fragmentation ## {#motivation-fragmentation}
+
+Another key motivation of this paper is the surprising amount of fragmentation that exists in the C++ community regarding the `optional` to use. It is an incredinbly poor user experience to have several types which perform fundamentally the same operations but to not cover the needs of the vocabulary type that have been demonstrated by codebases for well over a decade now. What is even more troubling is that users continue to roll their own optionals, even on C++17 compliant compilers or standard libraries. The driving motivation is disatisfaction with the optional provided by the standard library and its lack of features deemed useful by the broader family of C++ programmers.
+
+
+
+# Design Considerations # {#design}
+
+This paper surveys known implementation experience. This paper also dives into a survey of 110+ developers (plus a few additional members who espoused their opinions directly VIA e-mail, instant messaging mediums, twitter, and else) to understand what is necessary in the optionals they use in real-world projects, company projects, hobby projects and more.
+
+This proposal strongly advises the 2nd of 2 options, [[#solutions-rebind]]. All solutions are explored to thoroughly justify the choice. In the interest of reaching consensus sometime before all of CppCon and C++ Now's student volunteers become old enough to start their own families, [[#solutions-conservative]] is also acceptable and leaves room to decide the fate of the assignment operator to an older and wiser C++ Committee.
+
+In no universe should [[#traps-assign-through]] be considered to be anywhere close to acceptable or reasonable: the table above alone highlights the *gross* inconsistencies in its behavior, and further analysis demonstrates that it will produce easy-to-write bugs, as explained in not only this paper but discovered by programmers independently of one another.
+
+
+
+# Traps # {#traps}
+
+Before we detail the solutions, it is necessary to talk about the design *traps* that has seen a frightening amount of advocacy amongst the C++ community in general. We will start by deconstructing and analyzing the non-solutions to this problem, and from that help inform the design decisions that contribute to the actual solutions for this design space.
+
+
+## Trap: Assign Through ## {#traps-assign-through}
+
+This variation of the "complete" solution [[#solutions-rebind|found below]] is an assign-through optional that attempts to mimic the semantics of a reference as much as the `optional` specification allows it. This includes assign-through behavior.
+
+This "solution" is both silly and harmful to programmers due to its change-of-behavior depending purely on a runtime property (engaged vs. unengaged). As shown in [[#overview-behavior]], many of the other options are much more consistent and have much less questions surrounding the totality of its behavior.
+
+Most notably is the lack of decided semantics for what happens in the engaged state versus the unengaged state with assignment. This version of an `optional<T&>` would have to rebind for assignment operators that take a right hand side of a l-value. Still, the more dangerous case is the r-value case. `int a = 24; int& a_ref = a; a_ref = 12;` is valid code: if we are attemping to achieve syntactic purity here, then assignment of optionals would have to tolerate this use case.
+
+If we do not make r-value assignment a compiler error, then we are left with handling the unenaged state for r-value references in an `optional`, of which there is no good answer: do we throw `bad_optional_access`? `terminate` so it can be `noexcept`? These answers and many more do not seem to adequately address the design space, and other decisions like it are increasingly questionable in either utility or usefulness. Having optional references behave as the reference they contain is a poor design choice: trying to gloss over the fact that they are, indeed, optionals is bad in the case of references.
+
+It is also extremely easy to write code using an assign-through optional where something that may or may not be a code smell cannot be detected simply by looking at the code. Consider the following snippet, adapted from [[foonathan-optional-problems]]:
+
+```
+int foo_bad(int x, optional<int&> maybe_y) {
+	int value = 40;
+	/* lots of code */
+	maybe_y = value;
+	/* lodes ah kode */
+	return 24;
+}
+```
+
+In an assign-through world, this code is *valid* because `maybe_y` might *actually* have something inside of it. In the engaged case, it will assign to whatever was previous bound inside of `maybe_y`. This means that you can be asking for dangling reference problems based purely on the engaged vs. unengaged states.
+
+Static analysis tools cannot definitively point to this code as bad: the best it can offer is a warning, because there exists runtime states where this is exactly what the programmer intended to do. It also creates insanely hard to track bugs. Undefined behavior because a manifestation of a collection of runtime properties rather than a mistake that can be caught immediately by tools or by the eyes of a code reviewer is the front-running poster child for hard to track [[heisenbugs|"Heisenbugs"]].
+
+It is extremely clear that assign-through is not good design. It is a non-solution, and this paper actively discourages pursuit of it. This paper furthermore asserts that continued pursuit of a syntatically-equivalent but semantically-riduclous "optional reference that behaves exactly like a reference" is quite firmly outside of the scope of well-reasoned design for the goals of the type. If any optional reference -- and indeed, references in std::variant, std::any, std::expected and other vocabulary types -- goes into the C++ standard, it should **not** be this one.
+
+
+## Traps: Status Quo, but Monadic? ## {#traps-monadic}
+
+The highest feature request for optional from the conducted survey is monadic operations. This proposal does not go into it: it is detailed in Simon Brand's [[p0798]]. However, it is critical to note that many of these chained monadic operations cannot be implemented efficiently without some form of reference handling through the optionals. Lots of implicit and uncontrolled copies can result from long chains of `and_then` and `map` that propogate optionals through, resulting in poor performance unless the user explicitly handles returning `std::reference_wrapper`s and similar.
+
+
+
+# Proposed Solution # {#solutions}
+
+This proposal has 2 solutions to the current design space we are targeting. The first is a conservative solution that gives all of the essential functionality and deletes the assignment operators, essentially refusing to select.
+
+
+## Conservative Solution ## {#solutions-conservative}
+
+The first, baseline version is the version that has seen adoption from hundreds of companies and users: an optional where `operator=` is not allowed, comparison operators are kept in terms of the value, and rebinding is done with an explicit wrapping of `my_op = std::optional<T&>( my_lvalue )`. This keeps `std::optional` as a delay-constructed type with value-semantic compare operations, allows usage in all of the places a programmer might want to put it (in a `std::vector` that is expected to be sorted, for example), allows it to be used as a parameter, and allows it to be used as a return type.
+
+It forces the user to choose assign-through by explicitly dereferencing the optional as in `*my_op = some_value`, and forces rebind by making the user specify `optional<T&amp;>(some_lvalue)`. It is safe, but penalizes the user for this safety with verbosity (and, arguably, disappointment). It also prevents users of `boost::optional`, `tl::optional`, `ts::optional_ref` and others from migrating painlessly to the standard version, but still allows many of the high-priority uses of such classes with references to transition to using the standard library version.
+
+Another notable feature of adding optional references and using `const T&` is the ability to transition codebases that use temporary values (r-values) passed to functions, this solution will work for individuals without requiring a full rewrite of the code. For example, the function `void old_foo( int arg, const options& opts);` can be transitioned to `void old_foo( int arg, optional<const options&> opts);` and work for both l-values and r-values passed to the type. This is safe thanks to C++'s lifetime rules around temporary objects, when they bind to references, and when they are lifetime extended; see [class.temporary]/6 for applicable lifetime extension clauses of temporaries, including temporaries that bind to stored references.
+
+This "simple", baseline version is featured in [[akrzemi-optional|akrzemi/optional]], [[sol2]], and the "portable" version of [[boost::optional]] (following Boost's advice to avoid the use of the assignment operator in select cases for compilers with degenerate behavior). It is the least offensive, tasteless, hazard-proof, odorless, non-toxic, biodegradable, organic, and politically correct choice™; it can also be expanded upon at a later date.
+
+
+## Best Solution (Rebind) ## {#solutions-rebind}
+
+This is the "complete" solution that is seen as a step up from the conservative solution. It is the version that has seen adoption in `boost::optional` for over 15 years: it is a rebinding optional reference with `my_op = my_lvalue;` being a valid expression. It uses C++11 rvalue-references to delete the rvalue-reference assignment and rvalue-reference constructors for a type `T`.
+
+Rebind semantics have the benefit of having no surprises in engaged vs. unengaged states, as shown in [[#overview-behavior]].
+
+`boost::optional` is not the only implementation of rebinding optionals. As shown in the table above, there are over 4 publicly available (and highly regarded) optional implementations that have references and behave in this fashion. It is the typical community choice when one is starting a new project, and has been a staple for many years. Among its design is the chief semantic that certain code will always be wrong, no matter what. Consider the code from [[#traps-assign-through]]:
+
+```
+int foo_bad(int x, optional<int&> maybe_y) {
+	int value = 40;
+	/* lots of code */
+	maybe_y = value;
+	/* lodes ah kode */
+	return 24;
+}
+```
+
+Now, the moment anyone sees `maybe_y = value;`, they immediately know it is an error. It does not change semantic meaning based on runtime properties. It also does not have potentially surprising answers to the question of "how do we handle r-values?"; those are simply compile-time errors, all the time, unless one is using `optional<const T&>` where the same lifetime rules from above apply to the expression in which `optional<const T&>` is being used. There are no heisenbugs and no surprises. On this merit alone, rebind is the only sane choice for reference-like handling in `std::optional` and -- indeed -- in any vocabulary type produced by the standard.
+
+
+
+# Implementation Experience # {#experience}
+
+[[#solutions-conservative]] and [[#solutions-rebind]] both have design, implementation, and industry experience. [[#traps-assign-through]] has not been reported to see much experience (any experience, currently), other than my anecdotal experimentation as a beginning programmer. There is supposedly one assign-through implementation of an optional
+
+
+## Conversative and Rebinding ## {#experience-conservative-rebinding}
+
+The "simple" version is a much more tame version that has seen implementation experience for at least 6 years in [[akrzemi-optional|akrzemi/optional]], and 4-5 years in [[sol2|sol2]]. The simple version has also existed as the advised compiler-safe subset for [[boost-optional|Boost.Optional]] for 15 years, maybe more (this was mostly from warning about the inability of pre-C++11 to delete or restrict r-value bindings and how `const T&` could bind to more than was likely intended).
+
+The "complete" version has seen implementation experience for even longer for those who used the full functionality of [[boost-optional|Boost.Optional]]. It is also present in [[llama-optional|Simon Brand's optional]], a number of industry optionals, and the author's independent optional. The boost mailing list thread on this topic indicates much of the same potential confusion around references, but towards the end there was the realization that due to inconsistencies with how assign-through behaves the behavior of assign-through is far from ideal.
+
+Jonathan Müller's [[foonathan-optional|type_safe]] has it, but under a different name (`optional_ref`). From Müller's [[foonathan-cppnow|C++Now 2018 'Rethinking Pointers' Talk]], it is easy to see why: he argues that using a type which very explicitly demarcates its purpose with a name (`optional_ref<T>` as compared to `optional<T&>`) is better for an API interface. This works just as fine as any other argument, until the case of generic programming comes around. This is where the difference between `optional_ref` and `optional` as 2 distinctly named, strong types becomes noticeable and painful for any given developer. This could be smoothed over by having `template <typename T> using optional_ref = optional<T&>;`, which helps the interface be explicit but avoids having to create multiple strong types which will convolute generic programming. Of course, the generic programmer can also add a level of indirection as mentioned in [[tcbrindle-post|Tristan Brindle's musings for Optional References]], but this is similar to the whackiness of having to explicitly `unref_unwrap<>` every type just in case `std::reference_wrapper` shows up in your generic code.
+
+
+## Assign-Through: Not Good Enough? ## {#experience-assign-through}
+
+[[#traps-assign-through]] has some design experience, but has zero publicly available implementation experience. Only 2 out of 110 survey responses report using an assign-through optional. Neither point to a repository. One is used for projects and hacks, the other is used for a large company project. It is notable that for the individual who reported using an assign-through optional in a company project, there was no firm conviction behind the code: it is "a lazy implementation" that predates boost, and has not actually had a reference put inside of it ever. (In other words, it does not count as implementation experience.) The only other user to have an assign-through optional in their projects put rebinding optionals on their wish list: the only people that appear to want an assign-through optional are the people that never, ever implemented or used one.
+
+Asides from these two survey respondents, many companies, Boost Users, the twitter-verse, several Discord servers, the CppLang Slack, and many more e-mails to C++ programmers across the globe probed for real significant use of an assign-through optional. Nobody has reported using a non-rebinding or non-conservative optional solution in their code base to date, or if they do they are not aware of it and still need to get back to me.
+
+This leaves a serious question of the validity and usefulness for [[#traps-assign-through]]. It may be that in publishing r0 of this paper, individuals who the author could not reach directly or by survey will come out to inform the author of a non-rebinding reference optional that has seen experience and use as a Studio, Company, and/or shop across the globe. The author encourage everyone to please submit experienced implementations.
+
+However, given the above, [[#traps-assign-through]] appears to be exactly that: a fanciful unicorn that does not exist except for the sole purpose of creating unnecessary and directionless bikeshed. It is a trap that masks itself in the clothes of syntactic similarity with references while having demonstrably harmful properties that cannot stand up to even basic design principles for modern C++'s generally thoughtful and bug-proofing abstractions. It represents a foolish consistency for consistency's sake and there should not be a future in which it exists for C++, whether that is C++20 or C++50.
+
+
+## The Other Choice ## {#experience-none}
+
+The other choice is, of course, the current status quo: no specialization. Libraries which take this path are [[llvm-optional|llvm::Optional]], [[mnmlstc-optional|core::optional]], [[martinmoene-optional|optional lite]], [[abseil-optional|absl::optional]] and the current `std::optional`.
+
+Many of these do so because they claim to implement the C++17 version of optional-as-is, and try to keep strict conformance with the specification. Most implementations were done around the time of [[N3793]] or targeted the interface of [[N3793]] because that was the interface that went into the standard. Many of these implementations also claim to provide C++14/17/etc. features to older compilers (even as far back as C++98 for [[martinmoene-optional|optional lite]]): feature-parity (down to the exact same bugs, even) is desirable and necessary for perfect transition and interop between e.g. `absl::optional` and `std::optional`. This unfortunately means that no creativity can be taken with the implementation whatsoever. To quote the library author of [[mnmlstc-optional|core]]:
+
+> `core` was an attempt to implement proposals to the letter. Because it [(optional references)] didn’t make it in, core doesn’t do it. — Isabella Muerte of mnmlstc/core, July 4th, 2018
+
+This does not explain *all* optional implementations like this, however. For example, [[llvm-optional|llvm::Optional]] does not make it a specialization at all, and its implementation predates the version finally ratified in the standard (it was first introduced to LLVM in 2010, but had existed before then as clang::Optional for quite a few more years).
+
+David Blaikie of cfe-dev chimed in about the [[llvm-optional-history|history of clang::Optional and its successor, llvm::Optional]] saying that he believes that when there was a need to potentially push it forward, the standards body had already begun to have serious discussion around the current optional proposal. Because that discussion contained contention about assign-through versus rebind, LLVM/Clang simply decided to not try to introduce the idiom into their code base. They therefore stuck with using `T*` to represent optional values.
+
+
+## So what about Pointers? ## {#experience-pointer}
+
+Pointers have long been heralded as the proper way to have a rebindable optional reference. It's compact in size, already has a none value prepared in `nullptr`, and comes with the language itself. It seems to have everything needed. Unfortunately, pointers have problems: chief among them is the requirement that creation of a pointer must be explicit and must come from an l-value. This means that codebases which want to transition from either `boost::optional<const T&>` or from changing a `const T&` parameter to a `T const*` parameter suffer from hard compiler errors at every place of invocation. While this is not a big deal for some functions, it is an incredibly big deal for core APIs.
+
+Pointers also introduce lifetime and scoping issues questions and issues: names have to be assigned to temporaries that otherwise had perfect lifetimes that fit exactly the duration of the function call expression: `foo_bar(5);` must become `int temp = 5; foo_bar(&temp);`. While this might be easy to do with integers, it becomes exceedingly complicated for more complex objects and other intricate types. One would have to explicitly control function call lifetime by manually sprinkling brackets around the call site. This does not scale for older codebases wishing to move themselves to more idiomatic and expressive APIs, or for refactors that 
+
+This is not a concern rooted in purely hypothetical thought: 2 survey respondents, a handful of e-mail respondents and several individuals on the CppLang Slack and Discord reported significant pain switching from optional references to `T*`. A programmer responsible for long-term hobby project wrote in:
+
+> Had reference support before upgrading to std::optional, porting those to pointers was quite some work... — Anonymous, July 9th, 2018
+
+There is an observable and significant difference between having to use a pointer and being able to just have the useful lifetime extension rules apply to something that binds to a `const` reference. It is especially painful when one wants to upgrade a function to take a parameter that may or may not have used `const T&` for a parameter that becomes optional. Another way to fix this problem is overloading, but that presents the problem of making it impossible to take the address of a function name without explicitly and directly performing a `static_cast<>`. The only solution that requires absolutely no effort on the part of the programmer is upgrading from `const T&` to `optional<const T&>`. Jonathan Müller talks about this in his C++Now talk and in a handful of blogposts as well.
+
+
+
+# Acknowledgements # {#acknowledgements}
+
+Thank you to sol2 users for encouraging me to fix this in the standard. Thank you to Lisa Lippincott for encouraging me to make this and one other proposal after seeing my C++Now 2018 presentation.
+
+Thank you to Arthur O'Dwyer for pointing out that I should survey more than simply optional references, and include all other optionals as well.
+
+Thank you to Nicole Mazzucca for some sweet code snippets to help display the desirable properties of optional.
+
+
+
+<pre class=biblio>
+{
+	"heisenbugs": {
+		"title": "Heisenbugs",
+		"href": "https://en.wikipedia.org/wiki/Heisenbug",
+		"date": "August 20th, 2018"
+	},
+	"optional-survey": {
+		"title": "Optional: What's In Our Codebases",
+		"href": "",
+		"date": "August 20th, 2018"
+	},
+	"sol2": {
+		"authors": [
+			"ThePhD"
+		],
+		"title": "sol2: C++ <-> Lua Binding Framework",
+		"href": "https://github.com/ThePhD/sol2",
+		"date": "July 3rd, 2018"
+	},
+	"p0798": {
+		"authors":[
+			"Simon Brand"
+		],
+		"title": "Monadic operations for std::optional",
+		"href": "https://wg21.tartanllama.xyz/monadic-optional/",
+		"date": "May 4th, 2018"
+	},
+	"N3793": {
+		"authors": [
+			"Fernando Luis Cacciola Carballal",
+			"Andrzej Krzemieński"
+		],
+		"title": "A proposal to add a utility class to represent optional objects (Revision 5)",
+		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3793.html",
+		"date": "March 10th, 2013"
+	},
+	"foonathan-cppnow": {
+		"authors": [
+			"Jonathan Müller"
+		],
+		"title": "C++Now 2018: Rethinking Pointers",
+		"href": "https://foonathan.net/cppnow2018.html",
+		"date": "May 9th, 2018"
+	},
+	"foonathan-optional-problems": {
+		"authors": [
+			"Jonathan Müller"
+		],
+		"title": "Let's Talk about std::optional<T&> and optional references",
+		"href": "https://foonathan.net/blog/2018/07/12/optional-reference.html",
+		"date": "July 12th, 2018"
+	},
+	"llvm-optional": {
+		"authors": [
+			"LLVM Developer Group"
+		],
+		"title": "Optional.h",
+		"href": "http://llvm.org/doxygen/Optional_8h_source.html",
+		"date": "July 4th, 2018"
+	},
+	"llvm-optional-history": {
+		"authors": [
+			"David Blaikie"
+		],
+		"title": "[ clang::Optional ] History Digging",
+		"href": "http://lists.llvm.org/pipermail/cfe-dev/2018-July/058448.html",
+		"date": "July 10th, 2018"
+	},
+	"abseil-optional": {
+		"authors": [
+			"Titus Winters",
+			"Google"
+		],
+		"title": "abseil",
+		"href": "https://github.com/abseil/abseil-cpp",
+		"date": "July 4th, 2018"
+	},
+	"argot": {
+		"authors": [
+			"Matt Calabrese"
+		],
+		"title": "argot",
+		"href": "https://github.com/mattcalabrese/argot",
+		"date": "July 1st, 2018"
+	},
+	"martinmoene-optional": {
+		"authors": [
+			"Martin Moene"
+		],
+		"title": "Optional Lite",
+		"href": "https://github.com/martinmoene/optional-lite",
+		"date": "June 21st, 2018"
+	},
+	"folly-optional": {
+		"authors": [
+			"Facebook"
+		],
+		"title": "folly/Optional",
+		"href": "https://github.com/facebook/folly",
+		"date": "August 11th, 2018"
+	},
+	"mnmlstc-optional": {
+		"authors": [
+			"Isabella Muerte"
+		],
+		"title": "core::optional",
+		"href": "https://mnmlstc.github.io/core/optional.html",
+		"date": "February 26th, 2018"
+	},
+	"akrzemi-optional": {
+		"authors": [
+			"Andrzej Krzemieński"
+		],
+		"title": "Optional (nullable) objects for C++14",
+		"href": "https://github.com/akrzemi1/Optional",
+		"date": "April 23rd, 2018"
+	},
+	"boost-optional": {
+		"authors": [
+			"Fernando Luis Cacciola Carballal",
+			"Andrzej Krzemieński"
+		],
+		"title": "Boost.Optional",
+		"href": "https://www.boost.org/doc/libs/1_67_0/libs/optional/doc/html/index.html",
+		"date": "July 24th, 2018"
+	},
+	"llama-optional": {
+		"authors": [
+			"Simon Brand (TartanLlama)"
+		],
+		"title": "Optional",
+		"href": "https://github.com/TartanLlama/optional",
+		"date": "June 7th, 2018"
+	},
+	"foonathan-optional": {
+		"authors": [
+			"Jonathan Müller"
+		],
+		"title": "type_safe",
+		"href": "https://github.com/foonathan/type_safe",
+		"date": "June 22nd, 2018"
+	},
+	"tcbrindle-post": {
+		"authors": [
+			"Tristan Brindle"
+		],
+		"title": "The Case for Optional References",
+		"href": "https://tristanbrindle.com/posts/optional-references",
+		"date": "September 16th, 2018"
+	}
+}
+</pre>
