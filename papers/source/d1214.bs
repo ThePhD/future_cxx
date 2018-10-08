@@ -6,9 +6,9 @@ Audience: EWG
 Status: P
 Group: WG21
 URL: 
-!Current Source: <a href="https://github.com/ThePhD/pmf_pmo_callable/blob/master/papers/source/d1214.bs">github.com/ThePhD/pmf_pmo_callable/blob/master/papers/source/d1214.bs</a>
-!Current: <a href="https://rawgit.com/ThePhD/pmf_pmo_callable/master/papers/d1214.html">https://rawgit.com/ThePhD/pmf_pmo_callable/master/papers/d1214.html</a>
-Repository: ThePhD/pmf_pmo_callable
+!Current Source: <a href="https://github.com/ThePhD/future_cxx/blob/master/papers/source/d1214.bs">github.com/ThePhD/future_cxx/blob/master/papers/source/d1214.bs</a>
+!Current: <a href="https://rawgit.com/ThePhD/future_cxx/master/papers/d1214.html">https://rawgit.com/ThePhD/future_cxx/master/papers/d1214.html</a>
+Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide
 !Reply To: <a href="mailto:phdofthehouse@gmail.com">JeanHeyd Meneide</a>, <a href="https://twitter.com/thephantomderp">@thephantomderp</a>
 Abstract: This paper proposes making pointer to member objects and pointer to member functions callable.
@@ -54,6 +54,10 @@ auto it = std::find_if(objects.begin(), objects.end(), &my_object::is_zero);
 
 [[pmf-SO-algo|Individuals want to pass]] pointer to member functions and pointers to member objects, requiring quite a bit of boilerplate with either a lambda, `std::function`, `std::mem_fn`, `std::bind` or similar. This gets progressively worse because it is impossible to reference a member variable without the lambda approach or other boilerplate.
 
+`std::mem_fn`, `std::bind`, and similar also create a severe problem with how errors are reported. One cannot just point to the top-level call to the algorithm for the error: they are bubbled up inside a deep template stack trace from the heart of `std::mem_fn` or `std::bind` or similar. Even lambdas will produce unwieldy errors, albeit compilers are better at pointing inside the lambda if the error is there rather than in the heart of `_STD _Invoke` or some other grotesque amalgamation of template spew:
+
+> ... it would point directly to the failing call instead of failing inside the code of a mem_fn equivalent, which would be really convenient. It's worth noting that I had to fix functions several times in my library to add the missing call to as_function, which would have never been a problem with an intuitive call syntax. -- Morwenn, author of [[cpp-sort]]
+
 With the introduction of `std::invoke` matching the `INVOKE` concept in the C++ standard, C++ shifted the burden of implementing callable wrappers from users to the standard library. And while this has saved many developers from writing the code themselves in a post C++17 world, there is a more sinister underlying problem concerning frequent use of `std::invoke` by library and application developers.
 
 While we have been saved from having 31 separate implementations of `call_wrapper` and `call_detail` and `invoke_detail`, we are still suffering from a lower-level problem that a library-based solution cannot provide to us. The amount of generated cruft that infests object files and final debug executables is extraordinarily high, and for those individuals who do not have C++17 this pain is all the more apparent when they read through their executables. Function template instantiations that perfectly forward arguments and take the functions as part of those arguments ensure that there is almost no convergence amongst the tens of thousands and hundreds of thousands of function template instantiations the compiler must generate code for, leaving each one a special template snowflake that contributes to an avalanche of additional generated compiler information. Somewhat sadly, all of this work is then ultimately discarded as unimportant in any non-debug build. The actual compile-time cost that comes from having to SFINAE or struct-specialize on this behavior is non-negligible and we are often forcing heavy-handed template constructs to do something the compiler can implement as a simple transformation.
@@ -72,7 +76,7 @@ The goal of the design for this proposal is to make the simple and non-unique sy
 
 **No.** This is not Universal Functional Call Syntax (UFCS), has nothing to do with UFCS, and never will be UFCS. There is no correlation between fully-typed objects that are of type Pointer to Member Object or Pointer to Member Function having a specific invocation syntax and the leviathan that is Name Lookup, the resulting Argument-Dependent Lookup (ADL) and all it implies. Pointer to member objects and pointer to member functions are fully resolved entities that do not deal with overload resolution or name lookup.
 
-This proposal and that other proposal are not in any way correlated. If anyone claims as such or attempts to use this paper as support for UFCS should be promptly directed to this section of the paper.
+This proposal and other UFCS proposal are not in any way correlated. If anyone claims as such or attempts to use this paper as support for UFCS should be promptly directed to this section of the paper.
 
 ## Callable Members ## {#design.callable}
 
@@ -142,12 +146,12 @@ The following wording is relative to [[n4762]].
 
 ## Proposed feature Test Macro ## {#wording-feature}
 
-The recommended feature test macro is __cpp_callable_members.
+The recommended feature test macro is `__cpp_invokable_members`.
 
 
 ## Intent ## {#wording-intent}
 
-The intent of this wording is to add `pointer_to_member_function(obj, arg1, arg2, ..., argN)`, `auto value = pointer_to_member_object(obj)`, and `pointer_to_member_object(obj, arg1)` as valid expressions. The last expression would be ill-formed if the `pointer_to_member_object` itself refers to a `const` member. Similarly, neither `pointer_to_member_function` or `pointer_to_member_object` would work with an `obj` that does not match the required cv- and reference-qualifiers on that function (this is not different from how it works currently, but the wording must match).
+The intent of this wording is to add `pointer_to_member_function(obj, arg1, arg2, ..., argN)`, `auto value = pointer_to_member_object(obj)`, and `pointer_to_member_object(obj, arg1)` as valid expressions. The last expression would be ill-formed if the `pointer_to_member_object` itself refers to a `const` member or the object itself is `const`. Similarly, neither `pointer_to_member_function` or `pointer_to_member_object` would work with an `obj` that does not match the required cv- and reference-qualifiers on that function (this is not different from how it works currently, but the wording must match).
 
 
 ## Proposed Wording ## {#wording-language}
@@ -199,6 +203,14 @@ Thank you to Jason Turner for showing me some of the internals of ChaiScript a l
 
 <pre class=biblio>
 {
+	"cpp-sort": {
+		"authors": [
+			"Morwenn"
+		],
+		"title": "cpp-sort",
+		"href": "https://github.com/Morwenn/cpp-sort",
+		"date": "October 7th, 2018"
+	},
 	"n4762": {
 		"authors": [
 			"ISO/IEC JTC1/SC22/WG21 - The C++ Standards Committee",
