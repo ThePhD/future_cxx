@@ -1,18 +1,18 @@
 <pre class='metadata'>
 Title: Explicitly Specified Returns for (Implicit) Conversions
-Shortname: P1214
+Shortname: P1193
 Revision: 0
 Audience: EWG
 Status: P
 Group: WG21
 URL: 
-!Current Source: <a href="https://github.com/ThePhD/future_cxx/blob/master/papers/source/d1214.bs">github.com/ThePhD/future_cxx/blob/master/papers/source/d1214.bs</a>
-!Current: <a href="https://rawgit.com/ThePhD/future_cxx/master/papers/d1214.html">https://rawgit.com/ThePhD/future_cxx/master/papers/d1214.html</a>
+!Current Source: <a href="https://github.com/ThePhD/future_cxx/blob/master/papers/source/d1193.bs">github.com/ThePhD/future_cxx/blob/master/papers/source/d1193.bs</a>
+!Current: <a href="https://rawgit.com/ThePhD/future_cxx/master/papers/d1193.html">https://rawgit.com/ThePhD/future_cxx/master/papers/d1193.html</a>
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide
 !Reply To: <a href="mailto:phdofthehouse@gmail.com">JeanHeyd Meneide</a>, <a href="https://twitter.com/thephantomderp">@thephantomderp</a>
 Abstract: This paper proposes allowing a user to specify a return type to a conversion operator.
-Date: 2018-10-06
+Date: 2018-10-08
 Markup Shorthands: markdown yes, biblio yes, markup yes
 </pre>
 
@@ -30,19 +30,81 @@ path: wording_style.bs
 
 # Motivation # {#motivation}
 
-There is an increasingly 
+Consider a structure that is meant to be converted to anything that appears on the left hand side of an assignment expression or in any kind of constructor (an "omni" or "unicorn" proxy type):
+
+```
+struct unicorn_proxy {
+	// ... members to construct / make proxy type
+
+	template <typename T>
+	T operator () {
+		// convert to some T
+		return make_some<T>();
+	}
+};
+```
 
 
 
 # Design # {#design}
 
+The primary goal of this design is to make the feature an entirely opt-in specification that interacts with the language in the same way regular conversions do, just with the compiler no longer assuming the return type is exactly the same as the type argument used to select the conversion operator. Here is a motivating example:
 
+```
+struct new_unicorn_proxy {
+	template <typename T>
+	std::decay_t<T> operator T () {
+		// ... return a T
+	}
+};
+```
+
+
+## Opt-In ## {#design-opt_in}
+
+Any good language feature that wants to minimize potential problems and breakage must be opt-in. The syntax we require for our extension is entirely opt-in, and does not affect previous declarations:
+
+```
+struct old_unicorn_proxy {
+	template <typename T>
+	operator T () {
+		// ... return a T
+	}
+};
+
+struct new_unicorn_proxy {
+	template <typename T>
+	std::decay_t<T> operator T () {
+		// ... return a T
+	}
+};
+```
+
+The meaning of this code does not change, and neither does the way it interacts with any of the code currently existing in the codebase. Old code continues to be good code, and this mechanism remains in the standard because it is usually what an individual wants to begin with: it can simply be seen as the compact version of the extension we are attempting to provide. Using the new syntax for an explicit return value does not actually change what, e.g. `T` would deduce to in the above case for the `new_unicorn_proxy`.
+
+## Okay, but what if I keep returning proxies? ## {#design-infinity}
+
+Someone could invent a proxy that returns another proxy, that in turn produces another proxy of a different type, that in turn produces yet another proxy of a different type. This would invoke an infinite chain of lookups, circularly between the types. This proposal does not enable this: it is possible with code written today. This is not a new concern, and so far there have been repeated reports of this egregious sin cropping up in user code that are public knowledge.
+
+This is no different than the recursive function that has no base case or terminal branch or an infinite loop: the user programmed something very, very poorly in order for this to happen and the effect is also easy to test for. We do not anticipate this to be a problem, the same way infinite recursion is not a problem for the regular developer.
+
+N.B.: you cannot just keep returning the same proxy object, because ([**class.conv.fct**]/1)[http://eel.is/c++draft/class.conv.fct] forbids it explicitly. This eliminates one of the most common ways to invoke an infinite loop, and only a rather dedicated attempt at this would result in this being a problem.
 
 # Impact # {#impact}
 
+Since this feature has been designed to be [[#design-opt_in]], the impact is thankfully incredibly small.
 
+## On User Code ## {#impact-users}
+
+While this introduces an extension to a previous language construct, it thankfully does not break any old code due to its opt-in nature. This is a very important design aspect of this extension syntax: it cannot and should not break any old code unless someone explicitly opts into the functionality. At that point, the potential breakage is still completely bounded, because the return type one chooses for a conversion operator member.
+
+## On the Standard ## {#impact-standard}
+
+This does not cause any breakages in the Standard Library or the 
 
 # Proposed Wording and Feature Test Macros # {#wording}
+## On User Code ## {#impact-users}
+
 
 The following wording is relative to [[n4762]].
 
@@ -54,30 +116,19 @@ The recommended feature test macro is `__cpp_conversion_return_types`.
 
 ## Intent ## {#wording-intent}
 
-The intent of this wording is to 
+The intent of this wording is to allow for an explicit return type to be optionally defined on a member conversion operator.
 
 
 ## Proposed Wording ## {#wording-language}
 
-Modify §7.6.1.2/1 [**expr.call**]/1 to read as follows:
+Modify §... [**expr.call**] to read as follows:
 
 <blockquote>
-<sup>1</sup> A function call is a postfix expression followed by parentheses containing a possibly empty, comma-separated list of initializer-clauses which constitute the arguments to the function. The postfix expression shall have <del>function type or function pointer type</del><ins>function type, function pointer type, or pointer-to-member type</ins>. For a call to a non-member function or to a static member function, the postfix expression shall be either an lvalue that refers to a function (in which case the function-to-pointer standard conversion (7.3.3) is suppressed on the postfix expression), or it shall have function pointer type.
+<sup>1</sup> 
 </blockquote>
-
-Add one clause after §7.6.1.2/2 [**expr.call**]/2:
 
 <blockquote>
 <ins>
-<sup>3</sup> For a call of the form `pm(a1, ..., aN)`, where `pm` is of type "pointer to member of `T`".
-<dl>
-	<dd>— if `pm` is a pointer to member function taking `M` arguments, then `N` shall be `1+M`. The result of the expression shall be equivalent to calling a pointer to member function (7.6.4) with the syntax `(a1.*pm)(a2, ..., aN)` if `a1` is a possibly cv-qualified class type of which `T` is a base class. Otherwise, the behavior of the expression shall be equivalent to `(a1->*pm)(a2, ..., aN)`.</dd>
-	<dd>— if `pm` is a pointer to data member, then either</dd>
-	<dl>
-		<dd>— `N` shall be `1`. The behavior of the function call shall be as-if invoking a pointer to member data (**7.6.4**) with `a1.*pm` if `a1` is a possibly cv-qualified class type of which `T` is a base class or is convertible to such a class type, `a1->*pm` otherwise. Or,</dd>
-		<dd>— `N` shall be `2`. The behavior of the function call shall be as-if assigning the second argument `a2` to the result of a pointer to member data (**7.6.4**) with `(a1.*pm) = a2` if `a1` is a possibly cv-qualified class type of which `T` is a base class or is convertible to such a class type, `(a1->*pm) = a2` otherwise.</dd>
-	</dl>
-</dl>
 </ins>
 </blockquote>
 
@@ -90,7 +141,7 @@ Append to §14.8.1 Predefined macro names [**cpp.predefined**]'s **Table 16** wi
 	<th>Value</th>
 </tr>
 <tr>
-	<td><ins>__cpp_invokable_members</ins></td>
+	<td><ins>__cpp_conversion_return_types</ins></td>
 	<td><ins>201811L</ins></td>
 </tr>
 </table>
