@@ -31,7 +31,7 @@ We propose a safe, well-reasoned extension of the C++ Language in order to accom
 
 ## Variable Length Arrays? ## {#motivation-vla}
 
-This proposal is **not** for variable length arrays. It does all of the wants or needs that the previously proposed [[n3662]] does. Notably, Flexible Array Members only cover the case where memory is explicitly allocated for it already. This FAM specification does not include allowing anything but 0-sized default construction of a FAM type when an automatic storage duration value is created. This restriction may be lifted at another time in another revision, or in another paper entirely. This paper focuses exclusively on covering the case of working with a preallocated buffer of space that the user has explicitly requested.
+This proposal is **not** for variable length arrays. It does **not** cover all of the wants or needs that the previously proposed [[n3662]] does. Notably, Flexible Array Members only cover the case where memory is explicitly allocated for it already. This FAM specification does not include allowing anything but 0-sized default construction of a FAM type when an automatic storage duration value is created. This restriction may be lifted at another time in another revision, or in another paper entirely. This paper focuses exclusively on covering the case of working with a preallocated buffer of space that the user has explicitly requested.
 
 ## Runtime Sized Classes? ## {#motivation-rsc}
 
@@ -218,11 +218,17 @@ struct my_fam_t {
 		__size_type __sz = static_cast<__size_type>(__fs.size());
 		try {
 			for (; __constructed < __sz; ++__constructed, ++__elem_ptr) {
-				if constexpr (std::is_trivially_constructible_v<T>) {
+				if constexpr (std::is_trivially_constructible_v<__elem_type>) {
 					// default-init
 				}
 				else {
 					new (__elem_ptr) __elem_type();
+				}
+				if constexpr (not std::is_trivially_destructible_v<__elem_type>) {
+					// exposition only
+					// update constructed size, 
+					// so destructor of member can run properly
+					_Libc_stored_size(*this, __constructed);
 				}
 			}
 		}
@@ -233,9 +239,12 @@ struct my_fam_t {
 			// rethrow
 			throw;
 		}
-		// exposition only: storing the # of elements
-		// since std::string is non-trivial
-		_Libc_stored_size(*this, __sz);
+		if constexpr (not std::is_trivially_destructible_v<__elem_type>) {
+			// exposition only
+			// update constructed size, 
+			// so destructor can run properly
+			_Libc_stored_size(*this, __constructed);
+		}
 	}
 }
 ```
@@ -269,7 +278,7 @@ struct my_fam_t {
 }
 ```
 
-A user can never write a destructor for their FAM type: one will always be generated that is correct for dealing with all of the members, plus the flexible array member's data. Notably, this destructor will clean up all the FAM elements before invoking the rest of the member's destructors, true to C++'s first-constructed last-destructed ordering.
+A user does not ever have to write a destructor for their FAM type: one will always be generated that is correct for dealing with all of the members, plus the flexible array member's data. When a FAM type is destructed, the elements of the FAM are destroyed in reverse order, and then the other elements of the class are destroyed as normal. See the [[#design-demo-simple_non_trivial]] for an example of the default construction and destruction orders.
 
 #### Copy/Move Constructor and Assignment #### {#design-feature-special_members-copy_move}
 
@@ -296,9 +305,9 @@ struct easy_fam_t {
 #include <cassert>
 
 int main () {
-	using my_traits = std::fam_traits<fam_t>;
+	using my_traits = std::fam_traits<easy_fam_t>;
 
-	fam_t automatic_fam_object;
+	easy_fam_t automatic_fam_object;
 	std::size_t automatic_len 
 		= my_traits::size(automatic_fam_object);
 	assert(automatic_len == 0);
@@ -307,7 +316,7 @@ int main () {
 	// error: cannot create flexible array 
 	// member of varying size in automatic storage
 
-	fam_t* dynamic_fam_object_raw = new fam_t(std::fam_size(24));
+	easy_fam_t* dynamic_fam_object_raw = new easy_fam_t(std::fam_size(24));
 	std::size_t dynamic_raw_len
 		= my_traits::size(*dynamic_fam_object_raw);
 	// !! IMPORTANT
@@ -391,11 +400,11 @@ struct tracer_2 {
 
 	int id;
 
-	tracer(int id_boost) : (++x + id_boost) {
+	tracer_2(int id_boost) : id(++x + id_boost) {
 		std::cout << "constructed " << id << std::endl;
 	}
 
-	~tracer() {
+	~tracer_2() {
 		std::cout << "destructed " << id << std::endl;
 	}
 };
@@ -452,7 +461,7 @@ destructed 3
 
 Note here that `tracing_fam_2_t` has more than just `std::fam_size` as an argument for its special constructor. Therefore, a generated default constructor that takes 0 arguments and defers to a constructor as if `tracing_fam_2_t() : tracing_fam_2_t(std::fam_size(0))` is ill-formed. Therefore, it is not generated and attempt to default-construct this type would result in an error.
 
-### UDP Pakcets ### {#design-demo-udp}
+### UDP Packets ### {#design-demo-udp}
 
 This extension is also a natural fit for many on-the-wire and on-disk data types.
 
