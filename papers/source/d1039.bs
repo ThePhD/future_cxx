@@ -110,11 +110,13 @@ This is valid code and under this proposal will continue to remain valid, withou
 
 ### Feature: FAM types can only be created with `new` ### {#design-feature-create}
 
+FAM types can be created with `new`, but may not be used with array `new`.
+
 When used as an automatic storage variable (e.g. "on the stack"), the flexible array member types just have a size that includes the non-FAM members, plus any padding necessary to get to the start of the FAM. This proposal allows automatic storage duration versions of the type as it mimics exactly how C handles it: a struct with an empty Flexible Array Member.
 
-For the heap, are also still analogous with C. When allocated on the heap with `malloc`, the user makes room for it explicitly then performs type-punning of the returned `void*` data. In C++, this proposal would allow actually putting data in this type through the use of `new` as a proper analogy.
+For the heap, FAMs are also still analogous with C. When allocated on the heap with `malloc` in C, the user makes room for it explicitly then performs type-punning of the returned `void*` data. In C++, this proposal would allow actually putting data in this type through the use of `new` as a proper analogy.
 
-This matches C and also prevents a large myriad of cases where the type's boundaries are not clear and would violate invariants. For example, in the case of `new simple_fam_t[20];`, it is impossible to know where one flexible array member begins and the next ends without some sort of serious book keeping. The only allowed version of created a flexible array member is with `new some_fam_type(...);`.
+This matches C and also prevents a large myriad of cases where the type's boundaries are not clear and would violate invariants. For example, in the case of `new simple_fam_t[20];`, it is impossible to know where one flexible array member begins and the next ends without some sort of serious book keeping. The only allowed version of creating a flexible array member is with `new some_fam_type(...);`.
 
 
 ### Feature: Traits and Types ### {#design-feature-traits}
@@ -190,18 +192,18 @@ namespace std {
 }
 ```
 
-What this represents is a contract between the user and the C++ implementation. You are telling the implementation that you already manage and store the size yourself: thusly, the implementation knows to not bother storing any information about the number of elements, because you yourself are promising to construct and initialize `len` with the proper length, and to book keep the number of created elements. This is relevant for both the automatically generated constructor and destructor in [[#design-feature-special_members]].
+What this represents is a contract between the user and the C++ implementation. You are telling the implementation that you already manage and store the size yourself: thusly, the implementation knows to not bother storing any information about the number of elements, because thise user themselves are promising to construct and initialize `len` with the proper length and to book keep the number of created elements. This is relevant for both the automatically generated constructors and destructor in [[#design-feature-special_members]].
 
 
 ### Feature: C Compatibility ### {#design-feature-c}
 
-The size reported by the `size(const T&)` member function can be greater than or equal to the number of elements actually used for any type `T` where `std::is_trivial_v<T>` evaluates to `true`.
+The size reported by the `fam_traits<T>::size(const T&)` static function can be greater than or equal to the number of elements actually used for any type `T` where `std::is_trivial_v<T>` evaluates to `true`.
 
-"What in the world...?" Is what some people will say upon this realization, but there is an important point here. Consider that an implementation in C is absolutely conforming if you ask for an object with a FAM `int[]` for 20 `int`s: an implementation can give you space for 30 `int`s. Furthermore, any trivial type (every type `T` from C has `std::is_trivial_v<T>` evaluate to true) does not need destructors run, so all the system needs to do is reclaim the memory. Therefore, most implementations store _only the amount of memory allocated_, not the number of elements.
+"What in the world...?" Is what some people will say upon this realization, but there is an important point here. Consider the following absolutely confirming C implementation: the user asks for an object with a FAM `int[]`, requiring 20 `int`s worth of space: an implementation can give the user space for 30 `int`s. Furthermore, any trivial type (every type `T` from C has `std::is_trivial_v<T>` evaluate to true) does not need destructors run, so all the system needs to do is reclaim the memory. Therefore, most implementations store _only the amount of memory allocated_, not the number of elements.
 
 Therefore, for any type which is trivial, an unspecialized `fam_traits<T>::size()` is not required to report exactly the number of elements the user asked for the FAM object, just a value greater than or equal to. This is because a valid compiler implementation of `size()` can be `return _Libc_allocated_size(fam_obj) / sizeof(fam_element_t<T>);`.
 
-**Note that this is only for trivial types,** and is only mandated for perfect backwards compability with C code! For any FAM type that is non-trivial or whose array elements are non-trivial, the reported `size()` must be exactly equal to the number of elements requested so that the destructor can be run properly. The only reason to provide `size()` is to allow the compiler to generate a destructor that properly deletes the number of elements, or the user in a FAM type's destructor to use it to destruct the correct number of values. If the type is trivially destructible, the user should not need to invoke the destructor on each element individually to begin with.
+**Note that this is only for trivial types,** and is only mandated for perfect backwards compability with C code! For any FAM type that is non-trivial or whose array elements are non-trivial, the reported `size()` must be exactly equal to the number of successfully constructed elements so that the destructor can be run properly. The only reason to provide `size()` is to allow the compiler to generate a destructor that properly deletes the number of elements on your behalf, or the user in a FAM type's destructor to use it to destruct the correct number of values. If the type is trivially destructible, the user should not need to invoke the destructor on each element individually to begin with.
 
 
 ### Feature: Special Members ### {#design-feature-special_members}
