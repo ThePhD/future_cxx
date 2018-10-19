@@ -6,8 +6,7 @@ Audience: EWG, LEWG
 Status: P
 Group: WG21
 URL: 
-!Current Source: <a href="https://github.com/ThePhD/future_cxx/blob/master/papers/source/d1040.bs">github.com/ThePhD/future_cxx/blob/master/papers/source/d1040.bs</a>
-!Current: <a href="https://rawgit.com/ThePhD/future_cxx/master/papers/d1040.html">https://rawgit.com/ThePhD/future_cxx/master/papers/d1040.html</a>
+!Latest: <a href="https://https://htmlpreview.github.io/?https://github.com/ThePhD/future_cxx/master/papers/d1040.html">https://https://htmlpreview.github.io/?https://github.com/ThePhD/future_cxx/master/papers/d1040.html</a>
 !Implementation: <a href="https://github.com/ThePhD/future_cxx-implementation">https://github.com/ThePhD/future_cxx-implementation</a>
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
@@ -18,12 +17,23 @@ Date: 2018-10-2
 Markup Shorthands: markdown yes, biblio yes, markup yes
 </pre>
 
+<pre class=include>
+path: wording_style.bs
+</pre>
+
+
+
+
 # Revision History # {#changelog}
+
+
 
 ## Revision 2 ## {#changelog-r2}
 
 	Destroy `embed_options` and `alignment` options: if the function is materialized only at compile-time through `constexpr` or the upcoming "immediate functions" (`constexpr!`), there is no reason to make this part of the function. Instead, the user can choose their own alignment when they pin this down into a std::array or some form of C array storage.
-	
+
+
+
 ## Revision 1 ## {#changelog-r1}
 
 	Create future directions section, follow up on Library Evolution Working Group comments.
@@ -34,9 +44,14 @@ Markup Shorthands: markdown yes, biblio yes, markup yes
 
 	Incorporate LEWG feedback, particularly alignment requirements illuminated by Odin Holmes and Niall Douglass. Add a feature macro on top of having `__has_include( <embed> )`.
 
+
+
 ## Revision 0 ## {#changelog-r0}
 
     Initial release.
+
+
+
 
 # Motivation # {#motivation}
 
@@ -94,17 +109,26 @@ int main (int, char*[]) {
 }
 </xmp>
 
+
+
+
 # Scope and Impact # {#scope}
 
 `constexpr span<const byte> embed( string_view resource_identifier )` is an extension to the language proposed entirely as a library construct. The goal is to have it implemented with compiler intrinsics, builtins, or other suitable mechanisms. It does not affect the language. The proposed header to expose this functionality is `<embed>`, making the feature entirely-opt-in by checking if either the proposed feature test macro or header exists.
+
+
+
 
 # Design Decisions # {#design}
 
 `<embed>` avoids using the preprocessor or defining new string literal syntax like its predecessors, preferring the use of a free function in the `std` namespace. `<embed>`'s design is derived heavily from community feedback plus the rejection of the prior art up to this point, as well as the community needs demonstrated by existing practice and their pit falls.
 
+
+
 ## Current Practice ## {#design-practice}
 
 Here, we examine current practice, their benefits, and their pitfalls. There are a few cross-platform (and not-so-cross-platform) paths for getting data into an executable.
+
 
 ### Manual Work ### {#design-practice-manual}
 
@@ -139,33 +163,43 @@ This happens often in the case of people who have not yet taken the "add a build
 
 Furthermore, if the string literal is too big vendors such as VC++ will hard error [[nonius-visual-c-error|the build (example from Nonius, benchmarking framework)]].
 
+
 ### Processing Tools ### {#design-practice-tools}
 
 Other developers use pre-processors for data that can't be easily hacked into a C++ source-code appropriate state (e.g., binary). The most popular one is `xxd -i my_data.bin`, which outputs an array in a file which developers then include. This is problematic because it turns binary data in C++ source. In many cases, this results in a larger file due to having to restructure the data to fit grammar requirements. It also results in needing an extra build step, which throws any programmer immediately at the mercy of build tools and project management. An example and further analysis can be found in the [[#appendix-tools]] and the [[#appendix-mongo]] section.
+
 
 ### `ld`, resource files, and other vendor-specific link-time tools ### {#design-practice-vendor}
 
 Resource files and other "link time" or post-processing measures have one benefit over the previous method: they are fast to perform in terms of compilation time. A example can be seen in the [[#appendix-ld]] section.
 
+
 ### The `incbin` tool ### {#design.practice.incbin}
 
 There is a tool called [[incbin]] which is a 3rd party attempt at pulling files in at "assembly time". Its approach is incredibly similar to `ld`, with the caveat that files must be shipped with their binary. It unfortnately falls prey to the same problems of cross-platform woes when dealing with VC++, requiring additional pre-processing to work out in full.
+
+
 
 ## Prior Art ## {#design-prior}
 
 There has been a lot of discussion over the years in many arenas, from Stack Overflow to mailing lists to meetings with the Committee itself. The latest advancements that had been brought to WG21's attention was [[p0373r0|p0373r0 - File String Literals]]. It proposed the syntax `F"my_file.txt"` and `bF"my_file.txt"`, with a few other amenities, to load files at compilation time. The following is an analysis of the previous proposal.
 
+
 ### Literal-Based, constexpr ### {#design-prior-literal}
 
 A user could reasonably assign (or want to assign) the resulting array to a `constexpr` variable as its expected to be handled like most other string literals. This allowed some degree of compile-time reflection. It is entirely helpful that such file contents be assigned to constexpr: e.g., string literals of JSON being loaded at compile time to be parsed by Ben Deane and Jason Turner in their CppCon 2017 talk, [[constexpr-all-the-things|constexpr All The Things]].
+
 
 ### Literal-Based, Null Terminated (?) ### {#design-prior-null}
 
 It is unclear whether the resulting array of characters or bytes was to be null terminated. The usage and expression imply that it will be, due to its string-like appearance. However, is adding an additional null terminator fitting for desired usage? From the existing tools and practice (e.g., `xxd -i` or linking a data-dumped object file), the answer is no: but the syntax `bF"hello.txt"` makes the answer seem like a "yes". This is confusing: either the user should be given an explicit choice or the feature should be entirely opt-in.
 
+
 ### Encoding ### {#design-prior-encoding}
 
 Because the proposal used a string literal, several questions came up as to the actual encoding of the returned information. The author gave both `bF"my_file.txt"` and `F"my_file.txt"` to separate binary versus string-based arrays of returns. Not only did this conflate issues with expectations in the previous section, it also became a heavily contested discussion on both the mailing list group discussion of the original proposal and in the paper itself. This is likely one of the biggest pitfalls between separating "binary" data from "string" data: imbuing an object with string-like properties at translation time provide for all the same hairy questions around source/execution character set and the contents of a literal.
+
+
 
 ## Design Goals ## {#design-goals}
 
@@ -179,6 +213,7 @@ constexpr span<const byte> embed(
 
 `resource_identifier` is a `string_view` processed in an implementation-defined manner to find and pull resources into C++ at constexpr time. The most obvious source will be the file system, with the intention of having this evaluated as a core constant expression. We do not attempt to restrict the `string_view` to a specific subset: whatever the implementation accepts (typically expected to be a relative or absolute file path, but can be other identification scheme), the implementation should use.
 
+
 ### Implementation Defined ### {#design-goals-impldefn}
 
 Calls such as `std::embed( "my_file.txt" );`, `std::embed( "data.dll" );`, and `std::embed( "vertices.bin" );` are meant to be evaluated in a `constexpr` context (with "core constant expressions" only), where the behavior is implementation-defined. The function has unspecified behavior when evaluated in a non-constexpr context (with the expectation that the implementation will provide a failing diagnostic in these cases). This is similar to how include paths work, albeit `#include` interacts with the programmer through the preprocessor.
@@ -187,23 +222,33 @@ There is precedent for specifying library features that are implemented only thr
 
 As `std::embed` is meant to exist at compile-time only, it may be prudent to rely on [[p1073r0|p1073r0 - immediate (constexpr!) functions]]. However, these are only design decisions to more clearly express the intent of the paper. This paper does not explicitly rely on [[p1073r0]] at this time.
 
+
 ### Binary Only ### {#design-goals-binary}
 
 Creating two separate forms or options for loading data that is meant to be a "string" always fuels controversy and debate about what the resulting contents should be. The problem is sidestepped entirely by demanding that the resource loaded by `std::embed` represents the bytes exactly as they come from the resource. This prevents encoding confusion, conversion issues, and other pitfalls related to trying to match the user's idea of "string" data or non-binary formats. Data is received exactly as it is from the resource as defined by the implementation, whether it is a supposed text file or otherwise. `std::embed( "my_text_file.txt" )` and `std::embed( "my_binary_file.bin" )` behave exactly the same concerning their treatment of the resource.
+
 
 ### Constexpr Compatibility ### {#design-goals-constexpr}
 
 The entire implementation must be usable in a `constexpr` context. It is not just for the purposes of processing the data at compile time, but because it matches existing implementations that store strings and huge array literals into a variable via `#include`. These variables can be `constexpr`: to not have a constexpr implementation is to leave many of the programmers who utilize this behavior without a proper standardized tool.
 
+
+
+
 # Help Requested # {#help}
 
 The author of this proposal is extremely new to writing standardese. While the author has read other papers and consumed the standard, there is a definite need for help and any guidance and direction is certainly welcome. The author expects that this paper may undergo several revisions and undertake quite a few moments of "bikeshedding".
+
+
 
 ## Feeling Underrepresented? ## {#help-represent}
 
 The author has consulted dozens of C++ users in each of the Text Processing, Video Game, Financial, Server, Embedded and Desktop Application development subspaces. The author has also queried the opinions of Academia. The author feels this paper adequately covers many use cases, existing practice and prior art. If there is a use case or a problem not being adequately addressed by this proposal, the author encourages anyone and everyone to reach out to have their voice heard.
 
+
+
 ## Bikeshedding ## {#help-bikshed}
+
 
 ### Alternative Names ### {#help-bikeshed-alternative}
 
@@ -217,6 +262,7 @@ Some people feel that `embed` is not a good name for this function. Therefore, h
 - `static_resource`
 - `static_include`
 - `cfsread`
+
 
 ### Answered Questions ### {#help-bikeshed-answered}
 
@@ -263,13 +309,19 @@ This brings up the question: do we change std::embed to work before Phase 7 of c
 
 Wording changes are relative to [[n4762]].
 
+
+
 ## Intent ## {#wording-intent}
 
 The intent of the wording is to provide a function that has implementation-defined behavior but returns the specified constexpr span representing the bytes of the resource the passed-in string_view represents. The wording also explicitly disallows the usage of the function outside of a core constant expression, meaning it is ill-formed if it is attempted to be used at not-constexpr time (std::embed calls should not show up as a function in the final executable).
 
+
+
 ## Proposed Feature Test Macro ## {#wording-feature}
 
 The proposed feature test macro is `__cpp_lib_embed`.
+
+
 
 ## Proposed Wording ## {#wording-proposed}
 
@@ -351,6 +403,9 @@ namespace std {
 </ins>
 </blockquote>
 
+
+
+
 # Future Direction # {#future}
 
 Many developers in all spaces are concerned that `constexpr` does not allow `reinterpret_cast` to be used. This means that the bytes cannot be viewed -- at `constexpr` time -- as more complex entities. There are 2 directions to solve this problem. This paper proposes neither of the fixes at this time.
@@ -372,11 +427,15 @@ We do not propose any of these future directions at this time.
 
 
 
+
 # Appendix # {#appendix}
+
+
 
 ## Sadness ## {#appendix-sadness}
 
 Other techniques used include pre-processing data, link-time based tooling, and assembly-time runtime loading. They are detailed below, for a complete picture of today's sad landscape of options.
+
 
 ### Pre-Processing Tools Sadness ### {#appendix-tools}
 
@@ -426,6 +485,7 @@ There are problems with the `xxd -i` or similar tool-based approach. Lexing and 
 Binary data as C(++) arrays provide the overhead of having to comma-delimit every single byte present, it also requires that the compiler verify every entry in that array is a valid literal or entry according to the C++ language.
 
 This scales poorly with larger files, and build times suffer for any non-trivial binary file, especially when it scales into Megabytes in size (e.g., firmware and similar).
+
 
 ### `python` Sadness ### {#appendix-mongo}
 
@@ -484,6 +544,7 @@ if __name__ == "__main__":
 
 MongoDB were brave enough to share their code with me and make public the things they have to do: other companies have shared many similar concerns, but do not have the same bravery. We thank MongoDB for sharing.
 
+
 ### `ld` Sadness ### {#appendix-ld}
 
 A full, compilable example (except on Visual C++):
@@ -539,6 +600,7 @@ int main() {
 This scales a little bit better in terms of raw compilation time but is shockingly OS, vendor and platform specific in ways that novice developers would not be able to handle fully. The macros are required to erase differences, lest subtle differences in name will destroy one's ability to use these macros effectively. We ommitted the code for handling VC++ resource files because it is excessively verbose than what is present here.
 
 N.B.: Because these declarations are `extern`, the values in the array cannot be accessed at compilation/translation-time.
+
 
 
 

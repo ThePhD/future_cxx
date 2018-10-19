@@ -6,8 +6,7 @@ Audience: EWG
 Status: P
 Group: WG21
 URL: 
-!Current Source: <a href="https://github.com/ThePhD/future_cxx/blob/master/papers/source/d1214.bs">github.com/ThePhD/future_cxx/blob/master/papers/source/d1214.bs</a>
-!Current: <a href="https://rawgit.com/ThePhD/future_cxx/master/papers/d1214.html">https://rawgit.com/ThePhD/future_cxx/master/papers/d1214.html</a>
+!Latest: <a href="https://https://htmlpreview.github.io/?https://github.com/ThePhD/future_cxx/master/papers/d1214.html">https://https://htmlpreview.github.io/?https://github.com/ThePhD/future_cxx/master/papers/d1214.html</a>
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide
 !Reply To: <a href="mailto:phdofthehouse@gmail.com">JeanHeyd Meneide</a>, <a href="https://twitter.com/thephantomderp">@thephantomderp</a>
@@ -27,6 +26,142 @@ path: wording_style.bs
 	Initial release.
 
 
+<table>
+	<tr>
+		<th colspan="2">Shared Code</td>
+	</tr>
+	<tr>
+		<td colspan="2">
+```
+struct widget {
+	bool on_grid = false;
+
+	widget () = default;
+	widget(int level)
+	: display_level(level) {}
+
+	bool is_at_top() const { return display_level == 0; }
+
+	void raise() { raise(1); }
+	void raise(int by) { display_level += by; }
+private:
+	int display_level = 0;
+};
+
+std::vector<widget> widgets(30);
+widgets.push_back(widget(3));
+widgets[15].on_grid = true;
+
+std::vector<widget*> p_widgets;
+for (auto& w : widgets) p_widgets.push_back(&w);
+```
+		</td>
+	</tr>
+	<tr>
+		<th>Currently</th>
+		<th>With Proposal</th>
+	</tr>
+	<tr>
+		<td>
+```
+widget w;
+widget* p_w = &w;
+using func_t = void(widget::*)(int);
+auto pmf = static_cast<func_t>(
+	widget::raise);
+(w.*pmf)(1);
+(p_w->*pmf)(2);
+```
+✔️ compiles, runs successfully<br/>
+syntax is surprise, not same as others
+		</td>
+		<td>
+```
+widget w;
+widget* p_w = &w;
+using func_t = void(widget::*)(int);
+auto pmf = static_cast<func_t>(
+	widget::raise);
+pmf(w, 1);
+pmf(p_w, 2);
+```
+✔️ compiles, runs successfully<br/>
+consistent syntax with everything else
+		</td>
+	</tr>
+	<tr>
+		<td>
+```
+widget w;
+widget* p_w = &w;
+auto pmo = &widget::on_grid;
+assert(!(w.*pmo));
+(p_w->*pmo) = true;
+assert((w.*pmo));
+```
+✔️ compiles, runs successfully<br/>
+syntax is surprise, not same as others
+		</td>
+		<td>
+```
+widget w;
+widget* p_w = &w;
+auto pmo = &widget::on_grid;
+assert(!pmo(w));
+pmo(p_w, true);
+assert(pmo(w));
+```
+✔️ compiles, runs successfully<br/>
+consistent syntax with everything else
+		</td>
+	</tr>
+	<tr>
+		<td>
+```
+auto it = std::find_if(widgets.begin(), 
+  widgets.end(), 
+  &widget::is_at_top);
+if (it != widgets.end()) {
+	assert(it->is_at_top());
+}
+```
+🚫 compiler error
+		</td>
+		<td>
+```
+auto it = std::find_if(widgets.begin(), 
+  widgets.end(), 
+  &widget::is_at_top);
+if (it != widgets.end()) {
+	assert(it->is_at_top());
+}
+```
+✔️ compiles, runs successfully<br/>
+conditional taken, assert passes
+		</td>
+	</tr>
+	<tr>
+		<td>
+```
+bool all_off_grid = std::none_of(widgets.begin(), 
+  widgets.end(), 
+  &widget::on_grid);
+assert(!all_off_grid);
+```
+🚫 compiler error
+		</td>
+		<td>
+```
+bool all_off_grid = std::none_of(widgets.begin(), 
+  widgets.end(), 
+  &widget::on_grid);
+assert(!all_off_grid);
+```
+✔️ compiles, runs successfully
+		</td>
+	</tr>
+</table>
+
 
 # Motivation # {#motivation}
 
@@ -37,6 +172,7 @@ The problem grows greater in generic code, where both library developers and sta
 ```
 struct my_object {
 	int value = 0;
+	bool is_anchored = false;
 
 	bool is_zero() const {
 		return value == 0;
@@ -72,11 +208,13 @@ This design pulls from two previous papers. Peter Dimov's September 2004 [[N1695
 
 The goal of the design for this proposal is to make the simple and non-unique syntax have intrinsic and worthwhile value for both the novice and the expert programmer.
 
+
 ## But what about UFCS- ## {#design.ufcs}
 
 **No.** This is not Universal Functional Call Syntax (UFCS), has nothing to do with UFCS, and never will be UFCS. There is no correlation between fully-typed objects that are of type Pointer to Member Object or Pointer to Member Function having a specific invocation syntax and the leviathan that is Name Lookup, the resulting Argument-Dependent Lookup (ADL) and all it implies. Pointer to member objects and pointer to member functions are fully resolved entities that do not deal with overload resolution or name lookup.
 
 This proposal and other UFCS proposal are not in any way correlated. If anyone claims as such or attempts to use this paper as support for UFCS should be promptly directed to this section of the paper.
+
 
 ## Callable Members ## {#design.callable}
 
@@ -93,14 +231,23 @@ In line with the goals of this proposal, we propose a very simple syntax that wi
 	`auto value = (obj.*pmo);` can be written as `auto value = pmo(obj);`<br/>
 	`(obj.*pmo) = new_value;` can be written as `pmo(obj, new_value);`
 
-N.B.: this syntax treats the arguments passed to pointer to members like any other argument, meaning that types which have conversions to `T` trigger naturally without the special exceptions or wording that is required by `INVOKE`.
+N.B.: this syntax treats the arguments passed to pointer to members like any other argument, meaning that types which have conversions to `T` trigger naturally without the special exceptions or wording that is required by `INVOKE` to handle wrapping references, as shown in [[#design.ref]].
+
+Callable pointer to member objects are supported by `INVOKE`. This syntax extends it slightly by adding the assignment for the 2-argument form of a pointer to member object. We believe this to be important because outside of and prior to `INVOKE`, many codebases creating binding interface layers (to ChaiScript, Python, Lua, Javascript, Java, and more) used the 2-argument form to simply assign into the variable. Seeing as this is a common idiom that would also have good use in certain `BinaryOperation` algorithms.
+
+Callable pointer to member objects also enable the following:
+
+```
+std::vector<my_object*> objects;
+auto first_anchored_it = std::find_if(objects.begin(), objects.end(), &my_object::is_anchored);
+```
 
 
 ## References, Pointers, and std::reference_wrapper, oh my! ## {#design.ref}
 
-The additional question is whether or not pointer to member functions and pointer to member objects should work with `obj` that is either a cv-qualified `T*` or a cv-qualified `T&`. For parity with `INVOKE` and `std::invoke`, and parity with `std::thread`/`std::function`/`std::bind` and other places that have `INVOKE` in the standard, it is useful to simply have the compiler automatically rewrite the syntax for pointer to member function and pointer to member functions to use the arrow `->` when `obj` is a pointer. The runtime errors if a user is dealing with an invalid pointer will be the same no matter what, and there seems little benefit here to force the user to specify.
+The additional question is whether or not pointer to member functions and pointer to member objects should work with `obj` that is either a cv-qualified `T*` or a cv-qualified `T&`. For parity with `INVOKE` and `std::invoke`, and parity with `std::thread`/`std::function`/`std::bind` and other places that have `INVOKE` in the standard, it is useful to simply have the compiler automatically rewrite the syntax for pointer to member function and pointer to member functions to use the arrow `->` when `obj` is a pointer. The runtime errors if a user is dealing with an invalid pointer will be the same no matter what, and there seems little benefit here to force the user to specify. It also impacts generic code that uses `INVOKE`, and new generic code that wants to write `pointer_to_member_function(obj, ...)` or `pointer_to_member(obj)`. All `obj` will have to be wrapped with `detail::deref`, as many codebases do now for little benefit. Note that we only allow `obj` to be a pointer or a reference in the case of pointer to members: there is no proposal or extension for regular function types.
 
-For `std::reference_wrapper`, the implementation when calling this function would first let the natural implicit conversion from `std::reference_wrapper<T>` to `T&` happen, before the pointer to member function or pointer to member object is called. There need be no special clauses to allow this to happen, unlike for `INVOKE` and `std::invoke`.
+For `std::reference_wrapper`, the implementation when calling this function would first let the natural implicit conversion from `std::reference_wrapper<T>` to `T&` happen, before the pointer to member function or pointer to member object is called. There need be no special clauses to allow this to happen, unlike for `INVOKE` and `std::invoke`. This allows other custom reference wrappers and similar class types to be used like anyone would with the rest of the language.
 
 
 ## Improvement of usage with the Standard Library ## {#design-stdlib}
@@ -128,6 +275,7 @@ This proposal is an extension to the Core language. Its potential impacts are as
 If an implementation of `std::invoke` used non-evaluated context SFINAE, that code may become ill-formed due to ambiguous overloads. The fix would be to delete the offending overloads for when this paper is adopted, and to date we do not know of any library vendors that have objection to making this fix. It is also easy to do because Feature Test Macros are part of the C++ standard now.
 
 There are no backwards compatibility compromises or breaks for this feature in the standard. The usage of parenthesis and function call syntax in this case do not conflict or produce grammar or parsing ambiguities or errors.
+
 
 ## On User Code ## {#impact-user}
 

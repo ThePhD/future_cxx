@@ -6,8 +6,7 @@ Audience: EWG
 Status: P
 Group: WG21
 URL: 
-!Current Source: <a href="https://github.com/ThePhD/future_cxx/blob/master/papers/source/d1193.bs">github.com/ThePhD/future_cxx/blob/master/papers/source/d1193.bs</a>
-!Current: <a href="https://rawgit.com/ThePhD/future_cxx/master/papers/d1193.html">https://rawgit.com/ThePhD/future_cxx/master/papers/d1193.html</a>
+!Latest: <a href="https://https://htmlpreview.github.io/?https://github.com/ThePhD/future_cxx/master/papers/d1193.html">https://https://htmlpreview.github.io/?https://github.com/ThePhD/future_cxx/master/papers/d1193.html</a>
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide
 !Reply To: <a href="mailto:phdofthehouse@gmail.com">JeanHeyd Meneide</a>, <a href="https://twitter.com/thephantomderp">@thephantomderp</a>
@@ -20,7 +19,82 @@ Markup Shorthands: markdown yes, biblio yes, markup yes
 path: wording_style.bs
 </pre>
 
+
+
+
+<table>
+	<tr>
+		<th colspan="2">Shared Code</td>
+	</tr>
+	<tr>
+		<td colspan="2">
+```
+template <typename T>
+auto make_some(std::type_identity<T>) {
+  // for exposition
+  using U = std::remove_const_t<std::remove_reference_t<T>>;
+  return U{};
+}
+
+template <typename... Args>
+auto make_some(std::type_identity<std::tuple<Args...>>) {
+  return std::tuple(make_some<Args>()...);
+}
+```
+		</td>
+	</tr>
+	<tr>
+		<th>Currently</th>
+		<th>With Proposal</th>
+	</tr>
+	<tr>
+		<td>
+```
+struct unicorn_proxy {
+  template <typename T>
+  operator T () {
+    return make_some(std::type_identity<T>());
+  }
+};
+
+unicorn_proxy u;
+int a = 24, b = 3, c = 2;
+// hard compiler error
+std::tie(a, b, c) = u;
+assert(a == 0);
+assert(b == 0);
+assert(c == 0);
+```
+🚫 compiler error: `could not convert 'make_some(...)' [with Args = {int&, int&, int&}] from 'tuple<int, int, int>' to 'tuple<int&, int&, int&>'`
+		</td>
+		<td>
+```
+struct unicorn_proxy {
+  template <typename T>
+  auto operator T () {
+    return make_some(std::type_identity<T>());
+  }
+};
+
+unicorn_proxy u;
+int a = 24, b = 3, c = 2;
+// ta-da!~
+std::tie(a, b, c) = u;
+assert(a == 0);
+assert(b == 0);
+assert(c == 0);
+```
+✔️ compiles, runs successfully
+		</td>
+	</tr>
+</table>
+
+
+
+
 # Revision History # {#changelog}
+
+
 
 ## Revision 0 - November 21st, 2014 ## {#changelog-r0}
 
@@ -28,85 +102,219 @@ path: wording_style.bs
 
 
 
+
 # Motivation # {#motivation}
 
-Consider a structure that is meant to be converted to anything that appears on the left hand side of an assignment expression or in any kind of constructor (an "omni" or "unicorn" proxy type):
+There are many types which take advantage of certain conversion operations but need to have their type pinned down exactly in order for such conversions to work properly. We will review two cases here which speak to the heart of the problem: the "Read-Only" effect, and the "Mutual Exclusion" effect.
+
+
+
+## Read-Only ## {#motivation-readonly}
+
+A primary example is `std::tie( a, b, c )`, where it generates a tuple of references that expects any left-hand-side of the assignment operation to have types that can assign into each of the reference variables. This works with an explicit conversion:
+
+```c++
+struct fixed_proxy {
+	operator std::tuple<int, int, int> () const {
+		return std::make_tuple(1, 2, 3);
+	}
+};
+
+int a, b, c;
+// calls conversion operator
+std::tie(a, b, c) = fixed_proxy{};
+// a == 1, b == 2, c == 3
+```
+
+This breaks down when the type for the conversion operation is deduced. Consider a structure that is meant to be converted to anything that appears on the left hand side of an assignment expression or in any kind of constructor (an "omni" or "unicorn" proxy type):
+
+```c++
+struct unicorn_proxy {
+	template <typename T>
+	operator T () {
+		// convert to some T
+		// we hardcore this here for example purposes,
+		// but usually comes from some make_some<T>()
+		// function
+		return std::make_tuple(1, 2, 3);
+	}
+};
+
+int a, b, c;
+// compiler error
+std::tie(a, b, c) = unicorn_proxy{};
+```
+
+This is simply a hard compiler error, because `T` is deduced to be `std::tuple<int&, int&, int&>`. Therefore, it becomes impossible to return newly constructed values into tuple, and effectively locks us out of participating in `std::tie` or similar systems in C++. One would think they could perform some degree of result filtering or SFINAE to allow this to work. But, it does not:
 
 ```
 struct unicorn_proxy {
-	// ... members to construct / make proxy type
-
+	// compiler error
 	template <typename T>
-	T operator () {
-		// convert to some T
-		return make_some<T>();
-	}
+	operator remove_internal_tuple_references_t<T> ();
 };
 ```
+
+This is also a hard compiler error, because only a potentially cv-qualified non-dependent type identifier is allowed by the grammar for the so-called "type argument" of a conversion member function.
+
+While developers can still apply SFINAE with enable_if and friends in the template, we cannot change the the type of `T` itself. This is the essence of the "Read-Only" problem. Developers may query and utilize its properties, but the result -- the thing developers are interested in changing to play nice with `std::tie` and other systems -- is an opaque black box that no one can touch.
+
+
+
+## Mutual Exclusion ## {#motivation-mutual}
+
+The mutual exclusion effect is very simple. Consider a type which is interested in the difference between a reference and a value (as is the case for [sol2's proxy types](https://github.com/ThePhD/sol2/issues/629)):
+
+```
+struct unicorn {
+    template <typename T>
+    operator T () {
+        static std::decay_t<T> v = std::decay_t<T>{};
+        return v;
+    }
+    
+    template <typename T>
+    operator T& () {
+        static std::decay_t<T> v = std::decay_t<T>{};
+        return v;
+    }
+};
+
+unicorn u;
+int i1 = u;
+int& i2 = u;
+```
+
+The compiler will error here, stating that the conversion is ambiguous and that it cannot choose between either conversion operator:
+
+```
+error: conversion from 'unicorn' to 'int' is ambiguous
+     int i1 = u;
+	         ^
+```
+
+If the developer attempts to reduce it by removing the second conversion hoping that the first will be able to catch different reference types, the compiler will complain that it cannot initialize `i2` properly:
+
+```
+error: cannot bind non-const lvalue reference of 
+type 'int&' to an rvalue of type 'int'
+     int& i2 = u;
+	          ^
+```
+
+This means it is impossible to handle the difference between `int&` and `int` for a single type during a conversion in C++. This happens with templated and non-templated conversion operators.
+
+
+
+## In General ## {#motivation-general}
+
+In general, C++'s conversion operators pick both the type and the result of an implicit conversion expression without letting the user perform any useful changes that they can normally perform with a regular function. It also does not let a single conversion operation handle different cv-qualified and ref-qualified types, leaving a very useful and specific class of conversions out. There are many cases where loosening the declaration, definition and usage of conversion operators would greatly benefit library and user code.
+
+Therefore, this paper proposes allowing the user to specify the return type of a conversion operation, and for templated conversion operations with an explicitly specified return type to be capable of capturing both a reference and value conversions similar to forwarded template parameters.
+
 
 
 
 # Design # {#design}
 
-The primary goal of this design is to make the feature an entirely opt-in specification that interacts with the language in the same way regular conversions do, just with the compiler no longer assuming the return type is exactly the same as the type argument used to select the conversion operator. Here is a motivating example:
+The primary design goal is to make the feature an entirely opt-in specification that interacts with the language in the same way regular conversions do, just with the compiler no longer assuming the return type is exactly the same as the type argument used to select the conversion operator. Here is an example of the full potential of a templated conversion operation with a changed return type:
 
-```
+```c++
 struct new_unicorn_proxy {
+	// capture anything
 	template <typename T>
-	std::decay_t<T> operator T () {
-		// ... return a T
+	decltype(auto) operator T&& () {
+		// ... return anything
+		return make_some<std::remove_reference_t<T>>();
 	}
 };
 ```
+
+We go over the set of design decisions made for this extension to the language.
+
+
+
+## Mechanism ## {#design-mechanism}
+
+Allowing an implicit conversion to return different types and deduce reference qualifiers alongside cv-qualifiers opens up a few unique opportunities. The anatomy of this proposal is: `return_type operator type_argument ();`.
+
+
+
+## The Meanings and Syntax ## {#design-syntax}
+
+Enabling explicit returns comes with a few interesting design decisions when it comes to the syntax and the meanings. Thankfully, the change is wholly conservative and does complicate or change the grammar with any new keywords or terminology. There is a difference in semantics, however, which is why it is incredibly important that this feature is [[#design-opt_in]]:
+
+```
+struct unicorn_value {
+	template <typename T>
+	auto operator T ();
+};
+
+struct unicorn_ref {
+	template <typename T>
+	auto operator T& ();
+};
+```
+
+The above two behave like they always do: no matter what you decorate the left hand side of your expression with, it will always deduce `T` to be the type without reference qualifiers. However, with the new syntax we introduce a distinction between the old form and the new form:
+
+```
+struct unicorn_anything {
+	template <typename T>
+	auto operator T&& ();
+};
+```
+
+This conversion operator in particular does not work with only r-value references as the previous form did: `T` will deduce to exactly the type of the expression on the left hand side, including all cv-qualifiers and reference qualifiers. This only happens when you [[#design-opt_in]] to this feature by adding a return type.
+
+The reason for this departure is as explained before. The [[#motivation-mutual]] problem removes classes of code that care about a single type that can be an l-value, an r-value, or just a plain value in C++ code. By allowing a type argument that has the same capture rules as a forwarding reference, we can capture these differences and act on them in code.
+
+Similarly, allowing us to manipulate the return type more thoroughly allows us to handle the `std::tie` and similar problems. Note that this does not actually change the rules for user-defined conversions as they are now by much: the compiler selects which overload is appropriate by 
+
 
 
 ## Opt-In ## {#design-opt_in}
 
-Any good language feature that wants to minimize potential problems and breakage must be opt-in. The syntax we require for our extension is entirely opt-in, and does not affect previous declarations:
+Any language feature that wants to minimize potential problems and breakage must be opt-in. The syntax we require for our extension is entirely opt-in, and does not affect previous declarations.
 
-```
-struct old_unicorn_proxy {
-	template <typename T>
-	operator T () {
-		// ... return a T
-	}
-};
+The meaning of old code does not change, and neither does the way it interacts with any of the code currently existing in the codebase. Old code continues to be good code, and this mechanism remains in the standard because it is usually what an individual wants to begin with: it can simply be seen as the compact version of the extension we are attempting to provide. Using the new syntax for an explicit return value does not actually change what, e.g. `T` would deduce to in the above case for the `new_unicorn_proxy`.
 
-struct new_unicorn_proxy {
-	template <typename T>
-	std::decay_t<T> operator T () {
-		// ... return a T
-	}
-};
-```
 
-The meaning of this code does not change, and neither does the way it interacts with any of the code currently existing in the codebase. Old code continues to be good code, and this mechanism remains in the standard because it is usually what an individual wants to begin with: it can simply be seen as the compact version of the extension we are attempting to provide. Using the new syntax for an explicit return value does not actually change what, e.g. `T` would deduce to in the above case for the `new_unicorn_proxy`.
 
-## Okay, but what if I keep returning proxies? ## {#design-infinity}
+## Okay, but what if I keep returning things that are convertible? ## {#design-infinity}
 
-Someone could invent a proxy that returns another proxy, that in turn produces another proxy of a different type, that in turn produces yet another proxy of a different type. This would invoke an infinite chain of lookups, circularly between the types. This proposal does not enable this: it is possible with code written today. This is not a new concern, and so far there have been repeated reports of this egregious sin cropping up in user code that are public knowledge.
+This is already banned under current rules: all user-defined conversions to non-builtin types may only go through 1 conversion resolution, otherwise the conversion is ill-formed. [[**class.conv.fct**]/1](http://eel.is/c++draft/class.conv.fct) also forbids returning the same type as the object the conversion being performed on or the base class.
 
-This is no different than the recursive function that has no base case or terminal branch or an infinite loop: the user programmed something very, very poorly in order for this to happen and the effect is also easy to test for. We do not anticipate this to be a problem, the same way infinite recursion is not a problem for the regular developer.
+The same rule still holds: conversions are not allowed to return the same type as the type the conversion is being invoked on (or any of its base classes). The type returned shall also be usable in the context that it is selected in. This means that a conversion that uses a type argument of `int` must return a type that is convertible to `int` without further user defined conversions (but may invoke additional constructors or other overloaded functions based on the selection).
 
-N.B.: you cannot just keep returning the same proxy object, because ([**class.conv.fct**]/1)[http://eel.is/c++draft/class.conv.fct] forbids it explicitly. This eliminates one of the most common ways to invoke an infinite loop, and only a rather dedicated attempt at this would result in this being a problem.
+This rule is stringent to fit how strict the current lookup model is (one and only one user defined conversion to non-builtin type per resolution attempt). There may be room to relax the rules to allow 1 more conversion if the return type is not identical to the type argument, but this proposal does not look into that.
+
+
+
 
 # Impact # {#impact}
 
 Since this feature has been designed to be [[#design-opt_in]], the impact is thankfully incredibly small.
 
+
+
 ## On User Code ## {#impact-users}
 
-While this introduces an extension to a previous language construct, it thankfully does not break any old code due to its opt-in nature. This is a very important design aspect of this extension syntax: it cannot and should not break any old code unless someone explicitly opts into the functionality. At that point, the potential breakage is still completely bounded, because the return type one chooses for a conversion operator member.
+While this introduces an extension to a previous language construct, it thankfully does not break any old code due to its opt-in nature. This is a very important design aspect of this extension syntax: it cannot and should not break any old code unless someone explicitly opts into the functionality. At that point, the potential breakage is still completely bounded, because the return type a developer chooses for a conversion operator member is up to them.
+
+
 
 ## On the Standard ## {#impact-standard}
 
-This does not cause any breakages in the Standard Library or the 
+This does not cause any breakages in the Standard Library or with existing code. No facilities in the standard library would need to use this facility currently.
+
+
+
 
 # Proposed Wording and Feature Test Macros # {#wording}
-## On User Code ## {#impact-users}
 
+**This wording section is incomplete!** Any help anyone can give to properly process the wording for this section would be greatly appreciated. The following wording is relative to [[n4762]].
 
-The following wording is relative to [[n4762]].
 
 
 ## Proposed feature Test Macro ## {#wording-feature}
@@ -114,17 +322,18 @@ The following wording is relative to [[n4762]].
 The recommended feature test macro is `__cpp_conversion_return_types`.
 
 
+
 ## Intent ## {#wording-intent}
 
 The intent of this wording is to allow for an explicit return type to be optionally defined on a member conversion operator.
 
 
+
 ## Proposed Wording ## {#wording-language}
 
-Modify §... [**expr.call**] to read as follows:
+Modify §10.3.8.2 [**class.conv.fct**] to read as follows:
 
 <blockquote>
-<sup>1</sup> 
 </blockquote>
 
 <blockquote>
@@ -149,10 +358,10 @@ Append to §14.8.1 Predefined macro names [**cpp.predefined**]'s **Table 16** wi
 
 
 
+
 # Acknowledgements # {#acknowledgements}
 
-Thank you to Jason Turner for showing me some of the internals of ChaiScript a long time ago and bringing this common problem to light. Thank you to Stephan T. Lavavej for talking about this during one of his talks. Thank you to Barry Revzin and Peter Dimov for their previous work and scholarship on this matter.
-
+Thank you to Lisa Lippincott for the advice and knowledge on how to solve this problem in an elegant and simple manner.
 
 
 <pre class=biblio>

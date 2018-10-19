@@ -6,8 +6,7 @@ Audience: LEWG, LWG
 Status: P
 Group: WG21
 URL: 
-!Current Source: <a href="https://github.com/ThePhD/future_cxx/blob/master/papers/source/d1132.bs">github.com/ThePhD/future_cxx/blob/master/papers/source/d1132.bs</a>
-!Current: <a href="https://rawgit.com/ThePhD/future_cxx/master/papers/d1132.html">https://rawgit.com/ThePhD/future_cxx/master/papers/d1132.html</a>
+!Latest: <a href="https://https://htmlpreview.github.io/?https://github.com/ThePhD/future_cxx/master/papers/d1132.html">https://https://htmlpreview.github.io/?https://github.com/ThePhD/future_cxx/master/papers/d1132.html</a>
 !Implementation: <a href="https://github.com/ThePhD/out_ptr">https://github.com/ThePhD/out_ptr</a>
 !Reply To: <a href="mailto:phdofthehouse@gmail.com">JeanHeyd Meneide</a> | <a href="https://twitter.com/thephantomderp">@thephantomderp</a>
 Repository: ThePhD/future_cxx
@@ -28,14 +27,17 @@ path: wording_style.bs
 # Revision History # {#changelog}
 
 
+
 ## Revision 0 ## {#changelog-r0}
 
     Initial release.
 
 
+
 ## Revision 1 ## {#changelog-r1}
 
     Add wording. Incorporate wording feedback. Eliminate CTAD design. Add a few more words about implementation experience.
+
 
 
 
@@ -49,9 +51,11 @@ In short: it's a thing convertible to a `T**` that updates the smart pointer it 
 
 
 
+
 # Design Considerations # {#design}
 
 The core of `out_ptr`'s (and `inout_ptr`'s) design revolves around avoiding the mistakes of the past, preventing continual modification of new smart pointers and outside smart pointers's interfaces to perform the same task, and enabling some degree of performance efficiency without having to wrap every C API function.
+
 
 
 ## Synopsis ## {#design-synopsis}
@@ -61,24 +65,20 @@ The function template's full specification is:
 ```c++
 namespace std {
 	template <class Pointer, class Smart, class... Args>
-	auto out_ptr(Smart& s, Args&&... args) noexcept
-	-> out_ptr_t<Smart, Pointer, Args...>;
+	out_ptr_t<Smart, Pointer, Args...> out_ptr(Smart& s, Args&&... args) noexcept;
 	
 	template <class Smart, class... Args>
-	auto out_ptr(Smart& s, Args&&... args) noexcept 
-	-> decltype(out_ptr<PointerOf<Smart>>(s, std::forward<Args>(args)...));
+	out_ptr_t<Smart, POINTER_OF(Smart), Args...> out_ptr(Smart& s, Args&&... args) noexcept;
 
 	template <class Pointer, class Smart, class... Args>
-	auto inout_ptr(Smart& s, Args&&... args) noexcept
-	-> inout_ptr_t<Smart, Pointer, Args...>;
+	inout_ptr_t<Smart, Pointer, Args...> inout_ptr(Smart& s, Args&&... args) noexcept;
 	
 	template <class Smart, class... Args>
-	auto inout_ptr(Smart& s, Args&&... args) noexcept 
-	-> decltype(inout_ptr<PointerOf<Smart>>(s, std::forward<Args>(args)...));
+	inout_ptr_t<Smart, POINTER_OF(Smart), Args...> inout_ptr(Smart& s, Args&&... args) noexcept;
 }
 ```
 
-Where `PointerOf` is the `::pointer` type, then `::element_type*`, then `class std::pointer_traits<Smart>::element_type*` in that order. The return type `out_ptr_t` and its sister type `inout_ptr_t` are templated types and must at-minimum have the following:
+Where `POINTER_OF` is the `::pointer` type, then `::element_type*`, then `class std::pointer_traits<Smart>::element_type*` in that order. The return type `out_ptr_t` and its sister type `inout_ptr_t` are templated types and must at-minimum have the following:
 
 ```c++
 template <class Smart, class Pointer, class... Args>
@@ -101,9 +101,11 @@ struct inout_ptr_t {
 We specify "at minimum" because we expect users to override this type for their own shared, unique, handle-alike, reference-counting, and etc. smart pointers. The destructor of `~out_ptr_t()` calls `.reset()` on the stored smart pointer of type `Smart` with the stored pointer of type `Pointer` and arguments stored as `Args...`. `~inout_ptr_t()` does the same, but with the additional caveat that the constructor for `inout_ptr_t(Smart&, Args&&...)` also calls `.release()`, so that a `reset` doesn't double-delete a pointer that the expected re-allocating API used with `inout_ptr` already handles.
 
 
+
 ## Header and Feature Macro ## {#design-feature}
 
 The target header is `<memory>`. The desired feature is `__cpp_lib_out_ptr`. See [[#wording-feature]] for further discussion about other potential targets.
+
 
 
 ## Overview ## {#design-overview}
@@ -149,6 +151,7 @@ if (err == C_API_ERROR_CONDITION) {
 ```
 
 
+
 ## Safety ## {#design-safety}
 
 This implementation uses a pack of `...Args` in the signature of `out_ptr` to allow it to be used with other types whose `.reset()` functions may require more than just the pointer value to form a valid and proper smart pointer. This is the case with `std::shared_ptr` and `boost::shared_ptr`:
@@ -181,13 +184,17 @@ error_num err = c_api_create_handle(
 It is likely the intent of the programmer to also pass the fictional `c_api_delete_handle` function to this: the above constraint allows us to avoid such programmer mistakes.
 
 
+
 ## Casting Support ## {#design-casting}
 
 There are also many APIs (COM-style APIs, base-class handle APIs, type-erasure APIs) where the initialization requires that the type passed to the function is of some fundamental (`void**`) or base type that does not reflect what is stored exactly in the pointer. Therefore, it is necessary to sometimes specify what the underlying type `out_ptr` uses is stored as.
 
 It is also important to note that going in the *opposite* direction is also highly desirable, especially in the case of doing API-hiding behind an e.g. `void*` implementation. `out_ptr` supports both scenarios with an optional template argument to the function call.
 
-For example, consider this DirectX Graphics Infrastructure Interface (DXGI) function on `IDXGIFactory6`:
+
+### Casting Support: builtin `void**` ### {#design-casting-void}
+
+Consider this DirectX Graphics Infrastructure Interface (DXGI) function on `IDXGIFactory6`:
 
 ```c++
 HRESULT EnumAdapterByGpuPreference(
@@ -205,7 +212,7 @@ HRESULT result = dxgi_factory.
 EnumAdapterByGpuPreference(0, 
 	DXGI_GPU_PREFERENCE_MINIMUM_POWER, 
 	IID_IDXGIAdapter, 
-	std::out_ptr<void*>(adapter)
+	std::out_ptr(adapter)
 );
 if (FAILED(result)) {
 	// handle errors
@@ -213,7 +220,62 @@ if (FAILED(result)) {
 // adapter.get() contains strongly-typed pointer
 ```
 
-No manual casting, `.release()` fiddling, or `.reset()` is required: the returned type from `out_ptr` handles that.
+No manual casting, `.release()` fiddling, or `.reset()` is required: the returned type from `out_ptr` handles that. This is because the `out_ptr_t` and `inout_ptr_t` types have conversion operations to not only the detected `::pointer` or `::element_type*` of the smart pointer, but a `reinterpret_cast` conversion to `void*` as well. While the size of `void*` is not required by the C++ standard to be the same as the size of any other types pointer (except const/volatile qualified `char*`), most C APIs that use this technique have already sanctioned the conversion from whatever type the API works with to `void*` and, subsequently, `void**`.
+
+This idiom is also useful for the `QueryInterface` base function for COM's `IUnknown`, and for Vulkan's `vkMapMemory`.
+
+
+### Casting Support: to arbitrary `T` ### {#design-casting-similar}
+
+In many cases, there is a typical C structure or similar that C++ users are sanctioned to derive and extend with their own data, with the promise that as long as the pointed passed to the function has a base class or matching type. There are also cases where the type stored in `std::unique_ptr<T, Deleter>` uses `Deleter` to override the `::pointer` type, making `std::unique_ptr` store the (fat, offset) `::pointer` that is convertible to `T*`.
+
+In these case, it is imperative that the user be allowed to specify a casting parameter that the `out_ptr_t`/`inout_ptr_t`, and that is done by simply adding a type when calling the desired function. Consider a specialized `std::unique_ptr<int, fd_deleter>` where `::pointer` is a typedef to a special `fd` type:
+
+```c++
+struct fd {
+	int handle;
+
+	fd()
+	: fd(nullptr) {}
+	fd(std::nullptr_t)
+	: handle(static_cast<intptr_t>(-1)) {}
+	fd(FILE* f)
+#ifdef _WIN32
+	: handle(f ? _fileno(f) : static_cast<intptr_t>(-1)){
+#else
+	: handle(f ? fileno(f) : static_cast<intptr_t>(-1)) {
+#endif // Windows
+	}
+
+	explicit operator bool() const;
+
+	bool operator==(std::nullptr_t) const;
+	bool operator!=(std::nullptr_t) const;
+	bool operator==(const fd& fd) const;
+	bool operator!=(const fd& fd) const;
+};
+
+struct fd_deleter {
+	using pointer = fd;
+	void operator()(fd des) const;
+};
+
+```
+
+Casting in this case is cumbersome and often error-prone to do properly when interfacing with C or C++ standard library facilities. It becomes trivial with `std::out_ptr`:
+
+```c++
+std::unique_ptr<int, fd_deleter> my_unique_fd;
+auto err = fopen_s( std::out_ptr<FILE*>(my_unique_fd), "prod.csv", "rb" );
+// check err, then work with raw fd
+```
+
+This is an example of a codebase which works primarily off of file descriptors, but wants to interop with the standard C and C++ libraries. The cast here is valid and properly opens the file, while the `fd` type handles converting in and out of the type safely and seamlessly, without going through extra effort or having to interact more closely with the POSIX API. This makes it easy to perform interop with a "high-level" or "convertible" type, while still working with the desired "low-level" or "native" type.
+
+This also demonstrates `out_ptr`'s ability to work with offset/fat/not-quite-exactly pointers, which are allowed by `std::unique_ptr` and the upcoming [[p0468|std::retain_ptr]].
+
+The full example code for Windows and *Nix platforms is [available as a compilable example](https://github.com/ThePhD/out_ptr/blob/master/examples/with_special_unique.cpp).
+
 
 
 ## Reallocation Support ## {#design-realloc}
@@ -235,11 +297,13 @@ Given that many companies, studios and individuals have all invented the same ty
 A [full implementation with UB and friendly optimizations is available in the repository](https://github.com/ThePhD/out_ptr/blob/master/include/phd/detail/base_out_ptr_impl.hpp). The type has been privately used in many projects over the last four years, and this public implementation is already seeing use at companies today. It has been particularly helpful with many COM APIs, and the re-allocation support in `inout_ptr` has been useful for FFMPEG's functions which feature reallocation support in their functions (e.g., `avformat_open_input`).
 
 
+
 ## Why Not Wrap It? ## {#experience-wrapping}
 
 A common point raised while using this abstraction is to simply "wrap the target function". We believe this to be a non-starter in many cases: there are thousands of C API functions and even the most dedicated of tools have trouble producing lean wrappers around them. This tends to work for one-off functions, but suffers scalability problems very quickly.
 
 Templated intermediate wrapper functions which take a function, perfectly forwards arguments, and attempts to generate e.g. a `unique_ptr` for the first argument and contain the boiler plate within itself also causes problems. Asides from the (perhaps minor) concern that such a wrapping function disrupts any auto-completion or tooling, the issue arises that C libraries -- even within themselves -- do not agree on where to place the `some_c_type**` parameter and detecting it properly to write a generic function to automagically do it is hard. Even within the C standard library, some functions have output parameters in the beginning and others have it at the end. The disparity grows when users pick up libraries outside the standard.
+
 
 
 
@@ -259,6 +323,8 @@ Below are some graphs indicating the performance metrics of the code. 5 categori
 
 The full JSON data for these benchmarks is available [in the repository](https://github.com/ThePhD/out_ptr/blob/master/benchmark_results/ptrptr_benchmarks.json), as well as all of the code necessary to run the benchmarks across all platforms with a simple CMake build system.
 
+
+
 ## For `std::out_ptr` ## {#perf-out_ptr}
 
 You can observe two graphs for two common `unique_ptr` usage scenarios, which are using the pointer locally and discarding it ("local"), and resetting a pre-existing pointer ("reset") for just an output pointer:
@@ -270,6 +336,8 @@ path: local out.bs
 <pre class=include>
 path: reset out.bs
 </pre>
+
+
 
 ## For `std::inout_ptr` ## {#perf-inout_ptr}
 
@@ -283,13 +351,20 @@ path: local inout.bs
 path: reset inout.bs
 </pre>
 
+
+
+
 # Bikeshed # {#bikeshed}
 
 As with every proposal, naming, conventions and other tidbits not related to implementation are important. This section is for pinning down all the little details to make it suitable for the standard.
 
+
+
 ## Alternative Specification ## {#bikeshed-specification} 
 
 The authors of this proposal know of two ways to specify this proposal's goals.
+
+The authors have settled on the approach in [[#design-synopsis]]. We believe this is the most robust and easiest to use: singular names tend to be easier to teach and use for both programmers and tools. We discuss the older techniques to uphold thorough discssion and inspection of the solution space.
 
 The first way is to specify both functions `out_ptr` and `inout_ptr` as factories, and then have their types named differently, such as `out_ptr_t` and `inout_ptr_t`. The factory functions and their implementation will be fixed in place, and users would be able to (partially) specialize and customize `std::out_ptr_t` and `std::inout_ptr_t` for types external to the stdlib for maximum performance tweaking and interop with types like `boost::shared_ptr`, `my_lib::local_shared_ptr`, and others. This is the direction this proposal takes.
 
@@ -297,7 +372,7 @@ The second way is to specify the class names to be `std::out_ptr` / `std::inout_
 
 Part of this specification is that you can specify the stored pointer for the underlying implementation of `out_ptr` as shown in [[#design-casting]]. Template Argument Deduction for Class Templates does not allow partial specialization (and for good reason, see the interesting example of `std::tuple<int, int>{1, 2, 3}`). The "Deduction Guides" (or CTAD) approach would accommodate [[#design-casting]] using functions with a more explicit names, such as `out_ptr_cast<void*>( ... );` and `inout_ptr_cast<void*>( ... );`.
 
-The authors have settled on the approach in [[#design-synopsis]]. We believe this is the most robust and easiest to use: singular names tend to be easier to teach and use for both programmers and tools.
+
 
 ## Naming ## {#bikeshed-naming}
 
@@ -330,15 +405,22 @@ For the `inout_ptr` part:
 
 As a pairing, `out_ptr` and `inout_ptr` are the most cromulent and descriptive in the authors' opinions. The type names would follow suit as `out_ptr_t` and `inout_ptr_t`. However, there is an argument for having a name that more appropriately captures the purpose of these abstractions. Therefore, `c_out_ptr` and `c_inout_ptr` would be even better, and the shortest would be `c_ptr` and `c_in_ptr`.
 
+
+
+
 # Proposed Changes # {#wording}
 
 The following wording is for the Library section, relative to [[n4762]]. This feature will go in the `<memory>` header, and is added to §19.11 [**utilities.smartptr**], at the end as subsection 9.
+
+
 
 ## Proposed Feature Test Macro and Header ## {#wording-feature}
 
 This should be available with the rest of the smart pointers, and thusly be included by simply including `<memory>`. If there is a desire for more fine-grained control, then we recommend the header `<out_ptr>` (subject to change based on bikeshed painting above). There has been some expressed desire for wanting to provide more fine-grained control of what entities the standard library produces when including headers: this paper does not explicitly propose adding such headers or doing such work, merely making a recommendation if this direction is desired by WG21.
 
 The proposed feature test macro for this is `__cpp_lib_out_ptr`. The exposure of `__cpp_lib_out_ptr` denotes the existence of both `inout_ptr` and `out_ptr`, as well as its customization points `out_ptr_t` and `inout_ptr_t`. 
+
+
 
 ## Intent ## {#wording-intent}
 
@@ -353,6 +435,8 @@ The intent of this wording is to allow implementers the freedom to implement the
 
 The goals of the wording are to not restrict implementation strategies (e.g., a `friend` implementation as benchmarked above for `unique_ptr`, or maybe a UB/IB implementation as also documented above). It is also explicitly meant to error for smart pointers whose `.reset()` call may reset the stored deleter (á la `boost::shared_ptr`/`std::shared_ptr`) and to catch programmer errors.
 
+
+
 ## Proposed Wording ## {#wording-library}
 
 Modify §19.10.1 In general [**memory.general**] as follows:
@@ -364,10 +448,9 @@ Add §19.10.2 Definitions [**memory.defns**] as follows:
 
 <p><ins><sup>1</sup> Definition: Let `POINTER_OF(T)` denote a type that is:
 <dl>
-	<dd><ins>— the type of `T::pointer` if the qualified-id `T::pointer` is valid and denotes a type, or</ins></dd>
-	<dd><ins>— the type of `std::add_pointer_t<typename T::element_type>` if the qualified-id `T::element_type` is valid and denotes a type, or</ins></dd>
-	<dd><ins>— the type of `std::add_pointer_t<typename std::pointer_traits<T>::element_type>` if `std::pointer_traits<T>::element_type` is valid,</ins></dd>
-	<dd><ins>— otherwise, `decltype(addressof(*declval<T>()))`</ins></dd>
+	<dd><ins>— `T::pointer` if the qualified-id `T::pointer` is valid and denotes a type, or</ins></dd>
+	<dd><ins>— otherwise, `std::add_pointer_t<typename T::element_type>` if the qualified-id `T::element_type` is valid and denotes a type, or</ins></dd>
+	<dd><ins>— otherwise, `std::add_pointer_t<typename std::pointer_traits<T>::element_type>` if `std::pointer_traits<T>::element_type` is valid.</ins></dd>
 </dl>
 </ins></p>
 </blockquote>
@@ -383,12 +466,10 @@ template <class Smart, class Pointer, class... Args>
 
 // 19.11.10, out_ptr
 template <class Pointer, class Smart, class... Args>
-	auto out_ptr(Smart& s, Args&&... args) noexcept
-	-> out_ptr_t<Smart, Pointer, Args...>;
+	out_ptr_t<Smart, Pointer, Args...> out_ptr(Smart& s, Args&&... args) noexcept;
 	
 template <class Smart, class... Args>
-	auto out_ptr(Smart& s, Args&&... args) noexcept 
-	-> decltype(out_ptr<PointerOf<Smart>>(s, std::forward<Args>(args)...));
+	out_ptr_t<Smart, POINTER_OF(Smart), Args...> out_ptr(Smart& s, Args&&... args) noexcept;
 
 // 19.11.11, inout_ptr_t
 template <class Smart, class Pointer, class... Args>
@@ -399,8 +480,7 @@ template <class Pointer, class Smart, class... Args>
 	inout_ptr_t<Smart, Pointer, Args...> inout_ptr(Smart& s, Args&&... args) noexcept;
 	
 template <class Smart, class... Args>
-	auto inout_ptr(Smart& s, Args&&... args) noexcept 
-	-> decltype(inout_ptr<PointerOf<Smart>>(s, std::forward<Args>(args)...));
+	inout_ptr_t<Smart, POINTER_OF(SMART), Args...> inout_ptr(Smart& s, Args&&... args) noexcept 
 </xmp>
 </ins>
 </blockquote>
@@ -412,7 +492,7 @@ Insert §19.11.9 [**out_ptr.class**]:
 
 <p><ins><sup>1</sup> *out_ptr_t* is a type used with smart pointers (**19.11**) and types which are designed on the same principles to interoperate easily with functions that use output pointer parameters. [ Note — For example, a function of the form `void foo(void**)` — end note ].</ins></p>
 
-<p><ins><sup>2</sup> *out_ptr_t* may be specialized (**12.6.5**) for user-defined types and shall meet the observable behavior in the rest of this section.</ins></p>
+<p><ins><sup>2</sup> *out_ptr_t* may be specialized (**12.6.5**) for program-defined types and shall meet the observable behavior in the rest of this section.</ins></p>
 
 <ins>
 <xmp highlight="C++">
@@ -423,22 +503,20 @@ namespace std {
 		// 19.11.9.1, constructors
 		out_ptr_t(Smart&, Args...) noexcept;
 		out_ptr_t(out_ptr_t&&) noexcept;
-		out_ptr_t(const out_ptr_t&) noexcept = delete;
 
 		// 19.11.9.2, assignment
 		out_ptr_t& operator=(out_ptr_t&&) noexcept;
-		out_ptr_t& operator=(const out_ptr_t&) noexcept = delete;
 
 		// 19.11.9.3, destructors
 		~out_ptr_t();
 
 		// 19.11.9.4, conversion operators
-		operator Pointer*() noexcept;  // if Pointer not void*
+		operator Pointer*() noexcept;
 		operator void**() noexcept;
 
 	private:
 		Smart* s; // exposition only
-		tuple<Args> a; // exposition only
+		tuple<Args...> a; // exposition only
 		Pointer p; // exposition only
 	};
 
@@ -455,52 +533,27 @@ namespace std {
 
 <p><ins><xmp highlight="C++">out_ptr_t(Smart& smart, Args... args) noexcept;</xmp></ins></p>
 
-<p><ins><sup>1</sup> Effects: constructs an object of `out_ptr_t` and stores the arguments to be used for destructor.</ins></p>
-
-<p><ins><sup>2</sup> Equivalent to: 
-<xmp>
-out_ptr_t(Smart& smart, Args... args) noexcept : 
-	s(&smart), 
-	a(std::forward<Args>(args)...), 
-	p(static_cast<Pointer>(smart.get())) 
-{}.
-</xmp></ins></p>
+<p><ins><sup>1</sup> Effects: initializes `s` with `addressof(smart)`, `a` with `std::forward<Args>(args)...`, and `p` with `static_cast<Pointer>(smart.get())`.</ins></p>
 
 <p><ins><xmp highlight="C++">out_ptr_t(out_ptr&& rhs) noexcept;</xmp></ins></p>
 
-<p><ins><sup>3</sup> Effects: moves all elements of `rhs` into `*this`, then sets `rhs.p` to `nullptr` so that the destructor's effects do not apply.</ins></p>
-
-<p><ins><sup>4</sup> Equivalent to: 
-
-<xmp>
-out_ptr_t(out_ptr_t&& rhs) noexcept : 
-	s(std::move(rhs.s)), 
-	a(std::move(rhs.a)),
-	p(std::move(rhs.p)) { 
-		rhs.p = nullptr; 
-}
-</xmp>
-
-</ins></p>
+<p><ins><sup>3</sup> Effects: initializes `s` with `std::move(rhs.s)`, `a` with `std::move(args)...`, and `p` with `std::move(rhs.p)`. Then sets `rhs.p` to `nullptr`.</ins></p>
 
 
 <p><ins>19.11.9.2 Assignment [**out_ptr.class.assign**]</ins></p>
 
 <p><ins><xmp highlight="C++">out_ptr_t& operator=(out_ptr&& rhs) noexcept;</xmp></ins></p>
 
-<p><ins><sup>1</sup> Effects: moves each element of `rhs` into `*this`, then sets `rhs.p` to `nullptr` so that the destructor's effects do not apply.</ins></p>
-
-<p><ins><sup>2</sup> Equivalent to:
+<p><ins><sup>1</sup>Effects: Equivalent to:
 <xmp>
-out_ptr_t& operator=(out_ptr_t&& rhs) noexcept { 
-	s = std::move(rhs.s); 
-	a = std::move(rhs.a); 
-	p = std::move(rhs.p);
-	rhs.p = nullptr;
-	return *this;
-}
+s = std::move(rhs.s); 
+a = std::move(rhs.a); 
+p = std::move(rhs.p);
+rhs.p = nullptr;
+return *this;
 </xmp>
 </ins></p>
+
 
 <p><ins>19.11.9.3 Destructors [**out_ptr.class.dtor**]</ins></p>
 
@@ -508,13 +561,12 @@ out_ptr_t& operator=(out_ptr_t&& rhs) noexcept {
 
 <p><ins><sup>1</sup> Let `SP` be `POINTER_OF(Smart)` (**19.10.2**).</ins></p>
 
-<p><ins><sup>2</sup> Effects: reset the pointer stored in *s*, if *p* is not null using the `Args` value stored in `*this`, if any.</ins></p>
-
-<p><ins><sup>3</sup> Equivalent to:
+<p><ins><sup>2</sup> Effects: Equivalent to:
 <dl>
 	<dd><ins>— `if (p != nullptr) { s.reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if `reset` is a valid member function on `Smart`,</ins></dd>
 	<dd><ins>— otherwise `if (p != nullptr) { s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></dd>
 </dl>
+where `Args` are the arguments stored in `a`.
 </ins></p>
 
 
@@ -523,13 +575,13 @@ out_ptr_t& operator=(out_ptr_t&& rhs) noexcept {
 <p><ins>
 <xmp highlight="C++">
 operator Pointer*() noexcept;
-operator void**() noexcept; // if Pointer not void*
+operator void**() noexcept;
 </xmp>
 </ins></p>
-		
-<p><ins><sup>1</sup> Constraints: The second conversion shall participate in conversion if `Pointer` is not of type `void*`.</ins></p>
 
-<p><ins><sup>2</sup> Effects: The first conversion returns a pointer to `p`. The second conversion return `static_cast<void**>(static_cast<void*>(static_cast<Pointer*>(*this)));`</ins></p>
+<p><ins><sup>1</sup> Constraints: The second conversion shall participate in conversion if `Pointer` is not `void*`.</ins></p>
+
+<p><ins><sup>2</sup> Effects: The first conversion returns a pointer to `p`. The second conversion return `reinterpret_cast<void**>(static_cast<Pointer*>(*this));`</ins></p>
 </blockquote>
 
 
@@ -545,20 +597,18 @@ Insert §19.11.10 [**out_ptr**]:
 namespace std {
 
 	template <class Pointer, class Smart, class... Args>
-	auto out_ptr(Smart& s, Args&&... args) noexcept
-	-> out_ptr_t<Smart, Pointer, Args...>;
+	out_ptr_t<Smart, Pointer, Args...> out_ptr(Smart& s, Args&&... args) noexcept;
 
 	template <class Smart, class... Args>
-	auto out_ptr(Smart& s, Args&&... args) noexcept
-	-> decltype(out_ptr<Pointer>(s, std::forward<Args>(args)...));
+	out_ptr_t<Smart, POINTER_OF(Smart), Args...> out_ptr(Smart& s, Args&&... args) noexcept;
 
 }
 </xmp>
 </ins>
 
-<p><ins><sup>2</sup> Effects: For the second overload, let `Pointer` be `POINTER_OF(Smart)` (**19.10.2**).</ins></p>
+<p><ins><sup>2</sup> Effects: The first overload is Equivalent to: `return out_ptr<POINTER_OF(Smart)>(s, std::forward<Args>(args)...);`</ins></p>
 
-<p><ins><sup>3</sup> Equivalent to: `return out_ptr_t<Smart, Pointer, Args...>(s, std::forward<Args>(args)...);`</ins></p>
+<p><ins><sup>3</sup> Effects: The second overload is Equivalent to: `return out_ptr_t<Smart, Pointer, Args...>(s, std::forward<Args>(args)...);`</ins></p>
 </blockquote>
 
 
@@ -569,7 +619,7 @@ Insert §19.11.11 [**inout_ptr.class**]:
 
 <p><ins><sup>1</sup> *inout_ptr_t* is a type used with smart pointers (**19.11**) and types which are designed on the same principles to interoperate easily with functions that use output pointer parameters. [ Note — For example, a function of the form `void foo(void**)` — end note ].</ins></p>
 
-<p><ins><sup>2</sup> *inout_ptr_t* may be specialized (**12.6.5**) for user-defined types and shall meet the observable behavior in the rest of this section.</ins></p>
+<p><ins><sup>2</sup> *inout_ptr_t* may be specialized (**12.6.5**) for program-defined types and shall meet the observable behavior in the rest of this section.</ins></p>
 
 <ins>
 <xmp highlight="C++">
@@ -580,22 +630,20 @@ namespace std {
 		// 19.11.11.1, constructors
 		inout_ptr_t(Smart&, Args...) noexcept;
 		inout_ptr_t(inout_ptr_t&&) noexcept;
-		inout_ptr_t(const inout_ptr_t&) noexcept = delete;
 
 		// 19.11.11.2, assignment
 		inout_ptr_t& operator=(inout_ptr_t&&) noexcept;
-		inout_ptr_t& operator=(const inout_ptr_t&) noexcept = delete;
 
 		// 19.11.11.3, destructors
 		~inout_ptr_t();
 
 		// 19.11.11.4, conversion operators
-		operator Pointer*() noexcept; // if Pointer not void*
+		operator Pointer*() noexcept;
 		operator void**() noexcept;
 
 	private:
 		Smart* s; // exposition only
-		tuple<Args> a; // exposition only
+		tuple<Args...> a; // exposition only
 		Pointer p; // exposition only
 	};
 
@@ -605,59 +653,33 @@ namespace std {
 
 <p><ins><sup>2</sup> If `Smart` is a specialization of `shared_ptr` and `sizeof...(Args) == 0`, the program is ill-formed. `Pointer` shall meet the `Cpp17NullablePointer` requirements (**15.5.3.3**).</ins></p>
 
-<p><ins><sup>3</sup> [ *Note:* It is typically a user error to reset a `shared_ptr` without specifying a deleter, as `std::shared_ptr` will replace a custom deleter with the default deleter upon usage of `.reset()`, as specified in 19.11.3.4. — *end Note* ]</ins></p>
+<p><ins><sup>3</sup> [ *Note:* It is typically a user error to reset a `shared_ptr` without specifying a deleter, as `std::shared_ptr` will replace a custom deleter with the default deleter upon usage of `.reset(...)`, as specified in 19.11.3.4. — *end Note* ]</ins></p>
 
 
 <p><ins>19.11.11.1 Constructors [**inout_ptr.class.ctor**]</ins></p>
 
 <p><ins><xmp highlight="C++">inout_ptr_t(Smart& smart, Args... args) noexcept;</xmp></ins></p>
 
-<p><ins><sup>1</sup> Constraints: `s.release()` must be a valid expression.</ins></p>
+<p><ins><sup>1</sup> Constraints: The expression `smart.release()` is well-formed.</ins></p>
 
-<p><ins><sup>1</sup> Effects: constructs an object of `inout_ptr_t` and stores the arguments to be used for destructor.</ins></p>
-
-<p><ins><sup>2</sup> Equivalent to: 
-<xmp>
-inout_ptr_t(Smart& smart, Args... args) noexcept : 
-	s(&smart), 
-	a(std::forward<Args>(args)...), 
-	p(static_cast<Pointer>(smart.release())) 
-{}.
-</xmp></ins></p>
+<p><ins><sup>2</sup> Effects: initializes `s` with `addressof(smart)`, `a` with `std::forward<Args>(args)...`, and `p` with `static_cast<Pointer>(smart.release())`.</ins></p>
 
 <p><ins><xmp highlight="C++">inout_ptr_t(inout_ptr&& rhs) noexcept;</xmp></ins></p>
 
-<p><ins><sup>3</sup> Effects: moves all elements of `rhs` into `*this`, then sets `rhs.p` to `nullptr` so that the destructor's effects do not apply.</ins></p>
-
-<p><ins><sup>4</sup> Equivalent to: 
-
-<xmp>
-inout_ptr_t(inout_ptr_t&& rhs) noexcept : 
-	s(std::move(rhs.s)), 
-	a(std::move(rhs.a)),
-	p(std::move(rhs.p)) { 
-		rhs.p = nullptr; 
-}
-</xmp>
-
-</ins></p>
+<p><ins><sup>3</sup> Effects: initializes `s` with `std::move(rhs.s)`, `a` with `std::move(args)...`, and `p` with `std::move(rhs.p)`. Then sets `rhs.p` to `nullptr`.</ins></p>
 
 
 <p><ins>19.11.11.2 Assignment [**inout_ptr.class.assign**]</ins></p>
 
 <p><ins><xmp highlight="C++">inout_ptr_t& operator=(inout_ptr&& rhs) noexcept;</xmp></ins></p>
 
-<p><ins><sup>1</sup> Effects: moves each element of `rhs` into `*this`, then sets `rhs.p` to `nullptr` so that the destructor's effects do not apply.</ins></p>
-
-<p><ins><sup>2</sup> Equivalent to:
+<p><ins><sup>1</sup> Effects: Equivalent to:
 <xmp>
-inout_ptr_t& operator=(inout_ptr_t&& rhs) noexcept { 
-	s = std::move(rhs.s); 
-	a = std::move(rhs.a); 
-	p = std::move(rhs.p);
-	rhs.p = nullptr;
-	return *this;
-}
+s = std::move(rhs.s); 
+a = std::move(rhs.a); 
+p = std::move(rhs.p);
+rhs.p = nullptr;
+return *this;
 </xmp>
 </ins></p>
 
@@ -667,12 +689,10 @@ inout_ptr_t& operator=(inout_ptr_t&& rhs) noexcept {
 
 <p><ins><sup>1</sup> Let `SP` be `POINTER_OF(Smart)` (**19.10.2**).</ins></p>
 
-<p><ins><sup>2</sup> Effects: reset the pointer stored in *s*, if *p* is not null using the `Args` value stored in `*this`, if any.</ins></p>
-
-<p><ins><sup>3</sup> Equivalent to:
+<p><ins><sup>2</sup> Effects: Equivalent to:
 <dl>
-	<dd><ins>— `if (p != nullptr) { s.reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if `reset` is a valid member function on `Smart`,</ins></dd>
-	<dd><ins>— otherwise `if (p != nullptr) { s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></dd>
+	<dd><ins>— `if (p != nullptr) { s.reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if the expression `s.reset(...)` is well-formed,</ins></dd>
+	<dd><ins>— otherwise, `if (p != nullptr) { s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></dd>
 </dl>
 </ins></p>
 
@@ -682,13 +702,13 @@ inout_ptr_t& operator=(inout_ptr_t&& rhs) noexcept {
 <p><ins>
 <xmp highlight="C++">
 operator Pointer*() noexcept;
-operator void**() noexcept; // if Pointer not void*
+operator void**() noexcept;
 </xmp>
 </ins></p>
 		
-<p><ins><sup>1</sup> Constraints: The second conversion shall participate in conversion if `Pointer` is not of type `void*`.</ins></p>
+<p><ins><sup>1</sup> Constraints: The second conversion shall participate in conversion if `Pointer` is not `void*`.</ins></p>
 
-<p><ins><sup>2</sup> Effects: The first conversion returns a pointer to `p`. The second conversion return `static_cast<void**>(static_cast<void*>(static_cast<Pointer*>(*this)));`</ins></p>
+<p><ins><sup>2</sup> Effects: The first conversion returns a pointer to `p`. The second conversion returns `reinterpret_cast<void**>(static_cast<Pointer*>(*this));`</ins></p>
 </blockquote>
 
 Insert §19.11.12 [**inout_ptr**]:
@@ -703,21 +723,21 @@ Insert §19.11.12 [**inout_ptr**]:
 namespace std {
 
 	template <class Pointer, class Smart, class... Args>
-	auto inout_ptr(Smart& s, Args&&... args) noexcept
-	-> inout_ptr_t<Smart, Pointer, Args...>;
+	inout_ptr_t<Smart, Pointer, Args...> inout_ptr(Smart& s, Args&&... args) noexcept
 
 	template <class Smart, class... Args>
-	auto inout_ptr(Smart& s, Args&&... args) noexcept
-	-> decltype(inout_ptr<Pointer>(s, std::forward<Args>(args)...));
+	inout_ptr<Smart, POINTER_OF(Smart), Args...> inout_ptr(Smart& s, Args&&... args) noexcept;
 
 }
 </xmp>
 </ins>
 
-<p><ins><sup>2</sup> Effects: For the second overload, let `Pointer` be `POINTER_OF(Smart)` (**19.10.2**).</ins></p>
+<p><ins><sup>2</sup> Effects: The first overload is Equivalent to: `return inout_ptr_t<Smart, Pointer, Args...>(s, std::forward<Args>(args)...);`</ins></p>
 
-<p><ins><sup>3</sup> Equivalent to: `return inout_ptr_t<Smart, Pointer, Args...>(s, std::forward<Args>(args)...);`</ins></p>
+<p><ins><sup>3</sup> Effects: The second overload is Equivalent to: `return inout_ptr<POINTER_OF(Smart)>(s, std::forward<Args>(args)...);`</ins></p>
 </blockquote>
+
+
 
 
 # Acknowledgements # {#acknowledgements}
@@ -725,6 +745,8 @@ namespace std {
 Thank you to Lounge&lt;C++&gt;'s Cicada, melak47, rmf, and Puppy for reporting their initial experiences with such an abstraction nearly 5 years ago and helping JeanHeyd Meneide implement the first version of this.
 
 Thank you to Mark Zeren for help in this investigation and analysis of the performance of smart pointers.
+
+Thank you to Tim Song for reviewing the wording for this paper and vastly improving it.
 
 <pre class=biblio>
 {
