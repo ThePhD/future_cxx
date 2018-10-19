@@ -1,5 +1,5 @@
 <pre class='metadata'>
-Title: Flexible Array Members for C++
+Title: I got you, FAM: Flexible Array Members for C++
 Shortname: P1039
 Revision: 0
 Audience: EWG
@@ -25,13 +25,21 @@ C99 defined Flexible Array Members (FAMs), a way of having a dynamic array of si
 
 Despite this success, nothing like this exists in C++, making it's usage unspecified behavior by omission. All compilers warn or error about its usage when working with C from C++ that uses it, making it hard to confidently employ the C technique in C++ code bases. This presents a fairly painful chasm between what is possible in C and what is possible in C++, and prevents Bjarne Stroustrup's earliest vision of making it possible to fully cover and subsume all of C with C++.
 
-We propose a safe, well-reasoned extension of the C++ Language in order to accommodate and properly define FAMs for C++ that is compatible with the C99 standard.
+This paper proposes a safe, well-reasoned extension of the C++ Language in order to accommodate and properly define FAMs for C++ that is compatible with the C99 standard.
+
+
+
+## Contiguous Fixed Header and Data ## {#motivation-contiguous}
+
+There are many data structures in program, on disk, and on wire that are a fixed header plus a chunk of variably sized data. C++ has no way to represent this in a single allocation without the use of `char` buffers or `std::aligned_storage` plus a good, hefty helping of type punning/`reinterpret_cast`. FAM types guarantee not only contiguous layout, but at most one allocation to have all of the data required. This makes them ideal in high-performance environments where multiple allocations for a single packet of data are unacceptable, and usable in the other scenarios without locking out usability and performance benefits.
 
 
 
 ## Variable Length Arrays? ## {#motivation-vla}
 
-This proposal is **not** for variable length arrays. It does **not** cover all of the wants or needs that the previously proposed [[n3662]] does. Notably, Flexible Array Members only cover the case where memory is explicitly allocated for it already. This FAM specification does not include allowing anything but 0-sized default construction of a FAM type when an automatic storage duration value is created. This restriction may be lifted at another time in another revision, or in another paper entirely. This paper focuses exclusively on covering the case of working with a preallocated buffer of space that the user has explicitly requested.
+This proposal is **not** for variable length arrays. It does **not** cover all of the wants or needs that the previously proposed [[n3662]] does. Variable Length Arrays also do not cover all of the things Flexible Array Members do. Notably, Flexible Array Members only cover the case where memory is explicitly allocated for it already. Variable Length Arrays also do not accommodate heterogeneous data in their structure. This FAM specification does not include allowing anything but 0-sized default construction of a FAM type when an automatic storage duration value is created. This restriction may be lifted at another time in another revision, or in another paper entirely. This paper focuses exclusively on covering the case of working with a preallocated buffer of space that the user has explicitly requested. (That preallocated buffer can be spelled `new my_fam_type(...)`).
+
+
 
 ## Runtime Sized Classes? ## {#motivation-rsc}
 
@@ -46,7 +54,7 @@ FAMs are used in the wild for many binary formats, particularly those that find 
 
 - Embedded and ARM code often use it to map regions of memory with prefixed data,
 - Financial Bid and Transaction Protocols (such as OMX before reaching down into sub item headers, subscriber lists and set event lists),
-- Heterogenous Computing, such as [[hsa-brig|HSA BRIG modules]],
+- Heterogeneous Computing, such as [[hsa-brig|HSA BRIG modules]],
 - Networking protocols, such as
 	- the ubiquitous lower layers such as [[tcp-ip|Internet Protocol (IP),Transmission Control Protocol (TCP)]], and [[udp|User Datagram Protocol (UDP)]], Link and similar in both userspace and kernel "ring0" space,
 	- the increasingly popular [websockets|WebSockets],
@@ -81,7 +89,7 @@ These sets of constraints help us properly integrate FAMs into the C++ language 
 2. Ease the porting of C code into C++ for users who wish to have correct, well-specified and well-defined behavior of their code.
 3. Enable developers who must work with the data laid out in #1 to rely on standards-compliant, reasonable constructs in code.
 
-Furthermore, we aim to provide a set of overridable traits that -- if specified for a type -- will override how member count and data size are handled in C++. If the traits are not overridden, then the compiler is allowed to continue to use implementation-defined mechanisms for managing, controlling and deleting the memory.
+Furthermore, this proposal aims to provide a set of overridable traits that -- if specified for a type -- will override how member count and data size are handled in C++. If the traits are not overridden, then the compiler is allowed to continue to use implementation-defined mechanisms for managing, controlling and deleting the memory.
 
 These restrictions may seem overbearing, but they are for the good of the features laid out below. This proposal's restrictions are also forward-compatible: they can be relaxed or enhanced later without breaking old code, much like how `constexpr` was initially constrained and then generally relaxed later on once the power of the feature was fully understood.
 
@@ -100,11 +108,13 @@ struct simple_fam_t {
 This is valid code and under this proposal will continue to remain valid, without modification. This proposal does so through the application of the following features below.
 
 
-### Feature: FAMs can only be created with `new` ### {#design-feature-create}
+### Feature: FAM types can only be created with `new` ### {#design-feature-create}
 
-When used as an automatic storage variable (e.g. "on the stack"), the flexible array member just has a size that includes the non-FAM members, plus any padding to the first type. We allow this usage as it mimics exactly how C handles it.
+When used as an automatic storage variable (e.g. "on the stack"), the flexible array member types just have a size that includes the non-FAM members, plus any padding necessary to get to the start of the FAM. This proposal allows automatic storage duration versions of the type as it mimics exactly how C handles it: a struct with an empty Flexible Array Member.
 
-When allocated on the heap with `malloc`, the user makes room for it explicitly then performs type-punning of the returned `void*` data. In C++, we allow actually putting data in this type through the use of `new` as a proper analogy. This matches C and also prevents a large myriad of cases where the type's boundaries are not clear and would violate invariants. For example, in the case of `new simple_fam_t[20];`, it is impossible to know where one flexible array member begins and the next ends without some sort of serious book keeping. The only allowed version of created a flexible array member is with `new some_fam_type(...);`.
+For the heap, are also still analogous with C. When allocated on the heap with `malloc`, the user makes room for it explicitly then performs type-punning of the returned `void*` data. In C++, this proposal would allow actually putting data in this type through the use of `new` as a proper analogy.
+
+This matches C and also prevents a large myriad of cases where the type's boundaries are not clear and would violate invariants. For example, in the case of `new simple_fam_t[20];`, it is impossible to know where one flexible array member begins and the next ends without some sort of serious book keeping. The only allowed version of created a flexible array member is with `new some_fam_type(...);`.
 
 
 ### Feature: Traits and Types ### {#design-feature-traits}
