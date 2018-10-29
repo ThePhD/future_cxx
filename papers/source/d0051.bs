@@ -1,7 +1,4 @@
 
-<!--
-Distributed under the Boost Software License v1.0 (boost.org/LICENSE_1_0.txt)
--->
 <pre class='metadata'>
 Title: std::overload 
 H1: <code>std::overload</code>
@@ -13,14 +10,14 @@ Audience: LWG
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Vicente J. Botet Escribá, vicente.botet@wanadoo.fr
 Editor: Bryce Adelstein Lelbach, NVIDIA, brycelelbach@gmail.com
-URL: https://wg21.link/P0051R1
-!Source: <a href="https://github.com/brycelelbach/wg21_p0051_std_overload/blob/master/std_overload.bs">GitHub</a>
-Issue Tracking: GitHub https://github.com/brycelelbach/wg21_p0051_std_overload/issues
+URL: https://wg21.link/P0051R2
+!Implementation: <a href="https://github.com/ThePhD/phd">GitHub</a>
+!Source: <a href="https://github.com/ThePhD/future_cxx/blob/master/papers/source/d0051.bs">GitHub</a>
+Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
 Metadata Order: Author, This Version, Source, Issue Tracking, Project, Audience
 Markup Shorthands: markdown yes
 Toggle Diffs: no
 No Abstract: yes
-Boilerplate: style-syntax-highlighting off
 </pre>
 
 <pre class=include>
@@ -30,58 +27,25 @@ path: wording_style_bryce.bs
 
 
 
-# Introduction # {#intro}
-
-This paper proposes a `std::overload` function for the C++ Standard Library. It creates an implementation-defined object which uses C++ overload resolution to select one of the provided functions to call. The overloaded functions are copied and there is no what to access to the stored functions. There will be another proposal to take care state full function objects and a mean to access them.
+# Revision History # {#changelog}
 
 
 
-
-# Motivation # {#motivation#}
-
-As lambdas functions, function objects, can’t be overloaded in the usual implicit way, but they can be “explicitly overloaded” using the proposed overload function. It is primarily useful for creating visitors, e.g. for `variant`:
-
-```c++
-auto visitor = std::overload(+)
-```
-
-```c++
-```
-
-
-# Acknowledgements # {#acknowledgements}
-
-Thanks to Daniel Krügler who helped me to improve the wording and that pointe out to me the use case for a final Callable. Thanks to Scott Pager who suggested to add overloads for non-member and member functions. Thanks to Paul Fultz II and Bjørn Ali authors of the [Fit library](https://github.com/pfultz2/Fit) and the [FTL library](https://github.com/beark/ftl) from where the idea of the first_overload function comes from. Thanks to Matt Calabrese for its useful improvement suggestions on the library usability. Thanks to Tony Van Eerd for championing the original proposal at Kona and for insightful comments. Thanks to Stephan TL for pointing to [CWG-1581 - "When are constexpr member functions defined?"](http://www.open-std.org/jtc1/sc22/wg21/docs/cwg_active.html#1581). Thanks to Peter Remmers that reported [issue 16](https://github.com/viboes/std-make/issues/16). Thanks to Tomasz Kaminski helping me to refine the implementation for final function object and to the private discussion about the possibility to have the combination of unique_overload and first_overload as a much safer solution.
-
-Special thanks and recognition goes to Technical Center of Nokia: Lannion for supporting in part the production of this proposal.
-
-Special thanks to Bryce Adelstein Lelbach for his notifying the new primary author of this proposal so it could be cleaned up.
-
-# History # {#history#}
-
-
-
-## Review ## {#review#}
-
-TODO
-
-
-
-## Revision History ## {#history-changelog}
-
-### Revision 4 ### {#history-changelog-r4}
+## Revision 4 ## {#changelog-r4}
 
 - Change primary author and point of contact.
 - Prepare paper for LWG with wording for parts approved by LEWG.
 
 
-### Revision 3 ### {#history-changelog-r3}
+
+## Revision 3 ## {#changelog-r3}
 
 - Signal a limitation on the design: final structs, reference_wrapper/perfect forwarders, and other not-quite-derivable types.
 - Remove the wording waiting for a decision on how deal with these limitations.
 
 
-### Revision 2 ### {#history-changelog-r2}
+
+## Revision 2 ## {#changelog-r2}
 
 - Add `constexpr` and conditional `noexcept`.
 - Confirmed the use of universal references as parameters of `std::overload`.
@@ -89,34 +53,266 @@ TODO
 - Note that the use case for `final`-marked Callables is acceptable.
 - Check the working with an expert from LWG before sending a new revision to LEWG and LWG.
 
-### Revision 1 ### {#history-changelog-r1}
+
+
+## Revision 1 ## {#changelog-r1}
 
 This paper has been splintered into 3 proposals, following discussion in the Kona meeting for the original [[p0051r0]]:
 - `std::overload` selects teh best overload using C++ overload resolution (this paper)
 - `std::first_overload` selects the first overload that matches using C++ overload resolution (**not** this paper)
 - Providing access to the stored function objects when they are stateful (**not** this paper)
 
-### Revision 0 ### {#history-changelog-r0}
+
+
+## Revision 0 ## {#changelog-r0}
 
 Initial release.
 
 
+
+
+# Motivation # {#motivation#}
+
+This paper proposes a `std::overload` function for the C++ Standard Library. It creates an unspecified object which uses C++ overload resolution to select one of the provided functions to call. The overloaded functions are copied and there is no what to access to the stored functions. There will be another proposal to take care state full function objects and a means to access them.
+
+As lambdas functions, function objects, can’t be overloaded in the usual implicit way, but they can be “explicitly overloaded” using the proposed overload function. It is primarily useful for creating visitors, e.g. for `variant`. See below:
+
+<table>
+	<tr>
+		<th colspan="2">Shared Code</td>
+	</tr>
+	<tr>
+		<td colspan="2">
+```
+#include <string>
+#include <vector>
+
+void f(int value) { /* work */ }
+void g(const std::string& value) { /* work */ }
+auto h = [] (std::vector<int> value) { /* work */ }
+
+void f_00(int v0, int 1) { /* work */ }
+void f_01(int v0, std::string v1) { /* work */ }
+auto f_10 = [] (std::string v0, int v1) { /* work */ }
+auto f_11 = [] (std::string v0, std::string v1) { /* work */ }
+```
+		</td>
+	</tr>
+	<tr>
+		<th>Currently</th>
+		<th>With Proposal</th>
+	</tr>
+	<tr>
+		<td>
+```c++
+template<class T> 
+struct always_false : std::false_type {};
+
+int main() {
+
+	using my_variant = std::variant<
+		int, 
+		std::string, 
+		std::vector<int>
+	>;
+	my_variant v1("bark");
+	my_variant v2(2);
+
+	auto visitor = [](auto&& value) {
+		using T = std::decay_t<decltype(arg)>;
+		if constexpr(std::is_same_v<T, int>) {
+			f(std::forward<decltype(arg)>(value));
+		}
+		else if constexpr(std::is_same_v<T, std::string>) {
+			g(std::forward<decltype(arg)>(value));
+		}
+		else if constexpr (std::is_same_v<T, std::vector<int>>) {
+			h(std::forward<decltype(arg)>(value));
+		}
+		else {
+			static_assert(always_false<T>::value, 
+				"Isn't this pretty?");
+		}
+	};
+
+	// calls first overload
+	std::visit(visitor, v1);
+	// calls second overload
+	std::visit(visitor, v2);
+	// calls third overload
+	visitor(std::vector<int>{2, 4, 6, 8});
+
+	return 0;
+}
+```
+		</td>
+		<td>
+```c++
+int main() {
+	using my_variant = std::variant<
+		int, 
+		std::string, 
+		std::vector<int>
+	>;
+	my_variant v1("bark");
+	my_variant v2(2);
+
+	auto visitor = std::overload(f, g, h);
+
+	// calls g
+	std::visit(visitor, v1);
+	// calls f
+	std::visit(visitor, v2);
+	// can be used on its own:
+	// calls the lambda
+	visitor(std::vector<int>{2, 4, 6, 8});
+
+	return 0;
+}
+```
+		</td>
+	</tr>
+</table>
+
+
+
+
+# Design # {#design}
+
+`std::overload` is designed to work with anything that is `INVOKE`-able a là `std::invoke` or equivalent. That means it works with functions, objects with `operator()` defined on their structure, pointer to members (member function pointers and member object pointers), and `std::reference_wrapper` types. This allows the full gamut of C++'s expressivity to be utilized in an overload expression.
+
+The interface is a simple variadic function which returns an unspecified structure. It is unspecified because its implementation techniques and things are not to be relied upon by the user. As such, there is no way to retrieve a function out of the result of a `std::overload` call. This is intentional: if the user wants to keep a reference to the invokable, they will have to pass it in VIA `std::ref` or similar wrapper. All functions are taken by forwarding reference and stored by value.
+
+The resulting call operation will be marked `noexcept` if the call it makes is `noexcept`. `constexpr` is also propagated properly.
+
+
+
+## Perfect Argument Match or Perfect Forwarding? ## {#design-args}
+
+This touches at the heart of some implementation problems. There are 2 known ways to implement this: one is to perfectly mimic the function call's arguments in the case where it cannot be easily inherited into the `operator()` of `std::overload`'s unspecified returned type. The other is to create perfectly forwarding versions that use `std::is_invocable_v<F, Args...>` to SFINAE the call away when it is not appropriate.
+
+The first creates problems of invoking too many moves and copies, because the compiler still has to go through the "shim" layer before hitting the real function call. But, when used in an overload set, a function that has very-close-conversions will not double-match. For example: `auto ovr = std::overload([](int) {}, [](double){})` with the first implementation strategy will always properly select the right call with `ovr(2)` and `ovr(3.5)`. With the secondary way, the use of `ovr(2)` and `ovr(3.5)` are ambiguous.
+
+This paper chooses efficiency over overload resolution issues: by using the perfectly-forwarding `SFINAE` call, we can maintain a minimal amount of moves or copies which is highly desirable. Additionally, the other problems can be potentially worked around, while forwarding efficiency cannot be worked around adequately by a user.
+
+
+## Final Classes and Member Function Pointers and Member Variable Pointers, Oh My? ## {#design-invoke}
+
+The handling of all of these will be like `INVOKE`. The [publicly available implementation]() does a few things extra, such as allowing for any wrapper type (not just `std::reference_wrapper`) to be used with pointer-to-members and some additional syntax choices, but for the sake of standardization the only requirement we are placing on implementers is that anything placed into `std::overload` must be `INVOKE`/`std::invoke`-able.
+
+
+
+
+# History # {#history#}
+
+This paper has undergone several revisions, changes, and modifications that resulted in many ideas pulled out to be put in separate papers so that `std::overload` could be made into its best form. Previous reviews, polls and ideas are below.
+
+
+
+## Future ## {#future}
+
+When creating this paper, it was clear that other forms of overload matching that might be ideal to have. For example, a `std::first_overload(f1, f2, f3, ...)` was discussed that would not necessarily pick the best overload not by C++ overload resolution rules, but pick the first function that was properly callable with the parameters. This means that even if one function "matches" better by C++ overload resolution rules, if a function prior to it is callable but has a worse ranking due to e.g. conversions, the function that was earlier in the list that had the conversions would be called rather than the best match. This would allow users to willingly trade between different types where conversions and other things make it ambiguous.
+
+This is not proposed in this paper, albeit it is strongly encouraged for others to contribute their ideas in another paper. In particular, the authors here think that a `std::exact_overload` would be highly desirable for users who have complex variants and other corner-case ambiguities and are willing to settle for strict, perfect matching of arguments. Again, this is not proposed in this paper.
+
+
+
+
 # Proposed Wording # {#wording}
 
-Note: The following changes are relative to the post Rapperswil 2018 working draft of ISO/IEC 14882, 
+Note: The following changes are relative to the post-Rapperswil 2018 working draft of ISO/IEC 14882, 
 ([[N4762]]).
 
 Note: The � character is used to denote a placeholder number which shall be selected by the editor.
 
-<!--
-Look at https://github.com/brycelelbach/wg21_p1135_cpp20_synchronization_library for examples of how to use my stylesheet
-It does stuff like automatic paragraph and bulleted list numbering
--->
 
-Insert a new entry into 
 
-Modify the header synopsis for `<atomic>` in <a href="http://eel.is/c++draft/atomics.syn">[**atomics.syn**]</a> as follows:
+## Proposed Feature Testing Macro ## {#wording-feature}
+
+The proposed feature testing macro is `__cpp_lib_overload`.
+
+
+## Intent ## {#wording-intent}
+
+The intent of this wording is to produce an **unspecified** object that:
+
+- is `constexpr` and has `constexpr` call operators,
+- is `noexcept` to construct if all the passed in types are nothrow move constrictuble,
+- is `noexcept` to call if the selected overload is `noexcept`,
+- implements a (potentially overloaded) call operator usable in the form, `obj(args...)`,
+- works with any `INVOKE`/`std::invoke`-able callable,
+- and, forwards all arguments to its underlying function call, if the implementation needs to.
+
+The implementation may not need to explicitly forward the arguments,but the specification will be written as if all arguments are perfectly forwarded from the the call on an `overload`-returned object and given to the proper underlying call.
+
+## Proposed Wording ## {#wording-library}
+
+Append to §16.3.1 General [**support.limits.general**]'s **Table 35** one additional entry:
 
 <blockquote>
-<b>29.2 Header `<atomic>` synopsis <span style="float: right;">[atomics.syn]</span></b>
+<table>
+<tr>
+	<th>Macro name</th>
+	<th>Value</th>
+</tr>
+<tr>
+	<td><ins>__cpp_lib_overload</ins></td>
+	<td><ins>201811L</ins></td>
+</tr>
+</table>
 </blockquote>
+
+Insert a new entry into §19.1 [utilities.general]'s Table 38:
+
+<blockquote>
+<table>
+	<tr>
+		<th>Subclause</th>
+		<th>Header(s)</th>
+	</tr>
+	<tr>
+		<th><ins>19.�<nbsp/><nbsp/>Overload function objects</ins></th>
+		<th><ins>&lt;overload&gt;</ins></th>
+	</tr>
+</table>
+</blockquote>
+
+Insert a new sub-section §19.� Overload function objects [**overload.obj**] in <a href="http://eel.is/c++draft/utilities">§19 [**utilities**]</a> as follows:
+
+<blockquote class="ins">
+<b>19.� Overload function objects <span style="float: right;">[overload.obj]</span></b>
+
+<b>19.�.1 Header `<overload>` synopsis <span style="float: right;">[overload.obj.syn]</span></b>
+
+<pre><code>
+namespace std {
+	<i>// 19.�, Overload</i>
+	template <class... Args>
+	constexpr /* see below */ overload(Args&&... args) noexcept(/*see below*/)
+</code></pre>
+
+<b>19.�.2 `overload` <span style="float: right;">[overload.obj.overload]</span></b>
+
+```
+template<class... Args>;
+	constexpr /* see below */ overload(Args&&... args) noexcept(/*see below*/);
+```
+
+<div class="numbered"><i>Returns:</i> An instance of an <i>unspecified</i> type of function object that behaves as if all the passed-in callables were overloaded (<a href="eel.is/c++draft/over.match">11.3 [**over.match**]</a>) when calling it. The overloads shall preserve `constexpr`, `noexcept`, cv-qualifiers and reference qualifiers.
+
+The effect of calling an instance of this type with parameters will select the best overload. Given arguments `a1`, `a2`, ... `aN` with types `T1`, `T2`, ..., `TN` for any number `N` >= 0, a call on the resulting object will behave as if by `INVOKE(DECAY_COPY(arg), forward<T1>(a1) ..., forward<TN>(aN)`. If there is no such a best overload, either because there is no candidate or that there are ambiguous candidates, the invocation expression will be ill-formed.</div>
+
+<div class="numbered"><i>Thows:</i> Any exception thrown during the construction of the resulting function object. If all of the constructors satisfy `is_nothrow_constructible`, then the function is `noexcept`.</div>
+
+<div class="numbered"><i>Remarks:</i> This function as well as the overloaded `operator()` for each of `Args` on the resulting type shall be a `constexpr` functions. The overloaded `operator()` for each `arg` in `args...` on the resulting type shall be `noexcept(is_nothrow_invocable_v<Arg, T1, T2, ..., TN>)` or equivalent.</div>
+</blockquote>
+
+
+
+# Acknowledgements # {#acknowledgements}
+
+Thanks to Daniel Krügler who helped me to improve the wording and that pointed out to me the use case for a final Callable. Thanks to Scott Pager who suggested to add overloads for non-member and member functions. Thanks to Paul Fultz II and Bjørn Ali, authors of the [Fit library](https://github.com/pfultz2/Fit) and the [FTL library](https://github.com/beark/ftl), who yielded the ideas of `first_overload` and helped in separating the papers out from this one. Thanks to Matt Calabrese for its useful improvement suggestions on the library usability. Thanks to Tony Van Eerd for championing the original proposal at Kona and for insightful comments. Thanks to Stephan TL for pointing to [CWG-1581 - "When are constexpr member functions defined?"](http://www.open-std.org/jtc1/sc22/wg21/docs/cwg_active.html#1581). Thanks to Peter Remmers that reported [issue 16](https://github.com/viboes/std-make/issues/16). Thanks to Tomasz Kaminski helping me to refine the implementation for final function object and to the private discussion about the possibility to have the combination of unique_overload and first_overload as a much safer solution.
+
+Special thanks and recognition goes to Technical Center of Nokia: Lannion for supporting in part the production of this proposal.
+
+Special thanks to Bryce Adelstein Lelbach for his notifying the new primary author of this proposal so it could be cleaned up for C++20.
