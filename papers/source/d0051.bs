@@ -74,7 +74,7 @@ This paper has been splintered into 3 or more proposals, following discussion in
 
 # Motivation # {#motivation#}
 
-This paper proposes a `std::overload` function for the C++ Standard Library. It creates an unspecified object which uses C++ overload resolution to select one of the provided functions to call. The overloaded functions are copied and there is no way to access to the stored functions: that is another proposals.
+This paper proposes a `std::overload` function for the C++ Standard Library. It creates an unspecified object which uses C++ overload resolution to select one of the provided functions to call. The overloaded functions are copied and there is no way to access to the stored functions: that is another proposal.
 
 Lambda expressions, library-defined functions objects, and other callables/`INVOKE`ables are unable to be overloaded in the usual way, but they can be 'explicitly overloaded' using the proposed overload function. It is primarily useful for creating visitors, e.g. for `variant`. See below:
 
@@ -87,6 +87,10 @@ Lambda expressions, library-defined functions objects, and other callables/`INVO
 ```
 #include <string>
 #include <vector>
+#include <type_traits>
+
+template<class T> 
+struct always_false : std::false_type {};
 
 void f(int value) { /* work */ }
 void g(const std::string& value) { /* work */ }
@@ -101,11 +105,7 @@ auto h = [] (std::vector<int> value) { /* work */ }
 	<tr>
 		<td>
 ```c++
-template<class T> 
-struct always_false : std::false_type {};
-
 int main() {
-
 	using my_variant = std::variant<
 		int, 
 		std::string, 
@@ -131,11 +131,11 @@ int main() {
 		}
 	};
 
-	// calls first overload
+	// calls g
 	std::visit(visitor, v1);
-	// calls second overload
+	// calls f
 	std::visit(visitor, v2);
-	// calls third overload
+	// calls h
 	visitor(std::vector<int>{2, 4, 6, 8});
 
 	return 0;
@@ -159,9 +159,9 @@ int main() {
 	std::visit(visitor, v1);
 	// calls f
 	std::visit(visitor, v2);
-	// can be used on its own:
 	// calls the lambda
 	visitor(std::vector<int>{2, 4, 6, 8});
+	// ^note it can be used on its own
 
 	return 0;
 }
@@ -196,7 +196,7 @@ There are 2 known ways to implement this in the face of such: one is to perfectl
 
 This was seen as a problem in previous revisions and by people who read the paper, and it was agreed that the calls should forward arguments whenever possible.
 
-This led to the second, preferred implementation. By using a perfectly forwarding wrapper, `std::overload` achieves the zero-argument-passing overhead that was desirable. We performed `std::enable_if_t` with `std::is_invocable_v<F, Args...>` to SFINAE the call away when it is not appropriate. The problem became that with this strategy, the use of `over(2)` and `over(3.5)` are ambiguous if and only if one uses non-derivable types or types with forwarding calls (e.g., `std::reference_wrapper<my_callable>`). This presented a conundrum for the previous revisions of the paper. Ambiguity due to overload resolution based on cv-qualifiers of contained type's `operator()` also happened. A regular lambda that takes a `const std::string&` and an `mutable`-marked lambda that takes a `std::string_view` result is an ambiguous overload set for `std::overload`'s implementation due to the differences between `const` and non `const`.
+This led to the second, preferred implementation. By using a perfectly forwarding wrapper, `std::overload` achieves the zero-argument-passing overhead that was desirable. We performed `std::enable_if_t` with `std::is_invocable_v<F, Args...>` to SFINAE the call away when it is not appropriate. The problem became that with this strategy, the use of `over(2)` and `over(3.5)` are ambiguous if and only if one uses non-derivable types or types with forwarding calls (e.g., `std::reference_wrapper<my_callable>`). This presented a conundrum for the previous revisions of the paper. Ambiguity due to overload resolution based on cv-qualifiers of contained type's `operator()` also happened. A regular lambda that takes a `const std::string&` and a `mutable`-marked lambda that takes a `std::string_view` result is an ambiguous overload set for `std::overload`'s implementation due to the differences between `const` and non `const`.
 
 This revision decides that it is better to make a choice and let other proposals provide more fine-grained methods of overloading. In particular, this revision chooses efficiency over overload resolution issues: by using the perfectly-forwarding, `std::enable_if_t`-SFINAE'd calls to handle wrapping non-derivable types, we can maintain a minimal amount of moves or copies. This is highly desirable. Additionally, the other problems can be potentially worked around by properly selecting which functions go into `std::overload` or writing additional lambdas, while forwarding efficiency cannot be worked around adequately by a user of `std::overload`. This makes the use of perfectly forwarding calls much more important for non-derivable types.
 
@@ -323,7 +323,7 @@ Thanks to Daniel Krügler who helped me improve the wording and pointed out to m
 
 Thanks to Paul Fultz II and Bjørn Ali, authors of the [Fit library](https://github.com/pfultz2/Fit) and the [FTL library](https://github.com/beark/ftl), who yielded the ideas of `first_overload` and helped in separating the papers out from this one.
 
-Thanks to Matt Calabrese for its useful improvement suggestions on the library usability. Thanks to Tony Van Eerd for championing the original proposal at Kona and for insightful comments.
+Thanks to Matt Calabrese for his useful improvement suggestions on the library usability. Thanks to Tony Van Eerd for championing the original proposal at Kona and for insightful comments.
 
 Thanks to Stephan T. Lavavej for pointing to [CWG-1581 - "When are constexpr member functions defined?"](http://www.open-std.org/jtc1/sc22/wg21/docs/cwg_active.html#1581). Thanks to Peter Remmers that reported [issue 16](https://github.com/viboes/std-make/issues/16).
 
