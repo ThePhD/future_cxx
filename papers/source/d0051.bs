@@ -10,7 +10,7 @@ Audience: LWG
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Vicente J. Botet Escribá, vicente.botet@wanadoo.fr
 Editor: Bryce Adelstein Lelbach, NVIDIA, brycelelbach@gmail.com
-URL: https://wg21.link/P0051R2
+URL: https://wg21.link/P0051
 !Implementation: <a href="https://github.com/ThePhD/phd">GitHub</a>
 !Source: <a href="https://github.com/ThePhD/future_cxx/blob/master/papers/source/d0051.bs">GitHub</a>
 Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
@@ -35,7 +35,8 @@ path: wording_style_bryce.bs
 
 - Change primary author and point of contact.
 - Prepare paper for LWG with wording for parts approved by LEWG.
-
+- Separated out the idea of a `std::exact_overload` selects the first overload that matches arguments exactly (**not** this paper)
+- Select implementation to move forward with: forwarding calls for not-quite-derivable types while accepting that overload resolution might not work exactly as planned due to the greediness of perfectly forwarding types. Other overload strategies can be used for other types.
 
 
 ## Revision 3 ## {#changelog-r3}
@@ -57,10 +58,10 @@ path: wording_style_bryce.bs
 
 ## Revision 1 ## {#changelog-r1}
 
-This paper has been splintered into 3 proposals, following discussion in the Kona meeting for the original [[p0051r0]]:
-- `std::overload` selects teh best overload using C++ overload resolution (this paper)
-- `std::first_overload` selects the first overload that matches using C++ overload resolution (**not** this paper)
-- Providing access to the stored function objects when they are stateful (**not** this paper)
+This paper has been splintered into 3 or more proposals, following discussion in the Kona meeting for the original [[p0051r0]]:
+- `std::overload` selects the best overload using C++ overload resolution (this paper).
+- Separate out `std::first_overload` selects the first overload that matches using C++ overload resolution (**not** this paper)
+- Separate out providing access to the stored function objects when they are stateful (**not** this paper).
 
 
 
@@ -174,41 +175,53 @@ int main() {
 
 # Design # {#design}
 
-`std::overload` is designed to work with anything that is `INVOKE`-able a là `std::invoke` or equivalent. That means it works with functions, objects with `operator()` defined on their structure, pointer to members (member function pointers and member object pointers), and `std::reference_wrapper` types. This allows the full gamut of C++'s expressivity to be utilized in an overload expression.
+`std::overload` is designed to work with anything that is `INVOKE`-able, a là `std::invoke` or equivalent. That means it works with functions, class types with `operator()`, pointer to members (member function pointers and member object pointers), and `std::reference_wrapper` types. This allows the full gamut of C++'s expressivity to be utilized in an overload expression.
 
-The interface is a simple variadic function which returns an unspecified structure. It is unspecified because its implementation techniques and things are not to be relied upon by the user. As such, there is no way to retrieve a function out of the result of a `std::overload` call. This is intentional: if the user wants to keep a reference to the invokable, they will have to pass it in VIA `std::ref` or similar wrapper. All functions are taken by forwarding reference and stored by value.
+The interface is a simple variadic function which returns an instance of an unspecified type. It is unspecified because its implementation techniques and internals are not to be relied upon by the user. As such, there is no way to retrieve a function out of the result of a `std::overload` call. This is intentional: if the user wants to keep a reference to the invokable, they will have to pass it in via `std::ref` or similar wrapper. All functions are taken by forwarding reference and behave as if stored by `DECAY_COPY`, with the caveat that they must behave as-presented.
 
-The resulting call operation will be marked `noexcept` if the call it makes is `noexcept`. `constexpr` is also propagated properly.
-
-
-
-## Perfect Argument Match or Perfect Forwarding? ## {#design-args}
-
-This touches at the heart of some implementation problems. There are 2 known ways to implement this: one is to perfectly mimic the function call's arguments in the case where it cannot be easily inherited into the `operator()` of `std::overload`'s unspecified returned type. The other is to create perfectly forwarding versions that use `std::is_invocable_v<F, Args...>` to SFINAE the call away when it is not appropriate.
-
-The first creates problems of invoking too many moves and copies, because the compiler still has to go through the "shim" layer before hitting the real function call. But, when used in an overload set, a function that has very-close-conversions will not double-match. For example: `auto ovr = std::overload([](int) {}, [](double){})` with the first implementation strategy will always properly select the right call with `ovr(2)` and `ovr(3.5)`. With the secondary way, the use of `ovr(2)` and `ovr(3.5)` are ambiguous.
-
-This paper chooses efficiency over overload resolution issues: by using the perfectly-forwarding `SFINAE` call, we can maintain a minimal amount of moves or copies which is highly desirable. Additionally, the other problems can be potentially worked around, while forwarding efficiency cannot be worked around adequately by a user.
-
-
-## Final Classes and Member Function Pointers and Member Variable Pointers, Oh My? ## {#design-invoke}
-
-The handling of all of these will be like `INVOKE`. The [publicly available implementation](https://github.com/ThePhD/phd/blob/master/docs/quick/overload.md) does a few things extra, such as allowing for any wrapper type (not just `std::reference_wrapper`) to be used with pointer-to-members and some additional syntax choices, but for the sake of standardization the only requirement we are placing on implementers is that anything placed into `std::overload` must be `INVOKE`/`std::invoke`-able.
-
-Note that `final` classes are supported in the public implementation, as well as all `INVOKE`-ables. As a side note, the public implementation also supports any kind of reference_wrapper and type that decays to a pointer with any pointer-to-member. While the implementation does this, we do not require it of the standard and simply rely on what is already in `INVOKE`/`std::invoke`.
-
-
-# History # {#history#}
-
-This paper has undergone several revisions, changes, and modifications that resulted in many ideas pulled out to be put in separate papers so that `std::overload` could be made into its best form. Previous reviews, polls and ideas are below.
+The resulting call operation will be marked `noexcept` if the selected overload is `noexcept` and `is_noexcept_invocable_v` evaluates to true. `constexpr` is also propagated properly.
 
 
 
-## Future ## {#future}
+## Perfect Argument Match vs. Forwarding? ## {#design-args}
 
-When creating this paper, it was clear that other forms of overload matching might be ideal to have. For example, a `std::first_overload(f1, f2, f3, ...)` was discussed that would not necessarily pick the best overload not by C++ overload resolution rules, but pick the first function that was properly callable with the parameters. This means that even if one function "matches" better by C++ overload resolution rules, if a function prior to it is callable but has a worse ranking due to e.g. conversions, the function that was earlier in the list that had the conversions would be called rather than the best match. This would allow users to willingly trade between different types where conversions and other things make it ambiguous.
+This touches at the heart of some implementation problems. Types which introduce this problem include anything the implementation cannot derive from directly, as well as types which wrap other types and introduce forwarding argument calls:
 
-This is not proposed in this paper, albeit it is strongly encouraged for others to contribute such ideas in another paper. In particular, the authors here think that a `std::exact_overload` would be highly desirable for users who have complex variants and other corner-case ambiguities and are willing to settle for strict, perfect matching of arguments. Again, this is not proposed in this paper.
+- member function pointers
+- member object pointers
+- function pointers
+- instances of types marked final
+
+There are 2 known ways to implement this in the face of such: one is to perfectly mimic the function call's arguments in the case where it cannot be easily inherited into the `operator()` of `std::overload`'s unspecified return type. This is usually via template specialization or similar technique that pulls out the type of every single argument (plus any object type in the case of pointer-to-members). This gives us exactly perfect overload resolution that copes with things as expected by the developer. For example: `auto over = std::overload([](int) {}, [](double){});` with the first implementation strategy will always properly select the right call with `over(2)` and `over(3.5)`. It comes with a cost, however: more moves and copies are performed than necessary. This is due to leaking some of the implementation details because the compiler still has to go through the "shim" layer to handle not-quite-derivable types, before hitting the real function call. Still, when used as the implementation technique for an overload set, a function that has very-close-conversions will not be ambiguous.
+
+This was seen as a problem in previous revisions and by people who read the paper, and it was agreed that the calls should forward arguments whenever possible.
+
+This led to the second, preferred implementation. By using a perfectly forwarding wrapper, `std::overload` achieves the zero-argument-passing overhead that was desirable. We performed `std::enable_if_t` with `std::is_invocable_v<F, Args...>` to SFINAE the call away when it is not appropriate. The problem became that with this strategy, the use of `over(2)` and `over(3.5)` are ambiguous if and only if one uses non-derivable types or types with forwarding calls (e.g., `std::reference_wrapper<my_callable>`). This presented a conundrum for the previous revisions of the paper. Ambiguity due to overload resolution based on cv-qualifiers of contained type's `operator()` also happened. A regular lambda that takes a `const std::string&` and an `mutable`-marked lambda that takes a `std::string_view` result is an ambiguous overload set for `std::overload`'s implementation due to the differences between `const` and non `const`.
+
+This revision decides that it is better to make a choice and let other proposals provide more fine-grained methods of overloading. In particular, this revision chooses efficiency over overload resolution issues: by using the perfectly-forwarding, `std::enable_if_t`-SFINAE'd calls to handle wrapping non-derivable types, we can maintain a minimal amount of moves or copies. This is highly desirable. Additionally, the other problems can be potentially worked around by properly selecting which functions go into `std::overload` or writing additional lambdas, while forwarding efficiency cannot be worked around adequately by a user of `std::overload`. This makes the use of perfectly forwarding calls much more important for non-derivable types.
+
+
+
+## `INVOKE`ables ## {#design-invoke}
+
+The handling of all of these will be with `INVOKE`. The [publicly available implementation](https://github.com/ThePhD/phd/blob/master/docs/quick/overload.md) does a few things extra, such as allowing for any wrapper type (not just `std::reference_wrapper`) to be used with pointer-to-members and some additional syntax choices, but for the sake of standardization the only requirement we are placing on implementers is that anything placed into `std::overload` must be `INVOKE`able.
+
+
+
+
+# Future # {#future}
+
+## Library ## {#future-library}
+
+When creating this paper, it was clear that other forms of overload matching might be ideal to have. For example, a `std::first_overload(f1, f2, f3, ...)` was discussed that would not necessarily pick the best overload not by C++ overload resolution rules, but pick the first function that was properly callable with the parameters. This means that even if one function "matches" better by C++ overload resolution rules, if a function prior to it is callable but has a worse ranking due to e.g. conversions, the function that was earlier in the list that had the conversions would be called rather than the best match. This would allow users to willingly trade between different types where conversions and other things make it ambiguous. This would also allow an explicit ranking.
+
+This is not proposed in this paper, albeit it is strongly encouraged for others to contribute such ideas in another paper. In particular, the authors here think that a `std::exact_overload`/`std::first_overload` would be highly desirable for users who have complex variants and other corner-case ambiguities and are willing to settle for strict, perfect matching of arguments. Again, this is not proposed in this paper.
+
+
+
+## Language ## {#future-language}
+
+Given the various problems with defining overload sets, it seems like this feature might be better fit as a language feature. Thankfully, a language solution to this problem can be developed in-parallel or even after this paper and does not need to impede the progress of this paper. A language feature addressing this problem would be to create an overloaded set out of a number of `INVOKE`ables, and not have to suffer any of the usual problems with having to choose between different implementation techniques. This could even be an extension to [[P1170R0]].
 
 
 
@@ -232,7 +245,7 @@ The proposed feature testing macro is `__cpp_lib_overload`.
 The intent of this wording is to produce an **unspecified** object that:
 
 - is `constexpr` and has `constexpr` call operators,
-- is `noexcept` to construct if all the passed in types are nothrow move constrictuble,
+- is `noexcept` to construct if all the passed in types are nothrow move constructible,
 - is `noexcept` to call if the selected overload is `noexcept`,
 - implements a (potentially overloaded) call operator usable in the form, `obj(args...)`,
 - works with any `INVOKE`/`std::invoke`-able callable,
@@ -266,7 +279,7 @@ Insert a new entry into §19.1 [utilities.general]'s Table 38:
 		<th>Header(s)</th>
 	</tr>
 	<tr>
-		<th><ins>19.�<nbsp/><nbsp/>Overload function objects</ins></th>
+		<th><ins>19.� Overload function objects</ins></th>
 		<th><ins>&lt;overload&gt;</ins></th>
 	</tr>
 </table>
@@ -297,7 +310,7 @@ template<class... Args>;
 
 The effect of calling an instance of this type with parameters will select the best overload. Given arguments `a1`, `a2`, ... `aN` with types `T1`, `T2`, ..., `TN` for any number `N` >= 0, a call on the resulting object will behave as if by `INVOKE(DECAY_COPY(arg), forward<T1>(a1) ..., forward<TN>(aN)`. If there is no such a best overload, either because there is no candidate or that there are ambiguous candidates, the invocation expression will be ill-formed.</div>
 
-<div class="numbered"><i>Thows:</i> Any exception thrown during the construction of the resulting function object. If all of the constructors satisfy `is_nothrow_constructible`, then the function is `noexcept`.</div>
+<div class="numbered"><i>Throws:</i> Any exception thrown during the construction of the resulting function object. If all of the constructors satisfy `is_nothrow_constructible`, then the function is `noexcept`.</div>
 
 <div class="numbered"><i>Remarks:</i> This function as well as the overloaded `operator()` for each of `Args` on the resulting type shall be a `constexpr` functions. The overloaded `operator()` for each `arg` in `args...` on the resulting type shall be `noexcept(is_nothrow_invocable_v<Arg, T1, T2, ..., TN>)` or equivalent.</div>
 </blockquote>
