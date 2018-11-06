@@ -43,10 +43,11 @@ This proposal is **not** for variable length arrays. It does **not** cover all o
 
 ## Runtime Sized Classes? ## {#motivation-rsc}
 
-Classes of runtime size that also modified `sizeof()` were explored in Jeff Snyder and Richard Smith's [[n4025]]. This proposal believes that the paper modified too much and went too far with what it changed about the core language. In particular, with this proposal:
+Classes of runtime size that also modified `sizeof()` were explored in Jeff Snyder and Richard Smith's [[n4025]]. This proposal believes that the paper modified too much and went too far with what it changed about the core language. In particular, this paper instead focuses on the following:
 
 - `sizeof()` will continue to always be well-formed and will never be ill-formed
-- it does not attempt to cover or replace variable length arrays
+- it does not attempt to cover or replace variable length arrays, which is a divisive topic currently unable to be solved
+- it does not allow multiple or multiply-nested runtime classes
 
 ## Places of Application ## {#motivation-uses}
 
@@ -67,6 +68,7 @@ FAMs are used in the wild for many binary formats, particularly those that find 
 	- Tail-allocated data structures are used frequently to save on the number of allocations even if they do not use the Flexible Array Member syntax directly,
 - All over typical C code,
 	- [[sanlock-ocaml|Sanlock shared storage lock]],
+	- [[spirv-cross]],
 - and, many, many more places.
 
 This proposal's Flexible Array Members cover a good portion of the use cases found above.
@@ -273,8 +275,12 @@ struct my_fam_t {
 	std::string s[];
 
 	~my_fam_t() {
-		using __size_type = decltype(std::fam_traits<my_fam_t>::size());
 		using __elem_type = std::string;
+		using __size_type = decltype(
+			std::fam_traits<my_fam_t>::size(
+				std::declval<__elem_type>()
+			)
+		);
 		if constexpr(std::is_trivially_destructible_v<__elem_type>) {
 			// no-op
 		}
@@ -476,7 +482,7 @@ Note here that `tracing_fam_2_t` has more than just `std::fam_size` as an argume
 
 ### UDP Packets ### {#design-demo-udp}
 
-This extension is also a natural fit for many on-the-wire and on-disk data types.
+This extension is also a natural fit for many on-the-wire and on-disk data types. Here is an example for UDP packets.
 
 ```
 #include <cstddef>
@@ -555,8 +561,8 @@ struct socket_t {
 };
 
 struct socket_deleter {
-	void operator()(socket_t* s) const {
-		close(s->handle);
+	void operator()(socket_t s) const {
+		close(s.handle);
 	}
 };
 
@@ -728,7 +734,7 @@ Thank you to Jeff Snyder for his insights with his previous papers and his wisdo
 			"Linus Torvalds et. al."
 		],
 		"title": "Linux CGroups",
-		"href": "https://github.com/torvalds/linux/blob/master/include/linux/cgroup-defs.h#L445",
+		"href": "https://github.com/torvalds/linux/blob/2ce7135adc9ad081aa3c49744144376ac74fea60/include/linux/cgroup-defs.h#L450",
 		"date": "October 4th, 2018"
 	},
 	"file_notify_information": {
@@ -799,6 +805,14 @@ Thank you to Jeff Snyder for his insights with his previous papers and his wisdo
 		"title": "OCaml ctypes: support for Flexible Array members",
 		"href": "http://simonjbeaumont.com/posts/ocaml-ctypes-flexible-array-member/",
 		"date": "March 30th, 2016"
+	},
+	"spirv-cross": {
+		"authors": [
+			"Khronos Group"
+		],
+		"title": "Flexible array member in CPP output",
+		"href": "https://github.com/KhronosGroup/SPIRV-Cross/issues/10",
+		"date": "November 2nd, 2018"
 	}
 }
 </pre>

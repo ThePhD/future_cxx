@@ -43,7 +43,82 @@ path: wording_style.bs
 
 # Motivation # {#motivation}
 
-We have very good tools for handling unique and shared resource semantics, alongside more coming with [[p0468|Intrusive Smart Pointers]]. Independently between several different companies, studios, and shops -- from VMWare and Microsoft to small game development startups -- a common type has been implemented. It has many names: `ptrptr`, `OutPtr`, `PtrToPtr`, `out_ptr`, [[wrl-comptrref|WRL::ComPtrRef]] and even [[ccomptr|unary operator& on CComPtr]]. It is universally focused on one task: making it so a smart pointer can be passed as a parameter to a function which uses an output pointer parameter in C API functions (e.g., `my_type**`).
+<table>
+	<tr>
+		<th colspan="2">Shared Code</th>
+	</tr>
+	<tr>
+		<td colspan="2">
+[From libavformat](http://git.videolan.org/?p=ffmpeg.git;a=blob;f=libavformat/avformat.h;h=fdaffa5bf41b6ed83fa4f7acebcf04ed796296fd;hb=refs/heads/master)
+```
+#include <memory>
+#include <avformat.h>
+
+struct AVFormatContextDeleter {
+		void operator() (AVFormatContext* c) noexcept {
+			avformat_close_input(&c);
+			avformat_free_context(c);
+		}
+};
+typedef std::unique_ptr<AVFormatContext, AVFormatContextDeleter> AVFormatContext;
+// Signature from libavformat:
+// int avformat_open_input(AVFormatContext **ps, const char *url, AVInputFormat *fmt, AVDictionary **options);
+```
+		</td>
+	</tr>
+	<tr>
+		<th>Current Code</th>
+		<th>With Proposal</th>
+	</tr>
+	<tr>
+		<td>
+```
+int main (int, char* argv[]) {
+	AVFormatContext context(avformat_alloc_context());
+	// ...
+	// used, need to reopen
+	AVFormatContext* raw_context = context.release();
+	if (avformat_open_input(&raw_context, 
+		argv[0], nullptr, nullptr) != 0) {
+		std::stringstream ss;
+		ss << "ffmpeg_image_loader could not open file '"
+			<< path << "'";
+		throw FFmpegInputException(ss.str().c_str());
+	}
+	context.reset(raw_context);
+
+	// ... off to the races !
+
+	return 0;
+}
+```
+		</td>
+		<td>
+```
+int main (int, char* argv[]) {
+	AVFormatContext context(avformat_alloc_context());
+	// ...
+	// used, need to reopen
+
+	if (avformat_open_input(std::inout_ptr(context), 
+		argv[0], nullptr, nullptr) != 0) {
+		std::stringstream ss;
+		ss << "ffmpeg_image_loader could not open file '"
+			<< argv[0] << "'";
+		throw FFmpegInputException(ss.str().c_str());
+	}
+
+
+	// ... off to the races!
+
+	return 0;
+}
+```
+		</td>
+	</tr>
+</table>
+
+We have very good tools for handling unique and shared resource semantics, alongside more coming with [[p0468|Intrusive Smart Pointers]]. Independently between several different companies, studios, and shops -- from VMWare and Microsoft to small game development startups -- a common type has been implemented. It has many names: `ptrptr`, `OutPtr`, `PtrToPtr`, `out_ptr`, [[wrl-comptrref|WRL::ComPtrRef]], [[std-proposals-overload-operator|a proposal on std-proposals]] and even [[ccomptr|unary operator& on CComPtr]]. It is universally focused on one task: making it so a smart pointer can be passed as a parameter to a function which uses an output pointer parameter in C API functions (e.g., `my_type**`).
 
 This paper is a culmination of a private survey of types from the industry to propose a common, future-proof, high-performance `out_ptr` type that is easy to use. It makes interop with pointer types a little bit simpler and easier for everyone who has ever wanted something like `my_c_function( &my_unique );` to behave properly.
 
@@ -62,25 +137,29 @@ The core of `out_ptr`'s (and `inout_ptr`'s) design revolves around avoiding the 
 
 The function template's full specification is:
 
-```c++
+```
 namespace std {
 	template <class Pointer, class Smart, class... Args>
-	out_ptr_t<Smart, Pointer, Args...> out_ptr(Smart& s, Args&&... args) noexcept;
+	out_ptr_t<Smart, Pointer, Args...> 
+	out_ptr(Smart& s, Args&&... args) noexcept;
 	
 	template <class Smart, class... Args>
-	out_ptr_t<Smart, POINTER_OF(Smart), Args...> out_ptr(Smart& s, Args&&... args) noexcept;
+	out_ptr_t<Smart, POINTER_OF(Smart), Args...> 
+	out_ptr(Smart& s, Args&&... args) noexcept;
 
 	template <class Pointer, class Smart, class... Args>
-	inout_ptr_t<Smart, Pointer, Args...> inout_ptr(Smart& s, Args&&... args) noexcept;
+	inout_ptr_t<Smart, Pointer, Args...> 
+	inout_ptr(Smart& s, Args&&... args) noexcept;
 	
 	template <class Smart, class... Args>
-	inout_ptr_t<Smart, POINTER_OF(Smart), Args...> inout_ptr(Smart& s, Args&&... args) noexcept;
+	inout_ptr_t<Smart, POINTER_OF(Smart), Args...> 
+	inout_ptr(Smart& s, Args&&... args) noexcept;
 }
 ```
 
 Where `POINTER_OF` is the `::pointer` type, then `::element_type*`, then `class std::pointer_traits<Smart>::element_type*` in that order. The return type `out_ptr_t` and its sister type `inout_ptr_t` are templated types and must at-minimum have the following:
 
-```c++
+```
 template <class Smart, class Pointer, class... Args>
 struct out_ptr_t {
 	out_ptr_t(Smart&, Args...);
@@ -112,7 +191,7 @@ The target header is `<memory>`. The desired feature is `__cpp_lib_out_ptr`. See
 
 `out_ptr`/`inout_ptr` are free functions meant to be used for C APIs:
 
-```c++
+```
 error_num c_api_create_handle(int seed_value, int** p_handle);
 error_num c_api_re_create_handle(int seed_value, int** p_handle);
 void c_api_delete_handle(int* handle);
@@ -126,7 +205,7 @@ struct resource_deleter {
 
 Given a smart pointer, it can be used like so:
 
-```c++
+```
 std::unique_ptr<int, resource_deleter> resource(nullptr);
 error_num err = c_api_create_handle(
 	24, std::out_ptr(resource)
@@ -139,7 +218,7 @@ if (err == C_API_ERROR_CONDITION) {
 
 Or, in the re-create (reallocation) case:
 
-```c++
+```
 std::unique_ptr<int, resource_deleter> resource(nullptr);
 error_num err = c_api_re_create_handle(
 	24, std::inout_ptr(resource)
@@ -156,7 +235,7 @@ if (err == C_API_ERROR_CONDITION) {
 
 This implementation uses a pack of `...Args` in the signature of `out_ptr` to allow it to be used with other types whose `.reset()` functions may require more than just the pointer value to form a valid and proper smart pointer. This is the case with `std::shared_ptr` and `boost::shared_ptr`:
 
-```c++
+```
 std::shared_ptr<int> resource(nullptr);
 error_num err = c_api_create_handle(
 	24, std::out_ptr(resource, resource_deleter{})
@@ -168,11 +247,11 @@ if (err == C_API_ERROR_CONDITION) {
 // the C API function
 ```
 
-Additional arguments past the smart pointer stored in `out_ptr`'s implementation-defined return type will perfectly forward these to whatever `.reset()` or equivalent implementation requires them. If the underlying pointer does not require such things, it may be ignored or discarded (optionally, with a compiler error using a static assert that the argument will be ignored for the given type of smart pointer).
+Additional arguments past the smart pointer stored in `out_ptr`'s return type will perfectly forward these to whatever `.reset()` or equivalent implementation requires them. If the underlying pointer does not require such things, it may be ignored or discarded (optionally, with a compiler error using a static assert that the argument will be ignored for the given type of smart pointer).
 
 Of importance here is to note that `std::shared_ptr` can and will overwrite any custom deleter present when called with just `.reset(some_pointer);`. Therefore, we make it a compiler error to not pass in a second argument when using `std::shared_ptr` without a deleter:
 
-```c++
+```
 std::shared_ptr<int> resource(nullptr);
 error_num err = c_api_create_handle(
 	42, std::out_ptr(resource)
@@ -196,7 +275,7 @@ It is also important to note that going in the *opposite* direction is also high
 
 Consider this DirectX Graphics Infrastructure Interface (DXGI) function on `IDXGIFactory6`:
 
-```c++
+```
 HRESULT EnumAdapterByGpuPreference(
 	UINT Adapter, 
 	DXGI_GPU_PREFERENCE GpuPreference, 
@@ -207,7 +286,7 @@ HRESULT EnumAdapterByGpuPreference(
 
 Using `out_ptr`, it becomes trivial to interface with it using an exemplary `std::unique_ptr<IDXGIAdapter, ComDeleter> adapter`:
 
-```c++
+```
 HRESULT result = dxgi_factory.
 EnumAdapterByGpuPreference(0, 
 	DXGI_GPU_PREFERENCE_MINIMUM_POWER, 
@@ -231,7 +310,7 @@ In many cases, there is a typical C structure or similar that C++ users are sanc
 
 In these case, it is imperative that the user be allowed to specify a casting parameter that the `out_ptr_t`/`inout_ptr_t`, and that is done by simply adding a type when calling the desired function. Consider a specialized `std::unique_ptr<int, fd_deleter>` where `::pointer` is a typedef to a special `fd` type:
 
-```c++
+```
 struct fd {
 	int handle;
 
@@ -264,7 +343,7 @@ struct fd_deleter {
 
 Casting in this case is cumbersome and often error-prone to do properly when interfacing with C or C++ standard library facilities. It becomes trivial with `std::out_ptr`:
 
-```c++
+```
 std::unique_ptr<int, fd_deleter> my_unique_fd;
 auto err = fopen_s( std::out_ptr<FILE*>(my_unique_fd), "prod.csv", "rb" );
 // check err, then work with raw fd
@@ -288,7 +367,7 @@ This can be heavily optimized in the case of `unique_ptr`, but to do so from the
 
 # Implementation Experience # {#experience}
 
-This library has been brewed at many companies in their private implementations, and implementations in the wild are scattered throughout code bases with no unifying type. As noted in [[#motivation]], Microsoft has implemented this in `WRL::ComPtrRef`. Its earlier iteration -- `CComPtr` -- simply overrode `operator&`. We assume they prefer the former after having forced the need with `CComPtr` for `std::addressof`. VMWare has a type that much more closely matches the specification in this paper, titled `Vtl::OutPtr`. The primary author of this paper wrote and used `out_ptr` for over 5 years in their code base working primarily with graphics APIs such as DirectX and OpenGL, and more recently Vulkan. They have also seen a similar abstraction in the places they have interned at.
+This library has been brewed at many companies in their private implementations, and implementations in the wild are scattered throughout code bases with no unifying type. As noted in [[#motivation]], Microsoft has implemented this in `WRL::ComPtrRef`. Its earlier iteration -- `CComPtr` -- simply overrode `operator&`. We assume they prefer the former after having forced the need with `CComPtr` for `std::addressof`. the WRL is a public library used in thousands of applications, and has an interface similar to the proposed `std::out_ptr`/`std::inout_ptr`. VMWare has a type that much more closely matches the specification in this paper, titled `Vtl::OutPtr`. The primary author of this paper wrote and used `out_ptr` for over 5 years in their code base working primarily with graphics APIs such as DirectX and OpenGL, and more recently Vulkan. They have also seen a similar abstraction in the places they have interned at.
 
 The primary author of [[p0468]] in pre-r0 days also implemented an overloaded `operator&` to handle interfacing with C APIs, but was quickly talked out of actually proposing it when doing the proposal. That author has joined in on this paper to continue to voice the need to make it easier to work with C APIs without having to wrap the function.
 
@@ -364,7 +443,7 @@ As with every proposal, naming, conventions and other tidbits not related to imp
 
 The authors of this proposal know of two ways to specify this proposal's goals.
 
-The authors have settled on the approach in [[#design-synopsis]]. We believe this is the most robust and easiest to use: singular names tend to be easier to teach and use for both programmers and tools. We discuss the older techniques to uphold thorough discssion and inspection of the solution space.
+The authors have settled on the approach in [[#design-synopsis]]. We believe this is the most robust and easiest to use: singular names tend to be easier to teach and use for both programmers and tools. We discuss the older techniques to uphold thorough discussion and inspection of the solution space.
 
 The first way is to specify both functions `out_ptr` and `inout_ptr` as factories, and then have their types named differently, such as `out_ptr_t` and `inout_ptr_t`. The factory functions and their implementation will be fixed in place, and users would be able to (partially) specialize and customize `std::out_ptr_t` and `std::inout_ptr_t` for types external to the stdlib for maximum performance tweaking and interop with types like `boost::shared_ptr`, `my_lib::local_shared_ptr`, and others. This is the direction this proposal takes.
 
@@ -780,6 +859,14 @@ Thank you to Tim Song for reviewing the wording for this paper and vastly improv
 		"title": "ComPtrRef Class",
 		"href": "https://docs.microsoft.com/en-us/cpp/windows/comptrref-class",
 		"date": "November 4th, 2016"
+	},
+	"std-proposals-overload-operator": {
+		"authors": [
+			"isocpp.org Forums"
+		],
+		"title": "Add operator&() to std::unique_ptr to get internal pointer",
+		"href": "https://groups.google.com/a/isocpp.org/forum/#!topic/std-proposals/8MQhnL9rXBI",
+		"date": "April 15th, 2018"
 	},
 	"n4762": {
 		"authors": [

@@ -1229,7 +1229,7 @@ Possible extra rowspan handling
   </style>
   <meta content="Bikeshed version 04b354547d55896d854a81cffb3965bd6f8758ec" name="generator">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="d05ed7edf65e7e042b6ea78f7ab479fddd24791a" name="document-revision">
+  <meta content="756ea4c48d341fa9aacdcd7ab02aaa8d220159a0" name="document-revision">
 <style>
 ins  {background-color: #CCFFCC; text-decoration: underline;}
 del  {background-color: #FFCACA; text-decoration: line-through;}
@@ -1536,42 +1536,111 @@ pre .property::before, pre .property::after {
    <h3 class="heading settled" data-level="1.2" id="changelog-r1"><span class="secno">1.2. </span><span class="content">Revision 1</span><a class="self-link" href="#changelog-r1"></a></h3>
    <p>Add wording. Incorporate wording feedback. Eliminate CTAD design. Add a few more words about implementation experience.</p>
    <h2 class="heading settled" data-level="2" id="motivation"><span class="secno">2. </span><span class="content">Motivation</span><a class="self-link" href="#motivation"></a></h2>
-   <p>We have very good tools for handling unique and shared resource semantics, alongside more coming with <a data-link-type="biblio" href="#biblio-p0468">Intrusive Smart Pointers</a>. Independently between several different companies, studios, and shops -- from VMWare and Microsoft to small game development startups -- a common type has been implemented. It has many names: <code class="highlight"><c- n>ptrptr</c-></code>, <code class="highlight"><c- n>OutPtr</c-></code>, <code class="highlight"><c- n>PtrToPtr</c-></code>, <code class="highlight"><c- n>out_ptr</c-></code>, <a data-link-type="biblio" href="#biblio-wrl-comptrref">WRL::ComPtrRef</a> and even <a data-link-type="biblio" href="#biblio-ccomptr">unary operator&amp; on CComPtr</a>. It is universally focused on one task: making it so a smart pointer can be passed as a parameter to a function which uses an output pointer parameter in C API functions (e.g., <code class="highlight"><c- n>my_type</c-><c- o>**</c-></code>).</p>
+   <table>
+    <tbody>
+     <tr>
+      <th colspan="2">Shared Code
+     <tr>
+      <td colspan="2">
+        <a href="http://git.videolan.org/?p=ffmpeg.git;a=blob;f=libavformat/avformat.h;h=fdaffa5bf41b6ed83fa4f7acebcf04ed796296fd;hb=refs/heads/master">From libavformat</a> 
+<pre class="highlight"><c- cp>#include</c-> &lt;memory>
+<c- cp>#include</c-> &lt;avformat.h>
+
+<c- k>struct</c-> <c- n>AVFormatContextDeleter</c-> <c- p>{</c->
+		<c- b>void</c-> <c- k>operator</c-><c- p>()</c-> <c- p>(</c-><c- n>AVFormatContext</c-><c- o>*</c-> <c- n>c</c-><c- p>)</c-> <c- k>noexcept</c-> <c- p>{</c->
+			<c- n>avformat_close_input</c-><c- p>(</c-><c- o>&amp;</c-><c- n>c</c-><c- p>);</c->
+			<c- n>avformat_free_context</c-><c- p>(</c-><c- n>c</c-><c- p>);</c->
+		<c- p>}</c->
+<c- p>};</c->
+<c- k>typedef</c-> <c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- n>AVFormatContext</c-><c- p>,</c-> <c- n>AVFormatContextDeleter</c-><c- o>></c-> <c- n>AVFormatContext</c-><c- p>;</c->
+<c- c1>// Signature from libavformat:</c->
+<c- c1>// int avformat_open_input(AVFormatContext **ps, const char *url, AVInputFormat *fmt, AVDictionary **options);</c->
+</pre>
+     <tr>
+      <th>Current Code
+      <th>With Proposal
+     <tr>
+      <td>
+<pre class="highlight"><c- b>int</c-> <c- nf>main</c-> <c- p>(</c-><c- b>int</c-><c- p>,</c-> <c- b>char</c-><c- o>*</c-> <c- n>argv</c-><c- p>[])</c-> <c- p>{</c->
+	<c- n>AVFormatContext</c-> <c- n>context</c-><c- p>(</c-><c- n>avformat_alloc_context</c-><c- p>());</c->
+	<c- c1>// ...</c->
+	<c- c1>// used, need to reopen</c->
+	<c- n>AVFormatContext</c-><c- o>*</c-> <c- n>raw_context</c-> <c- o>=</c-> <c- n>context</c-><c- p>.</c-><c- n>release</c-><c- p>();</c->
+	<c- k>if</c-> <c- p>(</c-><c- n>avformat_open_input</c-><c- p>(</c-><c- o>&amp;</c-><c- n>raw_context</c-><c- p>,</c-> 
+		<c- n>argv</c-><c- p>[</c-><c- mi>0</c-><c- p>],</c-> <c- k>nullptr</c-><c- p>,</c-> <c- k>nullptr</c-><c- p>)</c-> <c- o>!=</c-> <c- mi>0</c-><c- p>)</c-> <c- p>{</c->
+		<c- n>std</c-><c- o>::</c-><c- n>stringstream</c-> <c- n>ss</c-><c- p>;</c->
+		<c- n>ss</c-> <c- o>&lt;&lt;</c-> <c- s>"ffmpeg_image_loader could not open file '"</c->
+			<c- o>&lt;&lt;</c-> <c- n>path</c-> <c- o>&lt;&lt;</c-> <c- s>"'"</c-><c- p>;</c->
+		<c- k>throw</c-> <c- n>FFmpegInputException</c-><c- p>(</c-><c- n>ss</c-><c- p>.</c-><c- n>str</c-><c- p>().</c-><c- n>c_str</c-><c- p>());</c->
+	<c- p>}</c->
+	<c- n>context</c-><c- p>.</c-><c- n>reset</c-><c- p>(</c-><c- n>raw_context</c-><c- p>);</c->
+
+	<c- c1>// ... off to the races !</c->
+
+	<c- k>return</c-> <c- mi>0</c-><c- p>;</c->
+<c- p>}</c->
+</pre>
+      <td>
+<pre class="highlight"><c- b>int</c-> <c- nf>main</c-> <c- p>(</c-><c- b>int</c-><c- p>,</c-> <c- b>char</c-><c- o>*</c-> <c- n>argv</c-><c- p>[])</c-> <c- p>{</c->
+	<c- n>AVFormatContext</c-> <c- n>context</c-><c- p>(</c-><c- n>avformat_alloc_context</c-><c- p>());</c->
+	<c- c1>// ...</c->
+	<c- c1>// used, need to reopen</c->
+
+	<c- k>if</c-> <c- p>(</c-><c- n>avformat_open_input</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>inout_ptr</c-><c- p>(</c-><c- n>context</c-><c- p>),</c-> 
+		<c- n>argv</c-><c- p>[</c-><c- mi>0</c-><c- p>],</c-> <c- k>nullptr</c-><c- p>,</c-> <c- k>nullptr</c-><c- p>)</c-> <c- o>!=</c-> <c- mi>0</c-><c- p>)</c-> <c- p>{</c->
+		<c- n>std</c-><c- o>::</c-><c- n>stringstream</c-> <c- n>ss</c-><c- p>;</c->
+		<c- n>ss</c-> <c- o>&lt;&lt;</c-> <c- s>"ffmpeg_image_loader could not open file '"</c->
+			<c- o>&lt;&lt;</c-> <c- n>argv</c-><c- p>[</c-><c- mi>0</c-><c- p>]</c-> <c- o>&lt;&lt;</c-> <c- s>"'"</c-><c- p>;</c->
+		<c- k>throw</c-> <c- n>FFmpegInputException</c-><c- p>(</c-><c- n>ss</c-><c- p>.</c-><c- n>str</c-><c- p>().</c-><c- n>c_str</c-><c- p>());</c->
+	<c- p>}</c->
+
+
+	<c- c1>// ... off to the races!</c->
+
+	<c- k>return</c-> <c- mi>0</c-><c- p>;</c->
+<c- p>}</c->
+</pre>
+   </table>
+   <p>We have very good tools for handling unique and shared resource semantics, alongside more coming with <a data-link-type="biblio" href="#biblio-p0468">Intrusive Smart Pointers</a>. Independently between several different companies, studios, and shops -- from VMWare and Microsoft to small game development startups -- a common type has been implemented. It has many names: <code class="highlight"><c- n>ptrptr</c-></code>, <code class="highlight"><c- n>OutPtr</c-></code>, <code class="highlight"><c- n>PtrToPtr</c-></code>, <code class="highlight"><c- n>out_ptr</c-></code>, <a data-link-type="biblio" href="#biblio-wrl-comptrref">WRL::ComPtrRef</a>, <a data-link-type="biblio" href="#biblio-std-proposals-overload-operator">a proposal on std-proposals</a> and even <a data-link-type="biblio" href="#biblio-ccomptr">unary operator&amp; on CComPtr</a>. It is universally focused on one task: making it so a smart pointer can be passed as a parameter to a function which uses an output pointer parameter in C API functions (e.g., <code class="highlight"><c- n>my_type</c-><c- o>**</c-></code>).</p>
    <p>This paper is a culmination of a private survey of types from the industry to propose a common, future-proof, high-performance <code class="highlight"><c- n>out_ptr</c-></code> type that is easy to use. It makes interop with pointer types a little bit simpler and easier for everyone who has ever wanted something like <code class="highlight"><c- n>my_c_function</c-><c- p>(</c-> <c- o>&amp;</c-><c- n>my_unique</c-> <c- p>);</c-></code> to behave properly.</p>
    <p>In short: it’s a thing convertible to a <code class="highlight"><c- n>T</c-><c- o>**</c-></code> that updates the smart pointer it is created with when it goes out of scope.</p>
    <h2 class="heading settled" data-level="3" id="design"><span class="secno">3. </span><span class="content">Design Considerations</span><a class="self-link" href="#design"></a></h2>
    <p>The core of <code class="highlight"><c- n>out_ptr</c-></code>'s (and <code class="highlight"><c- n>inout_ptr</c-></code>'s) design revolves around avoiding the mistakes of the past, preventing continual modification of new smart pointers and outside smart pointers’s interfaces to perform the same task, and enabling some degree of performance efficiency without having to wrap every C API function.</p>
    <h3 class="heading settled" data-level="3.1" id="design-synopsis"><span class="secno">3.1. </span><span class="content">Synopsis</span><a class="self-link" href="#design-synopsis"></a></h3>
    <p>The function template’s full specification is:</p>
-<pre class="language-c++ highlight"><c- n>namespace</c-> <c- n>std</c-> <c- p>{</c->
-	<c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>Pointer</c-><c- p>,</c-> <c- n>class</c-> <c- n>Smart</c-><c- p>,</c-> <c- n>class</c-><c- p>...</c-> <c- n>Args</c-><c- o>></c->
-	<c- n>out_ptr_t</c-><c- o>&lt;</c-><c- n>Smart</c-><c- p>,</c-> <c- n>Pointer</c-><c- p>,</c-> <c- n>Args</c-><c- p>...</c-><c- o>></c-> <c- n>out_ptr</c-><c- p>(</c-><c- n>Smart</c-><c- o>&amp;</c-> <c- n>s</c-><c- p>,</c-> <c- n>Args</c-><c- o>&amp;&amp;</c-><c- p>...</c-> <c- n>args</c-><c- p>)</c-> <c- n>noexcept</c-><c- p>;</c->
+<pre class="highlight"><c- k>namespace</c-> <c- n>std</c-> <c- p>{</c->
+	<c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>Pointer</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Smart</c-><c- p>,</c-> <c- n>class</c-><c- p>...</c-> <c- n>Args</c-><c- o>></c->
+	<c- n>out_ptr_t</c-><c- o>&lt;</c-><c- n>Smart</c-><c- p>,</c-> <c- n>Pointer</c-><c- p>,</c-> <c- n>Args</c-><c- p>...</c-><c- o>></c-> 
+	<c- n>out_ptr</c-><c- p>(</c-><c- n>Smart</c-><c- o>&amp;</c-> <c- n>s</c-><c- p>,</c-> <c- n>Args</c-><c- o>&amp;&amp;</c-><c- p>...</c-> <c- n>args</c-><c- p>)</c-> <c- k>noexcept</c-><c- p>;</c->
 	
-	<c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>Smart</c-><c- p>,</c-> <c- n>class</c-><c- p>...</c-> <c- n>Args</c-><c- o>></c->
-	<c- n>out_ptr_t</c-><c- o>&lt;</c-><c- n>Smart</c-><c- p>,</c-> <c- n>POINTER_OF</c-><c- p>(</c-><c- n>Smart</c-><c- p>),</c-> <c- n>Args</c-><c- p>...</c-><c- o>></c-> <c- n>out_ptr</c-><c- p>(</c-><c- n>Smart</c-><c- o>&amp;</c-> <c- n>s</c-><c- p>,</c-> <c- n>Args</c-><c- o>&amp;&amp;</c-><c- p>...</c-> <c- n>args</c-><c- p>)</c-> <c- n>noexcept</c-><c- p>;</c->
+	<c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>Smart</c-><c- p>,</c-> <c- n>class</c-><c- p>...</c-> <c- n>Args</c-><c- o>></c->
+	<c- n>out_ptr_t</c-><c- o>&lt;</c-><c- n>Smart</c-><c- p>,</c-> <c- n>POINTER_OF</c-><c- p>(</c-><c- n>Smart</c-><c- p>),</c-> <c- n>Args</c-><c- p>...</c-><c- o>></c-> 
+	<c- n>out_ptr</c-><c- p>(</c-><c- n>Smart</c-><c- o>&amp;</c-> <c- n>s</c-><c- p>,</c-> <c- n>Args</c-><c- o>&amp;&amp;</c-><c- p>...</c-> <c- n>args</c-><c- p>)</c-> <c- k>noexcept</c-><c- p>;</c->
 
-	<c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>Pointer</c-><c- p>,</c-> <c- n>class</c-> <c- n>Smart</c-><c- p>,</c-> <c- n>class</c-><c- p>...</c-> <c- n>Args</c-><c- o>></c->
-	<c- n>inout_ptr_t</c-><c- o>&lt;</c-><c- n>Smart</c-><c- p>,</c-> <c- n>Pointer</c-><c- p>,</c-> <c- n>Args</c-><c- p>...</c-><c- o>></c-> <c- n>inout_ptr</c-><c- p>(</c-><c- n>Smart</c-><c- o>&amp;</c-> <c- n>s</c-><c- p>,</c-> <c- n>Args</c-><c- o>&amp;&amp;</c-><c- p>...</c-> <c- n>args</c-><c- p>)</c-> <c- n>noexcept</c-><c- p>;</c->
+	<c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>Pointer</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Smart</c-><c- p>,</c-> <c- n>class</c-><c- p>...</c-> <c- n>Args</c-><c- o>></c->
+	<c- n>inout_ptr_t</c-><c- o>&lt;</c-><c- n>Smart</c-><c- p>,</c-> <c- n>Pointer</c-><c- p>,</c-> <c- n>Args</c-><c- p>...</c-><c- o>></c-> 
+	<c- n>inout_ptr</c-><c- p>(</c-><c- n>Smart</c-><c- o>&amp;</c-> <c- n>s</c-><c- p>,</c-> <c- n>Args</c-><c- o>&amp;&amp;</c-><c- p>...</c-> <c- n>args</c-><c- p>)</c-> <c- k>noexcept</c-><c- p>;</c->
 	
-	<c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>Smart</c-><c- p>,</c-> <c- n>class</c-><c- p>...</c-> <c- n>Args</c-><c- o>></c->
-	<c- n>inout_ptr_t</c-><c- o>&lt;</c-><c- n>Smart</c-><c- p>,</c-> <c- n>POINTER_OF</c-><c- p>(</c-><c- n>Smart</c-><c- p>),</c-> <c- n>Args</c-><c- p>...</c-><c- o>></c-> <c- n>inout_ptr</c-><c- p>(</c-><c- n>Smart</c-><c- o>&amp;</c-> <c- n>s</c-><c- p>,</c-> <c- n>Args</c-><c- o>&amp;&amp;</c-><c- p>...</c-> <c- n>args</c-><c- p>)</c-> <c- n>noexcept</c-><c- p>;</c->
+	<c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>Smart</c-><c- p>,</c-> <c- n>class</c-><c- p>...</c-> <c- n>Args</c-><c- o>></c->
+	<c- n>inout_ptr_t</c-><c- o>&lt;</c-><c- n>Smart</c-><c- p>,</c-> <c- n>POINTER_OF</c-><c- p>(</c-><c- n>Smart</c-><c- p>),</c-> <c- n>Args</c-><c- p>...</c-><c- o>></c-> 
+	<c- n>inout_ptr</c-><c- p>(</c-><c- n>Smart</c-><c- o>&amp;</c-> <c- n>s</c-><c- p>,</c-> <c- n>Args</c-><c- o>&amp;&amp;</c-><c- p>...</c-> <c- n>args</c-><c- p>)</c-> <c- k>noexcept</c-><c- p>;</c->
 <c- p>}</c->
 </pre>
    <p>Where <code class="highlight"><c- n>POINTER_OF</c-></code> is the <code class="highlight"><c- o>::</c-><c- n>pointer</c-></code> type, then <code class="highlight"><c- o>::</c-><c- n>element_type</c-><c- o>*</c-></code>, then <code class="highlight"><c- k>class</c-> <c- nc>std</c-><c- o>::</c-><c- n>pointer_traits</c-><c- o>&lt;</c-><c- n>Smart</c-><c- o>>::</c-><c- n>element_type</c-><c- o>*</c-></code> in that order. The return type <code class="highlight"><c- n>out_ptr_t</c-></code> and its sister type <code class="highlight"><c- n>inout_ptr_t</c-></code> are templated types and must at-minimum have the following:</p>
-<pre class="language-c++ highlight"><c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>Smart</c-><c- p>,</c-> <c- n>class</c-> <c- n>Pointer</c-><c- p>,</c-> <c- n>class</c-><c- p>...</c-> <c- n>Args</c-><c- o>></c->
+<pre class="highlight"><c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>Smart</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Pointer</c-><c- p>,</c-> <c- n>class</c-><c- p>...</c-> <c- n>Args</c-><c- o>></c->
 <c- k>struct</c-> <c- n>out_ptr_t</c-> <c- p>{</c->
 	<c- n>out_ptr_t</c-><c- p>(</c-><c- n>Smart</c-><c- o>&amp;</c-><c- p>,</c-> <c- n>Args</c-><c- p>...);</c->
-	<c- o>~</c-><c- n>out_ptr_t</c-> <c- p>()</c-> <c- n>noexcept</c-><c- p>;</c->
-	<c- n>operator</c-> <c- n>Pointer</c-><c- o>*</c-> <c- p>()</c-> <c- n>noexcept</c-><c- p>;</c->
-	<c- n>operator</c-> <c- b>void</c-><c- o>**</c-> <c- p>()</c-> <c- n>noexcept</c-><c- p>;</c->
+	<c- o>~</c-><c- n>out_ptr_t</c-> <c- p>()</c-> <c- k>noexcept</c-><c- p>;</c->
+	<c- k>operator</c-> <c- n>Pointer</c-><c- o>*</c-> <c- p>()</c-> <c- k>noexcept</c-><c- p>;</c->
+	<c- k>operator</c-> <c- b>void</c-><c- o>**</c-> <c- p>()</c-> <c- k>noexcept</c-><c- p>;</c->
 <c- p>};</c->
 
-<c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>Smart</c-><c- p>,</c-> <c- n>class</c-> <c- n>Pointer</c-><c- p>,</c-> <c- n>class</c-><c- p>...</c-> <c- n>Args</c-><c- o>></c->
+<c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>Smart</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Pointer</c-><c- p>,</c-> <c- n>class</c-><c- p>...</c-> <c- n>Args</c-><c- o>></c->
 <c- k>struct</c-> <c- n>inout_ptr_t</c-> <c- p>{</c->
 	<c- n>inout_ptr_t</c-><c- p>(</c-><c- n>Smart</c-><c- o>&amp;</c-><c- p>,</c-> <c- n>Args</c-><c- p>...);</c->
-	<c- o>~</c-><c- n>inout_ptr_t</c-> <c- p>()</c-> <c- n>noexcept</c-><c- p>;</c->
-	<c- n>operator</c-> <c- n>Pointer</c-><c- o>*</c-> <c- p>()</c-> <c- n>noexcept</c-><c- p>;</c->
-	<c- n>operator</c-> <c- b>void</c-><c- o>**</c-> <c- p>()</c-> <c- n>noexcept</c-><c- p>;</c->
+	<c- o>~</c-><c- n>inout_ptr_t</c-> <c- p>()</c-> <c- k>noexcept</c-><c- p>;</c->
+	<c- k>operator</c-> <c- n>Pointer</c-><c- o>*</c-> <c- p>()</c-> <c- k>noexcept</c-><c- p>;</c->
+	<c- k>operator</c-> <c- b>void</c-><c- o>**</c-> <c- p>()</c-> <c- k>noexcept</c-><c- p>;</c->
 <c- p>};</c->
 </pre>
    <p>We specify "at minimum" because we expect users to override this type for their own shared, unique, handle-alike, reference-counting, and etc. smart pointers. The destructor of <code class="highlight"><c- o>~</c-><c- n>out_ptr_t</c-><c- p>()</c-></code> calls <code class="highlight"><c- p>.</c-><c- n>reset</c-><c- p>()</c-></code> on the stored smart pointer of type <code class="highlight"><c- n>Smart</c-></code> with the stored pointer of type <code class="highlight"><c- n>Pointer</c-></code> and arguments stored as <code class="highlight"><c- n>Args</c-><c- p>...</c-></code>. <code class="highlight"><c- o>~</c-><c- n>inout_ptr_t</c-><c- p>()</c-></code> does the same, but with the additional caveat that the constructor for <code class="highlight"><c- n>inout_ptr_t</c-><c- p>(</c-><c- n>Smart</c-><c- o>&amp;</c-><c- p>,</c-> <c- n>Args</c-><c- o>&amp;&amp;</c-><c- p>...)</c-></code> also calls <code class="highlight"><c- p>.</c-><c- n>release</c-><c- p>()</c-></code>, so that a <code class="highlight"><c- n>reset</c-></code> doesn’t double-delete a pointer that the expected re-allocating API used with <code class="highlight"><c- n>inout_ptr</c-></code> already handles.</p>
@@ -1579,18 +1648,18 @@ pre .property::before, pre .property::after {
    <p>The target header is <code class="highlight"><c- o>&lt;</c-><c- n>memory</c-><c- o>></c-></code>. The desired feature is <code class="highlight"><c- n>__cpp_lib_out_ptr</c-></code>. See <a href="#wording-feature">§7.1 Proposed Feature Test Macro and Header</a> for further discussion about other potential targets.</p>
    <h3 class="heading settled" data-level="3.3" id="design-overview"><span class="secno">3.3. </span><span class="content">Overview</span><a class="self-link" href="#design-overview"></a></h3>
    <p><code class="highlight"><c- n>out_ptr</c-></code>/<code class="highlight"><c- n>inout_ptr</c-></code> are free functions meant to be used for C APIs:</p>
-<pre class="language-c++ highlight"><c- n>error_num</c-> <c- nf>c_api_create_handle</c-><c- p>(</c-><c- b>int</c-> <c- n>seed_value</c-><c- p>,</c-> <c- b>int</c-><c- o>**</c-> <c- n>p_handle</c-><c- p>);</c->
+<pre class="highlight"><c- n>error_num</c-> <c- nf>c_api_create_handle</c-><c- p>(</c-><c- b>int</c-> <c- n>seed_value</c-><c- p>,</c-> <c- b>int</c-><c- o>**</c-> <c- n>p_handle</c-><c- p>);</c->
 <c- n>error_num</c-> <c- nf>c_api_re_create_handle</c-><c- p>(</c-><c- b>int</c-> <c- n>seed_value</c-><c- p>,</c-> <c- b>int</c-><c- o>**</c-> <c- n>p_handle</c-><c- p>);</c->
 <c- b>void</c-> <c- nf>c_api_delete_handle</c-><c- p>(</c-><c- b>int</c-><c- o>*</c-> <c- n>handle</c-><c- p>);</c->
 
 <c- k>struct</c-> <c- n>resource_deleter</c-> <c- p>{</c->
-	<c- b>void</c-> <c- n>operator</c-><c- p>()(</c-> <c- b>int</c-><c- o>*</c-> <c- n>handle</c-> <c- p>)</c-> <c- p>{</c->
+	<c- b>void</c-> <c- k>operator</c-><c- p>()(</c-> <c- b>int</c-><c- o>*</c-> <c- n>handle</c-> <c- p>)</c-> <c- p>{</c->
 		<c- n>c_api_delete_handle</c-><c- p>(</c-><c- n>handle</c-><c- p>);</c->
 	<c- p>}</c->
 <c- p>};</c->
 </pre>
    <p>Given a smart pointer, it can be used like so:</p>
-<pre class="language-c++ highlight"><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- p>,</c-> <c- n>resource_deleter</c-><c- o>></c-> <c- n>resource</c-><c- p>(</c-><c- n>nullptr</c-><c- p>);</c->
+<pre class="highlight"><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- p>,</c-> <c- n>resource_deleter</c-><c- o>></c-> <c- n>resource</c-><c- p>(</c-><c- k>nullptr</c-><c- p>);</c->
 <c- n>error_num</c-> <c- n>err</c-> <c- o>=</c-> <c- n>c_api_create_handle</c-><c- p>(</c->
 	<c- mi>24</c-><c- p>,</c-> <c- n>std</c-><c- o>::</c-><c- n>out_ptr</c-><c- p>(</c-><c- n>resource</c-><c- p>)</c->
 <c- p>);</c->
@@ -1600,7 +1669,7 @@ pre .property::before, pre .property::after {
 <c- c1>// resource.get() the out-value from the C API function</c->
 </pre>
    <p>Or, in the re-create (reallocation) case:</p>
-<pre class="language-c++ highlight"><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- p>,</c-> <c- n>resource_deleter</c-><c- o>></c-> <c- n>resource</c-><c- p>(</c-><c- n>nullptr</c-><c- p>);</c->
+<pre class="highlight"><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- p>,</c-> <c- n>resource_deleter</c-><c- o>></c-> <c- n>resource</c-><c- p>(</c-><c- k>nullptr</c-><c- p>);</c->
 <c- n>error_num</c-> <c- n>err</c-> <c- o>=</c-> <c- n>c_api_re_create_handle</c-><c- p>(</c->
 	<c- mi>24</c-><c- p>,</c-> <c- n>std</c-><c- o>::</c-><c- n>inout_ptr</c-><c- p>(</c-><c- n>resource</c-><c- p>)</c->
 <c- p>);</c->
@@ -1611,7 +1680,7 @@ pre .property::before, pre .property::after {
 </pre>
    <h3 class="heading settled" data-level="3.4" id="design-safety"><span class="secno">3.4. </span><span class="content">Safety</span><a class="self-link" href="#design-safety"></a></h3>
    <p>This implementation uses a pack of <code class="highlight"><c- p>...</c-><c- n>Args</c-></code> in the signature of <code class="highlight"><c- n>out_ptr</c-></code> to allow it to be used with other types whose <code class="highlight"><c- p>.</c-><c- n>reset</c-><c- p>()</c-></code> functions may require more than just the pointer value to form a valid and proper smart pointer. This is the case with <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>shared_ptr</c-></code> and <code class="highlight"><c- n>boost</c-><c- o>::</c-><c- n>shared_ptr</c-></code>:</p>
-<pre class="language-c++ highlight"><c- n>std</c-><c- o>::</c-><c- n>shared_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>></c-> <c- n>resource</c-><c- p>(</c-><c- n>nullptr</c-><c- p>);</c->
+<pre class="highlight"><c- n>std</c-><c- o>::</c-><c- n>shared_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>></c-> <c- n>resource</c-><c- p>(</c-><c- k>nullptr</c-><c- p>);</c->
 <c- n>error_num</c-> <c- n>err</c-> <c- o>=</c-> <c- n>c_api_create_handle</c-><c- p>(</c->
 	<c- mi>24</c-><c- p>,</c-> <c- n>std</c-><c- o>::</c-><c- n>out_ptr</c-><c- p>(</c-><c- n>resource</c-><c- p>,</c-> <c- n>resource_deleter</c-><c- p>{})</c->
 <c- p>);</c->
@@ -1621,9 +1690,9 @@ pre .property::before, pre .property::after {
 <c- c1>// resource.get() the out-value from </c->
 <c- c1>// the C API function</c->
 </pre>
-   <p>Additional arguments past the smart pointer stored in <code class="highlight"><c- n>out_ptr</c-></code>'s implementation-defined return type will perfectly forward these to whatever <code class="highlight"><c- p>.</c-><c- n>reset</c-><c- p>()</c-></code> or equivalent implementation requires them. If the underlying pointer does not require such things, it may be ignored or discarded (optionally, with a compiler error using a static assert that the argument will be ignored for the given type of smart pointer).</p>
+   <p>Additional arguments past the smart pointer stored in <code class="highlight"><c- n>out_ptr</c-></code>'s return type will perfectly forward these to whatever <code class="highlight"><c- p>.</c-><c- n>reset</c-><c- p>()</c-></code> or equivalent implementation requires them. If the underlying pointer does not require such things, it may be ignored or discarded (optionally, with a compiler error using a static assert that the argument will be ignored for the given type of smart pointer).</p>
    <p>Of importance here is to note that <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>shared_ptr</c-></code> can and will overwrite any custom deleter present when called with just <code class="highlight"><c- p>.</c-><c- n>reset</c-><c- p>(</c-><c- n>some_pointer</c-><c- p>);</c-></code>. Therefore, we make it a compiler error to not pass in a second argument when using <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>shared_ptr</c-></code> without a deleter:</p>
-<pre class="language-c++ highlight"><c- n>std</c-><c- o>::</c-><c- n>shared_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>></c-> <c- n>resource</c-><c- p>(</c-><c- n>nullptr</c-><c- p>);</c->
+<pre class="highlight"><c- n>std</c-><c- o>::</c-><c- n>shared_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>></c-> <c- n>resource</c-><c- p>(</c-><c- k>nullptr</c-><c- p>);</c->
 <c- n>error_num</c-> <c- n>err</c-> <c- o>=</c-> <c- n>c_api_create_handle</c-><c- p>(</c->
 	<c- mi>42</c-><c- p>,</c-> <c- n>std</c-><c- o>::</c-><c- n>out_ptr</c-><c- p>(</c-><c- n>resource</c-><c- p>)</c->
 <c- p>);</c-> <c- c1>// ERROR: deleter was changed </c->
@@ -1636,7 +1705,7 @@ pre .property::before, pre .property::after {
    <p>It is also important to note that going in the <em>opposite</em> direction is also highly desirable, especially in the case of doing API-hiding behind an e.g. <code class="highlight"><c- b>void</c-><c- o>*</c-></code> implementation. <code class="highlight"><c- n>out_ptr</c-></code> supports both scenarios with an optional template argument to the function call.</p>
    <h4 class="heading settled" data-level="3.5.1" id="design-casting-void"><span class="secno">3.5.1. </span><span class="content">Casting Support: builtin <code class="highlight"><c- b>void</c-><c- o>**</c-></code></span><a class="self-link" href="#design-casting-void"></a></h4>
    <p>Consider this DirectX Graphics Infrastructure Interface (DXGI) function on <code class="highlight"><c- n>IDXGIFactory6</c-></code>:</p>
-<pre class="language-c++ highlight"><c- n>HRESULT</c-> <c- nf>EnumAdapterByGpuPreference</c-><c- p>(</c->
+<pre class="highlight"><c- n>HRESULT</c-> <c- nf>EnumAdapterByGpuPreference</c-><c- p>(</c->
 	<c- n>UINT</c-> <c- n>Adapter</c-><c- p>,</c-> 
 	<c- n>DXGI_GPU_PREFERENCE</c-> <c- n>GpuPreference</c-><c- p>,</c-> 
 	<c- n>REFIID</c-> <c- n>riid</c-><c- p>,</c-> 
@@ -1644,7 +1713,7 @@ pre .property::before, pre .property::after {
 <c- p>);</c->
 </pre>
    <p>Using <code class="highlight"><c- n>out_ptr</c-></code>, it becomes trivial to interface with it using an exemplary <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- n>IDXGIAdapter</c-><c- p>,</c-> <c- n>ComDeleter</c-><c- o>></c-> <c- n>adapter</c-></code>:</p>
-<pre class="language-c++ highlight"><c- n>HRESULT</c-> <c- n>result</c-> <c- o>=</c-> <c- n>dxgi_factory</c-><c- p>.</c->
+<pre class="highlight"><c- n>HRESULT</c-> <c- n>result</c-> <c- o>=</c-> <c- n>dxgi_factory</c-><c- p>.</c->
 <c- n>EnumAdapterByGpuPreference</c-><c- p>(</c-><c- mi>0</c-><c- p>,</c-> 
 	<c- n>DXGI_GPU_PREFERENCE_MINIMUM_POWER</c-><c- p>,</c-> 
 	<c- n>IID_IDXGIAdapter</c-><c- p>,</c-> 
@@ -1660,36 +1729,36 @@ pre .property::before, pre .property::after {
    <h4 class="heading settled" data-level="3.5.2" id="design-casting-similar"><span class="secno">3.5.2. </span><span class="content">Casting Support: to arbitrary <code class="highlight"><c- n>T</c-></code></span><a class="self-link" href="#design-casting-similar"></a></h4>
    <p>In many cases, there is a typical C structure or similar that C++ users are sanctioned to derive and extend with their own data, with the promise that as long as the pointed passed to the function has a base class or matching type. There are also cases where the type stored in <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Deleter</c-><c- o>></c-></code> uses <code class="highlight"><c- n>Deleter</c-></code> to override the <code class="highlight"><c- o>::</c-><c- n>pointer</c-></code> type, making <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-></code> store the (fat, offset) <code class="highlight"><c- o>::</c-><c- n>pointer</c-></code> that is convertible to <code class="highlight"><c- n>T</c-><c- o>*</c-></code>.</p>
    <p>In these case, it is imperative that the user be allowed to specify a casting parameter that the <code class="highlight"><c- n>out_ptr_t</c-></code>/<code class="highlight"><c- n>inout_ptr_t</c-></code>, and that is done by simply adding a type when calling the desired function. Consider a specialized <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- p>,</c-> <c- n>fd_deleter</c-><c- o>></c-></code> where <code class="highlight"><c- o>::</c-><c- n>pointer</c-></code> is a typedef to a special <code class="highlight"><c- n>fd</c-></code> type:</p>
-<pre class="language-c++ highlight"><c- k>struct</c-> <c- n>fd</c-> <c- p>{</c->
+<pre class="highlight"><c- k>struct</c-> <c- n>fd</c-> <c- p>{</c->
 	<c- b>int</c-> <c- n>handle</c-><c- p>;</c->
 
 	<c- n>fd</c-><c- p>()</c->
-	<c- o>:</c-> <c- n>fd</c-><c- p>(</c-><c- n>nullptr</c-><c- p>)</c-> <c- p>{}</c->
+	<c- o>:</c-> <c- n>fd</c-><c- p>(</c-><c- k>nullptr</c-><c- p>)</c-> <c- p>{}</c->
 	<c- n>fd</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>nullptr_t</c-><c- p>)</c->
-	<c- o>:</c-> <c- n>handle</c-><c- p>(</c-><c- n>static_cast</c-><c- o>&lt;</c-><c- b>intptr_t</c-><c- o>></c-><c- p>(</c-><c- o>-</c-><c- mi>1</c-><c- p>))</c-> <c- p>{}</c->
+	<c- o>:</c-> <c- n>handle</c-><c- p>(</c-><c- k>static_cast</c-><c- o>&lt;</c-><c- b>intptr_t</c-><c- o>></c-><c- p>(</c-><c- o>-</c-><c- mi>1</c-><c- p>))</c-> <c- p>{}</c->
 	<c- n>fd</c-><c- p>(</c-><c- b>FILE</c-><c- o>*</c-> <c- n>f</c-><c- p>)</c->
 <c- cp>#ifdef _WIN32</c->
-	<c- o>:</c-> <c- n>handle</c-><c- p>(</c-><c- n>f</c-> <c- o>?</c-> <c- n>_fileno</c-><c- p>(</c-><c- n>f</c-><c- p>)</c-> <c- o>:</c-> <c- n>static_cast</c-><c- o>&lt;</c-><c- b>intptr_t</c-><c- o>></c-><c- p>(</c-><c- o>-</c-><c- mi>1</c-><c- p>)){</c->
+	<c- o>:</c-> <c- n>handle</c-><c- p>(</c-><c- n>f</c-> <c- o>?</c-> <c- n>_fileno</c-><c- p>(</c-><c- n>f</c-><c- p>)</c-> <c- o>:</c-> <c- k>static_cast</c-><c- o>&lt;</c-><c- b>intptr_t</c-><c- o>></c-><c- p>(</c-><c- o>-</c-><c- mi>1</c-><c- p>)){</c->
 <c- cp>#else</c->
-	<c- o>:</c-> <c- n>handle</c-><c- p>(</c-><c- n>f</c-> <c- o>?</c-> <c- n>fileno</c-><c- p>(</c-><c- n>f</c-><c- p>)</c-> <c- o>:</c-> <c- n>static_cast</c-><c- o>&lt;</c-><c- b>intptr_t</c-><c- o>></c-><c- p>(</c-><c- o>-</c-><c- mi>1</c-><c- p>))</c-> <c- p>{</c->
+	<c- o>:</c-> <c- n>handle</c-><c- p>(</c-><c- n>f</c-> <c- o>?</c-> <c- n>fileno</c-><c- p>(</c-><c- n>f</c-><c- p>)</c-> <c- o>:</c-> <c- k>static_cast</c-><c- o>&lt;</c-><c- b>intptr_t</c-><c- o>></c-><c- p>(</c-><c- o>-</c-><c- mi>1</c-><c- p>))</c-> <c- p>{</c->
 <c- cp>#endif </c-><c- c1>// Windows</c->
 	<c- p>}</c->
 
-	<c- n>explicit</c-> <c- n>operator</c-> <c- b>bool</c-><c- p>()</c-> <c- k>const</c-><c- p>;</c->
+	<c- k>explicit</c-> <c- k>operator</c-> <c- b>bool</c-><c- p>()</c-> <c- k>const</c-><c- p>;</c->
 
-	<c- b>bool</c-> <c- n>operator</c-><c- o>==</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>nullptr_t</c-><c- p>)</c-> <c- k>const</c-><c- p>;</c->
-	<c- b>bool</c-> <c- n>operator</c-><c- o>!=</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>nullptr_t</c-><c- p>)</c-> <c- k>const</c-><c- p>;</c->
-	<c- b>bool</c-> <c- n>operator</c-><c- o>==</c-><c- p>(</c-><c- k>const</c-> <c- n>fd</c-><c- o>&amp;</c-> <c- n>fd</c-><c- p>)</c-> <c- k>const</c-><c- p>;</c->
-	<c- b>bool</c-> <c- n>operator</c-><c- o>!=</c-><c- p>(</c-><c- k>const</c-> <c- n>fd</c-><c- o>&amp;</c-> <c- n>fd</c-><c- p>)</c-> <c- k>const</c-><c- p>;</c->
+	<c- b>bool</c-> <c- k>operator</c-><c- o>==</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>nullptr_t</c-><c- p>)</c-> <c- k>const</c-><c- p>;</c->
+	<c- b>bool</c-> <c- k>operator</c-><c- o>!=</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>nullptr_t</c-><c- p>)</c-> <c- k>const</c-><c- p>;</c->
+	<c- b>bool</c-> <c- k>operator</c-><c- o>==</c-><c- p>(</c-><c- k>const</c-> <c- n>fd</c-><c- o>&amp;</c-> <c- n>fd</c-><c- p>)</c-> <c- k>const</c-><c- p>;</c->
+	<c- b>bool</c-> <c- k>operator</c-><c- o>!=</c-><c- p>(</c-><c- k>const</c-> <c- n>fd</c-><c- o>&amp;</c-> <c- n>fd</c-><c- p>)</c-> <c- k>const</c-><c- p>;</c->
 <c- p>};</c->
 
 <c- k>struct</c-> <c- n>fd_deleter</c-> <c- p>{</c->
-	<c- n>using</c-> <c- n>pointer</c-> <c- o>=</c-> <c- n>fd</c-><c- p>;</c->
+	<c- k>using</c-> <c- n>pointer</c-> <c- o>=</c-> <c- n>fd</c-><c- p>;</c->
 	<c- b>void</c-> <c- nf>operator</c-><c- p>()(</c-><c- n>fd</c-> <c- n>des</c-><c- p>)</c-> <c- k>const</c-><c- p>;</c->
 <c- p>};</c->
 </pre>
    <p>Casting in this case is cumbersome and often error-prone to do properly when interfacing with C or C++ standard library facilities. It becomes trivial with <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>out_ptr</c-></code>:</p>
-<pre class="language-c++ highlight"><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- p>,</c-> <c- n>fd_deleter</c-><c- o>></c-> <c- n>my_unique_fd</c-><c- p>;</c->
+<pre class="highlight"><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- p>,</c-> <c- n>fd_deleter</c-><c- o>></c-> <c- n>my_unique_fd</c-><c- p>;</c->
 <c- k>auto</c-> <c- n>err</c-> <c- o>=</c-> <c- n>fopen_s</c-><c- p>(</c-> <c- n>std</c-><c- o>::</c-><c- n>out_ptr</c-><c- o>&lt;</c-><c- b>FILE</c-><c- o>*></c-><c- p>(</c-><c- n>my_unique_fd</c-><c- p>),</c-> <c- s>"prod.csv"</c-><c- p>,</c-> <c- s>"rb"</c-> <c- p>);</c->
 <c- c1>// check err, then work with raw fd</c->
 </pre>
@@ -1700,7 +1769,7 @@ pre .property::before, pre .property::after {
    <p>In some cases, a function given a valid handle/pointer will delete that pointer on your behalf before performing an allocation in the same pointer. In these cases, just <code class="highlight"><c- p>.</c-><c- n>reset</c-><c- p>()</c-></code> is entirely redundant and dangerous because it will delete a pointer that it does not own. Therefore, there is a second abstraction called <code class="highlight"><c- n>inout_ptr</c-></code>, so aptly named because it is both an input (to be deleted) and an output (to be allocated post-delete). <code class="highlight"><c- n>inout_ptr</c-></code>'s semantics are exactly like <code class="highlight"><c- n>out_ptr</c-></code>'s, just with the additional requirement that it calls <code class="highlight"><c- p>.</c-><c- n>release</c-><c- p>()</c-></code> on the smart pointer upon constructing the temporary <code class="highlight"><c- n>inout_ptr_t</c-></code>.</p>
    <p>This can be heavily optimized in the case of <code class="highlight"><c- n>unique_ptr</c-></code>, but to do so from the outside requires Undefined Behavior or modification of the standard library. See <a href="#perf-inout_ptr">§5.2 For std::inout_ptr</a> for further explication.</p>
    <h2 class="heading settled" data-level="4" id="experience"><span class="secno">4. </span><span class="content">Implementation Experience</span><a class="self-link" href="#experience"></a></h2>
-   <p>This library has been brewed at many companies in their private implementations, and implementations in the wild are scattered throughout code bases with no unifying type. As noted in <a href="#motivation">§2 Motivation</a>, Microsoft has implemented this in <code class="highlight"><c- n>WRL</c-><c- o>::</c-><c- n>ComPtrRef</c-></code>. Its earlier iteration -- <code class="highlight"><c- n>CComPtr</c-></code> -- simply overrode <code class="highlight"><c- k>operator</c-><c- o>&amp;</c-></code>. We assume they prefer the former after having forced the need with <code class="highlight"><c- n>CComPtr</c-></code> for <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>addressof</c-></code>. VMWare has a type that much more closely matches the specification in this paper, titled <code class="highlight"><c- n>Vtl</c-><c- o>::</c-><c- n>OutPtr</c-></code>. The primary author of this paper wrote and used <code class="highlight"><c- n>out_ptr</c-></code> for over 5 years in their code base working primarily with graphics APIs such as DirectX and OpenGL, and more recently Vulkan. They have also seen a similar abstraction in the places they have interned at.</p>
+   <p>This library has been brewed at many companies in their private implementations, and implementations in the wild are scattered throughout code bases with no unifying type. As noted in <a href="#motivation">§2 Motivation</a>, Microsoft has implemented this in <code class="highlight"><c- n>WRL</c-><c- o>::</c-><c- n>ComPtrRef</c-></code>. Its earlier iteration -- <code class="highlight"><c- n>CComPtr</c-></code> -- simply overrode <code class="highlight"><c- k>operator</c-><c- o>&amp;</c-></code>. We assume they prefer the former after having forced the need with <code class="highlight"><c- n>CComPtr</c-></code> for <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>addressof</c-></code>. the WRL is a public library used in thousands of applications, and has an interface similar to the proposed <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>out_ptr</c-></code>/<code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>inout_ptr</c-></code>. VMWare has a type that much more closely matches the specification in this paper, titled <code class="highlight"><c- n>Vtl</c-><c- o>::</c-><c- n>OutPtr</c-></code>. The primary author of this paper wrote and used <code class="highlight"><c- n>out_ptr</c-></code> for over 5 years in their code base working primarily with graphics APIs such as DirectX and OpenGL, and more recently Vulkan. They have also seen a similar abstraction in the places they have interned at.</p>
    <p>The primary author of <a data-link-type="biblio" href="#biblio-p0468">[p0468]</a> in pre-r0 days also implemented an overloaded <code class="highlight"><c- k>operator</c-><c- o>&amp;</c-></code> to handle interfacing with C APIs, but was quickly talked out of actually proposing it when doing the proposal. That author has joined in on this paper to continue to voice the need to make it easier to work with C APIs without having to wrap the function.</p>
    <p>Given that many companies, studios and individuals have all invented the same type independently of one another, we believe this is a strong indicator of agreement on an existing practice that should see a proposal to the standard.</p>
    <p>A <a href="https://github.com/ThePhD/phd/blob/master/include/phd/out_ptr/detail/base_out_ptr_impl.hpp">full implementation with UB and friendly optimizations is available in the repository</a>. The type has been privately used in many projects over the last four years, and this public implementation is already seeing use at companies today. It has been particularly helpful with many COM APIs, and the re-allocation support in <code class="highlight"><c- n>inout_ptr</c-></code> has been useful for FFMPEG’s functions which feature reallocation support in their functions (e.g., <code class="highlight"><c- n>avformat_open_input</c-></code>).</p>
@@ -1736,7 +1805,7 @@ pre .property::before, pre .property::after {
    <p>As with every proposal, naming, conventions and other tidbits not related to implementation are important. This section is for pinning down all the little details to make it suitable for the standard.</p>
    <h3 class="heading settled" data-level="6.1" id="bikeshed-specification"><span class="secno">6.1. </span><span class="content">Alternative Specification</span><a class="self-link" href="#bikeshed-specification"></a></h3>
    <p>The authors of this proposal know of two ways to specify this proposal’s goals.</p>
-   <p>The authors have settled on the approach in <a href="#design-synopsis">§3.1 Synopsis</a>. We believe this is the most robust and easiest to use: singular names tend to be easier to teach and use for both programmers and tools. We discuss the older techniques to uphold thorough discssion and inspection of the solution space.</p>
+   <p>The authors have settled on the approach in <a href="#design-synopsis">§3.1 Synopsis</a>. We believe this is the most robust and easiest to use: singular names tend to be easier to teach and use for both programmers and tools. We discuss the older techniques to uphold thorough discussion and inspection of the solution space.</p>
    <p>The first way is to specify both functions <code class="highlight"><c- n>out_ptr</c-></code> and <code class="highlight"><c- n>inout_ptr</c-></code> as factories, and then have their types named differently, such as <code class="highlight"><c- n>out_ptr_t</c-></code> and <code class="highlight"><c- n>inout_ptr_t</c-></code>. The factory functions and their implementation will be fixed in place, and users would be able to (partially) specialize and customize <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>out_ptr_t</c-></code> and <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>inout_ptr_t</c-></code> for types external to the stdlib for maximum performance tweaking and interop with types like <code class="highlight"><c- n>boost</c-><c- o>::</c-><c- n>shared_ptr</c-></code>, <code class="highlight"><c- n>my_lib</c-><c- o>::</c-><c- n>local_shared_ptr</c-></code>, and others. This is the direction this proposal takes.</p>
    <p>The second way is to specify the class names to be <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>out_ptr</c-></code> / <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>inout_ptr</c-></code>, and then used Template Argument Deduction for Class Templates from C++17 to give a function-like appearance to their usage. Users can still specialize for types external to the standard library. This approach is more Modern C++-like, but contains a caveat.</p>
    <p>Part of this specification is that you can specify the stored pointer for the underlying implementation of <code class="highlight"><c- n>out_ptr</c-></code> as shown in <a href="#design-casting">§3.5 Casting Support</a>. Template Argument Deduction for Class Templates does not allow partial specialization (and for good reason, see the interesting example of <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>tuple</c-><c- o>&lt;</c-><c- b>int</c-><c- p>,</c-> <c- b>int</c-><c- o>></c-><c- p>{</c-><c- mi>1</c-><c- p>,</c-> <c- mi>2</c-><c- p>,</c-> <c- mi>3</c-><c- p>}</c-></code>). The "Deduction Guides" (or CTAD) approach would accommodate <a href="#design-casting">§3.5 Casting Support</a> using functions with a more explicit names, such as <code class="highlight"><c- n>out_ptr_cast</c-><c- o>&lt;</c-><c- b>void</c-><c- o>*></c-><c- p>(</c-> <c- p>...</c-> <c- p>);</c-></code> and <code class="highlight"><c- n>inout_ptr_cast</c-><c- o>&lt;</c-><c- b>void</c-><c- o>*></c-><c- p>(</c-> <c- p>...</c-> <c- p>);</c-></code>.</p>
@@ -2314,6 +2383,8 @@ pre .property::before, pre .property::after {
    <dd>ISO/IEC JTC1/SC22/WG21 - The C++ Standards Committee; Richard Smith. <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/n4762.pdf">N4750 - Working Draft, Standard for Programming Language C++</a>. May 7th, 2018. URL: <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/n4762.pdf">http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/n4762.pdf</a>
    <dt id="biblio-p0468">[P0468]
    <dd>Isabella Muerte. <a href="http://wg21.link/p0468">A Proposal to Add an Intrusive Smart Pointer to the C++ Standard Library</a>. October 15th, 2016. URL: <a href="http://wg21.link/p0468">http://wg21.link/p0468</a>
+   <dt id="biblio-std-proposals-overload-operator">[STD-PROPOSALS-OVERLOAD-OPERATOR]
+   <dd>isocpp.org Forums. <a href="https://groups.google.com/a/isocpp.org/forum/#!topic/std-proposals/8MQhnL9rXBI">Add operator&amp;() to std::unique_ptr to get internal pointer</a>. April 15th, 2018. URL: <a href="https://groups.google.com/a/isocpp.org/forum/#!topic/std-proposals/8MQhnL9rXBI">https://groups.google.com/a/isocpp.org/forum/#!topic/std-proposals/8MQhnL9rXBI</a>
    <dt id="biblio-wrl-comptrref">[WRL-COMPTRREF]
    <dd>Microsoft. <a href="https://docs.microsoft.com/en-us/cpp/windows/comptrref-class">ComPtrRef Class</a>. November 4th, 2016. URL: <a href="https://docs.microsoft.com/en-us/cpp/windows/comptrref-class">https://docs.microsoft.com/en-us/cpp/windows/comptrref-class</a>
   </dl>
