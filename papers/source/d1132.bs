@@ -28,15 +28,21 @@ path: wording_style.bs
 
 
 
-## Revision 0 ## {#changelog-r0}
+## Revision 2 ## {#changelog-r2}
 
-    Initial release.
+    Add [[#design-footguns]] section. Discuss implementation experience in more detail. Add exception inspection.
 
 
 
 ## Revision 1 ## {#changelog-r1}
 
     Add wording. Incorporate wording feedback. Eliminate CTAD design. Add a few more words about implementation experience.
+
+
+
+## Revision 0 ## {#changelog-r0}
+
+    Initial release.
 
 
 
@@ -264,6 +270,26 @@ It is likely the intent of the programmer to also pass the fictional `c_api_dele
 
 
 
+## Safety: Exceptions ## {#design-exceptions}
+
+This is two-fold. First, by placing the `.reset()` call into the destructor of `out_ptr`/`inout_ptr`, we can guarantee safety that trivial code does not have. For example, consider this abstracted form of the production code shown in the Tony Table:
+
+```
+std::unique_ptr<int> num(new int());
+// use, then have to prepare for some 
+// c_api call
+int* raw_num = num.release();
+if (my_c_api_call(&raw_num) != 0) {
+	// leak if the c api call does nothing!!
+	throw std::runtime_error("leaking memory!");
+}
+num.reset(raw_num);
+```
+
+If the user used `std::inout_ptr`, the value would be guaranteed to put back into the unique pointer, and then subsequently destroyed as the stack continued to be unwound.
+
+Secondly, the destructor for `out_ptr` calls to `.reset()`. The only case where this is questionable is with `std::shared_ptr`: the creation of the passed-in deleter might throw, and thusly the call cannot be `noexcept`. This means that the destructor might throw if `std::shared_ptr's` `.reset()` throws: in this case, `std::terminate` would be called.
+
 ## Casting Support ## {#design-casting}
 
 There are also many APIs (COM-style APIs, base-class handle APIs, type-erasure APIs) where the initialization requires that the type passed to the function is of some fundamental (`void**`) or base type that does not reflect what is stored exactly in the pointer. Therefore, it is necessary to sometimes specify what the underlying type `out_ptr` uses is stored as.
@@ -306,9 +332,11 @@ This idiom is also useful for the `QueryInterface` base function for COM's `IUnk
 
 ### Casting Support: to arbitrary `T` ### {#design-casting-similar}
 
-In many cases, there is a typical C structure or similar that C++ users are sanctioned to derive and extend with their own data, with the promise that as long as the pointed passed to the function has a base class or matching type. There are also cases where the type stored in `std::unique_ptr<T, Deleter>` uses `Deleter` to override the `::pointer` type, making `std::unique_ptr` store the (fat, offset) `::pointer` that is convertible to `T*`.
+In many cases, there is a typical C structure or similar that C++ users are sanctioned to derive and extend with their own data, with the promise that as long as the pointed passed to the function has a base class or matching type. It also happens that someone needs to cast from a type-erased `void*` to a more-derived type. There are also cases where the type stored in `std::unique_ptr<T, Deleter>` uses `Deleter` to override the `::pointer` type, making `std::unique_ptr` store the (fat, offset) `::pointer` that is convertible to `T*`.
 
-In these case, it is imperative that the user be allowed to specify a casting parameter that the `out_ptr_t`/`inout_ptr_t`, and that is done by simply adding a type when calling the desired function. Consider a specialized `std::unique_ptr<int, fd_deleter>` where `::pointer` is a typedef to a special `fd` type:
+For example, one technique detailed by a graphics develop helped them make an agnostic `graphics_handle` type: a type-erased pointer for DirectX or a regular integer for OpenGL. This requires casting from a chunk of type-erased storage to a more concrete `ID3D11Texture*` or similar. Allowing for `out_ptr` to work on that level was critical for its usage in these cases.
+
+It is imperative that the user be allowed to specify a casting parameter that the `out_ptr_t`/`inout_ptr_t`, and that is done by simply adding a type when calling the desired function. Consider a specialized `std::unique_ptr<int, fd_deleter>` where `::pointer` is a typedef to a special `fd` type:
 
 ```
 struct fd {
@@ -362,6 +390,26 @@ The full example code for Windows and *Nix platforms is [available as a compilab
 In some cases, a function given a valid handle/pointer will delete that pointer on your behalf before performing an allocation in the same pointer. In these cases, just `.reset()` is entirely redundant and dangerous because it will delete a pointer that it does not own. Therefore, there is a second abstraction called `inout_ptr`, so aptly named because it is both an input (to be deleted) and an output (to be allocated post-delete). `inout_ptr`'s semantics are exactly like `out_ptr`'s, just with the additional requirement that it calls `.release()` on the smart pointer upon constructing the temporary `inout_ptr_t`.
 
 This can be heavily optimized in the case of `unique_ptr`, but to do so from the outside requires Undefined Behavior or modification of the standard library. See [[#perf-inout_ptr]] for further explication.
+
+
+
+## Footguns? ## {#design-footguns}
+
+As far as we know and have designed this specification, `std::out_ptr` and `std::inout_ptr` has no hidden or easy-to-access footguns. Originally, `std::out_ptr` was going to potentially include a runtime parameter to encapsulate the behavior of `std::inout_ptr`: however, it was deemed much better design to separate the two out into separate functions. This also matched VMWare's implementation experience with the type and generated far superior code. It also made it easier to know when to pick `out_ptr` versus `inout_ptr`: one is for regular allocations that just create something new, the other is for the case when you need to reallocate into the pointer and thusly can save some instructions.
+
+Furthermore, all examples of `out_ptr`/`inout_ptr` include usage as a temporary to a function call. Let us assume someone wanted to get sufficiently clever:
+
+```
+std::unique_ptr<int> u_ptr;
+auto op = std::out_ptr(u_ptr);
+int err = c_function_call(op);
+if (err != 0) {
+	throw std::runtime_error()
+}
+```
+
+This still behaves the same: but, `.reset()` won't ever be called before the `unique_ptr` goes out of scope. Unless the user performs extraordinary gymnastics to circumvent the typical lifetime of the factory-generated `out_ptr`, there are no footguns in regular and general usage.
+
 
 
 
