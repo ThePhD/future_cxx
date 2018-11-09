@@ -30,7 +30,7 @@ path: wording_style.bs
 
 ## Revision 2 ## {#changelog-r2}
 
-    Add [[#design-footguns]] section. Discuss implementation experience in more detail. Add exception inspection.
+    Add [[#design-footguns]] section. Discuss implementation experience in more detail. Add exception inspection and reasoning. Add additional design decision information about customization points.
 
 
 
@@ -184,6 +184,8 @@ struct inout_ptr_t {
 ```
 
 We specify "at minimum" because we expect users to override this type for their own shared, unique, handle-alike, reference-counting, and etc. smart pointers. The destructor of `~out_ptr_t()` calls `.reset()` on the stored smart pointer of type `Smart` with the stored pointer of type `Pointer` and arguments stored as `Args...`. `~inout_ptr_t()` does the same, but with the additional caveat that the constructor for `inout_ptr_t(Smart&, Args&&...)` also calls `.release()`, so that a `reset` doesn't double-delete a pointer that the expected re-allocating API used with `inout_ptr` already handles.
+
+We chose this extension point because the other options (CPOs and ADL extension) have proven to not be very feasible in the long run of maintainability. While we are wary that users open up namespace `std` we also recognize that it is essentially the best way that someone can extend this type to pointers and handles that are _not_ part of the standard. If this only works with standard types, then this type is almost certainly not worth it.
 
 
 
@@ -395,7 +397,7 @@ This can be heavily optimized in the case of `unique_ptr`, but to do so from the
 
 ## Footguns? ## {#design-footguns}
 
-As far as we know and have designed this specification, `std::out_ptr` and `std::inout_ptr` has no hidden or easy-to-access footguns. Originally, `std::out_ptr` was going to potentially include a runtime parameter to encapsulate the behavior of `std::inout_ptr`: however, it was deemed much better design to separate the two out into separate functions. This also matched VMWare's implementation experience with the type and generated far superior code. It also made it easier to know when to pick `out_ptr` versus `inout_ptr`: one is for regular allocations that just create something new, the other is for the case when you need to reallocate into the pointer and thusly can save some instructions.
+As far as we know and have designed this specification, `std::out_ptr` and `std::inout_ptr` have no hidden or easy-to-access footguns. Originally, `std::out_ptr` was going to potentially include a runtime parameter to encapsulate the behavior of `std::inout_ptr`: however, it was deemed much better design to separate the two out into separate functions. This also matched VMWare's implementation experience with the type and generated far superior code. It also made it easier to know when to pick `out_ptr` versus `inout_ptr`: one is for regular allocations that just create something new, the other is for the case when you need to reallocate into the pointer and thusly can save some instructions.
 
 Furthermore, all examples of `out_ptr`/`inout_ptr` include usage as a temporary to a function call. Let us assume someone wanted to get sufficiently clever:
 
@@ -408,7 +410,7 @@ if (err != 0) {
 }
 ```
 
-This still behaves the same: but, `.reset()` won't ever be called before the `unique_ptr` goes out of scope. Unless the user performs extraordinary gymnastics to circumvent the typical lifetime of the factory-generated `out_ptr`, there are no footguns in regular and general usage.
+This still behaves the same: but, `.reset()` will be called before the `unique_ptr` goes out of scope. Unless the user performs extraordinary gymnastics to circumvent the typical lifetime of the factory-generated `out_ptr`, there are no footguns in regular and general usage.
 
 
 
