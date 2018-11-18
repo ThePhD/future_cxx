@@ -51,8 +51,22 @@ We propose a type that can only be constructed with a non-empty value by the com
 
 # Design # {#design}
 
-This type can implicitly decay to a `const` lvalue reference to an array of `const CharType`. It can be default-constructed and will represent an empty null-terminated (byte) string (NT(B)S), which will be a `const CharType[1]`. As a NTS, the size of the underlying array will is guaranteed to be 1 or more.
+This type can implicitly decay to a `const` lvalue reference to an array of `const CharType`. It can be default-constructed and will represent an empty null-terminated (byte) string (NT(B)S), which will be a `const CharType[1]`. As a NTS, the size of the underlying array will is guaranteed to be 1 or more and `*std::end("")` will always be valid and equal to `'\0'` as it is today. The result of a `"asdf"` or similar string literal will always be a `std::basic_string_literal<CharType, N>`:
 
+```
+#include <type_traits>
+#include <string_literal>
+
+int main () {
+	auto x = "woof";
+	const auto& x_ref = "purr";
+	static_assert(std::is_same_v<std::string_literal<5>, decltype(x)>);
+	static_assert(std::is_same_v<std::basic_string_literal<char, 5>, decltype(x)>);
+	static_assert(std::is_same_v<const std::basic_string_literal<5>&, decltype(x_ref)>);
+
+	return 0;
+}
+```
 
 
 ## Safe to convert to NTS ## {#design-nts}
@@ -71,8 +85,8 @@ It is imperative that this type does not break the assumptions that come from ex
 
 // used to be const char[5], 
 // now is std::basic_string_literal<char, 5>
-// NOTE: CTAD allows us to leave off char/N
-// specifiers in the type name
+// NOTE: CTAD (with p1021, approved in San Diego) 
+// allows us to leave off char/N specifiers in the type name
 std::string_literal x = "bark"; 
 // okay: conversion, decay
 const char* first = x;
@@ -85,7 +99,7 @@ auto letter_a = x[1];
 
 ```
 
-(To see how the CTAD might work, see the stub example working on [Coliru](http://coliru.stacked-crooked.com/a/ce2da1bd3251a85b) and [Compiler Explorer](https://gcc.godbolt.org/z/Vb-Ccd))
+(To see how the CTAD might work in a pre-p1021 (C++17) world, see the stub example working on [Coliru](http://coliru.stacked-crooked.com/a/ce2da1bd3251a85b) and [Compiler Explorer](https://gcc.godbolt.org/z/Vb-Ccd))
 
 The one place where this might provide a breaking change is for users who take the address of a string literal using `&"arf"`. Because the type has changed, this operation may not do what it is expected of code that may have had to use this operation. Currently, the wording synopsis for `std::basic_string_literal<CharType, N>` below does not provide an `operator&`; chiefly, taking the address of a literal directly is an exceedingly rare use case, even for generic code. The author encourages individuals to voice any concerns they have while this potential breakage is considered. If this is deemed a significant use case for strings, then this paper will add the overloaded `operator&` to assuage those compatibility concerns.
 
@@ -289,47 +303,25 @@ namespace std {
 	template &lt;classCharType, size_t N> 
 	constexpr const CharType* cend (const basic_string_literal<CharType, N>&) noexcept;
 
+	template <class CharType, size_t N>
+	basic_string_literal( const CharType(&)[N] ) -> basic_string_literal<CharType, N>
 
-	<i>// 16.�.6, string literal deduction guide helpers</i>
-	template <size_t N>
-	class string_literal : public basic_string_literal<char, N> { 
-	private: 
-		using base_t = basic_string_literal<char, N>; // exposition-only
-	public: 
-		using base_t::base_t; // exposition-only
-	};
 
 	template <size_t N>
-	class wstring_literal : public basic_string_literal<wchar_t, N> { 
-	private: 
-		using base_t = basic_string_literal<wchar_t, N>; // exposition-only
-	public:
-		using base_t::base_t; 
-	};
-
-	template <size_t N>
-	class u8string_literal : public basic_string_literal<char8_t, N> { 
-	private: 
-		using base_t = basic_string_literal<char8_t, N>; // exposition-only
-	public: 
-		using base_t::base_t;  // exposition-only
-	};
+	using string_literal = basic_string_literal<char, N>;
 	
-	template &lt;size_t N>
-	class u16string_literal : public basic_string_literal<char16_t, N> { 
-	private: 
-		using base_t = basic_string_literal&lt;char16_t, N>; // exposition only
-	public:
-		using base_t::base_t; // exposition only
-	};
+	template <size_t N>
+	using wstring_literal = basic_string_literal<wchar_t, N>;
+	
+	template <size_t N>
+	using u8string_literal = basic_string_literal<char8_t, N>;
+	
+	template <size_t N>
+	using u16string_literal = basic_string_literal<char16_t, N>;
+	
+	template <size_t N>
+	using u32string_literal = basic_string_literal<char32_t, N>;
 
-	template &lt;size_t N>	
-	class u32string_literal : public basic_string_literal&lt;char32_t, N> { 
-	private: 
-		using base_t = basic_string_literal&lt;char32_t, N>; // exposition-only
-	public:
-		using base_t::base_t; // exposition-only
-	};
 }
 </pre></code>
 </ins>
@@ -415,19 +407,6 @@ namespace std {
 </ins>
 </blockquote>
 
-<blockquote>
-<ins>
-<b>16.�.6 String literal deduction guide types <span style="float: right;">[**stringlit.deduct**]</span></b>
-
-<div class="numbered">`string_literal`, `wstring_literal`, `u8string_literal`, `u16string_literal` and `u32string_literal` are types that are meant to be convenience aliases for `std::basic_string_literal<CharType, N>` using `char`,  `wchar_t`, `char8_t`, `char16_t` and `char32_t` respectively. Each type publicly derives from its corresponding `basic_string_literal` type. [ <i>Note:</i> Separate classes allow for deduction guides for each of the string literals that do not require the user to write the size of the string literal, similar to `const char[] = "meow";`: 
-[ <i>Example</i>:<pre><code>
-	std::string_literal sun = "PRAISE"; // std::string_literal<7>
-	std::wstring_literal friend = L"THE"; // std::wstring_literal<4>
-	std::u32string_literal solaire = U"SUN"; // std::u32string_literal<4>
-</code></pre><i>—end example</i>] <i>—end note</i> ]</div>
-</ins>
-</blockquote>
-
 
 Modify §20.3.2 [**basic.string**] to add the following constructor:
 
@@ -477,7 +456,7 @@ Modify §20.4.2.1 [**string.view.cons**] to add the following constructor:
 
 # Acknowledgements # {#acknowledgements}
 
-Thanks to Colby Pike (vector-of-bool) for helping to incubate and brew this idea.
+Thanks to Colby Pike (vector-of-bool) for helping to incubate and brew this idea. Thanks to Jason Turner for elaborating in quite a bit of detail the pitfalls of string initialization and the need for a string literal type.
 
 
 
