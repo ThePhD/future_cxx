@@ -714,7 +714,9 @@ namespace std {
 
 <p><ins><xmp>out_ptr_t(Smart& smart, Args&&... args) noexcept;</xmp></ins></p>
 
-<p><ins><sup>1</sup> Effects: initializes `s` with `addressof(smart)`, `a` with `std::forward<Args>(args)...`, and initializes `p` to an unspecified state [ <i>Note:</i> This allows an implementation and subsequent specializations to use values meaningful to the smart pointer. — <i>end note</i> ].<1/ins></p>
+<p><ins><sup>1</sup> Effects: initializes `s` with `addressof(smart)`, `a` with `std::forward<Args>(args)...`, and initializes `p` to an unspecified value of either `smart.get()` or its value initialization.</ins></p>
+
+<p><ins><sup>2</sup> [ <i>Note:</i> This allows an implementation and subsequent specializations to use values meaningful to the smart pointer and implementation. The program may not be able to depend on or observe the value of `p` through the conversion operator defined below. — <i>end note</i> ].</ins></p>
 
 <p><ins><xmp>out_ptr_t(out_ptr&& rhs) noexcept;</xmp></ins></p>
 
@@ -744,7 +746,7 @@ return *this;
 
 <p><ins><sup>2</sup> Effects: Equivalent to:
 <dl>
-	<dd><ins>— `if (p != nullptr) { s.reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if `reset` is a valid member function on `Smart`,</ins></dd>
+	<dd><ins>— `if (p != nullptr) { s->reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if `reset` is a valid member function on `Smart`,</ins></dd>
 	<dd><ins>— otherwise `if (p != nullptr) { s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></dd>
 </dl>
 where `Args` are the arguments stored in `a`.
@@ -841,13 +843,15 @@ namespace std {
 
 <p><ins><xmp>inout_ptr_t(Smart& smart, Args... args) noexcept;</xmp></ins></p>
 
-<p><ins><sup>1</sup> Constraints: The expression `smart.release()` is well-formed.</ins></p>
+<p><ins><sup>1</sup> Effects: initializes `s` with `addressof(smart)`, `a` with `std::forward<Args>(args)...`, and `p` to an unspecified value of either `smart.get()` or `smart.release()`.</ins></p>
 
-<p><ins><sup>2</sup> Effects: initializes `s` with `addressof(smart)`, `a` with `std::forward<Args>(args)...`, and `p` with `static_cast<Pointer>(smart.release())`.</ins></p>
+<p><ins><sup>2</sup> [ <i>Note:</i> This allows an implementation and subsequent specializations pick an option which fits their type and implementation strategy. — <i>end note</i> ].</ins></p>
+
+<p><ins><sup>3</sup> Remarks: if an implementation calls `smart.release()`, then it shall not call `s->release()` in the destructor.</ins></p>
 
 <p><ins><xmp>inout_ptr_t(inout_ptr&& rhs) noexcept;</xmp></ins></p>
 
-<p><ins><sup>3</sup> Effects: initializes `s` with `std::move(rhs.s)`, `a` with `std::move(args)...`, and `p` with `std::move(rhs.p)`. Then sets `rhs.p` to `nullptr`.</ins></p>
+<p><ins><sup>4</sup> Effects: initializes `s` with `std::move(rhs.s)`, `a` with `std::move(args)...`, and `p` with `std::move(rhs.p)`. Then sets `rhs.p` to `nullptr`.</ins></p>
 
 
 <p><ins>19.11.11.2 Assignment [**inout_ptr.class.assign**]</ins></p>
@@ -868,14 +872,18 @@ return *this;
 
 <p><ins><xmp>~inout_ptr_t();</xmp></ins></p>
 
-<p><ins><sup>1</sup> Let `SP` be `POINTER_OF_OR(Smart, Pointer)` (**19.10.2**).</ins></p>
+<p><ins><sup>1</sup> Constraints: The expression `smart.release()` is well-formed.</ins></p>
 
-<p><ins><sup>2</sup> Effects: Equivalent to:
+<p><ins><sup>2</sup> Let `SP` be `POINTER_OF_OR(Smart, Pointer)` (**19.10.2**).</ins></p>
+
+<p><ins><sup>3</sup> Effects: Equivalent to:
 <dl>
-	<dd><ins>— `if (p != nullptr) { s.reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if the expression `s.reset(...)` is well-formed,</ins></dd>
-	<dd><ins>— otherwise, `if (p != nullptr) { s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></dd>
+	<dd><ins>— `s->release(); if (p != nullptr) { s->reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if the expression `s.reset(...)` is well-formed,</ins></dd>
+	<dd><ins>— otherwise, `s->release(); if (p != nullptr) { s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></dd>
 </dl>
 </ins></p>
+
+<p><ins><sup>4</sup> Remarks: if an implementation calls `s->release()` or `smart.release()` in the constructor, then it shall not call `s->release()` in the destructor.</ins></p>
 
 
 <p><ins>19.11.11.4 Conversions [**inout_ptr.class.conv**]</ins></p>
