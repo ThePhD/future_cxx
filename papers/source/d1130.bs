@@ -1,12 +1,12 @@
 <pre class='metadata'>
-Title: For All We Care: when Compilers are created Equal
-Shortname: D1130
+Title: Module Resource Requirement Propagation
+Shortname: P1130
 Revision: 0
-Audience: SG15
-Status: D
+Audience: EWG
+Status: P
 Group: WG21
 URL: 
-!Latest: <a href="https://thephd.github.io/vendor/future_cxx/papers/d1330.html">https://thephd.github.io/vendor/future_cxx/papers/d1330.html</a>
+!Latest: <a href="https://thephd.github.io/vendor/future_cxx/papers/d1130.html">https://thephd.github.io/vendor/future_cxx/papers/d1130.html</a>
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Abstract: This paper attempts to provide a level of indirection upon which build system and package management tools build sane, higher-level abstractions.
@@ -34,35 +34,113 @@ path: wording_style.bs
 
 # Motivation # {#motivation}
 
-I made the foolish mistake of opening my mouth during SG-15's second-ever meeting. After a few intense stares and a little pressure, I caved and volunteered to write what the user perspective for using C++ libraries and building C++ libraries, packages, and similar is like. Spoiler alert:
+The only way to declare a dependency in C++ currently is to use a `#include` statement. With Modules coming to C++, dependency information was greatly enhanced by preambles and globule module fragments which allow for both the compiler and build system to understand physical and semantic layout of code. However, there is still a problem area that C++ has not addressed that people in the brave new Modules ecosystem want to answer: external dependency information for Modular C++. There is a huge opportunity to add a small directive to C++ which can be transiently ignored by the compiler but allows a build system or dependency graph generator to stay up to date without compiler-specific and tool-specific hacks.
 
-It sucks.
+In particular, consider a resource file on Windows (`.rc`) or an injected resource on Linux (with `objcopy`) or Apple's Bundles. At present, there's no way to inform C++ of these dependencies or inform the build system in a way that keeps both the source code and the build system in-sync: it is easy to fall out of lock-step with each other, and often requires custom rules on the part of the build system vendor or the application author. While resource files are a problem that [[p1040]] plan to solve, San Diego discussion around such a proposal demonstrated that people were conflicted with the idea that there might not be a way to communicate without doing full Semantic Analysis the actual source dependencies.
 
-From 4 different package managers which each have their own idea of how packages should be handled, to over 8 different build and meta-build systems with varying levels of "what the hell is going on in this nightmare", C++ build and packaging systems are a glimpse into what H.P. Lovecraft might fashion if he was build engineer and had 10 years of free time.
-
-From Perl build scripts to bash-wrapped Tcl-coded "get me out of here" scripts, the C++ ecosystem is less an ecosystem and more a personification of what Hell would look like without any kind of legion or leadership, each and every build its own demon that people hire specialized people to take care of, all while heaping greater and greater requirements on them. From linking with object files that can never be deleted because they are the last of a source repository that was blown up by engineers that were alive before the time of reliable backups or source control, to ouroboros-like cyclical dependencies where libraries depend on each other and require multiple builds to resolve properly the enterprise C++ ecosystem is a nightmare that can be neither tamed nor fixed.
-
-So let's just not start there.
-
-A much easier to fix problem is the startup: new C++ users and veteran C++ users who are sick of hammering out CMake boilerplate and writing platform-dependent Makefiles are ripe for the harvest with a new build system and package manager. Thusly, this paper will focus on the bottom end of the spectrum of making all of this work nicely: dealing with the compiler.
+Reducing the complexity of the build system and its dependency on vendor-specific extensions and tools for handling source dependency information. This proposal wants to add 2 new statements to the Preprocessing Module Tokens for [[p1103]], in particular `using identifier = requires "blah.txt"` and `requires "blah.txt"` in the Preamble.
 
 
 
 
-# Design # {#design}
+# Proposed Solution # {#solution}
 
-The primary design behind this paper is theoretically simple: we need a way to erase which compiler we are compiling with, provide a well-defined set of options and flags that for the majority of well-behaved multi-library and multi-program structures provides useful information that a build system can introspect to compile on, and 
+The proposed solution to the problem is to add a general purpose marker for communication of dependencies in the preamble. There is also an addition for making the string literal used to show dependencies as a global variable, allowing it to be used in `constexpr` contexts. It will be used as part of the typical modules declaration, making it available in public and private modules. For example:
+
+```
+module;
+// communicate this module
+// relies in a file "foo.txt"
+module bar requires "foo.txt";
+```
+
+For multiple dependencies for a single module, we use a multi-clause requires with brackets:
+
+```
+module;
+// communicate this module
+// relies on multiple files / assets
+export module mega_bar requires { "qux.txt", "meow.jpg", "uuids.csv" };
+```
+
+This allows us to inform the build system of dependencies with no new keywords. This also lets the compiler export dependency information with user-added information at no additional cost to the compiler, not occurring semantic analysis.
+
+
+
+
+# Proposed Changes to the Standard # {#wording}
+
+These changes are relative to [[p1103]]. If this is successful in being merged to C++20, then this paper will be rebased on the C++ Working Draft.
+
+
+
+## Proposed Feature Test Macro ## {#wording-feature}
+
+The proposed feature test macro for this is `__cpp_module_dependency_requires`.
+
+
+
+## Proposed Wording ## {#wording-language}
+
+Modify section §100.1 Modules units and purview [**module.unit**] to also include the following:
+
+<blockquote>
+<dl>
+	<dt><i>module-declaration:</i></dt>
+		<dd>
+			export<sub>opt</sub> module <i>module-name</i> <i>module-partition<sub>opt</sub></i> <i>attribute-specifier-seq<sub>opt</sub></i> <ins> <i>module-requires<sub>opt</sub></i></ins> ;
+		</dd>
+</dl>
+</blockquote>
+
+Add a section §100.� Resource requirement propagation [**module.requires**] to §100 [**modules**]:
+
+<blockquote>
+<ins>
+<b>100.� Resource requirement propagation <span style="float: right">[module.requires]</span></b>
+
+<dl style="text-indent: 5em">
+	<dt><i>module-requires-named-seq:</i></dt>
+		<dd>
+			<i>string-literal</i>
+		</dd>
+		<dd>
+			<i>string-literal</i> , <i>module-requires-named-seq<sub>opt</sub></i>
+		</dd>
+	<dt><i>module-requires:</i></dt>
+		<dd>
+			requires { <i>module-requires-named-seq<sub>opt</sub></i> }
+		</dd>
+		<dd>
+			requires <i>string-literal</i>
+		</dd>
+</dl>
+
+<p><sup>1</sup> A resource requirement is a way for a module to communicate its dependency on other resources for the program. A program may specify one or more <i>string-literal</i>s in the requirements clause to make clear this dependency in the <i>module-declaration</i>.</p>
+
+<p><sup>2</sup> This information does not affect the well-formedness of the program. [ <i>Note:</i> the implementation may choose to issue a diagnostic or a warning if it cannot find the resource specified. <i>— end note</i> ]</p>
+</ins>
+</blockquote>
+
 
 <pre class=biblio>
 {
 	
-	"p1330r1": {
+	"p1040": {
 		"authors": [
-			"Rein Halbersma"
+			"JeanHeyd Meneide"
 		],
-		"title": "User-Defined Literals for size_t",
-		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p1330r1.pdf",
+		"title": "std::embed",
+		"href": "https://wg21.link/p1040",
 		"date": "October 12th, 2018"
+	},
+	"p1103": {
+		"authors": [
+			"Richard Smith"
+		],
+		"title": "Merging Modules",
+		"href": "https://wg21.link/p1103",
+		"date": "November 10th, 2018"
 	}
 }
 </pre>

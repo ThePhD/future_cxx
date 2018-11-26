@@ -1,9 +1,9 @@
 <pre class='metadata'>
 Title: Explicitly Specified Returns for (Implicit) Conversions
-Shortname: D1193
+Shortname: P1193
 Revision: 0
 Audience: EWG
-Status: D
+Status: P
 Group: WG21
 URL: 
 !Latest: <a href="https://thephd.github.io/vendor/future_cxx/papers/d1193.html">https://thephd.github.io/vendor/future_cxx/papers/d1193.html</a>
@@ -113,7 +113,7 @@ There are many types which take advantage of certain conversion operations but n
 
 A primary example is `std::tie( a, b, c )`, where it generates a tuple of references that expects any left-hand-side of the assignment operation to have types that can assign into each of the reference variables. This works with an explicit conversion:
 
-```c++
+```
 struct fixed_proxy {
 	operator std::tuple<int, int, int> () const {
 		return std::make_tuple(1, 2, 3);
@@ -128,7 +128,7 @@ std::tie(a, b, c) = fixed_proxy{};
 
 This breaks down when the type for the conversion operation is deduced. Consider a structure that is meant to be converted to anything that appears on the left hand side of an assignment expression or in any kind of constructor (an "omni" or "unicorn" proxy type):
 
-```c++
+```
 struct unicorn_proxy {
 	template <typename T>
 	operator T () {
@@ -219,7 +219,7 @@ Therefore, this paper proposes allowing the user to specify the return type of a
 
 The primary design goal is to make the feature an entirely opt-in specification that interacts with the language in the same way regular conversions do, just with the compiler no longer assuming the return type is exactly the same as the type argument used to select the conversion operator. Here is an example of the full potential of a templated conversion operation with a changed return type:
 
-```c++
+```
 struct new_unicorn_proxy {
 	// capture anything
 	template <typename T>
@@ -269,7 +269,7 @@ This conversion operator in particular does not work with only r-value reference
 
 The reason for this departure is as explained before. The [[#motivation-mutual]] problem removes classes of code that care about a single type that can be an l-value, an r-value, or just a plain value in C++ code. By allowing a type argument that has the same capture rules as a forwarding reference, we can capture these differences and act on them in code.
 
-Similarly, allowing us to manipulate the return type more thoroughly allows us to handle the `std::tie` and similar problems. Note that this does not actually change the rules for user-defined conversions as they are now by much: the compiler selects which overload is appropriate by 
+Similarly, allowing us to manipulate the return type more thoroughly allows us to handle the `std::tie` and similar problems. Note that this does not actually change the rules for user-defined conversions as they are now by much: the compiler selects which overload is appropriate by using the type argument -- templated or not -- and passes that return value back. If the return value can construct or be used with what the compiler has selected, that is fine. If it cannot, then it will issue a diagnostic (in the same way that the return type of an overloaded function was used incorrectly).
 
 
 
@@ -283,11 +283,11 @@ The meaning of old code does not change, and neither does the way it interacts w
 
 ## Okay, but what if I keep returning things that are convertible? ## {#design-infinity}
 
-This is already banned under current rules: all user-defined conversions to non-builtin types may only go through 1 conversion resolution, otherwise the conversion is ill-formed. [[**class.conv.fct**]/1](http://eel.is/c++draft/class.conv.fct) also forbids returning the same type as the object the conversion being performed on or the base class.
+This is already banned under current rules: all user-defined conversions to non-built-in types may only go through 1 conversion resolution, otherwise the conversion is ill-formed as defined by [class.conv.fct, clause 4](http://eel.is/c++draft/class.conv.fct). Clause 1 of the same also forbids returning the same type as the object the conversion being performed on or the base class.
 
 The same rule still holds: conversions are not allowed to return the same type as the type the conversion is being invoked on (or any of its base classes). The type returned shall also be usable in the context that it is selected in. This means that a conversion that uses a type argument of `int` must return a type that is convertible to `int` without further user defined conversions (but may invoke additional constructors or other overloaded functions based on the selection).
 
-This rule is stringent to fit how strict the current lookup model is (one and only one user defined conversion to non-builtin type per resolution attempt). There may be room to relax the rules to allow 1 more conversion if the return type is not identical to the type argument, but this proposal does not look into that.
+This rule is stringent to fit how strict the current lookup model is (one and only one user defined conversion to non-built-in type per resolution attempt). There may be room to relax the rules to allow more flexibility if the return type is not identical to the type argument, but this proposal does not explore this avenue at this time. It would be more prudent to establish this feature, and then look at the potential extension of this to behave more closely to something like e.g. `operator->`. However, this kind of change would require a breaking change to existing code since the behavior would change and fundamentally affects the purely opt-in nature of this proposed change.
 
 
 
