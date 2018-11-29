@@ -1,9 +1,9 @@
 <pre class='metadata'>
 Title: Explicitly Specified Returns for (Implicit) Conversions
-Shortname: P1193
-Revision: 0
+Shortname: D1193
+Revision: 1
 Audience: EWG
-Status: P
+Status: D
 Group: WG21
 URL: 
 !Latest: <a href="https://thephd.github.io/vendor/future_cxx/papers/d1193.html">https://thephd.github.io/vendor/future_cxx/papers/d1193.html</a>
@@ -93,6 +93,9 @@ assert(c == 0);
 
 
 # Revision History # {#changelog}
+
+
+# Revision 1 - January 2
 
 
 
@@ -206,6 +209,20 @@ This means it is impossible to handle the difference between `int&` and `int` fo
 
 
 
+## A Specific Example: sol2 ## {#motivation-sol2}
+
+Many real world code bases that inter-convert suffer both the Read-Only problem and the mutual exclusion problem. Some suffer from both problems: for example, [sol2](https://github.com/ThePhD/sol2) has no valid way of preventing a large class of user errors without significant, non-trivial amounts of SFINAE on its conversion operations. Without being able to change the return type, that code base in particular are not allowed to communicate this limitation to the user: if a programmer asks for an integer out of a sol2 table proxy, it must hand them an integer or try to exclude all the overloads to only return double. This is already done to prevent some bad string constructors and [it results in hard to maintain and unreadable code that has broken several times thanks to string_view advancements and constructor changes](https://github.com/ThePhD/sol2//tree/55e92056c1d31300b82e52ac863ab8f7a9c8a541/sol/proxy_base.hpp#L41). For the case of integers (which do not actually exist in the Virtual Machine sol2 has to talk to), sol2 has to make a different -- and sometimes more sinister -- choice:
+
+
+- Always convert to (`int`) and if it happens to fall outside of that, pray a `static_cast` or c-style cast can do the right thing
+- Incur a performance hit when someone asks for an integer and do bounds checking on the value of the double to ensure it is, indeed, an integer
+
+sol2 supports both methods for different classes of programmer, and this ends up being a serious maintenance burden that has surfaced over 21 over the issue reports to sol2. The macro-ridden handling code is [here](https://github.com/ThePhD/sol2/tree/55e92056c1d31300b82e52ac863ab8f7a9c8a541/sol/stack_check_get_unqualified.hpp#L83).
+
+It would be better if, when being asked for an integer, the library author could return a double and let the warning pop up for the user. Now, instead of the library picking for users or adding several different macro-based modes to handle various different kinds of states and potential errors (or not), the user now loudly given a warning about a lossy conversion (on, for example, VC++). This lets the programmer make an informed decision about what they want without requiring the library author to engage in obscene, unreadable and hard-to-understand SFINAE for what is a very simple task. Note that if we added the SFINAE for such conversions to allow only a `double` to be returned and furnish this warning for the user to make a decision, sol2 would need to go from having the handful of functions defined now to closer to 6 functions to provide perfectly mutually exclusive overloads that will still work for integral types and do not get caught by the default conversion operators.
+
+
+
 ## In General ## {#motivation-general}
 
 In general, C++'s conversion operators pick both the type and the result of an implicit conversion expression without letting the user perform any useful changes that they can normally perform with a regular function. It also does not let a single conversion operation handle different cv-qualified and ref-qualified types, leaving a very useful and specific class of conversions out. There are many cases where loosening the declaration, definition and usage of conversion operators would greatly benefit library and user code.
@@ -285,9 +302,7 @@ The meaning of old code does not change, and neither does the way it interacts w
 
 This is already banned under current rules: all user-defined conversions to non-built-in types may only go through 1 conversion resolution, otherwise the conversion is ill-formed as defined by [class.conv.fct, clause 4](http://eel.is/c++draft/class.conv.fct). Clause 1 of the same also forbids returning the same type as the object the conversion being performed on or the base class.
 
-The same rule still holds: conversions are not allowed to return the same type as the type the conversion is being invoked on (or any of its base classes). The type returned shall also be usable in the context that it is selected in. This means that a conversion that uses a type argument of `int` must return a type that is convertible to `int` without further user defined conversions (but may invoke additional constructors or other overloaded functions based on the selection).
-
-This rule is stringent to fit how strict the current lookup model is (one and only one user defined conversion to non-built-in type per resolution attempt). There may be room to relax the rules to allow more flexibility if the return type is not identical to the type argument, but this proposal does not explore this avenue at this time. It would be more prudent to establish this feature, and then look at the potential extension of this to behave more closely to something like e.g. `operator->`. However, this kind of change would require a breaking change to existing code since the behavior would change and fundamentally affects the purely opt-in nature of this proposed change.
+The rules change slightly 
 
 
 
