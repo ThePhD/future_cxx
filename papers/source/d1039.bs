@@ -36,23 +36,23 @@ C99 defined Flexible Array Members (FAMs), a way of having a dynamic array of si
 
 Despite this success, nothing like this exists in C++, making its usage unspecified behavior by omission. All compilers warn or error about its usage when working with C from C++ that uses it, making it hard to confidently employ the C technique in C++ code bases. This presents a fairly painful chasm between what is possible in C and what is possible in C++, and prevents Bjarne Stroustrup's earliest vision of making it possible to fully cover and subsume all of C with C++.
 
-This paper proposes a safe, well-reasoned extension of the C++ Language in order to accommodate and properly define FAMs for C++ that is compatible with the C99 standard.
+This paper proposes a safe, well-reasoned extension of the C++ Language in order to accommodate and properly define FAMs and their containing Flexible Array Types (FATs) for C++ that is compatible with the C99 standard.
 
 
 
 ## Contiguous Fixed Header and Data ## {#motivation-contiguous}
 
-There are many data structures in program, on disk, and on wire that are a fixed header plus a chunk of variably sized data. C++ has no way to represent this in a single allocation without the use of `char` buffers or `std::aligned_storage` plus a good, hefty helping of type punning/`reinterpret_cast`. FAM types guarantee not only contiguous layout, but at most one allocation to have all of the data required. This makes them ideal in high-performance environments where multiple allocations for a single packet of data are unacceptable, and usable in the other scenarios without locking out usability and performance benefits.
+There are many data structures in program, on disk, and on wire that are a fixed header plus a chunk of variably sized data. C++ has no way to represent this in a single allocation without the use of `char` buffers or `std::aligned_storage` plus a good, hefty helping of type punning/`reinterpret_cast`. FATs guarantee not only contiguous layout, but at most one allocation to have all of the data required. This makes them ideal in high-performance environments where multiple allocations for a single packet of data are unacceptable, and usable in the other scenarios without locking out usability and performance benefits.
 
 
 
-## Variable Length Arrays? ## {#motivation-vla}
+## Variable Length Arrays? ## {#motivation-variable-length-array}
 
-This proposal is **not** for variable length arrays. It does **not** cover all of the wants or needs that the previously proposed [[n3662]] does. Variable Length Arrays also do not cover all of the things Flexible Array Members do. Notably, Flexible Array Members only cover the case where memory is explicitly allocated for it already. Variable Length Arrays also do not accommodate heterogeneous data in their structure. This FAM specification does not include allowing anything but 0-sized default construction of a FAM type when an automatic storage duration value is created. This restriction may be lifted at another time in another revision, or in another paper entirely. This paper focuses exclusively on covering the case of working with a pre-allocated buffer of space that the user has explicitly requested. (That pre-allocated buffer can be spelled `new my_fam_type(...)`).
+This proposal is **not** for variable length arrays. It does **not** cover all of the wants or needs that the previously proposed [[n3662]] does. Variable Length Arrays also do not cover all of the things Flexible Array Members do. Notably, Flexible Array Members only cover the case where memory is explicitly allocated for it already. Variable Length Arrays also do not accommodate heterogeneous data in their structure. This paper does not include allowing anything but 0-sized default construction of a FAT when an automatic storage duration value is created. This restriction may be lifted at another time in another revision, or in another paper entirely. This paper focuses exclusively on covering the case of working with a pre-allocated buffer of space that the user has explicitly requested. (That pre-allocated buffer can be spelled `new my_fam_type(...)`).
 
 
 
-## Runtime Sized Classes? ## {#motivation-rsc}
+## Runtime Sized Classes? ## {#motivation-runtime-sized-classes}
 
 Classes of runtime size that also modified `sizeof()` were explored in Jeff Snyder and Richard Smith's [[n4025]]. This proposal believes that the paper modified too much and went too far with what it changed about the core language. In particular, this paper instead focuses on the following:
 
@@ -62,13 +62,13 @@ Classes of runtime size that also modified `sizeof()` were explored in Jeff Snyd
 
 ## Places of Application ## {#motivation-uses}
 
-FAMs are used in the wild for many binary formats, particularly those that find themselves need to precisely align and pack data according to transfer formats. It is also found in operating system and  Some ripe places to use, and uses of, FAMs in the wild:
+FAMs are used in structs the wild for many binary formats, particularly those that find themselves with the need to precisely align and pack data according to transfer formats. It is also found in operating system and other systems programming applications. Some ripe places to use, and uses of, FAMs in the wild:
 
 - Embedded and ARM code often use it to map regions of memory with prefixed data,
 - Financial Bid and Transaction Protocols (such as OMX before reaching down into sub item headers, subscriber lists and set event lists),
 - Heterogeneous Computing, such as [[hsa-brig|HSA BRIG modules]],
 - Networking protocols, such as
-	- the ubiquitous lower layers such as [[tcp-ip|Internet Protocol (IP),Transmission Control Protocol (TCP)]], and [[udp|User Datagram Protocol (UDP)]], Link and similar in both userspace and kernel "ring0" space,
+	- the ubiquitous lower layers such as [[tcp-ip|Internet Protocol (IP),Transmission Control Protocol (TCP)]], and [[udp|User Datagram Protocol (UDP)]], Link and similar in both user space and kernel "ring0" space,
 	- the increasingly popular [[websockets|WebSockets]],
 - Operating System calls and system packages,
 	- Windows in several locations, including [[usn-record-v4|USN Journals]] and [[file_notify_information|ReadDirectoryChangesW]] return value,
@@ -104,7 +104,7 @@ These sets of constraints help us properly integrate FAMs into the C++ language 
 2. Ease the porting of C code into C++ for users who wish to have correct, well-specified and well-defined behavior of their code.
 3. Enable developers who must work with the data laid out in #1 to rely on standards-compliant, reasonable constructs in code.
 
-Furthermore, this proposal aims to provide a set of overridable traits that -- if specified for a type -- will override how member count and data size are handled in C++. If the traits are not overridden, then the compiler is allowed to continue to use implementation-defined mechanisms for managing, controlling and deleting the memory.
+Furthermore, this proposal aims to provide a set of overridable traits that -- if specified for a type -- will override how member count and data size are handled in C++. If the traits are not overridden, then the compiler is allowed to continue to use implementation-defined mechanisms for managing, controlling and deleting the memory associated with a Flexible Array Type (FAT).
 
 These restrictions may seem overbearing, but they are for the good of the features laid out below. This proposal's restrictions are also forward-compatible: they can be relaxed or enhanced later without breaking old code, much like how `constexpr` was initially constrained and then generally relaxed later on once the power of the feature was fully understood.
 
@@ -112,7 +112,7 @@ These restrictions may seem overbearing, but they are for the good of the featur
 
 ## Features and Explicit Opt-in ## {#design-features}
 
-Much of Flexible Array Member use will be coming from C code. It is imperative this code is well-formed, even when compiled as C++. Therefore, many of the operations that Flexible Array Members for C++ utilize must be completely defaulted. Consider the following simple FAM:
+Much of Flexible Array Member use will be coming from C code. It is imperative this code is well-formed, even when compiled as C++. Therefore, many of the operations that Flexible Array Members for C++ utilize must be completely defaulted. Consider the following simple FAT:
 
 ```
 struct simple_fam_t {
@@ -123,15 +123,15 @@ struct simple_fam_t {
 This is valid code and under this proposal will continue to remain valid, without modification. This proposal does so through the application of the following features below.
 
 
-### Feature: creation of FAM types is limited to certain expressions ### {#design-feature-create}
+### Feature: creation of Flexible Array Types is limited to certain expressions ### {#design-feature-create}
 
-FAM types can be created with `new`, but may not be used with array `new`. They can also be created with placement new.
+FAT can be created with `new`, but may not be used with array `new`. They can also be created with placement new.
 
-When used as an automatic storage variable (e.g. "on the stack"), the flexible array member types just have a size that includes the non-FAM members, plus any padding necessary to get to the start of the FAM. This proposal allows automatic storage duration versions of the type as it mimics exactly how C handles it: a struct with an empty Flexible Array Member.
+When used as an automatic storage variable (e.g. "on the stack"), the FATs just have a size that includes the non-FAMs, plus any padding necessary to get to the start of the FAM. This proposal allows automatic storage duration versions of the type as it mimics exactly how C handles it: a struct with an empty Flexible Array Member.
 
-For the heap, FAMs are also still analogous with C. When allocated on the heap with `malloc` in C, the user makes room for it explicitly then performs type-punning of the returned `void*` data. In C++, this proposal would allow actually putting data in this type through the use of `new` as a proper analogy.
+For the heap, FATs are also still analogous with C. When allocated on the heap with `malloc` in C, the user explicitly makes room for it then performs type-punning of the returned `void*` data. In C++, this proposal would allow actually putting data in this type through the use of `new` as a proper analogy.
 
-This matches C and also prevents a large myriad of cases where the type's boundaries are not clear and would violate invariants. For example, in the case of `new simple_fam_t[20];`, it is impossible to know where one flexible array member begins and the next ends without some sort of serious book keeping. The only allowed version of creating a flexible array member is with `new some_fam_type(...);`.
+This matches C and also prevents a large myriad of cases where the type's boundaries are not clear and would violate invariants. For example, in the case of `new simple_fam_t[20];`, it is impossible to know where one flexible array member begins and the next ends without some sort of serious book keeping. The only allowed version of creating a flexible array member is with `new some_fam_type(...);`. This will specifically translate `new T(fam_size(n));` to `operator new(sizeof(T) + (sizeof(fam_element_t<T>) * n));, before invoking the constructor with `fam_size(n)`.
 
 
 ### Feature: Traits and Types ### {#design-feature-traits}
@@ -145,7 +145,7 @@ namespace std {
 	struct fam_size {
 		fam_size(std::size_t element_count = 0) noexcept : n(element_count) {}
 
-		std::size_t size() const noexcept {
+		std::size_t value() const noexcept {
 			return n;
 		}
 
@@ -167,12 +167,12 @@ namespace std {
 
 namespace std {
 	template <typename T>
-	struct is_fam  : std::integral_constant<
+	struct has_fam  : std::integral_constant<
 		bool, /* compiler intrinsic here */
 	> {};
 
 	template <typename T>
-	using is_fam_v = is_fam<T>::value;
+	using has_fam_v = has_fam<T>::value;
 
 	template <typename T>
 	struct fam_element {
@@ -216,18 +216,18 @@ The size reported by the `fam_traits<T>::size(const T&)` static function can be 
 
 "What in the world...?" Is what some people will say upon this realization, but there is an important point here. Consider the following absolutely confirming C implementation: the user asks for an object with a FAM `int[]`, requiring 20 `int`s worth of space: an implementation can give the user space for 30 `int`s. Furthermore, any trivial type (every type `T` from C has `std::is_trivial_v<T>` evaluate to true) does not need destructors run, so all the system needs to do is reclaim the memory. Therefore, most implementations store _only the amount of memory allocated_, not the number of elements.
 
-Therefore, for any type which is trivial, an unspecialized `fam_traits<T>::size()` is not required to report exactly the number of elements the user asked for the FAM object, just a value greater than or equal to. This is because a valid compiler implementation of `size()` can be `return _Libc_allocated_size(fam_obj) / sizeof(fam_element_t<T>);`.
+Therefore, for any type which is trivial, an unspecialized `fam_traits<T>::size()` is not required to report exactly the number of elements the user asked for the FAT object, just a value greater than or equal to. This is because a valid compiler implementation of `size()` can be `return _Libc_allocated_size(fam_obj) / sizeof(fam_element_t<T>);`.
 
-**Note that this is only for trivial types,** and is only mandated for perfect backwards compatibility with C code! For any FAM type that is non-trivial or whose array elements are non-trivial, the reported `size()` must be exactly equal to the number of successfully constructed elements so that the destructor can be run properly. The only reason to provide `size()` is to allow the compiler to generate a destructor that properly deletes the number of elements on your behalf, or the user in a FAM type's destructor to use it to destruct the correct number of values. If the type is trivially destructible, the user should not need to invoke the destructor on each element individually to begin with.
+**Note that this is only for trivial types,** and is only mandated for perfect backwards compatibility with C code! For any FAT that is non-trivial or whose array elements are non-trivial, the reported `size()` must be exactly equal to the number of successfully constructed elements so that the destructor can be run properly. The only reason to provide `size()` is to allow the compiler to generate a destructor that properly deletes the number of elements on your behalf, or the user in a FAT's destructor to use it to destruct the correct number of values. If the type is trivially destructible, the user should not need to invoke the destructor on each element individually to begin with.
 
 
 ### Feature: Special Members ### {#design-feature-special_members}
 
-FAMs have one special constructor that can be generated. It then has the usual copy and move constructors, as well as copy and move assignment operators. The destructor is also generated (or left empty if the entire class is trivial).
+FATs have one special constructor that can be generated. It then has the usual copy and move constructors, as well as copy and move assignment operators. The destructor is also generated (or left empty if the entire class is trivial).
 
 #### Special Member: Constructor of `std::fam_size` #### {#design-feature-special_members-constructor}
 
-To construct a FAM type within the above restrictions, a constructor that takes an argument of `std::fam_size` as its first argument is required. It may have more arguments than this, but to be used with `new T(std::fam_size(), arg0, ..., argN)` expressions, a constructor present must take a `std::fam_size` as the first argument. If one is not provided and `std::fam_traits` has not been specialized, then one is generated as follows:
+To construct a type within the above restrictions, a constructor that takes an argument of `std::fam_size` as its first argument is required. It may have more arguments than this, but to be used with `new T(std::fam_size(), arg0, ..., argN)` expressions, a constructor present must take a `std::fam_size` as the first argument. If one is not provided and `std::fam_traits` has not been specialized, then one is generated as follows:
 
 ```
 #include <fam>
@@ -280,7 +280,7 @@ If `std::fam_traits` has been specialized, then the compiler will not generate t
 
 #### Destructor #### {#design-feature-special_members-destructor}
 
-The destructor is also automatically generated for FAM types. An exemplary implementation is as follows:
+The destructor is also automatically generated for types containing a FAM. An exemplary implementation is as follows:
 
 ```
 struct my_fam_t {
@@ -309,11 +309,11 @@ struct my_fam_t {
 }
 ```
 
-A user does not ever have to write a destructor for their FAM type: one will always be generated that is correct for dealing with all of the members, plus the flexible array member's data. When a FAM type is destructed, the elements of the FAM are destroyed in reverse order, and then the other elements of the class are destroyed as normal. See the [[#design-demo-simple_non_trivial]] for an example of the default construction and destruction orders.
+A user does not ever have to write a destructor for their FATs: one will always be generated that is correct for dealing with all of the members, plus the flexible array member's data. When a FAT is destructed, the elements of the FAM are destroyed in reverse order, and then the other elements of the class are destroyed as normal. See the [[#design-demo-simple_non_trivial]] for an example of the default construction and destruction orders.
 
 #### Copy/Move Constructor and Assignment #### {#design-feature-special_members-copy_move}
 
-Copy/move constructors and copy/move assignment all follow the same pattern as the constructor and destructor in this case. They are seen as if invoking a constructor with `std::fam_size`, and then copy/move constructing each element of the array (that is, it performs a by-value copy of each element). The sizes of both FAMs will compare equal after copy and move operations (modulo any insane `std::fam_traits` specializations).
+Copy/move constructors and copy/move assignment all follow the same pattern as the constructor and destructor in this case. They are seen as if invoking a constructor with `std::fam_size`, and then copy/move constructing each element of the array (that is, it performs a by-value copy of each element). The sizes of both FATs will compare equal after copy and move operations (modulo any insane `std::fam_traits` specializations).
 
 
 
@@ -324,7 +324,7 @@ Here are some examples of the syntax and some of its invariants.
 
 ### Simple: Trivial ### {#design-demo-simple_trivial}
 
-Here is a very simple FAM type:
+Here is a very simple FAT:
 
 ```
 #include <fam>
@@ -363,7 +363,7 @@ int main () {
 
 ### Simple: Non-Trivial ### {#design-demo-simple_non_trivial}
 
-Here is a FAM type with a non-trivial element that prints its id on construction and destruction:
+Here is a FAT with a non-trivial element that prints its id on construction and destruction:
 
 ```
 #include <iostream>
@@ -637,7 +637,7 @@ The proposed feature test macro is `__cpp_flexible_array_members` with a value o
 
 ## Intent ## {#wording-intent}
 
-The intent of this wording is to create a new type in the C++ language called a Flexible Array Member (FAM) type (FAM type). FAM types:
+The intent of this wording is to create a new type in the C++ language called a Flexible Array Type (FAT). FATs:
 - are implicitly final;
 - will contain an array of unknown bound that is the last non-static data member;
 - shall only be created with a variable size through placement new or new syntax;
@@ -646,7 +646,7 @@ The intent of this wording is to create a new type in the C++ language called a 
 - shall either specialize `std::fam_traits` with the required `size` function and write a constructor following the above restriction or have one generated;
 - may have a default constructor generated which defers to another constructor with only the argument `std::fam_size(0)`;
 - will not contribute to the `sizeof()` value for the type except for any necessary implementation-defined padding to reach the flexible array member;
-- and if either the type of the flexible array member's element type evaluates `std::is_trivial<element_type>` or `std::fam_traits` is specialized by the program to true then the FAM type is not required to report the exact element count requested by the use of a std::fam_size constructor.
+- and if either the type of the flexible array member's element type evaluates `std::is_trivial<element_type>` or `std::fam_traits` is specialized by the program then the FAT is not required to report the exact element count requested by the use of a std::fam_size constructor.
 
 Additionally, the wording is meant to create 1 new type -- std::fam_size -- whose type references a compiler-defined type that is only named in the program through inclusion of the header `<fam>` with the type identifier `std::fam_size`. It will also created 1 new program-specializable trait -- `std::fam_traits` -- that is also available in the `<fam>` header. If the `std::fam_traits` template type is not specialized, then it is only required that the implementation report exactly the element count passed in through `std::fam_size`, modulo the exception for trivial types above.
 

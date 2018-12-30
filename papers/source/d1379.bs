@@ -1,5 +1,5 @@
 <pre class='metadata'>
-Title: BLANK PAPER USE THIS FOR ANY NEW PAPERS
+Title: std::to_underlying for enumerations
 Shortname: D1379
 Revision: 0
 Audience: EWG, LEWG
@@ -11,7 +11,7 @@ Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Date: 2018-11-26
 Markup Shorthands: markdown yes, biblio yes, markup yes
-Abstract: PLACEHOLDER PAPER FOR THE FUUUTUUUUUURE!
+Abstract: A proposal to add a short utility function to handle going from an enumeration to its untyped underlying variant!
 </pre>
 
 <pre class=include>
@@ -25,9 +25,63 @@ path: wording_style.bs
 
 
 
-## Revision 0 - ???????? ## {#changelog-r1}
+## Revision 0 - December 30th, 2018 ## {#changelog-r1}
 
 	- Initial release.
+
+
+
+# Motivation # {#changelog}
+
+Many codebases write a version of a small utility function converting an enumeration to its underlying type. The reason for this function is very simple: applying `static_cast<int>` or `static_cast<unsigned long>` to change an enumeration to its underlying type makes it harder to quickly read and maintain places where the user explicitly converts from a strongly-typed enumeration to its underlying value for the purposes of working with an untyped API or similar: it looks like any old cast, making it harder to read code and potentially incorrect when enumeration types are changed from signed / unsigned or similar, masking potential bugs from size/signedness changes and hiding programmer intent. For example, going from this code,
+
+```
+enum class ABCD {
+	A = 0x1012,
+	B = 0x405324,
+	C = A & B
+};
+
+// sometime later ...
+
+void do_work(ABCD some_abcd_value) {
+	// no warning, no visual indication,
+	// is this what the person wanted,
+	// what was the original intent in this
+	// 'harmless' code?
+	internal_untyped_api(static_cast<int>(some_abcd_value));
+}
+```
+
+To this code:
+
+```
+#include <cstdint>
+
+// changed enumeration, underlying type
+enum class ABCD : uint32_t {
+	A = 0x1012,
+	B = 0x405324,
+	C = A & B,
+	D = 0xFFFFFFFF // !!
+};
+
+// from before:
+
+void do_work(ABCD some_abcd_value) {
+	// no warning, no visual indication,
+	// is this what the person wanted,
+	// what was the original intent in this
+	// 'harmless' code?
+	internal_untyped_api(static_cast<int>(some_abcd_value));
+}
+```
+
+Calling `do_work(ABCD::D);` is a code smell internally because the cast is the wrong one for the enumeration. If the internal untyped API takes an integral value larger than the size of `int` and friends, then this code might very well pass an unintended and wrong result, too. Of course, this change does not trigger warnings or errors: `static_cast<int>` is a declaration of intent that says "I meant to do this cast", even if that cast was done before any changes or refactoring was performed.
+
+We propose an intent-preserving function called `std::to_underlying( value );` that only works on enumeration types. It will `static_cast` the enumeration to integral representation with `std::underlying_type_t<EnumT>`.
+
+# Design # {#design}
 
 
 
