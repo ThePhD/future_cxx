@@ -11,7 +11,7 @@ Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Date: 2018-11-26
 Markup Shorthands: markdown yes, biblio yes, markup yes
-Abstract: A proposal to add a short utility function to handle going from an enumeration to its untyped underlying variant!
+Abstract: A proposal to add a short utility function to handle going from an enumeration to its underlying integral value for safety and ease of use.
 </pre>
 
 <pre class=include>
@@ -31,9 +31,9 @@ path: wording_style.bs
 
 
 
-# Motivation # {#changelog}
+# Motivation # {#motivation}
 
-Many codebases write a version of a small utility function converting an enumeration to its underlying type. The reason for this function is very simple: applying `static_cast<int>` or `static_cast<unsigned long>` to change an enumeration to its underlying type makes it harder to quickly read and maintain places where the user explicitly converts from a strongly-typed enumeration to its underlying value for the purposes of working with an untyped API or similar: it looks like any old cast, making it harder to read code and potentially incorrect when enumeration types are changed from signed / unsigned or similar, masking potential bugs from size/signedness changes and hiding programmer intent. For example, going from this code,
+Many codebases write a version of a small utility function converting an enumeration to its underlying type. The reason for this function is very simple: applying `static_cast<int>`/ `static_cast<unsigned long>` (or similar) to change an enumeration to its underlying type makes it harder to quickly read and maintain places where the user explicitly converts from a strongly-typed enumeration to its underlying value. For the purposes of working with an untyped API or similar, casts just look like any old cast, making it harder to read code and potentially incorrect when enumeration types are changed from signed / unsigned or similar. Typical casts can also mask potential bugs from size/signed-ness changes and hide programmer intent. For example, going from this code,
 
 ```
 enum class ABCD {
@@ -44,12 +44,12 @@ enum class ABCD {
 
 // sometime later ...
 
-void do_work(ABCD some_abcd_value) {
+void do_work(ABCD some_value) {
 	// no warning, no visual indication,
 	// is this what the person wanted,
 	// what was the original intent in this
 	// 'harmless' code?
-	internal_untyped_api(static_cast<int>(some_abcd_value));
+	internal_untyped_api(static_cast<int>(some_value));
 }
 ```
 
@@ -68,68 +68,146 @@ enum class ABCD : uint32_t {
 
 // from before:
 
-void do_work(ABCD some_abcd_value) {
+void do_work(ABCD some_value) {
 	// no warning, no visual indication,
 	// is this what the person wanted,
 	// what was the original intent in this
 	// 'harmless' code?
-	internal_untyped_api(static_cast<int>(some_abcd_value));
+	internal_untyped_api(static_cast<int>(some_value));
 }
 ```
 
-Calling `do_work(ABCD::D);` is a code smell internally because the cast is the wrong one for the enumeration. If the internal untyped API takes an integral value larger than the size of `int` and friends, then this code might very well pass an unintended and wrong result, too. Of course, this change does not trigger warnings or errors: `static_cast<int>` is a declaration of intent that says "I meant to do this cast", even if that cast was done before any changes or refactoring was performed.
+is dangerous, but the `static_cast<int>` is seen by the compiler as intentional by the user.
 
-We propose an intent-preserving function called `std::to_underlying( value );` that only works on enumeration types. It will `static_cast` the enumeration to integral representation with `std::underlying_type_t<EnumT>`.
+Calling `do_work(ABCD::D);` is a code smell internally because the cast is the wrong one for the enumeration. If the internal untyped API takes an integral value larger than the size of `int` and friends, then this code might very well pass a bit pattern that will be interpreted as the wrong value inside of the `internal_untyped_api`, too. Of course, this change does not trigger warnings or errors: `static_cast<int>` is a declaration of intent that says "I meant to do this cast", even if that cast was done before any changes or refactoring was performed on the enumeration.
+
+Doing it the right way is also cumbersome:
+
+```
+void do_work(ABCD some_value) {
+	// will produce proper warnings,
+	// but is cumbersome to type
+	internal_untyped_api(static_cast<std::underlying_type_t<ABCD>>(some_value));
+}
+```
+
+It is also vulnerable to the parameter's type changing from an enumeration to another type that is convertible to an integer. Because it is still a `static_cast`, unless someone changes the type for `do_work` while also deleting `ABCD`, that code will still compile:
+
+```
+void do_work(OtherEnumeration value) {
+	// no warnings, no errors, ouch!
+	internal_untyped_api(static_cast<std::underlying_type_t<ABCD>>(some_value));
+}
+```
+
+We propose an intent-preserving function used in many codebases across C++ called `std::to_underlying( value );`.
+
+
+
 
 # Design # {#design}
+
+`std::to_underlying` completely avoids all of the above-mentioned problems related to code reuse and refactoring. It makes it harder to write bugs when working with strongly-typed enumerations into untyped APIs such with things such as C code and similar. It only works on enumeration types. It will `static_cast` the enumeration to integral representation with `std::underlying_type_t<T>`. This means that the value passed into the function provides the type information, and the type information is provided by the compiler, not by the user.
+
+This makes it easy to find conversion points for "unsafe" actions, reducing search and refactoring area. It also puts the `static_cast` inside of a utility function, meaning that warnings relating to size and signed-ness differences can still be caught in many cases since the result's usage comes from a function, not from an explicitly inserted user cast.
+
+```
+#include <utility>
+
+void do_work(MyEnum value) {
+	// changes to match its value,
+	// proper warnings for signed/unsigned mismatch,
+	// and ease-of-use!
+	internal_untyped_api(std::to_underlying(some_value));
+}
+```
+
+
+
+
+# Proposing Wording # {#wording}
+
+The wording proposed here is relative to [[n4791]].
+
+
+
+## Proposed Feature Test Macro ## {#wording-feature}
+
+The proposed library feature test macro is `__cpp_lib_to_underlying`.
+
+
+
+## Intent ## {#wording-intent}
+
+The intent of this wording is to introduce 1 function into the `<utility>` header called `to_underlying`. If the input to the function is not an enumeration, then the program is ill-formed.
+
+
+
+## Proposed Library Wording ## {#wording-library}
+
+Append to §16.3.1 General [**support.limits.general**]'s **Table 35** one additional entry:
+
+<blockquote>
+<table>
+<tr>
+	<th>Macro name</th>
+	<th>Value</th>
+</tr>
+<tr>
+	<td><ins>__cpp_lib_to_underlying</ins></td>
+	<td><ins>201902L</ins></td>
+</tr>
+</table>
+</blockquote>
+
+Add the following into §19.2.1 Header `<utility>` synopsis:
+
+<blockquote>
+<ins>
+```
+// [utility.underlying], to_underlying
+template <class T>
+    constexpr std::underlying_type_t<T> to_underlying(T value) noexcept;
+```
+</ins>
+</blockquote>
+
+Add a new section §19.2.7 Function template `to_underlying` [utility.underlying]:
+
+<blockquote>
+**19.2.7** Function template `to_underlying` <span float="right">[**utility.underlying**]</span>
+
+```
+namespace std {
+	template <typename T>
+	constexpr std::underlying_type_t<T> to_underlying( T value ) noexcept;
+}
+```
+
+<sup>1</sup> Constraints: `T` shall satisfy `std::is_enum_v<T>`.
+
+<sup>2</sup> Returns: `static_cast<std::underlying_type_t<T>>(value)`.
+</ins>
+</blockquote>
+
+
+
+# Acknowledgements # {#acknowledgements}
+
+Thanks to Rein Halbersma for bringing this up as part of the things that would make programming in his field easier and the others who chimed in.
 
 
 
 <pre class=biblio>
 {
-	"n4762": {
+	"n4791": {
 		"authors": [
 			"ISO/IEC JTC1/SC22/WG21 - The C++ Standards Committee",
 			"Richard Smith"
 		],
-		"title": "N4762 - Working Draft, Standard for Programming Language C++",
-		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/n4762.pdf",
-		"date": "May 7th, 2018"
-	},
-	"p1040": {
-		"authors": [
-			"JeanHeyd Meneide"
-		],
-		"title": "std::embed",
-		"href": "https://wg21.link/p1040",
-		"date": "October 12th, 2018"
-	},
-	"p0424": {
-		"authors": [
-			"Louis Dionne",
-			"Hana Dusíková"
-		],
-		"title": "String literals as non-type template parameters",
-		"href": "https://wg21.link/p0424",
-		"date": "November 14th, 2017"
-	},
-	"p0732": {
-		"authors": [
-			"Jeff Snyder",
-			"Louis Dionne"
-		],
-		"title": "Class Types in Non-Type Template Parameters",
-		"href": "https://wg21.link/p0732",
-		"date": "June 6th, 2018"
-	},
-	"p0259": {
-		"authors": [
-			"Michael Price",
-			"Andrew Tomazos"
-		],
-		"title": "fixed_string: a compile-time string",
-		"href": "https://wg21.link/p0259",
-		"date": "2016"
+		"title": "N4791 - Working Draft, Standard for Programming Language C++",
+		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/n4791.pdf",
+		"date": "December 7th, 2018"
 	}
 }
 </pre>
