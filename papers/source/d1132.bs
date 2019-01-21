@@ -1,7 +1,7 @@
 <pre class='metadata'>
 Title: out_ptr - a scalable output pointer abstraction
 Shortname: P1132
-Revision: 2
+Revision: 3
 Audience: LEWG, LWG
 Status: P
 Group: WG21
@@ -14,7 +14,7 @@ Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Todor Buyukliev, tbuyukliev@vmware.com
 Editor: Isabella Muerte, https://twitter.com/slurpsmadrips
 Abstract: out_ptr is an abstraction to bring both C APIs and smart pointers back into the promised land by creating a temporary pointer-to-pointer that updates the smart pointer when it destructs.
-Date: 2018-11-26
+Date: 2019-01-21
 Markup Shorthands: markdown yes, biblio yes, markup yes
 </pre>
 
@@ -28,9 +28,21 @@ path: wording_style.bs
 
 
 
+## Revision 3 - January 21st, 2019 ## {#changelog-r3}
+
+    - Add details discussing upcoming implementations in [[#experience]].
+    - Add section about implementation churn.
+    - Add details about flow control statements and temporary evaluation for [[#design-footguns]].
+    - Wording is now relative to [[n4778]], the latest working draft of the C++ Standard.
+
+
+
 ## Revision 2 - November 26th, 2018 ## {#changelog-r2}
 
-    Add [[#design-footguns]] section. Discuss implementation experience in more detail. Add exception inspection and reasoning. Add additional design decision information about customization points.
+    - Add [[#design-footguns]] section.
+    - Discuss implementation experience in more detail.
+    - Add exception inspection and reasoning.
+    - Add additional design decision information about customization points.
 
 
 
@@ -395,7 +407,7 @@ This can be heavily optimized in the case of `unique_ptr`, but to do so from the
 
 ## Footguns? ## {#design-footguns}
 
-As far as we know and have designed this specification, `std::out_ptr` and `std::inout_ptr` have no hidden or easy-to-access footguns. Originally, `std::out_ptr` was going to potentially include a runtime parameter to encapsulate the behavior of `std::inout_ptr`: however, it was deemed much better design to separate the two out into separate functions. This also matched VMWare's implementation experience with the type and generated far superior code. It also made it easier to know when to pick `out_ptr` versus `inout_ptr`: one is for regular allocations that just create something new, the other is for the case when you need to reallocate into the pointer and thusly can save some instructions.
+As far as we know and have designed this specification, `std::out_ptr` and `std::inout_ptr` have no hidden or easy-to-access footguns for its intended usage. Originally, `std::out_ptr` was going to potentially include a runtime parameter to encapsulate the behavior of `std::inout_ptr`: however, it was deemed much better design to separate the two out into separate functions. This also matched VMWare's implementation experience with the type and generated far superior code. It also made it easier to know when to pick `out_ptr` versus `inout_ptr`: one is for regular allocations that just create something new, the other is for the case when you need to reallocate into the pointer and thusly can save some instructions.
 
 Furthermore, all examples of `out_ptr`/`inout_ptr` include usage as a temporary to a function call. Let us assume someone wanted to get sufficiently clever:
 
@@ -409,6 +421,23 @@ if (err != 0) {
 ```
 
 This still behaves the same: but, `.reset()` will be called before the `unique_ptr` goes out of scope. Unless the user performs extraordinary gymnastics to circumvent the typical lifetime of the factory-generated `out_ptr`, there are no footguns in regular and general usage.
+
+The only other place where someone could be sufficiently clever is with a function call _and_ a flow control statement. For example, an `if` statement that initializes something and also tests the smart pointer in that same `if` statement will extend lifetimes in a very poor order:
+
+```cpp
+std::unique_ptr<foo_handle, foo_deleter> my_unique(nullptr);
+
+if (get_some_pointer(std::out_ptr(my_unique)); my_unique)) {
+	std::cout << "yay" << std::endl;
+}
+else {
+	std::cout << "oh no" << std::endl;
+}
+```
+
+This happens whether the expression is chained with multiple comma/conditional expressions or if someone uses the new flow-control initializer statements. This is an unfortunately holdover of how temporaries are treated, and rather being fixed with flow control initializer statements the same quirky rules for the old `if` were carried over.
+
+This was pointed out as strange, but we feel this is not much of a blocker for this proposal. All RAII-based, action-on-destroy resources suffer from this problem: it is neither a new nor novel problem. One does not use a `std::lock_guard` in similar fashion to the snippet above; neither should `std::out_ptr` be used to that effect.
 
 
 
@@ -466,6 +495,8 @@ The primary author of [[p0468]] in pre-r0 days also implemented an overloaded `o
 Given that many companies, studios and individuals have all invented the same type independently of one another, we believe this is a strong indicator of agreement on an existing practice that should see a proposal to the standard.
 
 A [full implementation with UB and friendly optimizations is available in the repository](https://github.com/ThePhD/phd/blob/master/include/phd/out_ptr/detail/base_out_ptr_impl.hpp). The type has been privately used in many projects over the last four years, and this public implementation is already seeing use at companies today. It has been particularly helpful with many COM APIs, and the re-allocation support in `inout_ptr` has been useful for FFMPEG's functions which feature reallocation support in their functions (e.g., `avformat_open_input`).
+
+A version of this library is going to be available in Boost in time for 1.70, which should roll out in April. It has been extensively proofed and checked over by Peter Dimov and Glen Fernandes in initial vetting for [the Boost.SmartPtr repository at this issue](https://github.com/boostorg/smart_ptr/issues/56).
 
 
 
@@ -581,7 +612,7 @@ As a pairing, `out_ptr` and `inout_ptr` are the most cromulent and descriptive i
 
 # Proposed Changes # {#wording}
 
-The following wording is for the Library section, relative to [[n4762]]. This feature will go in the `<memory>` header, and is added to §19.11 [**utilities.smartptr**], at the end as subsection 9.
+The following wording is for the Library section, relative to [[n4778]]. This feature will go in the `<memory>` header, and is added to §19.11 [**utilities.smartptr**], at the end as subsection 9.
 
 
 
@@ -722,9 +753,14 @@ namespace std {
 
 <p><ins><xmp>out_ptr_t(Smart& smart, Args&&... args) noexcept;</xmp></ins></p>
 
-<p><ins><sup>1</sup> Effects: initializes `s` with `addressof(smart)`, `a` with `std::forward<Args>(args)...`, and initializes `p` to an unspecified value of either `smart.get()` or its value initialization.</ins></p>
+<p><ins><sup>1</sup> Effects: initializes `s` with `addressof(smart)`, `a` with `std::forward<Args>(args)...`, and initializes `p` to
+<dl>
+	<dd><ins>— an unspecified value of either `smart` or its value initialization if `std::is_pointer_v<Smart>` is true,</ins></dd>
+	<dd><ins>— otherwise, an unspecified value of either `smart.get()` or its value initialization.</ins></dd>
+</dl>
+</ins></p>
 
-<p><ins><sup>2</sup> [ <i>Note:</i> This allows an implementation and subsequent specializations to use values meaningful to the smart pointer and implementation. The program may not be able to depend on or observe the value of `p` through the conversion operator defined below. — <i>end note</i> ].</ins></p>
+<p><ins><sup>2</sup> [ <i>Note:</i> An unspecified value allows an implementation and subsequent program-defined specializations to use values meaningful to the smart pointer and implementation. The program may not be able to depend on or observe the value of `p` through the conversion operator defined below. — <i>end note</i> ].</ins></p>
 
 <p><ins><xmp>out_ptr_t(out_ptr&& rhs) noexcept;</xmp></ins></p>
 
@@ -755,7 +791,7 @@ return *this;
 <p><ins><sup>2</sup> Effects: Equivalent to:
 <dl>
 	<dd><ins>— `if (p != nullptr) { s->reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if `reset` is a valid member function on `Smart`,</ins></dd>
-	<dd><ins>— otherwise `if (p != nullptr) { s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></dd>
+	<dd><ins>— otherwise `if (p != nullptr) { *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></dd>
 </dl>
 where `Args` are the arguments stored in `a`.
 </ins></p>
@@ -797,9 +833,9 @@ namespace std {
 </xmp>
 </ins>
 
-<p><ins><sup>2</sup> Effects: The first overload is Equivalent to: `return out_ptr<POINTER_OF(Smart)>(s, std::forward<Args>(args)...);`</ins></p>
+<p><ins><sup>2</sup> Effects: The first overload is Equivalent to: `return out_ptr_t<Smart, Pointer, Args...>(s, std::forward<Args>(args)...);`</ins></p>
 
-<p><ins><sup>3</sup> Effects: The second overload is Equivalent to: `return out_ptr_t<Smart, Pointer, Args...>(s, std::forward<Args>(args)...);`</ins></p>
+<p><ins><sup>3</sup> Effects: The second overload is Equivalent to: `return out_ptr_t<Smart, POINTER_OF(Smart), Args...>(s, std::forward<Args>(args)...);`</ins></p>
 </blockquote>
 
 
@@ -851,9 +887,14 @@ namespace std {
 
 <p><ins><xmp>inout_ptr_t(Smart& smart, Args... args) noexcept;</xmp></ins></p>
 
-<p><ins><sup>1</sup> Effects: initializes `s` with `addressof(smart)`, `a` with `std::forward<Args>(args)...`, and `p` to an unspecified value of either `smart.get()` or `smart.release()`.</ins></p>
+<p><ins><sup>1</sup> Effects: initializes `s` with `addressof(smart)`, `a` with `std::forward<Args>(args)...`, and `p` to either
+<dl>
+	<dd><ins>— `smart` if `std::is_pointer_v<Smart>` is true,</ins></dd>
+	<dd><ins>— otherwise, an unspecified value of either `smart.get()` or `smart.release()`;</ins></dd>
+</dl>
+</ins></p>
 
-<p><ins><sup>2</sup> [ <i>Note:</i> This allows an implementation and subsequent specializations pick an option which fits their type and implementation strategy. — <i>end note</i> ].</ins></p>
+<p><ins><sup>2</sup> [ <i>Note:</i> An unspecified value allows an implementation and subsequent program-defined specializations to pick an option which fits an implementation's purpose. — <i>end note</i> ].</ins></p>
 
 <p><ins><sup>3</sup> Remarks: if an implementation calls `smart.release()`, then it shall not call `s->release()` in the destructor.</ins></p>
 
@@ -880,14 +921,15 @@ return *this;
 
 <p><ins><xmp>~inout_ptr_t();</xmp></ins></p>
 
-<p><ins><sup>1</sup> Constraints: The expression `smart.release()` is well-formed.</ins></p>
+<p><ins><sup>1</sup> Constraints: Either `std::is_pointer_v<Smart>` is true or the expression `smart.release()` is well-formed.</ins></p>
 
 <p><ins><sup>2</sup> Let `SP` be `POINTER_OF_OR(Smart, Pointer)` (**19.10.2**).</ins></p>
 
 <p><ins><sup>3</sup> Effects: Equivalent to:
 <dl>
-	<dd><ins>— `s->release(); if (p != nullptr) { s->reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if the expression `s.reset(...)` is well-formed,</ins></dd>
-	<dd><ins>— otherwise, `s->release(); if (p != nullptr) { s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></dd>
+	<dd><ins>— `if (p != nullptr) { *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }` if `std::is_pointer_v<Smart>` is true,</ins></dd>
+	<dd><ins>— `s->release(); if (p != nullptr) { s->reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if the expression `s->reset(...)` is well-formed,</ins></dd>
+	<dd><ins>— otherwise, `s->release(); if (p != nullptr) { *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></dd>
 </dl>
 </ins></p>
 
@@ -931,7 +973,7 @@ namespace std {
 
 <p><ins><sup>2</sup> Effects: The first overload is Equivalent to: `return inout_ptr_t<Smart, Pointer, Args...>(s, std::forward<Args>(args)...);`</ins></p>
 
-<p><ins><sup>3</sup> Effects: The second overload is Equivalent to: `return inout_ptr<POINTER_OF(Smart)>(s, std::forward<Args>(args)...);`</ins></p>
+<p><ins><sup>3</sup> Effects: The second overload is Equivalent to: `return inout_ptr_t<Smart, POINTER_OF(Smart), Args...>(s, std::forward<Args>(args)...);`</ins></p>
 </blockquote>
 
 
@@ -979,14 +1021,14 @@ Thank you to Tim Song for reviewing the wording for this paper and vastly improv
 		"href": "https://github.com/adobe/chromium/blob/master/base/win/scoped_comptr.h#L80",
 		"date": "November 25th, 2018"
 	},
-	"n4762": {
+	"n4778": {
 		"authors": [
 			"ISO/IEC JTC1/SC22/WG21 - The C++ Standards Committee",
 			"Richard Smith"
 		],
-		"title": "N4750 - Working Draft, Standard for Programming Language C++",
-		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/n4762.pdf",
-		"date": "May 7th, 2018"
+		"title": "N4778 - Working Draft, Standard for Programming Language C++",
+		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/n4778.pdf",
+		"date": "November 26th, 2018"
 	},
 	"p0468": {
 		"authors": [
