@@ -25,9 +25,10 @@ path: wording_style.bs
 
 
 
-## Revision 2 - February 30th, 2019 ## {#changelog-r1}
+## Revision 2 - February 30th, 2019 ## {#changelog-r2}
 
 	- Fix bad link.
+	- Give normative teeth to the feature, making not-found files ill-formed (Carruth, Dominiak).
 
 
 
@@ -53,7 +54,7 @@ path: wording_style.bs
 
 The only way to declare a dependency in C++ currently is to use a `#include` statement. With Modules coming to C++, dependency information was greatly enhanced by preambles and globule module fragments which allow for both the compiler and build system to understand physical and semantic layout of code. However, there is still a problem area that C++ has not addressed that people in the brave new Modules ecosystem want to answer: external dependency information for Modular C++. There is a huge opportunity to add a small directive to C++ which can be transiently ignored by the compiler but allows a build system or dependency graph generator to stay up to date without compiler-specific and tool-specific hacks.
 
-In particular, consider a resource file on Windows (`.rc`) or an injected resource on Linux (with `objcopy`) or Apple's Bundles. At present, there's no way to inform C++ of these dependencies or inform the build system in a way that keeps both the source code and the build system in-sync: it is easy to fall out of lock-step with each other, and often requires custom rules on the part of the build system vendor or the application author. While resource files are a problem that [[p1040]] plan to solve, San Diego discussion around such a proposal demonstrated that people were conflicted with the idea that there might not be a way to communicate without doing full Semantic Analysis the actual source dependencies.
+In particular, consider a resource file on Windows (`.rc`) or an injected resource on Linux (with `objcopy`) or Apple's Bundles. At present, there's no way to inform C++ of these dependencies or inform the build system in a way that keeps both the source code and the build system in-sync: it is easy to fall out of lock-step with each other, and often requires custom rules on the part of the build system vendor or the application author. While resource files are a problem that [[p1040]] plan to solve, San Diego discussion around such a proposal demonstrated that people were conflicted with the idea that there might not be a way to communicate without doing full Semantic Analysis the actual source dependencies (e.g., Phase 1-7 of compilation).
 
 Reducing the complexity of the build system and its dependency on vendor-specific extensions and tools for handling source dependency information is of high priority. This proposal wants to add 2 new statements to the Preprocessing Module Tokens for [[p1103]], in particular `requires { identifier = requires "blah.txt" }` and `requires "blah.txt"` in the Module Declaration.
 
@@ -74,13 +75,10 @@ module bar requires "foo.txt";
 For multiple dependencies for a single module, we use a multi-clause requires with brackets:
 
 ```
-module;
-// communicate this module
-// relies on multiple files / assets
-export module mega_bar requires { "qux.txt", "meow.jpg", "uuids.csv" };
+module mega_bar requires { "qux.txt", "meow.jpg", "uuids.csv" };
 ```
 
-This allows us to inform the build system of dependencies with no new keywords. This also lets the compiler export dependency information with user-added information at no additional cost to the compiler, not occurring semantic analysis. Note that there is no error if the compiler cannot find the file: it will be up to the build system to determine that information.
+This allows us to inform the build system of dependencies with no new keywords. This also lets the compiler export dependency information with user-added information at no additional cost to the compiler, not occurring semantic analysis.
 
 A program may also set one or more of the string literals to an identifier made available after the preamble. The value of that identifier will be the string literal set equal to the identifier in the module requires:
 
@@ -100,6 +98,8 @@ HRSRC hResource = FindResourceExW(m_hmoduleInstance,
 This allows individuals to not suffer from the multi-location-updating problem: specify the name in the preamble, use that name everywhere else without having to update multiple places or keep 2 names in sync.
 
 The proposal's wording also introduces a "Word of Power" — *resource-locations* — to specify and allow the rest of the C++ Standard to all reference the same place about resource locations and lookup. It is important that this is distinct from inclusion paths, because the two lookup specifications are inherently separate and serve different purposes. Having it as something that can be referenced means that we can keep all resource interaction attempts -- from [[p1040|p1040 - std::embed]] to any upcoming initiatives later in the standard -- perfectly in-sync with one another.
+
+The compiler is normatively required to error if it cannot find anything along the *resource-locations* type.
 
 
 
@@ -169,13 +169,13 @@ Add a section §100.� Resource requirement propagation [**module.requires**] t
 		</dd>
 </dl>
 
-<p><sup>1</sup> A resource requirement is a way for a module to communicate its dependency on other resources for the program. A program may specify one or more <i>string-literal</i>s in the requirements clause to make clear this dependency in the <i>module-declaration</i>.</p>
+<p><sup>1</sup> A resource requirement is a way for a module unit to communicate its dependency on certain unique resources for the well-formedness of the program. A program may specify one or more <i>string-literal</i>s in the requirements clause to make clear this dependency in the <i>module-declaration</i>. Each <i>string-literal</i> of a resource requirement uniquely identifies one resource.</p>
 
 <p><sup>2</sup> When the <i>module-requires-name</i> specifies an <i>identifier</i> set to a value, then the <i>module-requires-name</i>'s <i>identifier</i> is made available to the module unit as-if by `decltype(string-literal)& identifier = string-literal;`.</p>
 
 <p><sup>3</sup> The locations the implementation may search for the resource uniquely identified by the `string-literal` is implementation defined, and is called the <i>resource-locations</i>.</p>
 
-<p><sup>4</sup> This information does not affect the well-formedness of the program. [ <i>Note:</i> the implementation may choose to issue a warning if it cannot find the resource specified. <i>— end note</i> ]</p>
+<p><sup>4</sup> If the implementation cannot find the specified resource, then the program is ill-formed.</p>
 </ins>
 </blockquote>
 
