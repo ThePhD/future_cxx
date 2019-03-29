@@ -1,0 +1,151 @@
+<pre class='metadata'>
+Title: Standard Text Encoding
+Shortname: D1629
+Revision: 0
+Audience: EWG, LEWG
+Status: D
+Group: WG21
+URL: 
+!Latest: <a href="https://thephd.github.io/vendor/future_cxx/papers/d1629.html">https://thephd.github.io/vendor/future_cxx/papers/d1629.html</a>
+Repository: ThePhD/future_cxx
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Date: 2019-01-21
+Markup Shorthands: markdown yes, biblio yes, markup yes
+Abstract: The standard lacks facilities for transliterating and transcoding text from one form into another, leaving a serious barrier to entry for individuals who want to process text in any sensible manner in the Standard. This paper explores and proposes a static interface for encoding that can be used and built upon for the creation of higher-level abstractions.
+</pre>
+
+<pre class=include>
+path: wording_style.bs
+</pre>
+
+
+
+
+# Revision History # {#changelog}
+
+
+
+## Revision 0 - June 17th, 2019 ## {#changelog-r1}
+
+	- Initial release.
+
+
+
+
+# Motivation # {#motivation}
+
+
+
+
+# Design # {#design}
+
+The current design has been the culmination of a few years of collaborative and independent research, starting with the earliest papers from Mark Boyall's [n3574](https://isocpp.org/files/papers/n3572.html), Tom Honermann's [p0244R2](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0244r2.html), study of the [International Components for Unicode](http://site.icu-project.org/)'s interface, and finally the musings, experience and work of R. Martinho Fernandes in [libogonek](https://github.com/libogonek/ogonek/tree/rewrite). Current and future optimizations are considered to ensure that these fast paths are not blocked in the future, such as the work done in [Boost.Text](https://github.com/tzlaine/text) with hammering down the internally used encoding to be UTF8, Markus Sherer's participation in SG16 meetings and Bob Steagall's [work in writing a fast UTF8 decoder](https://www.youtube.com/watch?v=5FQ87-Ecb-A).
+
+Here is a sketch of a basic declaration of an encoding and a few relevant parts from the standard:
+
+```
+// <text_encoding> header
+namespace std {
+
+	// ...
+
+	template <typename In, typename Out>
+	struct encode_result {
+		In input;
+		Out output;
+	};
+
+	template <typename In, typename Out>
+	struct decode_result {
+		In input;
+		Out output;
+	};
+
+}
+```
+
+```
+#include <text_encoding>
+#include <range>
+
+
+struct some_state {};
+
+struct an_encoding {
+	using state = some_state;
+	using decoding_codepoint = codepoint;
+	using code_unit = char;
+
+	template <typename In, typename Out, typename Handler>
+	encode_result<In, Out> encode(std::ranges::InputRange<In> in_range, 
+		std::ranges::OutputRange<Out, code_unit> out_range,
+		state& current_state,
+		Handler&& handler
+	);
+
+	template <typename In, typename Out, typename Handler>
+	decode_result<In, Out> decode(std::ranges::InputRange<In> in_range, 
+		std::ranges::OutputRange<Out, decoding_codepoint> out_range,
+		state& current_state,
+		Handler&& handler
+	);
+};
+```
+
+
+
+## Range-Based ## {#design-ranges}
+
+This design chooses a range-based interface. It can be lowered to the C++20 concept of iterators at a later date (or later paper provision) should the need prove prevalent, but there is no compelling reason to choose an iterator-focused interface at this time.
+
+It is also important to note that an iterator-based design does profess significant problems for layered iterators and separation of concerns: stacking stateful iterators one on top of another for operations such as normalization and segmentation algorithms proves unwieldy and space-consuming. Sentinel iterators and ranges provide an easy way to handle this, alongside the `iter_move` and `iter_swap` customization points that allow handling the fact that any encoding and decoding iterators are essentially proxy iterators.
+
+
+
+## Stateful Objects, or Stateful Parameters? ## {#design-stateful}
+
+Stateful objects are good for encapsulation, reuse and transportation and have been proven in many APIs both C and C++ to provide a good, reentrant API with all relevant details captured on the object itself. It is important to note that this does not preclude static being used on functions: `my_encoding encoding{}; encoding.encode( ... );` works whether `encode` is a member function or a `static` function.
+
+After careful evaluation, stateful parameter rather than a stateful object for the function calls in encoding and decoding types are a better choice. There are 2 incredibly important use cases upheld by being able to separate the state from the object itself.
+
+- Maintains that encoding objects _can be_ cheap to construct, copy and move;
+- improves the general reusability of encoding objects by allowing state to be massaged into certain configurations;
+- and, allows users to set the state in a public way without having to prescribe a specific API for all encoders.
+
+The reason for keeping these types cheap is that they will be constructed, copied, and moved a lot, especially in the face of the ranges that SG16 is going to be putting a lot of work into (`std::text_view<View, Encoding, ...>`). Ranges require that they can be cheaply constructed in (amortized) constant time.
+
+Consider the case of execution encoding character sets today, which often defer to the locale. Locale is inherently expensive to construct and use: if the standard has to have an encoding that grabs or creates a `codecvt` or `locale` member, we will immediately lose a large portion of users over the performance drag. It is also notable that this is the same [mistake std::wstring_convert shipped with](https://github.com/ThePhD/sol2/issues/326) and is one of the largest contributing reasons to its lack of use and subsequent deprecation (on top of its poor implementation in several libraries, from MSVC to LLVM). It was certainly not an [unwelcome deprecation](https://github.com/ThePhD/sol2/issues/571).
+
+Contrast this to an explicit parameter: the state can be paid for once and reused in many separate places, allowing a user to front-load the state's expenses up-front. It also allows the users to set or get the locale ahead of time.
+
+
+### Self-Synchronizing State ### {#design-state-synchronizing}
+
+A self-synchronizing code is a uniquely decodable source symbol stream whose output provides a direct and unambiguous mapping with the source symbol stream. These require no state to parse given a sequence, because a sequence must be either valid or invalid with no intermediate states of "potentially valid". For example, not fully decoding any of the Unicode Transformation Formats's code units into a single code point -- unfinished surrogates or half-delivered byte sequences -- in full is an error because no sub-sequence can identify another code point. This is the primary usage of stateful in encoding and decoding operations: tracking what was last seen -- among other parameters -- for the purposes of disambiguating incoming input.
+
+Therefore, an encoding is considered self-synchronizing if it's state parameter is empty.
+
+
+### Empty State and learning from Minimal Allocators ### {#design-state-empty}
+
+If `std::is_empty_v<State>` is true, then there is no reason to require that the state is passed to the encoding functions. This is more or less an API "kindness", but so long as the state is an empty object it does not have to be passed to the `encode` or `decode` functions. This is not going to be proposed at this time, but for API usability it should be looked into.
+
+
+
+## Standard Encoding Errors ## {#design-errors}
+
+Error reporting will be done through an error handler, which can be any type of callable. The default error handler will be one which inserts the replacement character into the stream.
+
+For performance reasons, the error callable must have a way to ensure that the user can control whether or not we invoke Undefined Behavior and assume that the text is valid. `libogonek` made an object of type `assume_valid_t`.
+
+
+
+## Transcoding Compatibility ## {#design-interop}
+
+A set of program-overridable traits will be provided to clue implementations in on the ability to trivially relocate/trivially copy data from source to destination with respect to encodings. This is done primarily because ASCII encodings are a subset of UTF8 encodings, and 
+
+
+
+## Fast-Track: Pairwise Customization Points ## {#design-customization}
+
+TODO: dear god what did I sign up for.
