@@ -34,7 +34,7 @@ path: wording_style.bs
 
 # Motivation # {#motivation}
 
-
+Unicode support in the standard is beyond terrible and it would be nice to fix it within the coming decade.
 
 
 # Design # {#design}
@@ -44,48 +44,79 @@ The current design has been the culmination of a few years of collaborative and 
 Here is a sketch of a basic declaration of an encoding and a few relevant parts from the standard:
 
 ```
-// <text_encoding> header
+// <text/encoding> header
+
 namespace std {
 
-	// ...
+	enum class encoding_errc;
 
-	template <typename In, typename Out>
-	struct encode_result {
-		In input;
-		Out output;
+	class encoding_error_category : public std::error_category {
+	public:
+		constexpr encoding_error_category() noexcept;
+
+		virtual const char* name() const noexcept override;
+		virtual std::string message(int condition) const override;
 	};
 
-	template <typename In, typename Out>
+	template <typename Input, typename Output, typename State>
+	struct encode_result {
+		Input input;
+		Output output;
+		State& state;
+		encoding_errc error_code;
+		bool handled_error;
+
+		template <typename InRange, typename OutRange, typename EncodingState>
+		constexpr encode_result(InRange&& input, OutRange&& output, EncodingState&& state, encoding_errc error_code = encoding_errc::ok);
+
+		template <typename InRange, typename OutRange, typename EncodingState>
+		constexpr encode_result(InRange&& input, OutRange&& output, EncodingState&& state, encoding_errc error_code, bool handled_error);
+
+		constexpr std::error_condition error() const;
+	};
+
+	template <typename Input, typename Output, typename State>
 	struct decode_result {
-		In input;
-		Out output;
+		Input input;
+		Output output;
+		State& state;
+		encoding_errc error_code;
+		bool handled_error;
+
+		template <typename InRange, typename OutRange, typename EncodingState>
+		constexpr decode_result(InRange&& input, OutRange&& output, EncodingState&& state, encoding_errc error_code = encoding_errc::ok);
+
+		template <typename InRange, typename OutRange, typename EncodingState>
+		constexpr decode_result(InRange&& input, OutRange&& output, EncodingState&& state, encoding_errc error_code, bool handled_error);
+
+		constexpr std::error_condition error() const;
 	};
 
 }
 ```
 
 ```
-#include <text_encoding>
-#include <range>
-
+#include <text>
 
 struct some_state {};
 
 struct an_encoding {
 	using state = some_state;
-	using decoding_codepoint = codepoint;
+	using code_point = char32_t;
 	using code_unit = char;
 
 	template <typename In, typename Out, typename Handler>
-	encode_result<In, Out> encode(std::ranges::InputRange<In> in_range, 
-		std::ranges::OutputRange<Out, code_unit> out_range,
+	encode_result<In, Out, state> encode(
+		In&& in_range, 
+		Out&& out_range,
 		state& current_state,
 		Handler&& handler
 	);
 
 	template <typename In, typename Out, typename Handler>
-	decode_result<In, Out> decode(std::ranges::InputRange<In> in_range, 
-		std::ranges::OutputRange<Out, decoding_codepoint> out_range,
+	decode_result<In, Out, state> decode(
+		In&& in_range, 
+		Out&& out_range,
 		state& current_state,
 		Handler&& handler
 	);

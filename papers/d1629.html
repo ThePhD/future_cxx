@@ -1227,9 +1227,9 @@ Possible extra rowspan handling
       text-align: center;
     }
   </style>
-  <meta content="Bikeshed version 7d8ce2d953ffaca8e344c0dab76f68fc292738a6" name="generator">
+  <meta content="Bikeshed version 1cff2db4ee2c3bba7a4077d3007528ec73b0485d" name="generator">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="25919239a0ad9c46a8de977b0e374446e1f91f32" name="document-revision">
+  <meta content="62a0c1a7eeb4222fea5910648df7be01290f8967" name="document-revision">
 <style>
 pre {
   margin-top: 0px;
@@ -1556,26 +1556,81 @@ pre .property::before, pre .property::after {
      <p>Initial release.</p>
    </ul>
    <h2 class="heading settled" data-level="2" id="motivation"><span class="secno">2. </span><span class="content">Motivation</span><a class="self-link" href="#motivation"></a></h2>
+   <p>Unicode support in the standard is beyond terrible and it would be nice to fix it within the coming decade.</p>
    <h2 class="heading settled" data-level="3" id="design"><span class="secno">3. </span><span class="content">Design</span><a class="self-link" href="#design"></a></h2>
    <p>The current design has been the culmination of a few years of collaborative and independent research, starting with the earliest papers from Mark Boyall’s <a href="https://isocpp.org/files/papers/n3572.html">n3574</a>, Tom Honermann’s <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0244r2.html">p0244R2</a>, study of the <a href="http://site.icu-project.org/">International Components for Unicode</a>'s interface, and finally the musings, experience and work of R. Martinho Fernandes in <a href="https://github.com/libogonek/ogonek/tree/rewrite">libogonek</a>. Current and future optimizations are considered to ensure that these fast paths are not blocked in the future, such as the work done in <a href="https://github.com/tzlaine/text">Boost.Text</a> with hammering down the internally used encoding to be UTF8, Markus Sherer’s participation in SG16 meetings and Bob Steagall’s <a href="https://www.youtube.com/watch?v=5FQ87-Ecb-A">work in writing a fast UTF8 decoder</a>.</p>
-   <p>Here is a sketch of the early implementation and what is required or not required:</p>
-<pre class="highlight"><c- k>struct</c-> <c- n>some_state</c-> <c- p>{};</c->
+   <p>Here is a sketch of a basic declaration of an encoding and a few relevant parts from the standard:</p>
+<pre class="highlight"><c- c1>// &lt;text/encoding> header</c->
+
+<c- k>namespace</c-> <c- n>std</c-> <c- p>{</c->
+
+	<c- k>enum</c-> <c- k>class</c-> <c- nc>encoding_errc</c-><c- p>;</c->
+
+	<c- k>class</c-> <c- nc>encoding_error_category</c-> <c- o>:</c-> <c- k>public</c-> <c- n>std</c-><c- o>::</c-><c- n>error_category</c-> <c- p>{</c->
+	<c- k>public</c-><c- o>:</c->
+		<c- k>constexpr</c-> <c- n>encoding_error_category</c-><c- p>()</c-> <c- k>noexcept</c-><c- p>;</c->
+
+		<c- k>virtual</c-> <c- k>const</c-> <c- b>char</c-><c- o>*</c-> <c- nf>name</c-><c- p>()</c-> <c- k>const</c-> <c- k>noexcept</c-> <c- k>override</c-><c- p>;</c->
+		<c- k>virtual</c-> <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>message</c-><c- p>(</c-><c- b>int</c-> <c- n>condition</c-><c- p>)</c-> <c- k>const</c-> <c- k>override</c-><c- p>;</c->
+	<c- p>};</c->
+
+	<c- k>template</c-> <c- o>&lt;</c-><c- k>typename</c-> <c- n>Input</c-><c- p>,</c-> <c- k>typename</c-> <c- n>Output</c-><c- p>,</c-> <c- k>typename</c-> <c- n>State</c-><c- o>></c->
+	<c- k>struct</c-> <c- n>encode_result</c-> <c- p>{</c->
+		<c- n>Input</c-> <c- n>input</c-><c- p>;</c->
+		<c- n>Output</c-> <c- n>output</c-><c- p>;</c->
+		<c- n>State</c-><c- o>&amp;</c-> <c- n>state</c-><c- p>;</c->
+		<c- n>encoding_errc</c-> <c- n>error_code</c-><c- p>;</c->
+		<c- b>bool</c-> <c- n>handled_error</c-><c- p>;</c->
+
+		<c- k>template</c-> <c- o>&lt;</c-><c- k>typename</c-> <c- n>InRange</c-><c- p>,</c-> <c- k>typename</c-> <c- n>OutRange</c-><c- p>,</c-> <c- k>typename</c-> <c- n>EncodingState</c-><c- o>></c->
+		<c- k>constexpr</c-> <c- n>encode_result</c-><c- p>(</c-><c- n>InRange</c-><c- o>&amp;&amp;</c-> <c- n>input</c-><c- p>,</c-> <c- n>OutRange</c-><c- o>&amp;&amp;</c-> <c- n>output</c-><c- p>,</c-> <c- n>EncodingState</c-><c- o>&amp;&amp;</c-> <c- n>state</c-><c- p>,</c-> <c- n>encoding_errc</c-> <c- n>error_code</c-> <c- o>=</c-> <c- n>encoding_errc</c-><c- o>::</c-><c- n>ok</c-><c- p>);</c->
+
+		<c- k>template</c-> <c- o>&lt;</c-><c- k>typename</c-> <c- n>InRange</c-><c- p>,</c-> <c- k>typename</c-> <c- n>OutRange</c-><c- p>,</c-> <c- k>typename</c-> <c- n>EncodingState</c-><c- o>></c->
+		<c- k>constexpr</c-> <c- n>encode_result</c-><c- p>(</c-><c- n>InRange</c-><c- o>&amp;&amp;</c-> <c- n>input</c-><c- p>,</c-> <c- n>OutRange</c-><c- o>&amp;&amp;</c-> <c- n>output</c-><c- p>,</c-> <c- n>EncodingState</c-><c- o>&amp;&amp;</c-> <c- n>state</c-><c- p>,</c-> <c- n>encoding_errc</c-> <c- n>error_code</c-><c- p>,</c-> <c- b>bool</c-> <c- n>handled_error</c-><c- p>);</c->
+
+		<c- k>constexpr</c-> <c- n>std</c-><c- o>::</c-><c- n>error_condition</c-> <c- n>error</c-><c- p>()</c-> <c- k>const</c-><c- p>;</c->
+	<c- p>};</c->
+
+	<c- k>template</c-> <c- o>&lt;</c-><c- k>typename</c-> <c- n>Input</c-><c- p>,</c-> <c- k>typename</c-> <c- n>Output</c-><c- p>,</c-> <c- k>typename</c-> <c- n>State</c-><c- o>></c->
+	<c- k>struct</c-> <c- n>decode_result</c-> <c- p>{</c->
+		<c- n>Input</c-> <c- n>input</c-><c- p>;</c->
+		<c- n>Output</c-> <c- n>output</c-><c- p>;</c->
+		<c- n>State</c-><c- o>&amp;</c-> <c- n>state</c-><c- p>;</c->
+		<c- n>encoding_errc</c-> <c- n>error_code</c-><c- p>;</c->
+		<c- b>bool</c-> <c- n>handled_error</c-><c- p>;</c->
+
+		<c- k>template</c-> <c- o>&lt;</c-><c- k>typename</c-> <c- n>InRange</c-><c- p>,</c-> <c- k>typename</c-> <c- n>OutRange</c-><c- p>,</c-> <c- k>typename</c-> <c- n>EncodingState</c-><c- o>></c->
+		<c- k>constexpr</c-> <c- n>decode_result</c-><c- p>(</c-><c- n>InRange</c-><c- o>&amp;&amp;</c-> <c- n>input</c-><c- p>,</c-> <c- n>OutRange</c-><c- o>&amp;&amp;</c-> <c- n>output</c-><c- p>,</c-> <c- n>EncodingState</c-><c- o>&amp;&amp;</c-> <c- n>state</c-><c- p>,</c-> <c- n>encoding_errc</c-> <c- n>error_code</c-> <c- o>=</c-> <c- n>encoding_errc</c-><c- o>::</c-><c- n>ok</c-><c- p>);</c->
+
+		<c- k>template</c-> <c- o>&lt;</c-><c- k>typename</c-> <c- n>InRange</c-><c- p>,</c-> <c- k>typename</c-> <c- n>OutRange</c-><c- p>,</c-> <c- k>typename</c-> <c- n>EncodingState</c-><c- o>></c->
+		<c- k>constexpr</c-> <c- n>decode_result</c-><c- p>(</c-><c- n>InRange</c-><c- o>&amp;&amp;</c-> <c- n>input</c-><c- p>,</c-> <c- n>OutRange</c-><c- o>&amp;&amp;</c-> <c- n>output</c-><c- p>,</c-> <c- n>EncodingState</c-><c- o>&amp;&amp;</c-> <c- n>state</c-><c- p>,</c-> <c- n>encoding_errc</c-> <c- n>error_code</c-><c- p>,</c-> <c- b>bool</c-> <c- n>handled_error</c-><c- p>);</c->
+
+		<c- k>constexpr</c-> <c- n>std</c-><c- o>::</c-><c- n>error_condition</c-> <c- n>error</c-><c- p>()</c-> <c- k>const</c-><c- p>;</c->
+	<c- p>};</c->
+
+<c- p>}</c->
+</pre>
+<pre class="highlight"><c- cp>#include</c-> &lt;text>
+
+<c- k>struct</c-> <c- n>some_state</c-> <c- p>{};</c->
 
 <c- k>struct</c-> <c- n>an_encoding</c-> <c- p>{</c->
 	<c- k>using</c-> <c- n>state</c-> <c- o>=</c-> <c- n>some_state</c-><c- p>;</c->
-	<c- k>using</c-> <c- n>decoding_codepoint</c-> <c- o>=</c-> <c- n>codepoint</c-><c- p>;</c->
+	<c- k>using</c-> <c- n>code_point</c-> <c- o>=</c-> <c- b>char32_t</c-><c- p>;</c->
 	<c- k>using</c-> <c- n>code_unit</c-> <c- o>=</c-> <c- b>char</c-><c- p>;</c->
 
 	<c- k>template</c-> <c- o>&lt;</c-><c- k>typename</c-> <c- n>In</c-><c- p>,</c-> <c- k>typename</c-> <c- n>Out</c-><c- p>,</c-> <c- k>typename</c-> <c- n>Handler</c-><c- o>></c->
-	<c- b>void</c-> <c- n>encode</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>InputRange</c-><c- o>&lt;</c-><c- n>In</c-><c- o>></c-> <c- n>in_range</c-><c- p>,</c-> 
-		<c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>OutputRange</c-><c- o>&lt;</c-><c- n>Out</c-><c- p>,</c-> <c- n>code_unit</c-><c- o>></c-> <c- n>out_range</c-><c- p>,</c->
+	<c- n>encode_result</c-><c- o>&lt;</c-><c- n>In</c-><c- p>,</c-> <c- n>Out</c-><c- p>,</c-> <c- n>state</c-><c- o>></c-> <c- n>encode</c-><c- p>(</c->
+		<c- n>In</c-><c- o>&amp;&amp;</c-> <c- n>in_range</c-><c- p>,</c-> 
+		<c- n>Out</c-><c- o>&amp;&amp;</c-> <c- n>out_range</c-><c- p>,</c->
 		<c- n>state</c-><c- o>&amp;</c-> <c- n>current_state</c-><c- p>,</c->
 		<c- n>Handler</c-><c- o>&amp;&amp;</c-> <c- n>handler</c->
 	<c- p>);</c->
 
 	<c- k>template</c-> <c- o>&lt;</c-><c- k>typename</c-> <c- n>In</c-><c- p>,</c-> <c- k>typename</c-> <c- n>Out</c-><c- p>,</c-> <c- k>typename</c-> <c- n>Handler</c-><c- o>></c->
-	<c- b>void</c-> <c- n>decode</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>InputRange</c-><c- o>&lt;</c-><c- n>In</c-><c- o>></c-> <c- n>in_range</c-><c- p>,</c-> 
-		<c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>OutputRange</c-><c- o>&lt;</c-><c- n>Out</c-><c- p>,</c-> <c- n>decoding_codepoint</c-><c- o>></c-> <c- n>out_range</c-><c- p>,</c->
+	<c- n>decode_result</c-><c- o>&lt;</c-><c- n>In</c-><c- p>,</c-> <c- n>Out</c-><c- p>,</c-> <c- n>state</c-><c- o>></c-> <c- n>decode</c-><c- p>(</c->
+		<c- n>In</c-><c- o>&amp;&amp;</c-> <c- n>in_range</c-><c- p>,</c-> 
+		<c- n>Out</c-><c- o>&amp;&amp;</c-> <c- n>out_range</c-><c- p>,</c->
 		<c- n>state</c-><c- o>&amp;</c-> <c- n>current_state</c-><c- p>,</c->
 		<c- n>Handler</c-><c- o>&amp;&amp;</c-> <c- n>handler</c->
 	<c- p>);</c->
