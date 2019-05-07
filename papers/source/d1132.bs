@@ -1,8 +1,8 @@
 <pre class='metadata'>
 Title: out_ptr - a scalable output pointer abstraction
 Shortname: P1132
-Revision: 3
-Audience: LEWG, LWG
+Revision: 4
+Audience: LWG
 Status: P
 Group: WG21
 URL: 
@@ -25,6 +25,13 @@ path: wording_style.bs
 
 
 # Revision History # {#changelog}
+
+
+
+## Revision 4 - June 17th, 2019 ## {#changelog-r4}
+
+    - Remove default `void**` conversion after discussion with LEWG and Boost members.
+    - Forwarded to LWG: just needs to be wording approved now!
 
 
 
@@ -187,7 +194,6 @@ struct out_ptr_t {
 	out_ptr_t(Smart&, Args...);
 	~out_ptr_t () noexcept;
 	operator Pointer* () noexcept;
-	operator void** () noexcept;
 };
 
 template <class Smart, class Pointer, class... Args>
@@ -195,7 +201,6 @@ struct inout_ptr_t {
 	inout_ptr_t(Smart&, Args...);
 	~inout_ptr_t () noexcept;
 	operator Pointer* () noexcept;
-	operator void** () noexcept;
 };
 ```
 
@@ -309,7 +314,7 @@ There are also many APIs (COM-style APIs, base-class handle APIs, type-erasure A
 It is also important to note that going in the *opposite* direction is also highly desirable, especially in the case of doing API-hiding behind an e.g. `void*` implementation. `out_ptr` supports both scenarios with an optional template argument to the function call.
 
 
-### Casting Support: builtin `void**` ### {#design-casting-void}
+### Casting Support: easy `void**` support ### {#design-casting-void}
 
 Consider this DirectX Graphics Infrastructure Interface (DXGI) function on `IDXGIFactory6`:
 
@@ -329,7 +334,7 @@ HRESULT result = dxgi_factory.
 EnumAdapterByGpuPreference(0, 
 	DXGI_GPU_PREFERENCE_MINIMUM_POWER, 
 	IID_IDXGIAdapter, 
-	std::out_ptr(adapter)
+	std::out_ptr<void*>(adapter)
 );
 if (FAILED(result)) {
 	// handle errors
@@ -393,7 +398,7 @@ This is an example of a codebase which works primarily off of file descriptors, 
 
 This also demonstrates `out_ptr`'s ability to work with offset/fat/not-quite-exactly pointers, which are allowed by `std::unique_ptr` and the upcoming [[p0468|std::retain_ptr]].
 
-The full example code for Windows and *Nix platforms is [available as a compilable example](https://github.com/ThePhD/phd/blob/master/examples/out_ptr/with_special_unique.cpp).
+The full example code for Windows and *Nix platforms is [available as a compilable example](https://github.com/ThePhD/out_ptr/blob/master/examples/source/std.custom_unique_ptr.cpp).
 
 
 
@@ -494,7 +499,7 @@ The primary author of [[p0468]] in pre-r0 days also implemented an overloaded `o
 
 Given that many companies, studios and individuals have all invented the same type independently of one another, we believe this is a strong indicator of agreement on an existing practice that should see a proposal to the standard.
 
-A [full implementation with UB and friendly optimizations is available in the repository](https://github.com/ThePhD/phd/blob/master/include/phd/out_ptr/detail/base_out_ptr_impl.hpp). The type has been privately used in many projects over the last four years, and this public implementation is already seeing use at companies today. It has been particularly helpful with many COM APIs, and the re-allocation support in `inout_ptr` has been useful for FFMPEG's functions which feature reallocation support in their functions (e.g., `avformat_open_input`).
+A [full implementation with UB and friendly optimizations is available in the repository](https://github.com/ThePhD/out_ptr/blob/master/include/boost/out_ptr/detail/base_out_ptr_impl.hpp). The type has been privately used in many projects over the last four years, and this public implementation is already seeing use at companies today. It has been particularly helpful with many COM APIs, and the re-allocation support in `inout_ptr` has been useful for FFMPEG's functions which feature reallocation support in their functions (e.g., `avformat_open_input`).
 
 A version of this library is going to be available in Boost in time for 1.70, which should roll out in April. It has been extensively proofed and checked over by Peter Dimov and Glen Fernandes in initial vetting for [the Boost.SmartPtr repository at this issue](https://github.com/boostorg/smart_ptr/issues/56).
 
@@ -663,11 +668,11 @@ Append to §16.3.1 General [**support.limits.general**]'s **Table 35** one addit
 Modify §19.10.1 In general [**memory.general**] as follows:
 
 <blockquote>
-<p><sup>1</sup> The header <memory> defines several types and function templates that describe properties of pointers and pointer-like types, manage memory for containers and other template types, destroy objects, and construct multiple objects in uninitialized memory buffers (19.10.3–19.10.11). The header also defines the templates unique_ptr, shared_ptr, weak_ptr, <ins>out_ptr_t, inout_ptr_t,</ins> and various function templates that operate on objects of these types (19.11).
+<p><sup>1</sup> The header <memory> defines several types and function templates that describe properties of pointers and pointer-like types, manage memory for containers and other template types, destroy objects, and construct multiple objects in uninitialized memory buffers (19.10.3–19.10.11). The header also defines the templates unique_ptr, shared_ptr, weak_ptr, <ins>out_ptr_t, inout_ptr_t,</ins> and various function templates that operate on objects of these types (19.11).</p></blockquote>
 
 Add §19.10.2 Definitions [**memory.defns**] as follows:
 
-<p><ins><sup>1</sup> Definition: Let `POINTER_OF_OR(T, U)` denote a type that is:
+<blockquote><p><ins><sup>1</sup> Definition: Let `POINTER_OF_OR(T, U)` denote a type that is:
 <dl>
 	<dd><ins>— `T::pointer` if the qualified-id `T::pointer` is valid and denotes a type, or</ins></dd>
 	<dd><ins>— otherwise, `typename T::element_type*` if the qualified-id `T::element_type` is valid and denotes a type, or</ins></dd>
@@ -736,7 +741,6 @@ namespace std {
 
 		// 19.11.9.4, conversion operators
 		operator Pointer*() noexcept;
-		operator void**() noexcept;
 
 	private:
 		Smart* s; // exposition only
@@ -806,13 +810,12 @@ where `Args` are the arguments stored in `a`.
 <p><ins>
 <xmp>
 operator Pointer*() noexcept;
-operator void**() noexcept;
 </xmp>
 </ins></p>
 
 <p><ins><sup>1</sup> Constraints: `std::is_same_v<Pointer, void*>` is `false`.</ins></p>
 
-<p><ins><sup>2</sup> Effects: The first conversion returns a pointer to `p`. The second conversion return `reinterpret_cast<void**>(static_cast<Pointer*>(*this));`</ins></p>
+<p><ins><sup>2</sup> Effects: The first conversion returns a pointer to `p`.</ins></p>
 </blockquote>
 
 
@@ -870,7 +873,6 @@ namespace std {
 
 		// 19.11.11.4, conversion operators
 		operator Pointer*() noexcept;
-		operator void**() noexcept;
 
 	private:
 		Smart* s; // exposition only
@@ -938,20 +940,6 @@ return *this;
 </ins></p>
 
 <p><ins><sup>4</sup> Remarks: if an implementation calls `s->release()` or `smart.release()` in the constructor, then it shall not call `s->release()` in the destructor.</ins></p>
-
-
-<p><ins>19.11.11.4 Conversions [**inout_ptr.class.conv**]</ins></p>
-
-<p><ins>
-<xmp>
-operator Pointer*() noexcept;
-operator void**() noexcept;
-</xmp>
-</ins></p>
-		
-<p><ins><sup>1</sup> Constraints: `std::is_same_v<Pointer, void*>` is `true`.</ins></p>
-
-<p><ins><sup>2</sup> Effects: The first conversion returns a pointer to `p`. The second conversion returns `reinterpret_cast<void**>(static_cast<Pointer*>(*this));`</ins></p>
 </blockquote>
 
 Insert §19.11.12 [**inout_ptr**]:
