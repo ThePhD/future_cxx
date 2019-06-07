@@ -13,7 +13,7 @@ Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Todor Buyukliev, tbuyukliev@vmware.com
 Editor: Isabella Muerte, https://twitter.com/slurpsmadrips
-Abstract: out_ptr is an abstraction to bring both C APIs and smart pointers back into the promised land by creating a temporary pointer-to-pointer that updates (using a reset call or semantically equivalent behavior) the smart pointer when it destructs.
+Abstract: out_ptr and inout_ptr are abstractions to bring both C APIs and smart pointers back into the promised land by creating a temporary pointer-to-pointer that updates (using a reset call or semantically equivalent behavior) the smart pointer when it destructs.
 Date: 2019-01-21
 Markup Shorthands: markdown yes, biblio yes, markup yes
 </pre>
@@ -40,7 +40,7 @@ path: wording_style.bs
     - Add details discussing upcoming implementations in [[#experience]].
     - Add section about implementation churn.
     - Add details about flow control statements and temporary evaluation for [[#design-footguns]].
-    - Wording is now relative to [[n4778]], the latest working draft of the C++ Standard.
+    - Wording is now relative to [[n4800]], the latest working draft of the C++ Standard.
 
 
 
@@ -195,7 +195,7 @@ template <class Smart, class Pointer, class... Args>
 class out_ptr_t {
 public:
 	out_ptr_t(Smart&, Args...);
-	~out_ptr_t () noexcept;
+	~out_ptr_t () noexcept(...);
 	operator Pointer* () noexcept;
 };
 
@@ -621,7 +621,7 @@ As a pairing, `out_ptr` and `inout_ptr` are the most cromulent and descriptive i
 
 # Proposed Changes # {#wording}
 
-The following wording is for the Library section, relative to [[n4778]]. This feature will go in the `<memory>` header, and is added to §20.11 [**utilities.smartptr**], at the end as subsection 9.
+The following wording is for the Library section, relative to [[n4800]]. This feature will go in the `<memory>` header, and is added to <a href="http://eel.is/c++draft/smartptr">[**utilities.smartptr**] §20.11</a>, at the end as subsection 9.
 
 
 
@@ -650,7 +650,9 @@ The goals of the wording are to not restrict implementation strategies (e.g., a 
 
 ## Proposed Wording ## {#wording-library}
 
-Append to §16.3.1 General [**support.limits.general**]'s **Table 35** one additional entry:
+Note: The � character is used to denote a placeholder number which shall be selected by the editor. � represents the top-level entry place. For N4800, that � is 20.
+
+Append to §17.3.1 General [**support.limits.general**]'s **Table 35** one additional entry:
 
 <blockquote>
 <table>
@@ -723,9 +725,9 @@ Insert §20.11.9 [**out_ptr.class**]:
 <blockquote>
 <ins>20.11.9 **Class Template** `out_ptr_t` [**out_ptr.class**]</ins>
 
-<p><ins><sup>1</sup> *out_ptr_t* is a type used with smart pointers (**20.11**) and types which are designed on the same principles to interoperate easily with functions that use output pointer parameters. [ Note — For example, a function of the form `void foo(void**)` — <i>end note</i> ].</ins></p>
+<p><ins><sup>1</sup> *out_ptr_t* is a type used with smart pointers (<a href="http://eel.is/c++draft/smartptr">[**smartptr**] 20.11</a>) and types which are designed on the same principles to interoperate easily with functions that use output pointer parameters. [ Note — For example, a function of the form `void foo(void**)` — <i>end note</i> ].</ins></p>
 
-<p><ins><sup>2</sup> *out_ptr_t* may be specialized (**12.6.5**) for program-defined types and shall meet the observable behavior in the rest of this section.</ins></p>
+<p><ins><sup>2</sup> *out_ptr_t* may be specialized (<a href="http://eel.is/c++draft/temp.class.spec">[**temp.class.spec**] 13.6.5</a>) for program-defined types and shall meet the observable behavior in the rest of this section.</ins></p>
 
 <ins>
 <xmp>
@@ -742,7 +744,7 @@ namespace std {
 		out_ptr_t& operator=(out_ptr_t&&) noexcept;
 
 		// 20.11.9.3, destructors
-		~out_ptr_t();
+		~out_ptr_t() noexcept(see-below);
 
 		// 20.11.9.4, conversion operators
 		operator Pointer*() noexcept;
@@ -757,7 +759,7 @@ namespace std {
 </xmp>
 </ins>
 
-<p><ins><sup>2</sup> If `Smart` is a specialization of `shared_ptr` and `sizeof...(Args) == 0`, the program is ill-formed. `Pointer` shall meet the `Cpp17NullablePointer` requirements ((<a href="http://eel.is/c++draft/nullablepointer.requirements">15.5.3.3 [**nullablepointer.requirements**]</a>)).</ins></p>
+<p><ins><sup>2</sup> If `Smart` is a specialization of `shared_ptr` and `sizeof...(Args) == 0`, the program is ill-formed. `Pointer` shall meet the `Cpp17NullablePointer` requirements ((<a href="http://eel.is/c++draft/nullablepointer.requirements">[**nullablepointer.requirements**] 16.5.3.3</a>)).</ins></p>
 
 <p><ins><sup>3</sup> [ <i>Note:</i> It is typically a user error to reset a `shared_ptr` without specifying a deleter, as `std::shared_ptr` will replace a custom deleter with the default deleter upon usage of `.reset()`, as specified in 20.11.3.4. — <i>end note</i> ]</ins></p>
 
@@ -792,9 +794,9 @@ return *this;
 
 <p><ins>20.11.9.3 Destructors [**out_ptr.class.dtor**]</ins></p>
 
-<p><ins><xmp>~out_ptr_t();</xmp></ins></p>
+<p><ins><xmp>~out_ptr_t() noexcept(see-below);</xmp></ins></p>
 
-<p><ins><sup>1</sup> Let `SP` be `POINTER_OF_OR(Smart, Pointer)` (**20.10.2**).</ins></p>
+<p><ins><sup>1</sup> Let `SP` be `POINTER_OF_OR(Smart, Pointer)` ([**memory.defns**] 20.10.2).</ins></p>
 
 <p><ins><sup>2</sup> Effects: Equivalent to:
 <dl>
@@ -804,6 +806,14 @@ return *this;
 <ins>where `Args` are the arguments stored in `a`.</ins>
 </ins></p>
 
+<p><ins><sup>4</sup> Throws:
+<dl>
+	<dd><ins>— no exceptions and is `noexcept` if `std::is_pointer_v<Smart>` is true,</ins></dd>
+	<dd><ins>— any exceptions and is conditionally `noexcept` from `s->reset( static_cast<SP>(p), std::forward<Args>(args)... );` if the expression `s->reset(...)` is well-formed,</ins></dd>
+	<dd><ins>— otherwise, any exceptions and is conditionally `noexcept` from `*s = Smart( static_cast<SP>(p), std::forward<Args>(args)... );`.</ins></dd>
+</dl>
+<ins>where `Args` are the arguments stored in `a`.</ins>
+</ins></p>
 
 <p><ins>20.11.9.4 Conversions [**out_ptr.class.conv**]</ins></p>
 
@@ -822,7 +832,7 @@ Insert §20.11.10 [**out_ptr**]:
 <blockquote>
 <p><ins>20.11.10 **Function Template** `out_ptr` [**out_ptr**]</ins><p>
 
-<p><ins><sup>1</sup> *out_ptr* is a function template that produces an object of type *out_ptr_t* (**20.11.9**).</ins></p>
+<p><ins><sup>1</sup> *out_ptr* is a function template that produces an object of type *out_ptr_t* ([**out_ptr.class**] 20.11.9).</ins></p>
 
 <ins>
 <xmp>
@@ -849,9 +859,9 @@ Insert §20.11.11 [**inout_ptr.class**]:
 <blockquote>
 <ins>20.11.11 **Class Template** `inout_ptr_t` [**inout_ptr.class**]</ins>
 
-<p><ins><sup>1</sup> *inout_ptr_t* is a type used with smart pointers (**20.11**) and types which are designed on the same principles to interoperate easily with functions that use output pointer parameters. [ <i>Note:</i> For example, a function of the form `void foo_realloc(void**)` — <i>end note</i> ].</ins></p>
+<p><ins><sup>1</sup> *inout_ptr_t* is a type used with smart pointers (<a href="http://eel.is/c++draft/smartptr">[**smartptr**] 20.11</a>) and types which are designed on the same principles to interoperate easily with functions that use output pointer parameters. [ <i>Note:</i> For example, a function of the form `errno_t foo_realloc(void**)` — <i>end note</i> ].</ins></p>
 
-<p><ins><sup>2</sup> *inout_ptr_t* may be specialized (**12.6.5**) for program-defined types and shall meet the observable behavior in the rest of this section.</ins></p>
+<p><ins><sup>2</sup> *inout_ptr_t* may be specialized (<a href="http://eel.is/c++draft/temp.class.spec">[**temp.class.spec**] 13.6.5</a>) for program-defined types and shall meet the observable behavior in the rest of this section.</ins></p>
 
 <ins>
 <xmp>
@@ -868,7 +878,7 @@ namespace std {
 		inout_ptr_t& operator=(inout_ptr_t&&) noexcept;
 
 		// 20.11.11.3, destructors
-		~inout_ptr_t();
+		~inout_ptr_t() noexcept(see-below);
 
 		// 20.11.11.4, conversion operators
 		operator Pointer*() noexcept;
@@ -883,7 +893,7 @@ namespace std {
 </xmp>
 </ins>
 
-<p><ins><sup>2</sup> If `Smart` is a specialization of `shared_ptr`, the program is ill-formed. `Pointer` shall meet the `Cpp17NullablePointer` requirements (<a href="http://eel.is/c++draft/nullablepointer.requirements">15.5.3.3 [**nullablepointer.requirements**]</a>).</ins></p>
+<p><ins><sup>2</sup> If `Smart` is a specialization of `shared_ptr`, the program is ill-formed. `Pointer` shall meet the `Cpp17NullablePointer` requirements (<a href="http://eel.is/c++draft/nullablepointer.requirements">[**nullablepointer.requirements**] 16.5.3.3</a>).</ins></p>
 
 <p><ins><sup>3</sup> [ *Note:* It is impossible to properly release the managed resource from a `shared_ptr` given its shared ownership model. — <i>end note</i> ]</ins></p>
 
@@ -924,17 +934,26 @@ return *this;
 
 <p><ins>20.11.11.3 Destructors [**inout_ptr.class.dtor**]</ins></p>
 
-<p><ins><xmp>~inout_ptr_t();</xmp></ins></p>
+<p><ins><xmp>~inout_ptr_t() noexcept(see-below);</xmp></ins></p>
 
 <p><ins><sup>1</sup> Constraints: Either `std::is_pointer_v<Smart>` is `true` or the expression `smart.release()` is well-formed.</ins></p>
 
-<p><ins><sup>2</sup> Let `SP` be `POINTER_OF_OR(Smart, Pointer)` (**20.10.2**).</ins></p>
+<p><ins><sup>2</sup> Let `SP` be `POINTER_OF_OR(Smart, Pointer)` ([**memory.defns**] 20.10.2).</ins></p>
 
 <p><ins><sup>3</sup> Effects: Equivalent to:
 <dl>
 	<dd><ins>— `if (p != nullptr) { *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }` if `std::is_pointer_v<Smart>` is true,</ins></dd>
 	<dd><ins>— `s->release(); if (p != nullptr) { s->reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if the expression `s->reset(...)` is well-formed,</ins></dd>
 	<dd><ins>— otherwise, `s->release(); if (p != nullptr) { *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`.</ins></dd>
+</dl>
+<ins>where `Args` are the arguments stored in `a`.</ins>
+</ins></p>
+
+<p><ins><sup>4</sup> Throws:
+<dl>
+	<dd><ins>— no exceptions and is `noexcept` if `std::is_pointer_v<Smart>` is true,</ins></dd>
+	<dd><ins>— any exceptions and is conditionally `noexcept` from `s->release();` and `s->reset( static_cast<SP>(p), std::forward<Args>(args)... );` if the expression `s->reset(...)` is well-formed,</ins></dd>
+	<dd><ins>— otherwise, any exceptions and is conditionally `noexcept` from `s->release();` and `*s = Smart( static_cast<SP>(p), std::forward<Args>(args)... );`.</ins></dd>
 </dl>
 <ins>where `Args` are the arguments stored in `a`.</ins>
 </ins></p>
@@ -954,7 +973,7 @@ Insert §20.11.12 [**inout_ptr**]:
 <blockquote>
 <p><ins>20.11.12 **Function Template** `inout_ptr` [**inout_ptr**]</ins><p>
 
-<p><ins><sup>1</sup> *inout_ptr* is a function template that produces an object of type *inout_ptr_t* (**20.11.11**).</ins></p>
+<p><ins><sup>1</sup> *inout_ptr* is a function template that produces an object of type *inout_ptr_t* ([**inout_ptr.class**] 20.11.11).</ins></p>
 
 <ins>
 <xmp>
@@ -1028,14 +1047,14 @@ Thank you to Tim Song for reviewing the wording for this paper and vastly improv
 		"href": "https://devblogs.microsoft.com/oldnewthing/20190429-00/?p=102456",
 		"date": "April 29th, 2019"
 	},
-	"n4778": {
+	"n4800": {
 		"authors": [
 			"ISO/IEC JTC1/SC22/WG21 - The C++ Standards Committee",
 			"Richard Smith"
 		],
-		"title": "N4778 - Working Draft, Standard for Programming Language C++",
-		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/n4778.pdf",
-		"date": "November 26th, 2018"
+		"title": "N4800 - Working Draft, Standard for Programming Language C++",
+		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/n4800.pdf",
+		"date": "January 21st, 2019"
 	},
 	"p0468": {
 		"authors": [
