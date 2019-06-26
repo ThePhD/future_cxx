@@ -11,7 +11,7 @@ Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Date: 2019-01-21
 Markup Shorthands: markdown yes, biblio yes, markup yes
-Abstract: This paper proposes a new concept to the Standard Library for ranges called Reconstructible Range for the purpose of ensuring a range broken down into its two iterators can be "glued" back together using a constructor taking its iterator and sentinel type.
+Abstract: This paper proposes a new concept to the Standard Library for ranges called Reconstructible Range for the purpose of ensuring a range/view broken down into its two iterators can be "glued" back together using a constructor taking its iterator and sentinel type.
 </pre>
 
 <pre class=include>
@@ -38,7 +38,7 @@ Currently in C++, there is no generic ("with a capitol G") way to take a range a
 
 ```
 template <typename Range>
-auto modify_range_and_return_new_range (Range&& range) {
+auto operate_on_and_return_updated_range (Range&& range) {
 	using uRange = std::remove_cvref_t<Range>;
 	if (std::ranges::empty(range)) {
 		return uRange(std::forward<Range>(range));
@@ -60,7 +60,7 @@ auto modify_range_and_return_new_range (Range&& range) {
 }
 ```
 
-The solution is to employ `std::ranges::subrange<I, S>` to return a generic subrange. This makes it work with any two pair of iterators, but quickly becomes undesirable an interface point of view. If a user passes in a `std::span<T, Extent>` or a `std::basic_string_view<Char, Traits>` -- after the work done by [[p1391r2]] and [[p1394r2]] -- they can receive a sub span or a sub string view in return. This allows them to continue to use the same interface and functions as the type they passed in, resulting in a cleaner to use programming interface for generic algorithms. Returning a `std::ranges::sub_range<I, S>` loses the interface of the class that went into the algorithm and decreases usability. It also discards any range-specific storage optimizations and layout considerations, leaving us with the most bland kind of range akin to the "pair of iterators" model.
+The current fix is to employ `std::ranges::subrange<I, S>` to return a generic subrange. This makes it work with any two pair of iterators, but quickly becomes undesirable an interface point of view. If a user passes in a `std::span<T, Extent>` or a `std::basic_string_view<Char, Traits>` -- after the work done by [[p1391r2]] and [[p1394r2]] -- that interface and information is entirely lost to the user of the function. `std::ranges::sub_range<It, Sent, Kind>` does not -- and cannot/should not -- mimic the interface of the view it was created from: it is the barebones idea of a pair-of-iterators style of changes. This, unfortunately, decreases usability for end users. It also discards any range-specific storage optimizations and layout considerations, leaving us with the most bland kind of range akin to the "pair of iterators" model. Compilation time goes up too, since users must spawn a fresh `std::ranges::sub_range<I, S, K>` for every different set of iterator/sentinel/kind triplet.
 
 There is also a problem where there are a wide variety of ranges that could conceivably meet this criterion, but do not. Attempts to change this for Eric Niebler's range-v3 library -- in the hopes of working on introducing such functionality for applicable `std::ranges` -- was also denied after the initial inquiry. Specifically:
 
@@ -91,7 +91,7 @@ template<class T>
 	concept ReconstructibleRange = Range<T> && reconstructible-range-impl<T&>;
 ```
 
-In exposition, it is the formalization that a range can be constructed from its begin iterator and end iterator/sentinel. This allows a developer to propagate the range's properties after modifying its iterators for some underlying work, algorithm or other effect.
+In exposition, it is the formalization that a range can be constructed from its begin iterator and end iterator/sentinel. This allows a developer to propagate the range's properties after modifying its iterators for some underlying work, algorithm or other effect. This concept is also the basis of the idea behind [[p1739r0]].
 
 
 
