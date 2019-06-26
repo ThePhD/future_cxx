@@ -1,0 +1,156 @@
+<pre class='metadata'>
+Title: Reconstructible Ranges
+Shortname: D1664
+Revision: 0
+Audience: LEWG
+Status: D
+Group: WG21
+URL: 
+!Latest: <a href="https://thephd.github.io/vendor/future_cxx/papers/d1664.html">https://thephd.github.io/vendor/future_cxx/papers/d1664.html</a>
+Repository: ThePhD/future_cxx
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Date: 2019-01-21
+Markup Shorthands: markdown yes, biblio yes, markup yes
+Abstract: This paper proposes a new concept to the Standard Library for ranges called Reconstructible Range for the purpose of ensuring a range broken down into its two iterators can be "glued" back together using a constructor taking its iterator and sentinel type.
+</pre>
+
+<pre class=include>
+path: wording_style.bs
+</pre>
+
+
+
+
+# Revision History # {#changelog}
+
+
+
+## Revision 0 - ????, ??th, ???? ## {#changelog-r0}
+
+	- Initial release.
+
+
+
+
+# Motivation # {#motivation}
+
+Currently in C++, there is no generic ("with a capitol G") way to take a range apart with its iterators and put it back together. That is, the following code is not guaranteed to work:
+
+```
+template <typename Range>
+auto modify_range_and_return_new_range (Range&& range) {
+	using uRange = std::remove_cvref_t<Range>;
+	if (std::ranges::empty(range)) {
+		return uRange(std::forward<Range>(range));
+	}
+	/* perform some work with the 
+	iterators or similar */
+	auto first = std::ranges::begin(range);
+	auto last = std::ranges::end(range);
+	if (*first == u'\0xEF') {
+		// ...
+		std::advance(first, 3);
+		// ...
+	}
+	// ... algorithm finished,
+	// return the "updated" range!
+
+	// ... but the below errors
+	return uRange(std::move(first), std::move(last));
+}
+```
+
+The solution is to employ `std::ranges::subrange<I, S>` to return a generic subrange. This makes it work with any two pair of iterators, but quickly becomes undesirable an interface point of view. If a user passes in a `std::span<T, Extent>` or a `std::basic_string_view<Char, Traits>` -- after the work done by [[p1391r2]] and [[p1394r2]] -- they can receive a sub span or a sub string view in return. This allows them to continue to use the same interface and functions as the type they passed in, resulting in a cleaner to use programming interface for generic algorithms. Returning a `std::ranges::sub_range<I, S>` loses the interface of the class that went into the algorithm and decreases usability. It also discards any range-specific storage optimizations and layout considerations, leaving us with the most bland kind of range akin to the "pair of iterators" model.
+
+There is also a problem where there are a wide variety of ranges that could conceivably meet this criterion, but do not. Attempts to change this for Eric Niebler's range-v3 library -- in the hopes of working on introducing such functionality for applicable `std::ranges` -- was also denied after the initial inquiry. Specifically:
+
+> I don't add things because I can't find a reason not to. I add things selectively based on need and on design integrity.
+> 
+> There is no generic code that can use the functionality you are proposing because that expression is not part of any concept. — [[range-v3-sentinel-issue|Eric Niebler, May 15th, 2019]]
+
+This paper demonstrates such a concept.
+
+
+
+
+# Design # {#design}
+
+The concept is simple:
+
+```
+template<class T>
+	// exposition only
+	concept reconstructible-range-impl =
+	requires(T&& t) {
+		std::remove_reference_t<T>(
+			ranges::begin(std::forward<T>(t)),
+			ranges::end(std::forward<T>(t)));
+	};
+
+template<class T>
+	concept ReconstructibleRange = Range<T> && reconstructible-range-impl<T&>;
+```
+
+In exposition, it is the formalization that a range can be constructed from its begin iterator and end iterator/sentinel. This allows a developer to propagate the range's properties after modifying its iterators for some underlying work, algorithm or other effect.
+
+
+
+## Should this apply to all Ranges? ## {#design-all}
+
+Not all ranges can meet this requirement. Some ranges contain state which cannot be trivially propagated into the iterators, or state that cannot be reconstructed from the iterator/sentinel pair itself. However, most of the common ranges representing unbounded views, empty views, iterations viewing some section of non-owned storage, or similar can all be constructed from their iterator/iterator or iterator/sentinel pair.
+
+For example `std::ranges::single_view` contains a [exposition *semiregular-box* template type (ranges.semi.wrap)](http://eel.is/c++draft/range.semi.wrap) which holds a value to iterate over. It would not be possible to reconstruct the exact same range (e.g., iterators pointing to the exact same object) with the semi-regular wrapper.
+
+
+
+## Applicability ## {#design-applicable}
+
+There are many ranges to which this is applicable, but only a handful in the standard library need or satisfy this. If [[p1391r2]] and [[p1394r2]] are accepted, then the two most important view types -- `std::span<T, Extent>` and `std::basic_string_view<Char, Traits>` -- will have this concept applied to it. `std::ranges::subrange<Iterator, Sentinel, Kind>` already fits this as well. By making it a concept in the standard, we can dependably and reliably assert that these properties continue to hold for the ranges which it is desirable. Some ranges to which this would be helpfully applicable to in the current standard are:
+
+- `std::span` (currently under consideration)
+- `std::basic_string_view` (currently under consideration)
+- `std::ranges::empty_view`
+- `std::ranges::iota_view`
+- `std::ranges::ref_view`
+
+
+There are also upcoming ranges from [[range-v3]] and elsewhere that could have this concept applied to it as well:
+
+- [[p1255r3]]'s `std::ranges::ref_maybe_view`
+- `ranges::unbounded_view`
+- [[p0009r9]]'s `std::mdspan`
+
+By giving these ranges `iterator, iterator` or `iterator, sentinel` constructors, we can enable a greater degree of interface fidelity without having to resort to `std::ranges::subrange`.
+
+
+# Implementation and Impact # {#design-impact}
+
+Given that there are a handful of papers already in flight to add iterator-based constructors to various view and view-like types, there is already an abundance of usage experience in this area. [[range-v3]] in particular has already implemented _some_ of this in their `ranges::span` type, for example. It is also being pushed to add it for standardization. But without a concept to build upon, the library will not extend the functionality to other places.
+
+Note that this is a separate concept. It is not to be added to the base `Range` concept, or added to any other concept. It is to be applied separately to the types which can reasonably support it for the benefit of algorithms and code which can enhance the quality of their implementation, return types, and more by guaranteeing that they can hand the same type of range back to the user.
+
+Unlike other concept "fixes", this paper is not C++20-time-critical and can be added without breakage later.
+
+<pre class=biblio>
+{
+	"range-v3": {
+		"authors": [
+			"Eric Niebler",
+			"Casey Carter"
+		],
+		"href": "https://github.com/ericniebler/range-v3",
+		"title": "range-v3",
+		"publisher": "Eric Niebler",
+		"date": "June 11th, 2019"
+	},
+	"range-v3-sentinel-issue": {
+		"authors": [
+			"Eric Niebler"
+		],
+		"href": "https://github.com/ericniebler/range-v3/issues/1192#issuecomment-492867461",
+		"title": "Ranges which take a sentinel should be constructible from {Iterator, Sentinel}",
+		"publisher": "Eric Niebler",
+		"date": "June 11th, 2019"
+	}
+}
+</pre>
