@@ -58,9 +58,14 @@ auto operate_on_and_return_updated_range (Range&& range) {
 	// ... but the below errors
 	return uRange(std::move(first), std::move(last));
 }
+
+int main () {
+	std::string_view sview = "meow";
+	
+}
 ```
 
-The current fix is to employ `std::ranges::subrange<I, S>` to return a generic subrange. This makes it work with any two pair of iterators, but quickly becomes undesirable an interface point of view. If a user passes in a `std::span<T, Extent>` or a `std::basic_string_view<Char, Traits>` -- after the work done by [[p1391r2]] and [[p1394r2]] -- that interface and information is entirely lost to the user of the function. `std::ranges::sub_range<It, Sent, Kind>` does not -- and cannot/should not -- mimic the interface of the view it was created from: it is the barebones idea of a pair-of-iterators style of changes. This, unfortunately, decreases usability for end users. It also discards any range-specific storage optimizations and layout considerations, leaving us with the most bland kind of range akin to the "pair of iterators" model. Compilation time goes up too, since users must spawn a fresh `std::ranges::sub_range<I, S, K>` for every different set of iterator/sentinel/kind triplet.
+The current fix is to employ `std::ranges::subrange<I, S, K>` to return a generic subrange. This makes it work with any two pair of iterators, but quickly becomes undesirable from an interface point of view. If a user passes in a `std::span<T, Extent>` or a `std::basic_string_view<Char, Traits>` that interface and information is entirely lost to the user of the above function. `std::ranges::sub_range<Iterator, Sentinel, Kind>` does not -- and cannot/should not -- mimic the interface of the view it was created from: it is the barebones idea of a pair-of-iterators style of range. This, unfortunately, decreases usability for end users. It also discards any range-specific storage optimizations and layout considerations, leaving us with the most bland kind of range akin to the "pair of iterators" model. Compilation time goes up too, since users must spawn a fresh `std::ranges::sub_range<I, S, K>` for every different set of iterator/sentinel/kind triplet.
 
 There is also a problem where there are a wide variety of ranges that could conceivably meet this criterion, but do not. Attempts to change this for Eric Niebler's range-v3 library -- in the hopes of working on introducing such functionality for applicable `std::ranges` -- was also denied after the initial inquiry. Specifically:
 
@@ -68,30 +73,28 @@ There is also a problem where there are a wide variety of ranges that could conc
 > 
 > There is no generic code that can use the functionality you are proposing because that expression is not part of any concept. — [[range-v3-sentinel-issue|Eric Niebler, May 15th, 2019]]
 
-This paper demonstrates such a concept.
+This paper formalizes the work done in P1739 by giving it a conceptual name which identifies ranges where the user can logically return the same range rather than an entirely new range. This paper does not depend on any other papers, but notes that the changes from P
 
 
 
 
 # Design # {#design}
 
-The concept is simple:
+The concept is simple and is given in 2 exposition-only types:
 
 ```
-template<class T>
-	// exposition only
-	concept reconstructible-range-impl =
-	requires(T&& t) {
-		std::remove_reference_t<T>(
-			ranges::begin(std::forward<T>(t)),
-			ranges::end(std::forward<T>(t)));
-	};
+template <typename R>
+concept pair-reconstructible-range = 
+    forwarding-range<std::remove_reference_t<R>> && 
+    std::Constructible<std::remove_reference_t<R>, iterator_t<R>, sentinel_t<R>>;
 
-template<class T>
-	concept ReconstructibleRange = Range<T> && reconstructible-range-impl<T&>;
+template <typename R>
+concept range-reconstructible-range = 
+    forwarding-range<std::remove_reference_t<R>> && 
+    std::Constructible<std::remove_reference_t<R>, std::ranges::subrange<iterator_t<R>, sentinel_t<R>>>;
 ```
 
-In exposition, it is the formalization that a range can be constructed from its begin iterator and end iterator/sentinel. This allows a developer to propagate the range's properties after modifying its iterators for some underlying work, algorithm or other effect. This concept is also the basis of the idea behind [[p1739r0]].
+In exposition, it is the formalization that a range can be constructed from its begin iterator and end iterator/sentinel. It also provides an exposition concept for allowing a range to be constructed from a `subrange` of its iterator/sentinel pair. This allows a developer to propagate the range's properties after modifying its iterators for some underlying work, algorithm or other effect. This concept is also the basis of the idea behind [[p1739r0]].
 
 
 
@@ -110,8 +113,6 @@ There are many ranges to which this is applicable, but only a handful in the sta
 - `std::span` (currently under consideration)
 - `std::basic_string_view` (currently under consideration)
 - `std::ranges::empty_view`
-- `std::ranges::iota_view`
-- `std::ranges::ref_view`
 
 
 There are also upcoming ranges from [[range-v3]] and elsewhere that could have this concept applied to it as well:
@@ -120,7 +121,15 @@ There are also upcoming ranges from [[range-v3]] and elsewhere that could have t
 - `ranges::unbounded_view`
 - [[p0009r9]]'s `std::mdspan`
 
+
 By giving these ranges `iterator, iterator` or `iterator, sentinel` constructors, we can enable a greater degree of interface fidelity without having to resort to `std::ranges::subrange`.
+
+There are other views where applying this would be logically helpful, but does not satisfy the constraint because `pair-reconstructible-range` and `range-reconstructible-range` asks for the range to be a `forwarding-range`, for example:
+
+- `std::ranges::iota_view`
+
+could likely benefit. For example, returing a copy of itself which simply increments the internally stored begin value in the case of `drop_view` or similar would be highly beneficial, but because it is not a forwarding range it cannot apply here.
+
 
 
 # Implementation and Impact # {#design-impact}
