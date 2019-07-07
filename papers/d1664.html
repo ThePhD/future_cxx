@@ -1229,7 +1229,7 @@ Possible extra rowspan handling
   </style>
   <meta content="Bikeshed version 1cff2db4ee2c3bba7a4077d3007528ec73b0485d" name="generator">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="cb20c8f6469c4d5edb86720e8827d9ef2f9eb9be" name="document-revision">
+  <meta content="edc67edde9fa024602a0e7a88a13190d80d6ada0" name="document-revision">
 <style>
 pre {
   margin-top: 0px;
@@ -1591,9 +1591,10 @@ pre .property::before, pre .property::after {
 
 <c- b>int</c-> <c- n>main</c-> <c- p>()</c-> <c- p>{</c->
 	<c- n>std</c-><c- o>::</c-><c- n>string_view</c-> <c- n>meow_view</c-> <c- o>=</c-> <c- s>"나는 유리를 먹을 수 있어요. 그래도 아프지 않아요"</c-><c- p>;</c->
-	<c- k>auto</c-> <c- n>subview</c-> <c- o>=</c-> <c- n>operate_on_and_return_updated_range</c-><c- p>(</c-><c- n>meow_view</c-><c- p>);</c->
-	<c- c1>// decltype(subview) == </c->
+	<c- k>auto</c-> <c- n>sub_view</c-> <c- o>=</c-> <c- n>operate_on_and_return_updated_range</c-><c- p>(</c-><c- n>meow_view</c-><c- p>);</c->
+	<c- c1>// decltype(sub_view) == </c->
 	<c- c1>//   std::string_view, ideally</c->
+	<c- c1>//   but instead we get an error =(</c->
 	<c- k>return</c-> <c- mi>0</c-><c- p>;</c->
 <c- p>}</c->
 </pre>
@@ -1619,32 +1620,33 @@ pre .property::before, pre .property::after {
 	<c- c1>// ... algorithm finished,</c->
 	<c- c1>// return the "updated" range!</c->
 
-	<c- c1>// ... but the below errors</c->
+	<c- c1>// now it works!</c->
 	<c- k>return</c-> <c- n>Result</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>first</c-><c- p>),</c-> <c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>last</c-><c- p>));</c->
 <c- p>}</c->
 
 <c- b>int</c-> <c- n>main</c-> <c- p>()</c-> <c- p>{</c->
 	<c- n>std</c-><c- o>::</c-><c- n>string_view</c-> <c- n>meow_view</c-> <c- o>=</c-> <c- s>"나는 유리를 먹을 수 있어요. 그래도 아프지 않아요"</c-><c- p>;</c->
-	<c- k>auto</c-> <c- n>subview</c-> <c- o>=</c-> <c- n>operate_on_and_return_updated_range</c-><c- p>(</c-><c- n>meow_view</c-><c- p>);</c->
-	<c- c1>// decltype(subview) == </c->
+	<c- k>auto</c-> <c- n>sub_view</c-> <c- o>=</c-> <c- n>operate_on_and_return_updated_range</c-><c- p>(</c-><c- n>meow_view</c-><c- p>);</c->
+	<c- c1>// decltype(sub_view) == </c->
 	<c- c1>//   std::ranges::subrange&lt;std::string_view::iterator,std::string_view::iterator></c->
+	<c- c1>//   which is nowhere close to ideal...</c->
 	<c- k>return</c-> <c- mi>0</c-><c- p>;</c->
 <c- p>}</c->
 </pre>
    <p>This makes it work with any two pair of iterators, but quickly becomes undesirable from an interface point of view. If a user passes in a <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>span</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Extent</c-><c- o>></c-></code> or a <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>basic_string_view</c-><c- o>&lt;</c-><c- n>Char</c-><c- p>,</c-> <c- n>Traits</c-><c- o>></c-></code> that interface and information is entirely lost to the user of the above function. <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>sub_range</c-><c- o>&lt;</c-><c- n>Iterator</c-><c- p>,</c-> <c- n>Sentinel</c-><c- p>,</c-> <c- n>Kind</c-><c- o>></c-></code> does not -- and cannot/should not -- mimic the interface of the view it was created from other than what information comes from its iterators: it is the barebones idea of a pair-of-iterators/iterator-sentinel style of range. This is useful in the generic sense that if a library developer must work with iterators, they can always rely on creation of a <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-></code> of the iterator and sentinel.</p>
-   <p>Unfortunately, this decreases usability for end users. Users who have, for example a <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>string_view</c-></code> would prefer to have the same type after such an operation is performed. There is little reason why the original type needs to be discarded if it supports  It also discards any range-specific storage optimizations and layout considerations, leaving us with the most bland kind of range similar to the "pair of iterators" model. Compilation time goes up too, since users must spawn a fresh <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>sub_range</c-><c- o>&lt;</c-><c- n>I</c-><c- p>,</c-> <c- n>S</c-><c- p>,</c-> <c- n>K</c-><c- o>></c-></code> for every different set of iterator/sentinel/kind triplet.</p>
+   <p>Unfortunately, this decreases usability for end users. Users who have, for example a <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>string_view</c-></code> would prefer to have the same type after such an operation is performed. There is little reason why the original type needs to be discarded if it supports being put back together from its iterators. It also discards any range-specific storage optimizations and layout considerations, leaving us with the most bland kind of range similar to the "pair of iterators" model. Compilation time goes up as well: users must spawn a fresh <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>sub_range</c-><c- o>&lt;</c-><c- n>I</c-><c- p>,</c-> <c- n>S</c-><c- p>,</c-> <c- n>K</c-><c- o>></c-></code> for every different set of iterator/sentinel/kind triplet.</p>
    <p>There is also a problem where there are a wide variety of ranges that could conceivably meet this criterion, but do not. Attempts to change this for Eric Niebler’s range-v3 library were also denied after the initial inquiry, due to focusing only on a singular type. Specifically:</p>
    <blockquote>
     <p>I don’t add things because I can’t find a reason not to. I add things selectively based on need and on design integrity.</p>
     <p>There is no generic code that can use the functionality you are proposing because that expression is not part of any concept. — <a data-link-type="biblio" href="#biblio-range-v3-sentinel-issue">Eric Niebler, May 15th, 2019</a></p>
    </blockquote>
    <p>Still, the author of this paper was not the only one to see utility in such operations. <a data-link-type="biblio" href="#biblio-p1739r0">[p1739r0]</a> does much the same that this paper does, without the introduction of a concept to formalize the behavior it presents. In particular, it selects views which can realistically have their return types changed to match the input range and operations being performed (or a similarly powerful alternative) by asking whether they are constructible from a subrange of the iterators with the expressions acted upon.</p>
-   <p>In short, this paper formalizes the work done in P1739 by giving it a "kebab-case" concept name in the Standard which identifies ranges where the user can logically return the same range rather than an entirely new range. This paper does not depend on any other papers, but notes that the changes from <a data-link-type="biblio" href="#biblio-p1739r0">[p1739r0]</a>, <a data-link-type="biblio" href="#biblio-p1391r2">[p1391r2]</a> and <a data-link-type="biblio" href="#biblio-p1394r2">[p1394r2]</a> all follow down to the logical conclusion laid out here:</p>
+   <p>In short, this paper formalizes the work done in P1739 by giving it an exposition-only "kebab-case" concept name in the Standard which identifies ranges where the user can logically return the same range rather than an entirely new range. This paper does not depend on any other papers, but note that the changes from <a data-link-type="biblio" href="#biblio-p1739r0">[p1739r0]</a>, <a data-link-type="biblio" href="#biblio-p1391r2">[p1391r2]</a> and <a data-link-type="biblio" href="#biblio-p1394r2">[p1394r2]</a> all follow down to the logical conclusion laid out here:</p>
    <ul>
     <li data-md>
      <p>Ranges should be reconstructible from their iterators where applicable;</p>
     <li data-md>
-     <p>and, reconstructible ranges serve a useful purpose in generic algorithms, including better user interfaces.</p>
+     <p>and, reconstructible ranges serve a useful purpose in generic algorithms, including not losing information and returning it in a much more cromulent and desirable form.</p>
    </ul>
    <h2 class="heading settled" data-level="3" id="design"><span class="secno">3. </span><span class="content">Design</span><a class="self-link" href="#design"></a></h2>
    <p>The concept is simple and is given in 2 exposition-only types added to the standard:</p>
@@ -1685,12 +1687,14 @@ pre .property::before, pre .property::after {
     <li data-md>
      <p>Eventually, <a data-link-type="biblio" href="#biblio-range-v3">[range-v3]</a>'s <code class="highlight"><c- n>ranges</c-><c- o>::</c-><c- n>unbounded_view</c-></code></p>
    </ul>
+   <p>Note that these changes will greatly aid other algorithm writers who want to preserve the same input ranges. In the future, it may be beneficial to provide more than just an exposition-only concept to check, but rather a function in the standard in <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-></code> of the form <code class="highlight"><c- k>template</c-> <c- o>&lt;</c-><c- k>typename</c-> <c- n>Range</c-><c- o>></c-> <c- n>reconstruct</c-><c- p>(</c-><c- n>Iterator</c-><c- p>,</c-> <c- n>Sentinel</c-><c- p>);</c-></code>, whose goal is to check if it is possible to reconstruct the <code class="highlight"><c- n>Range</c-></code> or otherwise return a <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-></code>.</p>
+   <p>This paper does not propose this at this time because concepts -- and the things that rely on them -- must remain stable from now and into infinity. It is better as an exposition-only named set of helpers whose semantics we are a little more free to improve or be adapted, rather than hard-and-fast functions and named concepts which are impossible to fix or improve in the future due to the code which may rely on it.</p>
    <h3 class="heading settled" data-level="3.3" id="design-dual"><span class="secno">3.3. </span><span class="content">Two Concepts</span><a class="self-link" href="#design-dual"></a></h3>
    <p>By giving these ranges <code class="highlight"><c- n>Iterator</c-><c- p>,</c-> <c- n>Sentinel</c-></code>, <strong>or</strong> <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-><c- o>&lt;</c-><c- n>Iterator</c-><c- p>,</c-> <c- n>Sentinel</c-><c- o>></c-></code> constructors, we can enable a greater degree of interface fidelity without having to resort to <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-></code> for all generic algorithms. There should be a preference for <code class="highlight"><c- n>Type</c-><c- p>(</c-><c- n>Iterator</c-><c- p>,</c-> <c- n>Sentinel</c-><c- p>)</c-></code> constructors, because one-argument constructors have extremely overloaded meanings in many containers and some views and may result in having to fight with other constructor calls in a complicated overload set. It also produces less compiler boilerplate to achieve the same result of reconstructing the range when one does not have to go through <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-><c- o>&lt;</c-><c- n>I</c-><c- p>,</c-> <c- n>S</c-><c- p>,</c-> <c- n>K</c-><c- o>></c-></code>. However, it is important to attempt to move away from the iterator, sentinel model being deployed all the time: <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-></code> offers a single type that can accurately represent the intent and can be fairly easy to constrain overload sets on (most of the time).</p>
    <p>This paper includes a concept that covers both reconstructible methods, to support both old and new views and ranges.</p>
    <h2 class="heading settled" data-level="4" id="impact"><span class="secno">4. </span><span class="content">Impact</span><a class="self-link" href="#impact"></a></h2>
    <p>Originally, the impact of this feature was perceived to be small and likely not necessary to work into C++20. Indeed: this paper originally targeted C++23 with the intent of slowly working through existing ranges and range implementations and putting the concept and the manifestation of concepts in range libraries, particularly range-v3, over time.</p>
-   <p>This changed in the face of <a data-link-type="biblio" href="#biblio-p1739r0">[p1739r0]</a>. Haudeswell’s paper here makes it clear there are usability and API wins that are solved by this concept, and that not having the concept has resulted in interface inconsistency and ad-hoc, one-off fixes to fit limited problem domains without any respite to routines which have a desire to preserve the input types into their algorithms. Since this paper’s concept is likely to change interfaces API return values in a beneficial but ultimately breaking manner, this paper’s consideration was brought up to be presented as a late C++20 paper for the purpose of fixing the interface as soon as possible.</p>
+   <p>This changed in the face of <a data-link-type="biblio" href="#biblio-p1739r0">[p1739r0]</a>. Hauswedell’s paper here makes it clear there are usability and API wins that are solved by this concept, and that not having the concept has resulted in interface inconsistency and ad-hoc, one-off fixes to fit limited problem domains without any respite to routines which have a desire to preserve the input types into their algorithms. Since this paper’s concept is likely to change interfaces API return values in a beneficial but ultimately breaking manner, this paper’s consideration was brought up to be presented as a late C++20 paper for the purpose of fixing the interface as soon as possible.</p>
    <p>Note that this is a separate concept. It is not to be added to the base <code class="highlight"><c- n>Range</c-></code> concept, or added to any other concept. It is to be applied separately to the types which can reasonably support it for the benefit of algorithms and code which can enhance the quality of their implementation.</p>
    <h2 class="heading settled" data-level="5" id="wording"><span class="secno">5. </span><span class="content">Proposed Changes</span><a class="self-link" href="#wording"></a></h2>
    <p>The following wording is relative to the latest draft paper, <a data-link-type="biblio" href="#biblio-n4820">[n4820]</a>, and to several papers whose utilities have not been completely placed into the C++ Working draft such as <a data-link-type="biblio" href="#biblio-p1739r0">[p1739r0]</a> and <a data-link-type="biblio" href="#biblio-p1035r6">[p1035r6]</a>.</p>
