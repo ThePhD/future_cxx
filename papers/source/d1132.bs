@@ -14,7 +14,7 @@ Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Todor Buyukliev, tbuyukliev@vmware.com
 Editor: Isabella Muerte, https://twitter.com/slurpsmadrips
 Abstract: out_ptr and inout_ptr are abstractions to bring both C APIs and smart pointers back into the promised land by creating a temporary pointer-to-pointer that updates (using a reset call or semantically equivalent behavior) the smart pointer when it destructs.
-Date: 2019-06-17
+Date: 2019-07-08
 Markup Shorthands: markdown yes, biblio yes, markup yes
 </pre>
 
@@ -25,6 +25,14 @@ path: wording_style.bs
 
 
 # Revision History # {#changelog}
+
+
+
+## Revision 5 - July 8th, 2019 ## {#changelog-r5}
+
+    - Add back `void**` conversion after users voiced legitimate concerns about not being able to properly handle `std::unique_ptr<Base>` -> `out_ptr<Derived*>` -> `void**` functions, a common part of COM interfaces.
+    - Get benchmarks with both the unconditional noexcept and conditional noexcept code, particularly with non-noexcept reset calls (e.g. `std::shared_ptr`).
+    - Prepare for a trip back to LEWG to answer the unconditional noexcept vs. conditional noexcept.
 
 
 
@@ -40,7 +48,7 @@ path: wording_style.bs
     - Add details discussing upcoming implementations in [[#experience]].
     - Add section about implementation churn.
     - Add details about flow control statements and temporary evaluation for [[#design-footguns]].
-    - Wording is now relative to [[n4800]], the latest working draft of the C++ Standard.
+    - Wording is now relative to [[n4820]], the latest working draft of the C++ Standard.
 
 
 
@@ -91,7 +99,7 @@ struct AVFormatContextDeleter {
 			avformat_free_context(c);
 		}
 };
-typedef std::unique_ptr<AVFormatContext, AVFormatContextDeleter> AVFormatContext;
+typedef std::unique_ptr<AVFormatContext, AVFormatContextDeleter> av_format_context_ptr;
 // Signature from libavformat:
 // int avformat_open_input(AVFormatContext **ps, const char *url, AVInputFormat *fmt, AVDictionary **options);
 ```
@@ -105,7 +113,7 @@ typedef std::unique_ptr<AVFormatContext, AVFormatContextDeleter> AVFormatContext
 		<td>
 ```
 int main (int, char* argv[]) {
-	AVFormatContext context(avformat_alloc_context());
+	av_format_context_ptr context(avformat_alloc_context());
 	// ...
 	// used, need to reopen
 	AVFormatContext* raw_context = context.release();
@@ -127,7 +135,7 @@ int main (int, char* argv[]) {
 		<td>
 ```
 int main (int, char* argv[]) {
-	AVFormatContext context(avformat_alloc_context());
+	av_format_context_ptr context(avformat_alloc_context());
 	// ...
 	// used, need to reopen
 
@@ -387,7 +395,6 @@ struct fd_deleter {
 	using pointer = fd;
 	void operator()(fd des) const;
 };
-
 ```
 
 Casting in this case is cumbersome and often error-prone to do properly when interfacing with C or C++ standard library facilities. It becomes trivial with `std::out_ptr`:
@@ -420,7 +427,7 @@ As far as we know and have designed this specification, `std::out_ptr` and `std:
 
 Furthermore, all examples of `out_ptr`/`inout_ptr` include usage as a temporary to a function call. Let us assume someone wanted to get sufficiently clever:
 
-```
+```cpp
 std::unique_ptr<int> u_ptr;
 auto op = std::out_ptr(u_ptr);
 int err = c_function_call(op);
@@ -446,7 +453,20 @@ else {
 
 This happens whether the expression is chained with multiple comma/conditional expressions or if someone uses the new flow-control initializer statements. This is an unfortunately holdover of how temporaries are treated, and rather being fixed with flow control initializer statements the same quirky rules for the old `if` were carried over.
 
-This was pointed out as strange, but we feel this is not much of a blocker for this proposal. All RAII-based, action-on-destroy resources suffer from this problem: it is neither a new nor novel problem. One does not use a `std::lock_guard` in similar fashion to the snippet above; neither should `std::out_ptr` be used to that effect. Even [[oldnewthing-handle-proxy|Microsoft's Raymond Chen]] takes issues with temporary destructors and lifetimes in `if` statements and similar.
+This was pointed out as strange, but we feel this is not much of a blocker for this proposal. All RAII-based, action-on-destroy resources suffer from this problem: it is neither a new nor novel problem. One does not use a `std::lock_guard` in similar fashion to the snippet above; neither should `std::out_ptr` be used to that effect. Even [[oldnewthing-handle-proxy|Microsoft's Raymond Chen]] takes issues with temporary destructors and lifetimes in `if` statements and similar, but takes that problem up with C++ in general, not the abstraction presented in the write up or here.
+
+In most cases, when working with C APIs, there are error numbers to check which are infinitely more reliable than testing the pointer. APIs would do better to switch to such a method, rather than relying on testing for the null state on a pointer. Which is another way of saying, the following code is still just fine:
+
+```cpp
+std::unique_ptr<foo_handle, foo_deleter> my_unique(nullptr);
+
+if (auto err = get_some_pointer(std::out_ptr(my_unique)); err == 0)) {
+	std::cout << "yay" << std::endl;
+}
+else {
+	std::cout << "oh no" << std::endl;
+}
+```
 
 
 
@@ -489,6 +509,13 @@ Unfortunately, this requires opt-in from every author of a library type. This me
 Already, users have sent me tweets and e-mails about extending this for their own types that they do not own. It would defeat the purpose of this type to require explicit opt-in.
 
 
+### Potential Future: Traits type customization ### {#design-extension-traits}
+
+Some degree of success has been had with a `out_ptr_traits` and a `inout_ptr_traits` customization point. It reduced the amount of code necessary to write over the original structure-based version, even if it came at the loss of some control of the underlying class and its temporary storage. If stack space is at a premium, the traits specialization when used to optimize `std::unique_ptr`-like changes is actually mildly inferior, but only in the case of taking up an extra pointer or two of stack space. This is likely negligible for the vast majority of use cases.
+
+We propose that the struct specialization stays because it gives the user the most control for truly unique circumstances. Users should not be overriding the base defaults often except in the case to severely rework the internals. It is also possible to implement the traits type customization as a future extension: this has already been deployed in the version proposed to Boost as well as the standalone C++ version vended to companies and individuals around the world. It does not have the same degree of usage experience as the struct specialization, however, so this paper will not propose it until it can be seen as successfully replacing the old usages without problem.
+
+
 
 
 # Implementation Experience # {#experience}
@@ -505,7 +532,7 @@ Given that many companies, studios and individuals have all invented the same ty
 
 A [full implementation with UB and friendly optimizations is available in the repository](https://github.com/ThePhD/out_ptr/blob/master/include/boost/out_ptr/detail/base_out_ptr_impl.hpp). The type has been privately used in many projects over the last four years, and this public implementation is already seeing use at companies today. It has been particularly helpful with many COM APIs, and the re-allocation support in `inout_ptr` has been useful for FFMPEG's functions which feature reallocation support in their functions (e.g., `avformat_open_input`).
 
-A version of this library is going to be available in Boost in time for 1.70, which should roll out in April. It has been extensively proofed and checked over by Peter Dimov and Glen Fernandes in initial vetting for [the Boost.SmartPtr repository at this issue](https://github.com/boostorg/smart_ptr/issues/56).
+A version of this library might be available in Boost in time for 1.72, which should roll out late this year. It was slated for earlier boost releases but many circumstances changed the potential release date. It is currently under Boost Review, as of July 7th, 2019. It has been extensively proofed and checked over by Peter Dimov and Glen Fernandes in initial vetting for [the Boost.SmartPtr repository at this issue](https://github.com/boostorg/smart_ptr/issues/56).
 
 
 
@@ -564,6 +591,20 @@ path: reset inout.bs
 
 
 
+## For `std::shared_ptr` and various cases ## {#perf-shared}
+
+Here, we examine the impact of noexcept and various styles of initialize a `std::shared_ptr` with a value. This is mostly informational and educational: due to the asynchronous, shared ownership semantics of `std::shared_ptr` there is little that can be done in the optimization space.
+
+<pre class=include>
+path: local inout.bs
+</pre>
+
+<pre class=include>
+path: reset inout.bs
+</pre>
+
+
+
 
 # Bikeshed # {#bikeshed}
 
@@ -581,7 +622,7 @@ The first way is to specify both functions `out_ptr` and `inout_ptr` as factorie
 
 The second way is to specify the class names to be `std::out_ptr` / `std::inout_ptr`, and then used Template Argument Deduction for Class Templates from C++17 to give a function-like appearance to their usage. Users can still specialize for types external to the standard library. This approach is more Modern C++-like, but contains a caveat.
 
-Part of this specification is that you can specify the stored pointer for the underlying implementation of `out_ptr` as shown in [[#design-casting]]. Template Argument Deduction for Class Templates does not allow partial specialization (and for good reason, see the interesting example of `std::tuple<int, int>{1, 2, 3}`). The "Deduction Guides" (or CTAD) approach would accommodate [[#design-casting]] using functions with a more explicit names, such as `out_ptr_cast<void*>( ... );` and `inout_ptr_cast<void*>( ... );`.
+Part of this specification is that you can specify the stored pointer for the underlying implementation of `out_ptr` as shown in [[#design-casting]]. Template Argument Deduction for Class Templates does not allow partial specialization (and for good reason, see the interesting example of `std::tuple<int, int>{1, 2, 3}`). The "Deduction Guides" (or CTAD) approach would accommodate [[#design-casting]] using functions with a more explicit names, such as `out_ptr_cast<void*>( ... );` and `inout_ptr_cast<void*>( ... );`. This route was deemed less overall palatable.
 
 
 
@@ -621,7 +662,7 @@ As a pairing, `out_ptr` and `inout_ptr` are the most cromulent and descriptive i
 
 # Proposed Changes # {#wording}
 
-The following wording is for the Library section, relative to [[n4800]]. This feature will go in the `<memory>` header, and is added to <a href="http://eel.is/c++draft/smartptr">[**utilities.smartptr**] §20.11</a>, at the end as subsection 9.
+The following wording is for the Library section, relative to [[n4820]]. This feature will go in the `<memory>` header, and is added to <a href="http://eel.is/c++draft/smartptr">[**utilities.smartptr**] §20.11</a>, at the end as subsection 9.
 
 
 
@@ -650,8 +691,6 @@ The goals of the wording are to not restrict implementation strategies (e.g., a 
 
 ## Proposed Wording ## {#wording-library}
 
-Note: The � character is used to denote a placeholder number which shall be selected by the editor. � represents the top-level entry place. For N4800, that � is 20.
-
 Append to §17.3.1 General [**support.limits.general**]'s **Table 35** one additional entry:
 
 <blockquote>
@@ -663,7 +702,7 @@ Append to §17.3.1 General [**support.limits.general**]'s **Table 35** one addit
 </tr>
 <tr>
 	<td><ins>__cpp_lib_out_ptr</ins></td>
-	<td><ins>201811L</ins></td>
+	<td><ins>201907L</ins></td>
 </tr>
 <tr>
 	<td><ins>`<memory>`</ins></td>
@@ -748,6 +787,7 @@ namespace std {
 
 		// 20.11.9.4, conversion operators
 		operator Pointer*() noexcept;
+		operator void**() noexcept;
 
 	private:
 		Smart* s; // exposition only
@@ -759,7 +799,7 @@ namespace std {
 </xmp>
 </ins>
 
-<p><ins><sup>2</sup> If `Smart` is a specialization of `shared_ptr` and `sizeof...(Args) == 0`, the program is ill-formed. `Pointer` shall meet the `Cpp17NullablePointer` requirements ((<a href="http://eel.is/c++draft/nullablepointer.requirements">[**nullablepointer.requirements**] 16.5.3.3</a>)).</ins></p>
+<p><ins><sup>2</sup> If `Smart` is a specialization of `shared_ptr` and `sizeof...(Args) == 0`, the program is ill-formed.</ins></p>
 
 <p><ins><sup>3</sup> [ <i>Note:</i> It is typically a user error to reset a `shared_ptr` without specifying a deleter, as `std::shared_ptr` will replace a custom deleter with the default deleter upon usage of `.reset()`, as specified in 20.11.3.4. — <i>end note</i> ]</ins></p>
 
@@ -772,7 +812,7 @@ namespace std {
 
 <p><ins><xmp>out_ptr_t(out_ptr&& rhs) noexcept;</xmp></ins></p>
 
-<p><ins><sup>2</sup> Effects: initializes `s` with `std::move(rhs.s)`, `a` with `std::move(args)...`, and `p` with `std::move(rhs.p)`. Then sets `rhs.p` to `nullptr`.</ins></p>
+<p><ins><sup>2</sup> Effects: initializes `s` with `std::move(rhs.s)`, `a` with `std::move(args)...`, and `p` with `std::move(rhs.p)`. Then sets `rhs.s` to `nullptr`.</ins></p>
 
 
 <p><ins>20.11.9.2 Assignment [**out_ptr.class.assign**]</ins></p>
@@ -784,7 +824,7 @@ namespace std {
 s = std::move(rhs.s); 
 a = std::move(rhs.a); 
 p = std::move(rhs.p);
-rhs.p = nullptr;
+rhs.s = nullptr;
 return *this;
 </xmp>
 </ins></p>
@@ -798,8 +838,8 @@ return *this;
 
 <p><ins><sup>2</sup> Effects: Equivalent to:
 <dl>
-	<dd><ins>— `if (p != nullptr) { s->reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if the expression `s->reset(static_cast<SP>(p), std::forward<Args>(args)...)` is well-formed,</ins></dd>
-	<dd><ins>— otherwise `if (p != nullptr) { *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></dd>
+	<dd><ins>— `if (s != nullptr) { s->reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if the expression `s->reset(static_cast<SP>(p), std::forward<Args>(args)...)` is well-formed,</ins></dd>
+	<dd><ins>— otherwise `if (s != nullptr) { *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></dd>
 </dl>
 <ins>where `Args` are the arguments stored in `a`.</ins>
 </ins></p>
@@ -824,6 +864,17 @@ operator Pointer*() noexcept;
 <p><ins><sup>1</sup> Effects: returns a pointer to `p`.</ins></p>
 </blockquote>
 
+<p><ins>
+<xmp>
+operator void**() noexcept;
+</xmp>
+</ins></p>
+
+<p><ins><sup>2</sup> Constraints: `is_same_v<remove_cvref_t<Pointer>, void*>` is false.</ins></p>
+
+<p><ins><sup>3</sup> Effects: Equivalent to: `returns reinterpret_cast<void**>(static_cast<Pointer*>(*this));`.</ins></p>
+</blockquote>
+
 
 Insert §20.11.10 [**out_ptr**]:
 
@@ -834,21 +885,21 @@ Insert §20.11.10 [**out_ptr**]:
 
 <ins>
 <xmp>
-namespace std {
-
-	template <class Pointer, class Smart, class... Args>
-	out_ptr_t<Smart, Pointer, Args...> out_ptr(Smart& s, Args&&... args) noexcept;
-
-	template <class Smart, class... Args>
-	out_ptr_t<Smart, POINTER_OF(Smart), Args...> out_ptr(Smart& s, Args&&... args) noexcept;
-
-}
+template <class Pointer, class Smart, class... Args>
+  out_ptr_t<Smart, Pointer, Args...> out_ptr(Smart& s, Args&&... args) noexcept;
 </xmp>
 </ins>
 
-<p><ins><sup>2</sup> Effects: The first overload is Equivalent to: `return out_ptr_t<Smart, Pointer, Args...>(s, std::forward<Args>(args)...);`</ins></p>
+<p><ins><sup>2</sup> Returns: `return out_ptr_t<Smart, Pointer, Args...>(s, std::forward<Args>(args)...);`</ins></p>
 
-<p><ins><sup>3</sup> Effects: The second overload is Equivalent to: `return out_ptr_t<Smart, POINTER_OF(Smart), Args...>(s, std::forward<Args>(args)...);`</ins></p>
+<ins>
+<xmp>
+template <class Pointer, class Smart, class... Args>
+  out_ptr_t<Smart, Pointer, Args...> out_ptr(Smart& s, Args&&... args) noexcept;
+</xmp>
+</ins>
+
+<p><ins><sup>3</sup> Returns: `return out_ptr_t<Smart, POINTER_OF(Smart), Args...>(s, std::forward<Args>(args)...);`</ins></p>
 </blockquote>
 
 
@@ -881,6 +932,8 @@ namespace std {
 		// 20.11.11.4, conversion operators
 		operator Pointer*() noexcept;
 
+		operator void**() noexcept;
+
 	private:
 		Smart* s; // exposition only
 		tuple<Args...> a; // exposition only
@@ -891,7 +944,7 @@ namespace std {
 </xmp>
 </ins>
 
-<p><ins><sup>2</sup> If `Smart` is a specialization of `shared_ptr`, the program is ill-formed. `Pointer` shall meet the `Cpp17NullablePointer` requirements (<a href="http://eel.is/c++draft/nullablepointer.requirements">[**nullablepointer.requirements**] 16.5.3.3</a>).</ins></p>
+<p><ins><sup>2</sup> If `Smart` is a specialization of `shared_ptr`, the program is ill-formed.</ins></p>
 
 <p><ins><sup>3</sup> [ *Note:* It is impossible to properly release the managed resource from a `shared_ptr` given its shared ownership model. — <i>end note</i> ]</ins></p>
 
@@ -913,7 +966,7 @@ namespace std {
 
 <p><ins><xmp>inout_ptr_t(inout_ptr&& rhs) noexcept;</xmp></ins></p>
 
-<p><ins><sup>4</sup> Effects: initializes `s` with `std::move(rhs.s)`, `a` with `std::move(args)...`, and `p` with `std::move(rhs.p)`. Then sets `rhs.p` to `nullptr`.</ins></p>
+<p><ins><sup>4</sup> Effects: initializes `s` with `std::move(rhs.s)`, `a` with `std::move(args)...`, and `p` with `std::move(rhs.p)`. Then sets `rhs.s` to `nullptr`.</ins></p>
 
 
 <p><ins>20.11.11.2 Assignment [**inout_ptr.class.assign**]</ins></p>
@@ -925,7 +978,7 @@ namespace std {
 s = std::move(rhs.s); 
 a = std::move(rhs.a); 
 p = std::move(rhs.p);
-rhs.p = nullptr;
+rhs.s = nullptr;
 return *this;
 </xmp>
 </ins></p>
@@ -940,9 +993,9 @@ return *this;
 
 <p><ins><sup>3</sup> Effects: Equivalent to:
 <dl>
-	<dd><ins>— `if (p != nullptr) { *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }` if `std::is_pointer_v<Smart>` is true,</ins></dd>
-	<dd><ins>— `s->release(); if (p != nullptr) { s->reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if the expression `s->reset(static_cast<SP>(p), std::forward<Args>(args)...)` is well-formed,</ins></dd>
-	<dd><ins>— otherwise, `s->release(); if (p != nullptr) { *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`.</ins></dd>
+	<dd><ins>— `if (s != nullptr) { *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }` if `std::is_pointer_v<Smart>` is true,</ins></dd>
+	<dd><ins>— `if (s != nullptr) { s->release(); s->reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if the expression `s->reset(static_cast<SP>(p), std::forward<Args>(args)...)` is well-formed,</ins></dd>
+	<dd><ins>— otherwise, `if (s != nullptr) { s->release(); *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`.</ins></dd>
 </dl>
 <ins>where `Args` are the arguments stored in `a`.</ins>
 </ins></p>
@@ -964,6 +1017,16 @@ operator Pointer*() noexcept;
 </xmp>
 </ins></p>
 <p><ins><sup>1</sup> Effects: returns a pointer to `p`.</ins></p>
+<p><ins>
+
+<xmp>
+operator void**() noexcept;
+</xmp>
+</ins></p>
+
+<p><ins><sup>2</sup> Constraints: `is_same_v<remove_cvref_t<Pointer>, void*>` is false.</ins></p>
+
+<p><ins><sup>3</sup> Effects: Equivalent to: `returns reinterpret_cast<void**>(static_cast<Pointer*>(*this));`.</ins></p>
 </blockquote>
 
 Insert §20.11.12 [**inout_ptr**]:
@@ -975,21 +1038,22 @@ Insert §20.11.12 [**inout_ptr**]:
 
 <ins>
 <xmp>
-namespace std {
-
-	template <class Pointer, class Smart, class... Args>
+template <class Pointer, class Smart, class... Args>
 	inout_ptr_t<Smart, Pointer, Args...> inout_ptr(Smart& s, Args&&... args) noexcept
-
-	template <class Smart, class... Args>
-	inout_ptr<Smart, POINTER_OF(Smart), Args...> inout_ptr(Smart& s, Args&&... args) noexcept;
-
-}
 </xmp>
 </ins>
 
-<p><ins><sup>2</sup> Effects: The first overload is Equivalent to: `return inout_ptr_t<Smart, Pointer, Args...>(s, std::forward<Args>(args)...);`</ins></p>
+<p><ins><sup>2</sup> Returns: `inout_ptr_t<Smart, Pointer, Args...>(s, std::forward<Args>(args)...);`</ins></p>
 
-<p><ins><sup>3</sup> Effects: The second overload is Equivalent to: `return inout_ptr_t<Smart, POINTER_OF(Smart), Args...>(s, std::forward<Args>(args)...);`</ins></p>
+
+<ins>
+<xmp>
+template <class Smart, class... Args>
+	inout_ptr<Smart, POINTER_OF(Smart), Args...> inout_ptr(Smart& s, Args&&... args) noexcept;
+</xmp>
+</ins>
+
+<p><ins><sup>3</sup> Returns: `inout_ptr_t<Smart, POINTER_OF(Smart), Args...>(s, std::forward<Args>(args)...);`</ins></p>
 </blockquote>
 
 
@@ -1044,15 +1108,6 @@ Thank you to Tim Song for reviewing the wording for this paper and vastly improv
 		"title": "Spotting problems with destructors for C++ temporaries",
 		"href": "https://devblogs.microsoft.com/oldnewthing/20190429-00/?p=102456",
 		"date": "April 29th, 2019"
-	},
-	"n4800": {
-		"authors": [
-			"ISO/IEC JTC1/SC22/WG21 - The C++ Standards Committee",
-			"Richard Smith"
-		],
-		"title": "N4800 - Working Draft, Standard for Programming Language C++",
-		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/n4800.pdf",
-		"date": "January 21st, 2019"
 	},
 	"p0468": {
 		"authors": [
