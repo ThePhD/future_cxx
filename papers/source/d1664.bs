@@ -2,7 +2,7 @@
 Title: Reconstructible Ranges
 Shortname: D1664
 Revision: 0
-Audience: LEWG, SG18
+Audience: LEWG
 Status: D
 Group: WG21
 URL:
@@ -10,6 +10,7 @@ URL:
 !Latest: <a href="https://thephd.github.io/vendor/future_cxx/papers/d1664.html">https://thephd.github.io/vendor/future_cxx/papers/d1664.html</a>
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: Hannes Hauswedell, h2@fsfe.org
 Date: 2019-07-06
 Markup Shorthands: markdown yes, biblio yes, markup yes
 Abstract: This paper proposes new concepts to the Standard Library for ranges called Reconstructible Ranges for the purpose of ensuring a range/view broken down into its two iterators can be "glued" back together using a constructor taking its iterator and sentinel type.
@@ -35,6 +36,109 @@ path: wording_style.bs
 
 # Motivation # {#motivation}
 
+<table>
+	<tr>
+		<th>Currently</th>
+		<th>With Proposal</th>
+	</tr>
+	<tr>
+		<td>
+```c++
+vector vec{1, 2, 3, 4, 5};
+span s{vec.data(), 5};
+span v = s | view::drop(1) | view::take(10)
+           | view::drop(1) | view::take(10);
+```
+❌ - Compilation error
+
+```c++
+vector vec{1, 2, 3, 4, 5};
+span s{vec.data(), 5};
+auto v = s | view::drop(1) | view::take(10)
+           | view::drop(1) | view::take(10);
+```
+⚠️ - Compiles, but `decltype(v)` is
+`ranges::take_view<ranges::drop_view<ranges::take_view<ranges::drop_view<span<int, dynamic_extent>>>>>`
+		</td>
+		<td>
+```c++
+ 
+
+
+
+vector vec{1, 2, 3, 4, 5};
+span s{vec.data(), 5};
+span v = s | view::drop(1) | view::take(10)
+           | view::drop(1) | view::take(10);
+
+
+ 
+```
+✔️ - Compiles and works with no extra template 
+		</td>
+	</tr>
+	<tr>
+		<td>
+```c++
+std::u8string name = "𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷";
+char16_t conversion_buffer[432];
+
+std::u8string_view name_view(name);
+std::span<char16_t> output(conversion_buffer, 432);
+
+auto encoding_result = std::utf8{}.encode(input, output);
+// error here !!
+std::u8string_view unprocessed_code_units = encoding_result.input;
+std::span<char16_t> unconsumed_input = encoding_result.output;
+```
+❌ - Compilation error
+
+```c++
+std::u8string name = "𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷";
+char16_t conversion_buffer[432];
+
+std::u8string_view name_view(name);
+std::span<char16_t> output(conversion_buffer, 432);
+
+auto encoding_result = std::utf8{}.encode(input, output);
+auto unprocessed_code_units = encoding_result.input;
+auto unconsumed_input = encoding_result.output;
+```
+⚠️ - Compiles, but `decltype(unprocessed_code_units)` is
+`ranges::subrange<std::u8string_view::iterator, std::u8string_view::iterator>` and `decltype(unconsumed_input)` is
+`ranges::subrange<std::span<char16_t, std::dynamic_extent>::iterator, std::span<char16_t, std::dynamic_extent>::iterator>`
+		</td>
+		<td>
+```c++
+ 
+
+
+
+
+
+
+std::u8string name = "𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷";
+char16_t conversion_buffer[432];
+
+std::u8string_view name_view(name);
+std::span<char16_t> output(conversion_buffer, 432);
+
+auto transcode_result = std::text::transcode(input, output);
+std::u8string_view unprocessed_code_units = encoding_result.input;
+std::span<char16_t> unprocessed_code_units = encoding_result.input;
+
+
+
+
+
+ 
+```
+✔️ - Compiles and works with no implicit construction / conversion to input type or output type.
+		</td>
+	</tr>
+</table>
+
+
 Currently in C++, there is no Generic ("with a capital G") way to take a range apart with its iterators and put it back together. That is, the following code is not guaranteed to work:
 
 ```
@@ -42,6 +146,7 @@ template <typename Range>
 auto operate_on_and_return_updated_range (Range&& range) {
 	using uRange = std::remove_cvref_t<Range>;
 	if (std::ranges::empty(range)) {
+		// ... the below errors
 		return uRange(std::forward<Range>(range));
 	}
 	/* perform some work with the
@@ -112,15 +217,9 @@ This makes it work with any two pair of iterators, but quickly becomes undesirab
 
 Unfortunately, this decreases usability for end users. Users who have, for example a `std::string_view` would prefer to have the same type after such an operation is performed. There is little reason why the original type needs to be discarded if it supports being put back together from its iterators. It also discards any range-specific storage optimizations and layout considerations, leaving us with the most bland kind of range similar to the "pair of iterators" model. Compilation time goes up as well: users must spawn a fresh `std::ranges::subrange<I, S, K>` for every different set of iterator/sentinel/kind triplet.
 
-There is also a problem where there are a wide variety of ranges that could conceivably meet this criterion, but do not. Attempts to change this for Eric Niebler's range-v3 library were also denied after the initial inquiry, due to focusing only on a singular type. Specifically:
+There is also a problem where there are a wide variety of ranges that could conceivably meet this criterion, but do not. The author of the very first draft of this paper was not the only one to see utility in such operations. [[p1739r0]] does much the same that this paper does, without the introduction of a concept to formalize the behavior it presents. In particular, it selects views which can realistically have their return types changed to match the input range and operations being performed (or a similarly powerful alternative) by asking whether they are constructible from a subrange of the iterators with the expressions acted upon.
 
-> I don't add things because I can't find a reason not to. I add things selectively based on need and on design integrity.
->
-> There is no generic code that can use the functionality you are proposing because that expression is not part of any concept. — [[range-v3-sentinel-issue|Eric Niebler, May 15th, 2019]]
-
-Still, the author of this paper was not the only one to see utility in such operations. [[p1739r0]] does much the same that this paper does, without the introduction of a concept to formalize the behavior it presents. In particular, it selects views which can realistically have their return types changed to match the input range and operations being performed (or a similarly powerful alternative) by asking whether they are constructible from a subrange of the iterators with the expressions acted upon.
-
-In short, this paper formalizes the work done in P1739 by giving it an exposition-only "kebab-case" concept name in the Standard which identifies ranges where the user can logically return the same range rather than an entirely new range. This paper does not depend on any other papers, but note that the changes from [[p1739r0]], [[p1391r2]] and [[p1394r2]] all follow down to the logical conclusion laid out here:
+In short, this paper formalizes the work done in [[p1739r0]] by giving it an exposition-only "kebab-case" concept name in the Standard which identifies ranges where the user can logically return the same range rather than an entirely new range. This paper does not depend on any other papers, but note that the changes from [[p1739r0]], [[p1391r2]] and [[p1394r2]] all follow down to the logical conclusion laid out here:
 
 - Ranges should be reconstructible from their iterators where applicable;
 - and, reconstructible ranges serve a useful purpose in generic algorithms, including not losing information and returning it in a much more cromulent and desirable form.
@@ -140,7 +239,7 @@ concept pair-reconstructible-range =
     std::Constructible<R, iterator_t<R>, sentinel_t<R>>;
 
 template <typename R>
-concept range-reconstructible-range =
+concept reconstructible-range =
     Range<R> &&
     forwarding-range<std::remove_reference_t<R>> &&
     std::Constructible<R, std::ranges::subrange<iterator_t<R>, sentinel_t<R>>>;
@@ -148,10 +247,7 @@ concept range-reconstructible-range =
 
 It is the formalization that a range can be constructed from its begin iterator and end iterator/sentinel. It also provides an exposition-only concept for allowing a range to be constructed from a `subrange` of its iterator/sentinel pair. This allows a developer to propagate the input type's properties after modifying its iterators for some underlying work, algorithm or other effect. This concept is also the basis of the idea behind [[p1739r0]].
 
-Both concepts require that the type with any references removed model the exposition-only concept `forwarding-range`.
-This ensures that the validity of the iterators is in fact independent of the lifetime of the range they originate from
-and that a "reconstructed" range does not depend on the original.
-We remove reference before performing this check, because all reference types that model `Range` also model `forwarding-range` and the intent of the proposed changes is narrower: (re)construction is assumed to be in constant time (this typically implies that `R` also models `View`, but it is sufficient to check `forwarding-range<std::remove_reference_t<R>>`). Note that this explicitly excludes types like `std::vector<int> const &` from being reconstructible.
+Both concepts require that the type with any references removed model the exposition-only concept `forwarding-range`. This ensures that the validity of the iterators is in fact independent of the lifetime of the range they originate from and that a "reconstructed" range does not depend on the original. We remove reference before performing this check, because all reference types that model `Range` also model `forwarding-range` and the intent of the proposed changes is narrower: (re)construction is assumed to be in constant time (this typically implies that `R` also models `View`, but it is sufficient to check `forwarding-range<std::remove_reference_t<R>>`). Note that this explicitly excludes types like `std::vector<int> const &` from being reconstructible.
 
 
 ## Should this apply to all Ranges? ## {#design-all}
@@ -172,7 +268,7 @@ There are many ranges to which this is applicable, but only a handful in the sta
 - `std::ranges::empty_view` (proposed here);
 - and, `std::ranges::iota_view` (proposed here).
 
-The following range adaptor closure objects will make use of the concepts in determing the type of the returned range:
+The following range adaptor closure objects will make use of the concepts in determine the type of the returned range:
 
 - `view::drop` (currently under consideration, [[p1035r6]] and [[p1739r0]], re-proposed here);
 - `view::take` (currently under consideration, [[p1739r0]], re-proposed here).
@@ -204,7 +300,7 @@ This paper includes two concepts that cover both reconstructible methods.
 
 Originally, the impact of this feature was perceived to be small and likely not necessary to work into C++20. Indeed: this paper originally targeted C++23 with the intent of slowly working through existing ranges and range implementations and putting the concept and the manifestation of concepts in range libraries, particularly range-v3, over time.
 
-This changed in the face of [[p1739r0]]. Hauswedell's paper here makes it clear there are usability and API wins that are solved by this concept, and that not having the concept has resulted in interface inconsistency and ad-hoc, one-off fixes to fit limited problem domains without any respite to routines which have a desire to preserve the input types into their algorithms. Since this paper's concept is likely to change interfaces API return values in a beneficial but ultimately breaking manner, this paper's consideration was brought up to be presented as a late C++20 paper for the purpose of fixing the interface as soon as possible.
+This changed in the face of [[p1739r0]]. Hauswedell's paper here makes it clear there are usability and API wins that are solved by this concept for APIs that are already in the working draft **today**, and that not having the concept has resulted in interface inconsistency and ad-hoc, one-off fixes to fit limited problem domains without any respite to routines which have a desire to preserve the input types into their algorithms. Since this paper's concept is likely to change interfaces API return values in a beneficial but ultimately breaking manner, this paper's consideration was brought up to be presented as a late C++20 paper for the purpose of fixing the interface as soon as possible.
 
 Note that this is a separate concept. It is not to be added to the base `Range` concept, or added to any other concept. It is to be applied separately to the types which can reasonably support it for the benefit of algorithms and code which can enhance the quality of their implementation.
 
@@ -217,12 +313,12 @@ The following wording is relative to the latest draft paper, [[n4820]], and to s
 
 ## Feature Test Macro ## {#wording-feature}
 
-This paper results in an exposition-only concept to help guide the further development of standard ranges and simplify their usages in generic contexts. There is one proposed feature test macro, `__cpp_lib_range_constructors`, which is to be input into the standard and then explicitly updated every time a constructor from a pre-existing type is changed to reflect the new wording. We hope that by putting this in the standard early, most incoming ranges will be checked for compatibility with `pair-reconstructible-range` and `range-reconstructible-range`. This paper also notes that both [[p1394r2]] and [[p1391r2]] do not add wording for feature test macros, making this paper's feature test macro the ideal addition to encapsulate all reconstructible range changes.
+This paper results in an exposition-only concept to help guide the further development of standard ranges and simplify their usages in generic contexts. There is one proposed feature test macro, `__cpp_lib_range_constructors`, which is to be input into the standard and then explicitly updated every time a constructor from a pre-existing type is changed to reflect the new wording. We hope that by putting this in the standard early, most incoming ranges will be checked for compatibility with `pair-reconstructible-range` and `reconstructible-range`. This paper also notes that both [[p1394r2]] and [[p1391r2]] do not add wording for feature test macros, making this paper's feature test macro the ideal addition to encapsulate all reconstructible range changes.
 
 
 ## Intent ## {#wording-intent}
 
-The intent of this wording is to provide greater generic coding guarantees and optimizations by allowing for a class of ranges and views that satisfy the new exposition-only definitions of a reconstructible range:
+The intent of this wording is to provide greater generic coding guarantees and optimizations by allowing for a class of ranges and views that model the new exposition-only definitions of a reconstructible range:
 
 - add a new feature test macro for reconstructible ranges to cover constructor changes;
 - add two new exposition-only requirements to [[range.req](http://eel.is/c++draft/range.req)];
@@ -254,10 +350,10 @@ Append to §17.3.1 General [[support.limits.general](http://eel.is/c++draft/supp
 </table>
 </blockquote>
 
-Insert into §24.4.4 Ranges [[range.range](http://eel.is/c++draft/range.req#range.range)]'s after clause 7, one additional clause:
+Insert into §24.4.2 Ranges [[range.range](http://eel.is/c++draft/range.req#range.range)]'s after clause 7, one additional clause:
 
 <blockquote>
-<ins><sup>8</sup> The exposition-only <i>pair-reconstructible-range</i> and <i>range-reconstructible-range</i> concepts denote ranges whose iterator and sentinel pair can be used to efficiently construct an object of the type from which they originated.
+<ins><sup>8</sup> The exposition-only <i>pair-reconstructible-range</i> and <i>reconstructible-range</i> concepts denote ranges whose iterator and sentinel pair can be used to efficiently construct an object of the type from which they originated.
 
 ```
 template <typename R>
@@ -267,7 +363,7 @@ concept pair-reconstructible-range =
     std::Constructible<R, iterator_t<R>, sentinel_t<R>>;
 
 template <typename R>
-concept range-reconstructible-range =
+concept reconstructible-range =
     Range<R> &&
     forwarding-range<std::remove_reference_t<R>> &&
     std::Constructible<R, std::ranges::subrange<iterator_t<R>, sentinel_t<R>>>;
@@ -393,11 +489,7 @@ Add to §24.6.3 Class template `iota_view` [[range.iota.view](http://eel.is/c++d
 constexpr friend iterator begin(iota_view v);
 ```
 <p><sup>13</sup> Effects: Equivalent to: `return v.begin();`</p>
-</ins>
-</blockquote>
 
-<blockquote>
-<ins>
 ```
 constexpr friend auto end(iota_view v);
 ```
@@ -413,8 +505,8 @@ Modify §24.7.6.4 `view::take` [[range.take.adaptor](http://eel.is/c++draft/rang
 <p><sup>1</sup> The name `view::take` denotes a range adaptor object. <del>For some subexpressions `E` and `F`, the expression `view::take(E, F)` is expression-equivalent to `take_­view{E, F}`.</del></p>
 <p><ins><sup>2</sup> Let `E` and `F` be expressions, and let T be `remove_cvref_t<decltype((E))>`. Then the expression `view::take(E, F)` is expression-equivalent to:</ins></p>
 <dl>
-	<dd><ins>— `T{ranges::begin(E), ranges::begin(E) + min<iter_­difference_­t<iterator_t<decltype((E))>>>(ranges::size(E), F)}` if `T` models ranges::RandomAccessRange, ranges::SizedRange and <i>pair-reconstructible-range</i>;</ins></dd>
-	<dd><ins>— `T{ranges::subrange{ranges::begin(E), ranges::begin(E) + min<iter_­difference_­t<iterator_t<decltype((E))>>>(ranges::size(E), F)}}` if `T` models ranges::RandomAccessRange, ranges::SizedRange and <i>range-reconstructible-range</i>;</ins></dd>
+	<dd><ins>— `T{ranges::begin(E), ranges::begin(E) + min<iter_­difference_­t<iterator_t<decltype((E))>>>(ranges::size(E), F)}` if `T` models `ranges::RandomAccessRange`, `ranges::SizedRange` and <i>pair-reconstructible-range</i>;</ins></dd>
+	<dd><ins>— `T{ranges::subrange{ranges::begin(E), ranges::begin(E) + min<iter_­difference_­t<iterator_t<decltype((E))>>>(ranges::size(E), F)}}` if `T` models `ranges::RandomAccessRange`, `ranges::SizedRange` and <i>reconstructible-range</i>;</ins></dd>
 	<dd><ins>— `ranges::take_­view{E, F}` if that is well-formed;</ins></dd>
 	<dd><ins>— otherwise, `view::take(E, F)` is ill-formed.</ins></dd>
 </dl>
@@ -430,11 +522,17 @@ Modify [[p1035r6]]'s §23.7.8 `view::drop` as follows:
 <p><ins><sup>2</sup> Let `E` and `F` be expressions, and let `T` be `remove_cvref_t<decltype((E))>`. Then, the expression `view::drop(E, F)` is expression-equivalent to:</ins></p>
 <dl>
 	<dd><ins>— `T{ranges::begin(E) + min<iter_­difference_­t<iterator_t<decltype((E))>>>(ranges::size(E), F), ranges::end(E)}` if `T` models ranges::RandomAccessRange, ranges::SizedRange and <i>pair-reconstructible-range</i>;</ins></dd>
-	<dd><ins>— `T{ranges::subrange{ranges::begin(E) + min<iter_­difference_­t<iterator_t<decltype((E))>>>(ranges::size(E), F), ranges::end(E)}}` if `T` models ranges::RandomAccessRange, ranges::SizedRange and <i>range-reconstructible-range</i>;</ins></dd>
+	<dd><ins>— `T{ranges::subrange{ranges::begin(E) + min<iter_­difference_­t<iterator_t<decltype((E))>>>(ranges::size(E), F), ranges::end(E)}}` if `T` models ranges::RandomAccessRange, ranges::SizedRange and <i>reconstructible-range</i>;</ins></dd>
 	<dd><ins>— `ranges::drop_­view{E, F}` if the expression is well-formed;</ins></dd>
 	<dd><ins>— otherwise, `view::drop(E, F)` is ill-formed.</ins></dd>
 </dl>
 </blockquote>
+
+
+
+# Acknowledgements {#acknowledgements}
+
+Thanks to Corentin Jabot, Christopher DiBella, and Hannes Hauswedell for pointing me to p1035 and p1739 to review both papers and combine some of their ideas in here. Thanks to Eric Niebler for prompting me to think of the generic, scalable solution to this problem rather than working on one-off fixes for individuals views.
 
 
 <pre class=biblio>
@@ -446,15 +544,6 @@ Modify [[p1035r6]]'s §23.7.8 `view::drop` as follows:
 		],
 		"href": "https://github.com/ericniebler/range-v3",
 		"title": "range-v3",
-		"publisher": "Eric Niebler",
-		"date": "June 11th, 2019"
-	},
-	"range-v3-sentinel-issue": {
-		"authors": [
-			"Eric Niebler"
-		],
-		"href": "https://github.com/ericniebler/range-v3/issues/1192#issuecomment-492867461",
-		"title": "Ranges which take a sentinel should be constructible from {Iterator, Sentinel}",
 		"publisher": "Eric Niebler",
 		"date": "June 11th, 2019"
 	}
