@@ -61,20 +61,22 @@ auto v = s | view::drop(1) | view::take(10)
 `ranges::take_view<ranges::drop_view<ranges::take_view<ranges::drop_view<span<int, dynamic_extent>>>>>`
 		</td>
 		<td>
+
 ```c++
- 
-
-
-
 vector vec{1, 2, 3, 4, 5};
 span s{vec.data(), 5};
 span v = s | view::drop(1) | view::take(10)
            | view::drop(1) | view::take(10);
-
-
- 
 ```
-✔️ - Compiles and works with no extra template 
+✔️ - Compiles and works with no extra template instantiations
+
+```c++
+vector vec{1, 2, 3, 4, 5};
+span s{vec.data(), 5};
+auto v = s | view::drop(1) | view::take(10)
+           | view::drop(1) | view::take(10);
+```
+✔️ - Compiles and works with no extra templates. `decltype(v)` is `std::span<int>`
 		</td>
 	</tr>
 	<tr>
@@ -112,32 +114,33 @@ auto unconsumed_output = encoding_result.output;
 		</td>
 		<td>
 ```c++
- 
-
-
-
-
-
-
 std::u8string name = "𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷";
 char16_t conversion_buffer[432];
 
 std::u8string_view name_view(name);
 std::span<char16_t> output(conversion_buffer, 432);
 
-auto transcode_result = std::text::transcode(input, output);
+auto encoding_result = std::text::transcode(input, output);
+// compiler error here !!
 std::u8string_view unprocessed_code_units 
 	= encoding_result.input;
 std::span<char16_t> unconsumed_output 
 	= encoding_result.output;
-
-
-
-
-
- 
 ```
-✔️ - Compiles and works with no implicit construction / conversion to input type or output type.
+✔️ - Compiles and works, types match input.
+
+```c++
+std::u8string name = "𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷";
+char16_t conversion_buffer[432];
+
+std::u8string_view name_view(name);
+std::span<char16_t> output(conversion_buffer, 432);
+
+auto encoding_result = std::text::transcode(input, output);
+auto unprocessed_code_units = encoding_result.input;
+auto unconsumed_output = encoding_result.output;
+```
+✔️ - Compiles and works, where `decltype(unprocessed_code_units)` is `std::u8string_view` and `decltype(unconsumed_output)` is `std::span<char16_t>`.
 		</td>
 	</tr>
 </table>
@@ -290,7 +293,7 @@ This paper does not propose this at this time because concepts -- and the things
 
 ## Two Concepts ## {#design-dual}
 
-By giving these ranges `Iterator, Sentinel`, **or** `std::ranges::subrange<Iterator, Sentinel>` constructors, we can enable a greater degree of interface fidelity without having to resort to `std::ranges::subrange` for all generic algorithms. There should be a preference for `Type(Iterator, Sentinel)` constructors, because one-argument constructors have extremely overloaded meanings in many containers and some views and may result in having to fight with other constructor calls in a complicated overload set. It also produces less compiler boilerplate to achieve the same result of reconstructing the range when one does not have to go through `std::ranges::subrange<I, S, K>`. However, it is important to attempt to move away from the iterator, sentinel model being deployed all the time: `std::ranges::subrange` offers a single type that can accurately represent the intent and can be fairly easy to constrain overload sets on (most of the time).
+By giving these ranges `Iterator, Sentinel`, and/or `std::ranges::subrange<Iterator, Sentinel>` constructors, we can enable a greater degree of interface fidelity without having to resort to `std::ranges::subrange` for all generic algorithms. There should be a preference for `Type(Iterator, Sentinel)` constructors, because one-argument constructors have extremely overloaded meanings in many containers and some views and may result in having to fight with other constructor calls in a complicated overload set. It also produces less compiler boilerplate to achieve the same result of reconstructing the range when one does not have to go through `std::ranges::subrange<I, S, K>`. However, it is important to attempt to move away from the iterator, sentinel model being deployed all the time: `std::ranges::subrange` offers a single type that can accurately represent the intent and can be fairly easy to constrain overload sets on (most of the time).
 
 This paper includes two concepts that cover both reconstructible methods.
 
