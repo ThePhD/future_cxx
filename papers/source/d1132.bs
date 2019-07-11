@@ -28,11 +28,11 @@ path: wording_style.bs
 
 
 
-## Revision 5 - July 8th, 2019 ## {#changelog-r5}
+## Revision 5 - July 10th, 2019 ## {#changelog-r5}
 
-    - Add back `void**` conversion after users voiced legitimate concerns about not being able to properly handle `std::unique_ptr<Base>` -> `out_ptr<Derived*>` -> `void**` functions, a common part of COM interfaces.
-    - Get benchmarks with both the unconditional noexcept and conditional noexcept code, particularly with non-noexcept reset calls (e.g. `std::shared_ptr`).
-    - Prepare for a trip back to LEWG to answer the unconditional noexcept vs. conditional noexcept.
+    - Add back `void**` conversion after users voiced legitimate concerns about not being able to properly handle `std::unique_ptr<Base>` -> `out_ptr<Derived*>` -> `void**` functions, a common part of COM interfaces. This is explained in detail at the end of [[#design-casting-void]].
+    - Get benchmarks with both the unconditional noexcept and conditional noexcept code, particularly with non-`noexcept` `reset` calls (e.g. with `std::shared_ptr`). Results show it does not matter for the happy path, and therefore is being reverted.
+    - Prepare for a trip back to LEWG to answer the unconditional `noexcept` vs. conditional `noexcept`, favoring unconditional `noexcept`.
 
 
 
@@ -94,7 +94,7 @@ This library automates the `.reset(...)` and -- sometimes additionally -- the `.
 #include <avformat.h>
 
 struct AVFormatContextDeleter {
-		void operator() (AVFormatContext* c) noexcept {
+		void operator() (AVFormatContext* c) noexcept const {
 			avformat_close_input(&c);
 			avformat_free_context(c);
 		}
@@ -203,8 +203,10 @@ template <class Smart, class Pointer, class... Args>
 class out_ptr_t {
 public:
 	out_ptr_t(Smart&, Args...);
-	~out_ptr_t () noexcept(...);
-	operator Pointer* () noexcept;
+	~out_ptr_t () noexcept;
+	operator Pointer* () noexcept const; 
+	operator void** () noexcept const;
+	// ^ only if Pointer != void*
 };
 
 template <class Smart, class Pointer, class... Args>
@@ -212,7 +214,9 @@ class inout_ptr_t {
 public:
 	inout_ptr_t(Smart&, Args...);
 	~inout_ptr_t () noexcept;
-	operator Pointer* () noexcept;
+	operator Pointer* () noexcept const;
+	operator void** () noexcept const;
+	// ^ only if Pointer != void*
 };
 ```
 
@@ -319,6 +323,10 @@ If the user used `std::inout_ptr`, the value would be guaranteed to put back int
 
 Secondly, the destructor for `out_ptr` calls to `.reset()`. The only case where this is questionable is with `std::shared_ptr`: the creation of the passed-in deleter might throw, and thusly the call cannot be `noexcept`. This means that the destructor might throw if `std::shared_ptr's` `.reset()` throws: in this case, `std::terminate` would be called.
 
+In practice, this has not been observed (or reported). Still, the C++ standard makes guarantees for code even if the situation is never encountered in the real world: for this, it is much more palatable to go with the status quo and stick to the policies established by LEWG and LWG regarding throwing until such a policy is overturned.
+
+
+
 ## Casting Support ## {#design-casting}
 
 There are also many APIs (COM-style APIs, base-class handle APIs, type-erasure APIs) where the initialization requires that the type passed to the function is of some fundamental (`void**`) or base type that does not reflect what is stored exactly in the pointer. Therefore, it is necessary to sometimes specify what the underlying type `out_ptr` uses is stored as.
@@ -346,7 +354,7 @@ HRESULT result = dxgi_factory.
 EnumAdapterByGpuPreference(0, 
 	DXGI_GPU_PREFERENCE_MINIMUM_POWER, 
 	IID_IDXGIAdapter, 
-	std::out_ptr<void*>(adapter)
+	std::out_ptr(adapter)
 );
 if (FAILED(result)) {
 	// handle errors
@@ -358,6 +366,49 @@ No manual casting, `.release()` fiddling, or `.reset()` is required: the returne
 
 This idiom is also useful for the `QueryInterface` base function for COM's `IUnknown`, and for Vulkan's `vkMapMemory`.
 
+Note that the implicit `void**` conversion is important for more than just easy interaction with Windows or COM APIs: it is commonplace to store a pointer to a base class rather than a derived one. For example:
+
+```
+std::unique_ptr<ID3D11Device> g_d11_device;
+
+int main () {
+	init_global_device();
+
+	std::unique_ptr<IUnknown> dxgi_device;
+	IDXGIDevice * pDXGIDevice;
+	HRESULT hr = g_d11_device->QueryInterface(
+		__uuidof(IDXGIDevice), 
+		std::out_ptr<void*>(pDXGIDevice)); // !!
+	if (FAILED(hr)) {
+		// ...
+	}
+	// ...
+	return 0;
+}
+```
+
+The above code is actually wrong. `IUnknown` cast to `void*`, then passed as `void**` to the function, creates a bad pointer because the `void**` inside of the function call is cast directly to `IDXGIDevice**` and dereferenced. This is incorrect because the original pointer is `IUnknown`, and so member variables and the object's virtual table will be completely skewed and out of place. The correct way is to write use `QueryInterface` as so:
+
+```
+std::unique_ptr<ID3D11Device> g_d11_device;
+
+int main () {
+	init_global_device();
+
+	std::unique_ptr<IUnknown> dxgi_device;
+	IDXGIDevice * pDXGIDevice;
+	HRESULT hr = g_d11_device->QueryInterface(
+		__uuidof(IDXGIDevice), 
+		std::out_ptr<IDXGIDevice*>(pDXGIDevice));
+	if (FAILED(hr)) {
+		// ...
+	}
+	// ...
+	return 0;
+}
+```
+
+This properly up-casts to the derived type, and then decays to the desired `void**` and works properly. This problem was discovered when a version of `out_ptr` not containing the `void**` implicit conversion was shipped to customers who depended on this feature to do the correct base -> derived -> `void**` conversion. Therefore, the original design was restored to keep it up to date.
 
 ### Casting Support: to arbitrary `T` ### {#design-casting-similar}
 
@@ -532,7 +583,19 @@ Given that many companies, studios and individuals have all invented the same ty
 
 A [full implementation with UB and friendly optimizations is available in the repository](https://github.com/ThePhD/out_ptr/blob/master/include/boost/out_ptr/detail/base_out_ptr_impl.hpp). The type has been privately used in many projects over the last four years, and this public implementation is already seeing use at companies today. It has been particularly helpful with many COM APIs, and the re-allocation support in `inout_ptr` has been useful for FFMPEG's functions which feature reallocation support in their functions (e.g., `avformat_open_input`).
 
-A version of this library might be available in Boost in time for 1.72, which should roll out late this year. It was slated for earlier boost releases but many circumstances changed the potential release date. It is currently under Boost Review, as of July 7th, 2019. It has been extensively proofed and checked over by Peter Dimov and Glen Fernandes in initial vetting for [the Boost.SmartPtr repository at this issue](https://github.com/boostorg/smart_ptr/issues/56).
+A version of this library might be available in Boost in time for 1.72, which should roll out late this year. It was slated for earlier boost releases but many circumstances changed the potential release date. It is currently under Boost Review, as of July 10th, 2019. It has been extensively proofed and checked over by Peter Dimov and Glen Fernandes in initial vetting for [the Boost.SmartPtr repository at this issue](https://github.com/boostorg/smart_ptr/issues/56). It was deemed to be better off in a separate library, for optimization reasons and more.
+
+
+
+## Conditionally `noexcept` destructor? ## {#experience-noexcept}
+
+There is no indication whatsoever that conditional noexcept specification has any performance benefits in the happy path, as shown by the [[#perf-shared]] section. That makes the question of `noexcept(computed-expression)` vs. `noexcept(true)` strictly a matter of correctness, and not one of leaving no additional room beneath this library for a better C or hand-written alternative.
+
+Research into the Standard Library and scanning of the latest working draft, [[n4820]], there is only a handful of destructors that could have potentially been marked throwing. However, due to the guidance of [[res.on.exception.handling](http://eel.is/c++draft/res.on.exception.handling)], all of them have been marked as `noexcept`. Even the one destructor that logically could have thrown is marked explicitly `noexcept`, and it makes sure the "exception is caught but not rethrown" ([[filebuf.cons](http://eel.is/c++draft/filebuf.cons#5)], clause 5). While nobody is going to argue that `<iostream>`s and anything related to it is a paragon of good design, there is clear precedent in the Standard Library not to throw in destructors no matter what.
+
+Furthermore, there are plenty of things in the standard which error and should throw to communicate that error, but errors are deliberately not mentioned or ignored for the sake of destructors and usage idioms in the standard library. Consider the class of mutex types in the standard, including `std::mutex`: their unlock operations on all platforms can signal Out of Resource-style errors (`EAGAIN` for resource exhaustion pthreads mutices, for example). Absolutely no platforms throw an error for this, including [libstdc++ which simply marks ignores the error](https://github.com/gcc-mirror/gcc/blob/fbd263526ad105a953fd51d9f7bca2c3f268cf82/libstdc%2B%2B-v3/include/bits/std_mutex.h#L117) and [libc++ which only has an assertion tanking in an assert-enabled build of libc++, otherwise nothing](https://github.com/llvm/llvm-project/blob/8baf83839e9a22fff98d3b906a63063f62934d16/libcxx/src/mutex.cpp#L45). While this is not "as bad" as `basic_filebuf`, it's morally equivalent to just not bothering with the error: `std::lock_guard` could trigger any of these errors, and absolutely nothing will inform the programmer that something exploded, which is arguably *worse* than just letting the exception hit the `noexcept(true)` barrier of a standard destructor and tank the program because an important invariant has been violated.
+
+In short, given the long policy and history of `noexcept`-marked destructors even in the face of errors, the lack of performance differentiation for the happy path with or without `noexcept` markings, and the clear guidance in both Specification and Implementation to drop out-of-resource errors on the floor, `out_ptr_t` and `inout_ptr_t` will both remain unconditionally `noexcept` to be consistent with C++'s in letter and in spirit.
 
 
 
@@ -559,7 +622,7 @@ Below are some graphs indicating the performance metrics of the code. 5 categori
 - "manual": does the work by-hand using reset/release from a `std::unique_ptr`
 - "simple": a `out_ptr` implementation that naively resets
 
-The full JSON data for these benchmarks is available [in the repository](https://github.com/ThePhD/phd/blob/master/benchmark_results/out_ptr_benchmarks.json), as well as all of the code necessary to run the benchmarks across all platforms with a simple CMake build system.
+The full JSON data for these benchmarks is available [in the repository](https://github.com/ThePhD/phd/blob/master/benchmark_results/out_ptr/out_ptr_benchmarks.json), as well as all of the code necessary to run the benchmarks across all platforms with a simple CMake build system.
 
 
 
@@ -593,16 +656,17 @@ path: reset inout.bs
 
 ## For `std::shared_ptr` and various cases ## {#perf-shared}
 
-Here, we examine the impact of noexcept and various styles of initialize a `std::shared_ptr` with a value. This is mostly informational and educational: due to the asynchronous, shared ownership semantics of `std::shared_ptr` there is little that can be done in the optimization space.
+Here, we examine the impact of noexcept and various styles of initialize a `std::shared_ptr` with a value. This is mostly informational and educational: due to the asynchronous, shared ownership semantics of `std::shared_ptr` there is little that can be done in the optimization space. Note that this is not the case with types like `boost::local_shared_ptr` and the upcoming `std::retain_ptr`, where inline and synchronous execution are part of the type's semantic contract with the user. This allows someone to directly reseat the resource within depending on things like use count or whether it is conceptually an `out_ptr` operation or an `inout_ptr` operation.
+
+Note that `noexcept`-ness does not change the performance of the happy path in any of these scenarios, regardless of whether a conditional `noexcept` or unconditionally `noexcept`:
 
 <pre class=include>
-path: local inout.bs
+path: local shared out.bs
 </pre>
 
 <pre class=include>
-path: reset inout.bs
+path: reset shared out.bs
 </pre>
-
 
 
 
@@ -783,11 +847,11 @@ namespace std {
 		out_ptr_t& operator=(out_ptr_t&&) noexcept;
 
 		// 20.11.9.3, destructors
-		~out_ptr_t() noexcept(see-below);
+		~out_ptr_t() noexcept;
 
 		// 20.11.9.4, conversion operators
-		operator Pointer*() noexcept;
-		operator void**() noexcept;
+		operator Pointer*() noexcept const;
+		operator void**() noexcept const;
 
 	private:
 		Smart* s; // exposition only
@@ -832,7 +896,7 @@ return *this;
 
 <p><ins>20.11.9.3 Destructors [**out_ptr.class.dtor**]</ins></p>
 
-<p><ins><xmp>~out_ptr_t() noexcept(see-below);</xmp></ins></p>
+<p><ins><xmp>~out_ptr_t();</xmp></ins></p>
 
 <p><ins><sup>1</sup> Let `SP` be `POINTER_OF_OR(Smart, Pointer)` ([**memory.defns**] 20.10.2).</ins></p>
 
@@ -844,20 +908,11 @@ return *this;
 <ins>where `Args` are the arguments stored in `a`.</ins>
 </ins></p>
 
-<p><ins><sup>4</sup> Throws:
-<dl>
-	<dd><ins>— no exceptions and is `noexcept` if `std::is_pointer_v<Smart>` is true;</ins></dd>
-	<dd><ins>— any exceptions and is conditionally `noexcept` from `s->reset( static_cast<SP>(p), std::forward<Args>(args)... );` if the expression `s->reset(static_cast<SP>(p), std::forward<Args>(args)...)` is well-formed;</ins></dd>
-	<dd><ins>— otherwise, any exceptions and is conditionally `noexcept` from `*s = Smart( static_cast<SP>(p), std::forward<Args>(args)... );`;</ins></dd>
-</dl>
-<ins>where `Args` are the arguments stored in `a`.</ins>
-</ins></p>
-
 <p><ins>20.11.9.4 Conversions [**out_ptr.class.conv**]</ins></p>
 
 <p><ins>
 <xmp>
-operator Pointer*() noexcept;
+operator Pointer*() noexcept const;
 </xmp>
 </ins></p>
 
@@ -866,7 +921,7 @@ operator Pointer*() noexcept;
 
 <p><ins>
 <xmp>
-operator void**() noexcept;
+operator void**() noexcept const;
 </xmp>
 </ins></p>
 
@@ -927,12 +982,11 @@ namespace std {
 		inout_ptr_t& operator=(inout_ptr_t&&) noexcept;
 
 		// 20.11.11.3, destructors
-		~inout_ptr_t() noexcept(see-below);
+		~inout_ptr_t();
 
 		// 20.11.11.4, conversion operators
-		operator Pointer*() noexcept;
-
-		operator void**() noexcept;
+		operator Pointer*() noexcept const;
+		operator void**() noexcept const;
 
 	private:
 		Smart* s; // exposition only
@@ -985,7 +1039,7 @@ return *this;
 
 <p><ins>20.11.11.3 Destructors [**inout_ptr.class.dtor**]</ins></p>
 
-<p><ins><xmp>~inout_ptr_t() noexcept(see-below);</xmp></ins></p>
+<p><ins><xmp>~inout_ptr_t();</xmp></ins></p>
 
 <p><ins><sup>1</sup> Constraints: Either `std::is_pointer_v<Smart>` is `true` or the expression `s->release()` is well-formed.</ins></p>
 
@@ -1000,27 +1054,18 @@ return *this;
 <ins>where `Args` are the arguments stored in `a`.</ins>
 </ins></p>
 
-<p><ins><sup>4</sup> Throws:
-<dl>
-	<dd><ins>— no exceptions and is `noexcept` if `std::is_pointer_v<Smart>` is true;</ins></dd>
-	<dd><ins>— any exceptions and is conditionally `noexcept` from `s->release();` and `s->reset( static_cast<SP>(p), std::forward<Args>(args)... );` if the expression `s->reset(static_cast<SP>(p), std::forward<Args>(args)...)` is well-formed;</ins></dd>
-	<dd><ins>— otherwise, any exceptions and is conditionally `noexcept` from `s->release();` and `*s = Smart( static_cast<SP>(p), std::forward<Args>(args)... );`;</ins></dd>
-</dl>
-<ins>where `Args` are the arguments stored in `a`.</ins>
-</ins></p>
-
 <p><ins>20.11.11.4 Conversions [**inout_ptr.class.conv**]</ins></p>
 
 <p><ins>
 <xmp>
-operator Pointer*() noexcept;
+operator Pointer*() noexcept const;
 </xmp>
 </ins></p>
 <p><ins><sup>1</sup> Effects: returns a pointer to `p`.</ins></p>
 <p><ins>
 
 <xmp>
-operator void**() noexcept;
+operator void**() noexcept const;
 </xmp>
 </ins></p>
 
