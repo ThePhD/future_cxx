@@ -1,4 +1,5 @@
 ---
+hide: true
 title: [[nodiscard("should have a reason")]]
 document: nXXX2
 date: 2019-09-21

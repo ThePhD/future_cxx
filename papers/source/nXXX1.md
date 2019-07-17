@@ -1,4 +1,5 @@
 ---
+hide: true
 title: Fast, Scalable String Support for Unicode
 document: nXXX1
 date: 2019-09-21
