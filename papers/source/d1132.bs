@@ -1,9 +1,9 @@
 <pre class='metadata'>
 Title: out_ptr - a scalable output pointer abstraction
 Shortname: P1132
-Revision: 4
+Revision: 5
 Audience: LWG
-Status: P
+Status: D
 Group: WG21
 URL: 
 !Latest: <a href="https://thephd.github.io/vendor/future_cxx/papers/d1132.html">https://thephd.github.io/vendor/future_cxx/papers/d1132.html</a>
@@ -25,6 +25,13 @@ path: wording_style.bs
 
 
 # Revision History # {#changelog}
+
+
+
+## Revision 5-II - July 15th, 2019 ## {#changelog-r5ii}
+
+    - LEWG roundtrip done: forwarded to LWG as low-priority for C++20.
+    - Constructors are marked non-`noexcept` to allow for implementations to strengthen them as per their implementation strategies. This includes leaving it non-`noexcept` and forward-allocating `std::shared_ptr`'s control block in the constructor.
 
 
 
@@ -324,6 +331,10 @@ If the user used `std::inout_ptr`, the value would be guaranteed to put back int
 Secondly, the destructor for `out_ptr` calls to `.reset()`. The only case where this is questionable is with `std::shared_ptr`: the creation of the passed-in deleter might throw, and thusly the call cannot be `noexcept`. This means that the destructor might throw if `std::shared_ptr's` `.reset()` throws: in this case, `std::terminate` would be called.
 
 In practice, this has not been observed (or reported). Still, the C++ standard makes guarantees for code even if the situation is never encountered in the real world: for this, it is much more palatable to go with the status quo and stick to the policies established by LEWG and LWG regarding throwing until such a policy is overturned.
+
+Additionally, functions which have a non-`noexcept` reset function are guaranteed to delete the resource before releasing the exception, as is specified in e.g. [[util.smartptr.shared.const](http://eel.is/c++draft/util.smartptr.shared.const)]. This means that it is the responsibility of the pointer to release any resources once their `reset(...)` (or equivalent) function is successfully called.
+
+Finally, the original design had an unconditionally `noexcept` constructor. It has been suggested that the constructor be non-noexcept, and to allow an implementation to prevent throwing in the destructor by forward-allocating any necessary internal storage for the `reset` operation (for example, the control block of a `shared_ptr`) in the constructor. This would prevent termination from happening in the destructor when a common non-noexcept `reset` call is invoked. We leave answering this question to the discretion of LEWG. 
 
 
 
@@ -804,10 +815,10 @@ template <class Smart, class Pointer, class... Args>
 
 // 20.11.10, out_ptr
 template <class Pointer, class Smart, class... Args>
-	out_ptr_t<Smart, Pointer, Args...> out_ptr(Smart& s, Args&&... args) noexcept;
+	out_ptr_t<Smart, Pointer, Args...> out_ptr(Smart& s, Args&&... args);
 	
 template <class Smart, class... Args>
-	out_ptr_t<Smart, POINTER_OF(Smart), Args...> out_ptr(Smart& s, Args&&... args) noexcept;
+	out_ptr_t<Smart, POINTER_OF(Smart), Args...> out_ptr(Smart& s, Args&&... args);
 
 // 20.11.11, inout_ptr_t
 template <class Smart, class Pointer, class... Args>
@@ -815,10 +826,10 @@ template <class Smart, class Pointer, class... Args>
 	
 // 20.11.12, inout_ptr
 template <class Pointer, class Smart, class... Args>
-	inout_ptr_t<Smart, Pointer, Args...> inout_ptr(Smart& s, Args&&... args) noexcept;
+	inout_ptr_t<Smart, Pointer, Args...> inout_ptr(Smart& s, Args&&... args);
 	
 template <class Smart, class... Args>
-	inout_ptr_t<Smart, POINTER_OF(SMART), Args...> inout_ptr(Smart& s, Args&&... args) noexcept 
+	inout_ptr_t<Smart, POINTER_OF(SMART), Args...> inout_ptr(Smart& s, Args&&... args); 
 </xmp>
 </ins>
 </blockquote>
@@ -840,7 +851,7 @@ namespace std {
 	class out_ptr_t {
 	public:
 		// 20.11.9.1, constructors
-		out_ptr_t(Smart&, Args...) noexcept;
+		out_ptr_t(Smart&, Args...);
 		out_ptr_t(out_ptr_t&&) noexcept;
 
 		// 20.11.9.2, assignment
@@ -865,19 +876,20 @@ namespace std {
 
 <p><ins><sup>2</sup> If `Smart` is a specialization of `shared_ptr` and `sizeof...(Args) == 0`, the program is ill-formed.</ins></p>
 
-<p><ins><sup>3</sup> [ <i>Note:</i> It is typically a user error to reset a `shared_ptr` without specifying a deleter, as `std::shared_ptr` will replace a custom deleter with the default deleter upon usage of `.reset()`, as specified in 20.11.3.4. — <i>end note</i> ]</ins></p>
+<p><ins><sup>3</sup> [ <i>Note:</i> It is typically a user error to reset a `shared_ptr` without specifying a deleter, as `shared_ptr` will replace a custom deleter with the default deleter upon usage of `.reset()`, as specified in 20.11.3.4. — <i>end note</i> ]</ins></p>
 
 
 <p><ins>20.11.9.1 Constructors [**out_ptr.class.ctor**]</ins></p>
 
-<p><ins><xmp>out_ptr_t(Smart& smart, Args&&... args) noexcept;</xmp></ins></p>
+<p><ins><xmp>out_ptr_t(Smart& smart, Args&&... args);</xmp></ins></p>
 
 <p><ins><sup>1</sup> Effects: initializes `s` with `addressof(smart)`, `a` with `std::forward<Args>(args)...`, and initializes `p` to its value initialization.</ins></p>
 
+<p><ins><sup>2</sup> [ <i>Note:</i> The constructor is not `noexcept` to allow for a variety of non-terminating and safe implementation strategies. For example, an implementation may allocate a `shared_ptr`'s internal node in the constructor and let implementation-defined exceptions escape safely. The destructor can then move the allocated control block in directly and avoid any other exceptions. — <i>end note</i> ]</ins></p>
+
 <p><ins><xmp>out_ptr_t(out_ptr&& rhs) noexcept;</xmp></ins></p>
 
-<p><ins><sup>2</sup> Effects: initializes `s` with `std::move(rhs.s)`, `a` with `std::move(args)...`, and `p` with `std::move(rhs.p)`. Then sets `rhs.s` to `nullptr`.</ins></p>
-
+<p><ins><sup>3</sup> Effects: initializes `s` with `std::move(rhs.s)`, `a` with `std::move(args)...`, and `p` with `std::move(rhs.p)`. Then sets `rhs.p` to `nullptr`.</ins></p>
 
 <p><ins>20.11.9.2 Assignment [**out_ptr.class.assign**]</ins></p>
 
@@ -888,7 +900,7 @@ namespace std {
 s = std::move(rhs.s); 
 a = std::move(rhs.a); 
 p = std::move(rhs.p);
-rhs.s = nullptr;
+rhs.p = nullptr;
 return *this;
 </xmp>
 </ins></p>
@@ -902,8 +914,8 @@ return *this;
 
 <p><ins><sup>2</sup> Effects: Equivalent to:
 <dl>
-	<dd><ins>— `if (s != nullptr) { s->reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if the expression `s->reset(static_cast<SP>(p), std::forward<Args>(args)...)` is well-formed,</ins></dd>
-	<dd><ins>— otherwise `if (s != nullptr) { *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></dd>
+	<dd><ins>— `if (p) { s->reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if the expression `s->reset(static_cast<SP>(p), std::forward<Args>(args)...)` is well-formed,</ins></dd>
+	<dd><ins>— otherwise `if (p) { *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></dd>
 </dl>
 <ins>where `Args` are the arguments stored in `a`.</ins>
 </ins></p>
@@ -941,7 +953,7 @@ Insert §20.11.10 [**out_ptr**]:
 <ins>
 <xmp>
 template <class Pointer, class Smart, class... Args>
-  out_ptr_t<Smart, Pointer, Args...> out_ptr(Smart& s, Args&&... args) noexcept;
+  out_ptr_t<Smart, Pointer, Args...> out_ptr(Smart& s, Args&&... args);
 </xmp>
 </ins>
 
@@ -950,7 +962,7 @@ template <class Pointer, class Smart, class... Args>
 <ins>
 <xmp>
 template <class Pointer, class Smart, class... Args>
-  out_ptr_t<Smart, Pointer, Args...> out_ptr(Smart& s, Args&&... args) noexcept;
+  out_ptr_t<Smart, Pointer, Args...> out_ptr(Smart& s, Args&&... args);
 </xmp>
 </ins>
 
@@ -975,7 +987,7 @@ namespace std {
 	class inout_ptr_t {
 	public:
 		// 20.11.11.1, constructors
-		inout_ptr_t(Smart&, Args...) noexcept;
+		inout_ptr_t(Smart&, Args...);
 		inout_ptr_t(inout_ptr_t&&) noexcept;
 
 		// 20.11.11.2, assignment
@@ -1005,7 +1017,7 @@ namespace std {
 
 <p><ins>20.11.11.1 Constructors [**inout_ptr.class.ctor**]</ins></p>
 
-<p><ins><xmp>inout_ptr_t(Smart& smart, Args... args) noexcept;</xmp></ins></p>
+<p><ins><xmp>inout_ptr_t(Smart& smart, Args... args);</xmp></ins></p>
 
 <p><ins><sup>1</sup> Effects: initializes `s` with `addressof(smart)`, `a` with `std::forward<Args>(args)...`, and `p` to either
 <dl>
@@ -1018,9 +1030,11 @@ namespace std {
 
 <p><ins><sup>3</sup> Remarks: if an implementation calls `smart.release()` or `s->release()`, then it shall not call `s->release()` in the destructor.</ins></p>
 
+<p><ins><sup>4</sup> [ <i>Note:</i> The constructor is not `noexcept` to allow for a variety of non-terminating and safe implementation strategies. For example, an intrusive pointer with a control block may allocate in the constructor and safely fail with an exception. — <i>end note</i> ]</ins></p>
+
 <p><ins><xmp>inout_ptr_t(inout_ptr&& rhs) noexcept;</xmp></ins></p>
 
-<p><ins><sup>4</sup> Effects: initializes `s` with `std::move(rhs.s)`, `a` with `std::move(args)...`, and `p` with `std::move(rhs.p)`. Then sets `rhs.s` to `nullptr`.</ins></p>
+<p><ins><sup>4</sup> Effects: initializes `s` with `std::move(rhs.s)`, `a` with `std::move(args)...`, and `p` with `std::move(rhs.p)`. Then sets `rhs.p` to `nullptr`.</ins></p>
 
 
 <p><ins>20.11.11.2 Assignment [**inout_ptr.class.assign**]</ins></p>
@@ -1032,7 +1046,7 @@ namespace std {
 s = std::move(rhs.s); 
 a = std::move(rhs.a); 
 p = std::move(rhs.p);
-rhs.s = nullptr;
+rhs.p = nullptr;
 return *this;
 </xmp>
 </ins></p>
@@ -1047,9 +1061,9 @@ return *this;
 
 <p><ins><sup>3</sup> Effects: Equivalent to:
 <dl>
-	<dd><ins>— `if (s != nullptr) { *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }` if `std::is_pointer_v<Smart>` is true,</ins></dd>
-	<dd><ins>— `if (s != nullptr) { s->release(); s->reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if the expression `s->reset(static_cast<SP>(p), std::forward<Args>(args)...)` is well-formed,</ins></dd>
-	<dd><ins>— otherwise, `if (s != nullptr) { s->release(); *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`.</ins></dd>
+	<dd><ins>— `if (p) { *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }` if `std::is_pointer_v<Smart>` is true,</ins></dd>
+	<dd><ins>— `if (p) { s->release(); s->reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if the expression `s->reset(static_cast<SP>(p), std::forward<Args>(args)...)` is well-formed,</ins></dd>
+	<dd><ins>— otherwise, `if (p) { s->release(); *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`.</ins></dd>
 </dl>
 <ins>where `Args` are the arguments stored in `a`.</ins>
 </ins></p>
@@ -1084,7 +1098,7 @@ Insert §20.11.12 [**inout_ptr**]:
 <ins>
 <xmp>
 template <class Pointer, class Smart, class... Args>
-	inout_ptr_t<Smart, Pointer, Args...> inout_ptr(Smart& s, Args&&... args) noexcept
+	inout_ptr_t<Smart, Pointer, Args...> inout_ptr(Smart& s, Args&&... args);
 </xmp>
 </ins>
 
@@ -1094,7 +1108,7 @@ template <class Pointer, class Smart, class... Args>
 <ins>
 <xmp>
 template <class Smart, class... Args>
-	inout_ptr<Smart, POINTER_OF(Smart), Args...> inout_ptr(Smart& s, Args&&... args) noexcept;
+	inout_ptr<Smart, POINTER_OF(Smart), Args...> inout_ptr(Smart& s, Args&&... args);
 </xmp>
 </ins>
 
