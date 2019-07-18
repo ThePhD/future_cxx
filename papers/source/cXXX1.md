@@ -1,7 +1,6 @@
 ---
-hide: true
 title: Fast, Scalable String Support for Unicode
-document: nXXX1
+document: cXXX1
 date: 2019-09-21
 audience:
   - WG14
