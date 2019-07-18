@@ -3,23 +3,23 @@ title: [[nodiscard("should have a reason")]]
 document: cXXX2
 date: 2019-09-21
 audience:
-	- WG14
+  - WG14
 author:
-	- name: JeanHeyd Meneide
-	email: <phdofthehouse@gmail.com>
+  - name: JeanHeyd Meneide
+    email: <phdofthehouse@gmail.com>
 author:
-	- name: Aaron Ballman
-	email: <aaron@aaronballman.com>
+  - name: Aaron Ballman
+    email: <aaron@aaronballman.com>
 author:
-	- name: Isabella Muerte
-	email: <https://twitter.com/slurpsmadrips>
+  - name: Isabella Muerte
+    email: <https://twitter.com/slurpsmadrips>
 hide: true
 ---
 
 
 # Introduction
 
-Document N2051 introduced a new attribute `[[nodiscard]]` in the C2x working paper. This has provided a marked improvement in the marking of functions to remind programmers of the safety issues of discarding the return value of a function. The `[[nodiscard]]` attribute has helped prevent a serious class of software bugs, but sometimes it is hard to communicate exactly **why** a function is marked as `[[nodiscard]]` and perhaps what alternative usages are important.
+[Document N2051](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2051.pdf) introduced a new attribute `[[nodiscard]]` in the C2x working paper. This has provided a marked improvement in the marking of functions to remind programmers of the safety issues of discarding the return value of a function. The `[[nodiscard]]` attribute has helped prevent a serious class of software bugs, but sometimes it is hard to communicate exactly **why** a function is marked as `[[nodiscard]]` and perhaps what alternative usages are important.
 
 
 This paper adds an addendum to allow a person to add a string attribute token to let someone provide a small reasoning or reminder for why a function has been marked `[[nodiscard("potential memory leak")]]`.
