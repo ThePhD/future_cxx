@@ -1,5 +1,5 @@
 ---
-title: [[nodiscard("should have a reason")]]
+title: nodiscard("should have a reason")
 document: cXXX2
 date: 2019-09-21
 audience:
