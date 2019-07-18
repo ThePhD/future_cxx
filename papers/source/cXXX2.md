@@ -7,10 +7,6 @@ audience:
 author:
   - name: JeanHeyd Meneide
     email: <phdofthehouse@gmail.com>
-  - name: Aaron Ballman
-    email: <aaron@aaronballman.com>
-  - name: Isabella Muerte
-    email: <https://twitter.com/slurpsmadrips>
 hide: true
 ---
 
