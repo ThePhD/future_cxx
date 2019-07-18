@@ -7,5 +7,6 @@ audience:
 author:
   - name: JeanHeyd Meneide
     email: <phdofthehouse@gmail.com>
+hide: true
 ---
 

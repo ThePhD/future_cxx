@@ -13,6 +13,7 @@ author:
 author:
 	- name: Isabella Muerte
 	email: <https://twitter.com/slurpsmadrips>
+hide: true
 ---
 
 
