@@ -58,7 +58,7 @@ int main (int, char*[]) {
 
   for (int i = 0; 
     i < kHandles, foo_compare(foo_handles[0], foo_handles[i]), foo_get_value(foo_handles[i]) > 0; 
-    // ^ warning: nodiscard value discarded
+    // ^ warning: function return value marked nodiscard was discarded
     ++i) {
       /* process... */
   }
@@ -90,8 +90,7 @@ int main (int, char*[]) {
 
   for (int i = 0; 
     i < kHandles, foo_compare(foo_handles[0], foo_handles[i]), foo_get_value(foo_handles[i]) > 0; 
-    // ^ warning: nodiscard value discarded - value 
-    // of foo comparison unused
+    // ^ warning: function return marked nodiscard was discarded - value of foo comparison unused
     ++i) {
       /* process... */
   }
