@@ -34,14 +34,14 @@ Consider the following code example, before and after the change:
 #define FOO_LINK_TYPE 1
 
 struct foo { /* ... */ };
-[[nodiscard]] int foo_get_value(foo*);
+[[nodiscard]] int foo_get_value(struct foo*);
 ```
 
 ### Status Quo:
 
 ```c++
-[[nodiscard]] foo* foo_create(int, foo*);
-[[nodiscard]] int foo_compare(foo*, foo*);
+[[nodiscard]] foo* foo_create(int, struct foo*);
+[[nodiscard]] int foo_compare(struct foo*, struct foo*);
 
 // Always > 0
 const int kHandles = ...;
@@ -72,15 +72,15 @@ int main (int, char*[]) {
 ### With Proposal:
 
 ```c++
-[[nodiscard("memory leaked")]] foo* foo_create(int, foo*);
-[[nodiscard("value of foo comparison unused")]] int foo_compare(foo*, foo*);
+[[nodiscard("memory leaked")]] struct foo* foo_create(int, struct foo*);
+[[nodiscard("value of foo comparison unused")]] int foo_compare(struct foo*, struct foo*);
       
 // Always > 0
 const int kHandles = ...;
 
 int main (int, char*[]) {
 
-  foo* foo_handles[kHandles + 1] = { };
+  struct foo* foo_handles[kHandles + 1] = { };
   foo_handles[0] = create(BASE_FOO, NULL);
   for (int i = 1; i < kHandles; ++i) {
     foo_handles[i] = create(FOO_LINK_TYPE, foo_handles[0])
