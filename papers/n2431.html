@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="JeanHeyd Meneide &lt;phdofthehouse@gmail.com&gt;" />
+  <title>Restartable and Non-Restartable Functions for Efficient Character Conversions</title>
+  <style>
+      code{white-space: pre-wrap;}
+      span.smallcaps{font-variant: small-caps;}
+      span.underline{text-decoration: underline;}
+      div.column{display: inline-block; vertical-align: top; width: 50%;}
+  </style>
+  <!--[if lt IE 9]>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
+  <![endif]-->
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Restartable and Non-Restartable Functions for Efficient Character Conversions</h1>
+<p class="author">JeanHeyd Meneide &lt;<a href="mailto:phdofthehouse@gmail.com" class="email">phdofthehouse@gmail.com</a>&gt;</p>
+<p class="date">September 23rd, 2019</p>
+</header>
+<p><em><strong>Document</strong></em>: n2431<br />
+<em><strong>Audience</strong></em>: WG14<br />
+<em><strong>Proposal Category</strong></em>: New Library Features<br />
+<em><strong>Target Audience</strong></em>: General Developers, Text Processing Developers</p>
+<p style="text-align: center">
+<span style="font-style: italic; font-weight: bold">Abstract:</span>
+<p>
+Implementations firmly control what both Wide Character and Multibyte Character literals are interpreted as for the encoding, as well as how they are treated at runtime by the Standard Library. While this control is fine, users of the Standard Library have no portability guarantees about how these library functions may behave, especially in the face of encodings that do not support each other’s full codepage. And, despite additions to C11 for maybe-UTF16 and maybe-UTF32 encoded types, these functions only offer conversions of a single unit of information at a time, leaving orders of magnitude of performance on the table.
+</p>
+<p>
+This paper proposes and explores additional library functionality to allow users to retrieve multibyte and wide character into a statically known encoding to enhance the ability to work with text.
+</p>
+</p>
+<h1 id="introduction-and-motivation">Introduction and Motivation</h1>
+<p>C adopted conversion routines for the current active locale-derived/<code>LC_TYPE</code>-controlled/implementation-defined encoding for Multibyte (<code>mb</code>) Strings and Wide (<code>wc</code>) Strings. While the rationale for having such conversion routines to and from Multibyte and Wide strings in the C library are not explicitly stated in the documents, it is easy to derive the many benefits of a full ecosystem of both restarting (<code>r</code>) and non-restarting conversion routines for both single units and string-based bulk conversions for <code>mb</code> and <code>wc</code> strings. From ease of use with string literals to performance optimizations from bulk processing with vectorization and SIMD operations, the <code>mbs(r)towcs</code> — and vice-versa — granted a rich and fertile ground upon which C library developers took advantage of platform amenities, encoding specifics, and hardware support to provide useful and fast abstractions upon which encoding-aware applications could build.</p>
+<p>Unfortunately, none of these API designs were granted to <code>char16_t</code> (<code>c16</code>) or <code>char32_t</code> (<code>c32</code>) functions, let alone provide a way to work with a well-defined 8-bit multibyte encoding such as UTF8 without having to first pin it down with platform-specific <code>setlocale(...)</code> calls. This has resulted in a series of extremely vexing problems when it has come to trying to write portable, reliable C library code that is not locked to a specific vendor.</p>
+<p>This paper looks at the problems, and then proposes a solution (without C Standard wording) with the goal of hoping to arrive at a solution that is worth implementing for the C Standard Library.</p>
+<h2 id="problem-1-lack-of-portability">Problem 1: Lack of Portability</h2>
+<p>Already, Windows, z/OS, and POSIX platforms greatly differ in what they offer for <code>char</code>-typed, Multibyte string encodings. EBCDIC is still in play after many decades. Windows’s Active Code Page functionality on its machine prevents portability even on its own platforms. Environments where LANG controls functionality make communication between even processes a silent and often unforeseen gamble for library developers. Using functions which convert to/from <code>mbs</code> make it impossible to have stability guarantees not only between platforms, but for individual machines. Sometimes even cross-process communication becomes exceedingly problematic without opting into a serious amount of platform-specific or vendor-specific code and functionality to lock encodings in, harming the portability of C code greatly.</p>
+<p><code>wchar_t</code> does not fare better. By definition, a wide character type must be capable of holding the entire character set in a single unit of <code>wchar_t</code>: this has been a fundamental impossibility for decades for implementers which switched to 16-bit UCS-2 early. IBM machines persist with this issue for all 32-bit builds, though on some platforms took advantage of the 64-bit change to do an ABI break and use UTF32 like making Linux distributions settled on. This, of course, still does not help: a developer programming exclusively on IBM machines can still end up in a situation where <code>wchar_t</code> is neither 32-bit UTF32 or 16-bit UCS-2/UTF16: the encoding can change to something else in certain Chinese locales, becoming completely different.</p>
+<p>Windows is permanently stuck on having to explicitly detail that its implementation is “16-bit, UCS-2 as per the standard”, before explicitly informing developers to use vendor-specific <code>WideCharToMultibyte</code>/<code>MultibyteToWideChar</code> to handle UTF16-encoded characters in <code>wchar_t</code>.</p>
+<p>These solutions provide ways to achieve a local maxima for a specific vendor or platform. Unfortunately, this comes at the extreme cost of portability: the code has no guarantee it will work anywhere but your machine, and in a world that is increasingly interconnected by devices that interface with the bare metal it makes sharing both data and code troublesome and hard to work with.</p>
+<h2 id="problem-2-what-is-the-encoding">Problem 2: What is the Encoding?</h2>
+<p>With <code>setlocale</code> and <code>getlocale</code> only responding to and returning implementation-defined <code>(const )char*</code>, there is no way to portably determine what the locale (and any associated encoding) should or should not be. The typical solution for this has been to code and program only for what is guaranteed by the Standard as what is in the Basic Character Set. While this works fine for source code itself, this produces an extremely hostile environment:</p>
+<ul>
+<li>conversion functions in the standard mangle and truncate data in (sometimes troubling, sometimes hilarious) fashion;</li>
+<li>programs which are not careful to meticulously track encoding of incoming text often lose the ability to understand that text;</li>
+<li>programmers can never trust the platform will support even the Latin characters in any representation of data beyond the 7th bit;</li>
+<li>and, interchange between cultures with different default encodings makes it impossible to communicate with others without entirely forsaking the standard library.</li>
+</ul>
+<p>Abandoning the C <strong>Standard</strong> Library – to get <strong>standard</strong> behavior across platforms – is an exceedingly bitter pill to have to swallow as an enthusiastic C developer.</p>
+<h2 id="problem-3-performance">Problem 3: Performance</h2>
+<p>The current version of the C Standard includes functions which attempt to alleviate Problems 1 and 2 by providing conversions from the per-process, locale-sensitive black box encoding of multibyte <code>char*</code> strings to either <code>char16_t</code> strings or <code>char32_t</code> units with <code>mbrtoc(16|32)</code> and <code>c(16|32)rtomb</code> functions. We will for a brief moment ignore the presence of the <code>__STD_C_UTF16__</code> and <code>__STD_C_UTF32__</code> macros and assume the two types mean that string literals and library functions convert to and from UTF16 and UTF32 respectively. We will also ignore that <code>wchar_t</code>’s encoding – which is just as locale-sensitive and unknown at compile and runtime as <code>char</code>’s encoding is – has no such conversion functions. These givens make it possible to say that we, as C programmers, have 2 known encodings which we can use to shepherd data into a stable state for manipulation and processing.</p>
+<p>Even with that knowledge, these one-unit-at-a-time conversions functions are slower than they should be.</p>
+<p>On many platforms, these one-at-a-time function calls come from the operating system, dynamically loaded libraries, or other places which otherwise inhibit compiler observation and optimizer inspection, thwarting attempts to inline function content, vectorize code or unroll loops built around these functions. Building static libraries or from source is very often a non-starter for many platforms. Since the encoding used for multibyte strings and wide strings are controlled by the implementation, it becomes increasingly difficult to provide the functionality to convert long segments of data with decent performance characteristics without needing to opt into vendor or platform specific tricks.</p>
+<h2 id="problem-4-wchar_t-cannot-roundtrip">Problem 4: wchar_t cannot roundtrip</h2>
+<p>With no <code>wctoc32</code> or <code>wctoc16</code> functions, the only way to convert a wide character or wide character string to a program-controlled, statically known encoding is to first invoke the wide character to multibyte function, and then invoke the multibyte function to either <code>char16_t</code> or <code>char32_t</code>.</p>
+<p>This means that even if we have a well-behaved <code>wchar_t</code> that is not sensitive to the locale (e.g., on Windows machines), we lose data if the locale-controlled <code>char</code> encoding is not set to something that can handle all incoming code unit sequences. In fact, this was fundamentally impossible to perform on Windows until a very recent Windows 10 update; UTF8 could <strong>not</strong> be set as the active system codepage either programmatically or through an experimental, deeply-buried setting until Windows Version 1903 (May 2019 Update).</p>
+<p>Because other library functions can be used to change or alter the locale in some manner, it once again becomes impossible to have a portable, compliant program with deterministic behavior if even one library changes the locale of the program. This hidden state is nearly impossible to account for, and ends up with software systems that cannot properly handle text in a meaningful way without abandoning C’s encoding facilities, relying on vendor-specific extensions/encodings/tools, or confining one’s program to only the 7-bit plane of existence.</p>
+<h2 id="motivation">Motivation</h2>
+<p>In short, the problems C developers face today with respect to encoding and dealing with vendor and platform-specific black boxes is a staggering trifecta: non-portability between processes running on the same physical hardware, performance degradation from using standard facilities, and potentially having a locale changed out from under your program to prevent roundtripping.</p>
+<p>This serves as the core motivation for this proposal.</p>
+<h1 id="prior-art">Prior Art</h1>
+<p>The Small Device C Compiler (SDCC) has already begun some of this work. One of its principle contributors, Philip K. Krause, has wrote papers addressing exactly this problem<a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2282.htm">[1]</a>.</p>
+<h1 id="proposed-changes">Proposed Changes</h1>
+<p>An observation of the current landscape reveals that we have the immediately following table of functionality. Everything below the diagonal is duplicate, so only the upper triangular portion of this matrix is filled out:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;"></th>
+<th style="text-align: center;">mb</th>
+<th style="text-align: center;">wc</th>
+<th style="text-align: center;">mbs</th>
+<th style="text-align: center;">wcs</th>
+<th style="text-align: center;">c8</th>
+<th style="text-align: center;">c16</th>
+<th style="text-align: center;">c32</th>
+<th style="text-align: center;">c8s</th>
+<th style="text-align: center;">c16s</th>
+<th style="text-align: center;">c32s</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;">mb</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">✔️</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">⚠️🇷</td>
+<td style="text-align: center;">⚠️🇷</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">wc</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">mbs</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">✔️</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">wcs</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">c8</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">c16</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">c32</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">c8s</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">c16s</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">c32s</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+</tr>
+</tbody>
+</table>
+<p>The proposed functionality that we need to at the very minimum support getting data losslessly out of <code>wchar_t</code> and <code>char</code> strings controlled firmly by the implementation is as follows:</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;"></th>
+<th style="text-align: center;">mb</th>
+<th style="text-align: center;">wc</th>
+<th style="text-align: center;">mbs</th>
+<th style="text-align: center;">wcs</th>
+<th style="text-align: center;">c8</th>
+<th style="text-align: center;">c16</th>
+<th style="text-align: center;">c32</th>
+<th style="text-align: center;">c8s</th>
+<th style="text-align: center;">c16s</th>
+<th style="text-align: center;">c32s</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;">mb</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">✔️</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">🅿️🇷</td>
+<td style="text-align: center;">⚠️🇷</td>
+<td style="text-align: center;">⚠️🇷</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">wc</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">🅿️🇷</td>
+<td style="text-align: center;">🅿️🇷</td>
+<td style="text-align: center;">🅿️🇷</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">mbs</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">✔️</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">🅿️</td>
+<td style="text-align: center;">🅿️</td>
+<td style="text-align: center;">🅿️</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">wcs</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">🅿️</td>
+<td style="text-align: center;">🅿️</td>
+<td style="text-align: center;">🅿️</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">c8</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">c16</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">c32</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">c8s</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">c16s</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">c32s</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+<td style="text-align: center;">➖</td>
+</tr>
+</tbody>
+</table>
+<p>In particular, we recognize that the implementation is the “sole proprietor” of the wide character (<code>wc</code>) and Multibyte (<code>mb</code>) encodings for its string literals (compiler) and library functions (standard library). We propose, then, to focus on adding the one-at-a-time functions for <code>char</code> and <code>wchar_t</code>:</p>
+<ul>
+<li>Multibyte Character:
+<ul>
+<li><code>mbrtoc8</code> and <code>c8rtomb</code></li>
+</ul></li>
+<li>Wide Character:
+<ul>
+<li><code>wcrtoc8</code> and <code>c8rtowc</code></li>
+<li><code>wcrtoc16</code> and <code>c16rtowc</code></li>
+<li><code>wcrtoc32</code> and <code>c32rtowc</code></li>
+</ul></li>
+</ul>
+<p>Only the “<code>r</code>” (restarting) versions of these functions are proposed here because otherwise single code unit conversions would not be able to respect multiple code units of either <code>char16_t</code> or <code>char32_t</code>. See the discussion related to <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2244.htm#dr_488">N1991 and DR488</a><a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2244.htm#dr_488">[2]</a>. Additionally, we also propose the following:</p>
+<ul>
+<li>Multibyte Character Strings:
+<ul>
+<li><code>mbstoc8s</code> and <code>c8stombs</code></li>
+<li><code>mbsrtoc8s</code> and <code>c8srtombs</code></li>
+<li><code>mbstoc16s</code> and <code>c16stombs</code></li>
+<li><code>mbsrtoc16s</code> and <code>c16srtombs</code></li>
+<li><code>mbstoc32s</code> and <code>c32stombs</code></li>
+<li><code>mbsrtoc32s</code> and <code>c32srtombs</code></li>
+</ul></li>
+<li>Wide Character Strings:
+<ul>
+<li><code>wcstoc8s</code> and <code>c8stowcs</code></li>
+<li><code>wcsrtoc8s</code> and <code>c8srtowcs</code></li>
+<li><code>wcstoc16s</code> and <code>c16stowcs</code></li>
+<li><code>wcsrtoc16s</code> and <code>c16srtowcs</code></li>
+<li><code>wcstoc32s</code> and <code>c32stowcs</code></li>
+<li><code>wcsrtoc32s</code> and <code>c32srtowcs</code></li>
+</ul></li>
+</ul>
+<p>The functions follow the same conventions as their counterparts, <code>mbstowcs</code> and <code>wcstombs</code> (or <code>mbsrtowcs</code> and <code>wcsrtombs</code>, for the restartable versions). These allow for the implementation to bulk-convert to and from a statically-known encoding. Bulk conversions has significant performance benefits in both C and C++ code: see <a href="https://hsivonen.fi/encoding_rs/#results">[4]</a> and <a href="https://www.youtube.com/watch?v=5FQ87-Ecb-A">[5]</a> (both authors have shown that their code can be ported to use a C interface or just be written directly in C itself).</p>
+<h2 id="what-about-utfx-utfy-functions">What about UTF{X} 🔄 UTF{Y} functions?</h2>
+<p>We do not propose these functions because – while useful – both sides of the encoding are statically known by the user to be of this. We only want to consider functionality strictly in the case where the implementation has more information / private information that the user cannot access in a well-defined and standard manner. A user can write their own Unicode Transformation Format.</p>
+<p>Within my incredibly limited purview, there has been no suggestion or report of an implementation which does not use UTF16 and UTF32 for their <code>char16_t</code> and <code>char32_t</code> literals, respectively. If this changes, then the conversion functions <code>c{X}toc{Y}</code> marked with an ❌ will become important. Thankfully, that does not seem to be the case at this time.</p>
+<h2 id="addendum-sized-conversion-functions">Addendum: Sized Conversion Functions</h2>
+<p>If we follow the conventions of the string-based conversion functions already present, they will use null termination as a marker for stopping. Many streams of text data today have embedded nulls in them, and have thusly required many creative solutions for avoiding embedded nulls (including encodings like Modified UTF-8 (MUTF8)). Thusly, as an extension, we also propose all of the above functions, but as with an explicitly sized version with takes a <code>size_t</code> that specifies the number of code units in the source string.</p>
+<p>Previously, sized functions for certain string operations was attempted by trying to duplicate current library functionality but with an <code>RSIZE_MAX</code>-respecting parameter introduced the C 11 Standard, Annex K (for functions like <code>strncpy_s</code>). While the intention and rationale (N1570, §K.3.2 in <a href="http://www.open-std.org/jtc1/sc22/WG14/www/docs/n1570.pdf">[3]</a>) made it explicitly clear the goal was to prevent potential size errors when going from a signed number to <code>size_t</code> and promote safety, the effect of such changes was different. <code>RSIZE_MAX</code> values on certain platforms were restrictively tiny, taking payloads of reasonable sizes but still rejecting them. C programmers used to developing on certain platforms would use these functions in one area, port that code to another platform, and then would experience what amounted to a Denial of Service as their payloads exceeded <code>RSIZE_MAX</code> values that were restrictively tiny.</p>
+<p>Therefore, we have no desire to introduce functions like Annex K’s security features into the C standard. Instead, we simply request a <code>size_t</code>-sized function for all of the above currently existing (✔️) and desired (🅿️) functions in the above table.</p>
+<h1 id="conclusion">Conclusion</h1>
+<p>This is a lot of functionality to ask for. Therefore, while this paper was written and submitted, I wanted to get the Committee’s general feedback about the ideas present here. I am working on an independent library implementation<a href="https://github.com/ThePhD/ooficode/tree/develop/source">[6]</a> that has come up against all of the issues above, with goals to submit patches to glibc, musl, and other Standard Library implementations when the time comes. However, getting early feedback from the C Committee about this functionality is crucial to ensuring that these large and hardworking open source implementations do not feel as if I am wasting their time by pursuing this functionality.</p>
+<h1 id="acknowledgements">Acknowledgements</h1>
+<p>Thank you to Philipp K. Krause for responding to the e-mails of a newcomer to matters of C and providing me with helpful guidance. Thank you to Rajan Bhakta and David Keaton for guidance on how to submit these papers and get started in WG14. Thank you to Tom Honermann for lighting the passionate fire for proper text handling in me for not just C++, but for our sibling language C.</p>
+<h1 id="references">References</h1>
+<p>[1]: Philip K. Krause. N2282: Additional multibyte/wide string conversion functions. June 2018. Published: <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2282.htm">http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2282.htm</a>.<br />
+[2]: WG14. Clarification Request Summary for C11, Version 1.13. October 2017. Published: <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2244.htm">http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2244.htm</a>.<br />
+[3]: ISO/IEC, WG14. Programming Languages - C (Committee Draft). April 12, 2011. Published: <a href="http://www.open-std.org/jtc1/sc22/WG14/www/docs/n1570.pdf">http://www.open-std.org/jtc1/sc22/WG14/www/docs/n1570.pdf</a>.<br />
+[4]: Henri Sivonen. <code>encoding_rs</code>: a Web-Compatible Character Encoding Library in Rust. December 2018. Published: <a href="https://hsivonen.fi/encoding_rs/#results">https://hsivonen.fi/encoding_rs/#results</a>.<br />
+[5]: Bob Steagall. Fast Conversion From UTF-8 with C++, DFAs, an SSE Intrinsics. September 2018. Published: <a href="https://www.youtube.com/watch?v=5FQ87-Ecb-A">https://www.youtube.com/watch?v=5FQ87-Ecb-A</a><br />
+[6]: JeanHeyd Meneide. Ooficode (alpha version). September 2019. Published: <a href="https://github.com/ThePhD/ooficode/tree/develop/source">https://github.com/ThePhD/ooficode/tree/develop/source</a>.</p>
+<p><sub><sub>May the Tower of Babel’s curse be defeated.</sub></sub></p>
+</body>
+</html>
