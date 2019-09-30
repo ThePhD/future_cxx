@@ -35,4 +35,80 @@ path: wording_style.bs
 
 # Motivation # {#motivation}
 
+When building wrapping ranges and iterators, it is useful for individuals working with these wrapped iterators to provide algorithms synonymous to the C++ Standard. For example, if someone is writing a `bit_iterator` or a `code_point_iterator` which wraps an underlying iterator and performs operations on the underlying iterator, one can optimize for the case where the wrapped iterators are potentially of the same `iterator_category` (`iterator_concept`) and have the same `value_type`s. In an [example from real-world code](https://github.com/ThePhD/itsy_bitsy/blob/9556008313029b3deaabd67fabdcb3f5b84e8a3d/include/itsy/detail/algorithm.hpp#L166):
 
+```
+template<typename _It0, typename _It1>
+constexpr bool
+bit_equal(bit_iterator<_It0> __first0, bit_iterator<_It0> __last0, 
+	bit_iterator<_It1> __first1) 
+{
+	using __iterator0        = __bit_iterator<_It0>;
+	using __iterator1        = __bit_iterator<_It1>;
+	using __difference_type0 = typename ::std::iterator_traits<__iterator0>::difference_type;
+	using __iterator_category0 = typename __iterator0::iterator_category;
+	using __iterator_category1 = typename __iterator1::iterator_category;
+	using __base_iterator0     = typename __iterator0::iterator_type;
+	using __base_iterator1     = typename __iterator1::iterator_type;
+	using __base_value_type0 = typename ::std::iterator_traits<__base_iterator0>::value_type;
+	using __base_value_type1 = typename ::std::iterator_traits<__base_iterator1>::value_type;
+	if constexpr (::std::is_unsigned_v<__base_value_type0> &&
+				::std::is_unsigned_v<__base_value_type1> &&
+				::std::is_same_v<__base_value_type0, __base_value_type1>)
+	{
+		if constexpr (__is_iterator_category_or_better_v<::std::forward_iterator_tag,
+				__iterator_category0>
+			&& __is_iterator_category_or_better_v<::std::forward_iterator_tag,
+				__iterator_category1>)
+			{
+				// get .base() and use internal algorithms...
+			}
+	}
+	// use baseline input algorithm...
+}
+```
+
+In the innermost branch after checking iterator categories, we would like to use `std::equal` on the `.base()` iterators, to compare whole words at a time or entire sequences at a time rather than just compare 1 bit at a time. The problem with using `std::equal` here is that it only returns a `bool` value: if there is any additional "work" left over after `std::equal` is done comparing the fully populated underlying iterators, we now have to manually re-increment all the way to the end.
+
+This problem is present with a large number of algorithms in the standard. From `copy`/`copy_n` to `equal`, many algorithms advance the iterator or perform useful computation on the iterators that is then discarded, leaving higher levels to re-do that work and incur a performance penalty. This was fixed for the `std::ranges` version of algorithms like `copy`, where a `std::ranges::copy` returns a `std::ranges::copy_result<Iterator, OutputIterator>`.
+
+There are three ways around the problem (using `std::ranges::equal` as an example):
+
+1. re-implement what the `std::ranges` algorithms do now, [which is what libstdc++ has done](https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/ext/algorithm#L79) for a handful of algorithms before `std::ranges` came along. This works only for an individual library's implementation of `std::ranges::equal` or other bool-returning algorithms;
+2. re-implement any of the time-complexity checks in algorithms like `std::ranges::equal`. This would include duplicating logic from `std::ranges::equal` and then dispatching to a "lower level" algorithm such as calling `std::ranges::mismatch` after doing explicit `std::distance` checks upon getting `random_access_iterator`s or better to meet the complexity requirements of `std::equal`;
+3. or, return iterator information from the `std::ranges` version of the algorithms that currently lose this information by returning only a `bool`.
+
+This paper proposes Option 3, which is enhancing only the `std::ranges` versions of these algorithms to return additional iterator information, in the same way `std::ranges::copy` was enhanced over its non-`ranges` counterpart.
+
+
+# Design # {#design}
+
+The design here is fairly straightforward: we go through all algorithms returning `bool` in the standard library's `ranges` namespace and change it to have a return type similar to the below structure.  This proposal uses the same machinery that other range algorithms like `std::ranges::mismatch` and friends to produce an `X_result` type. Most algorithms only need a `predicate_result` type, while others require a little extra information. For example, the following result structure...
+
+```
+namespace ranges {
+	template<class I1, class I2>
+	struct predicate_result {
+		[[no_unique_address]] I1 in1;
+		[[no_unique_address]] I2 in2;
+		bool value;
+		
+		template<class II1, class II2>
+			requires convertible_to<const I1&, II1> && convertible_to<const I2&, II2>
+			operator X_result<II1, II2>() const & {
+				return {in1, in2};
+			}
+
+		template<class II1, class II2>
+			requires convertible_to<I1, II1> && convertible_to<I2, II2>
+			operator C_result<II1, II2>() && {
+				return {std::move(in1), std::move(in2)};
+			}
+	};
+}
+```
+
+... works for the following algorithm return types:
+
+- std::ranges::equal
+- 
