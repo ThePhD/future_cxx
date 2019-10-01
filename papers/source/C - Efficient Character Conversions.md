@@ -10,6 +10,14 @@ redirect_from:
 hide: true
 ---
 
+<style>
+@media print
+{
+  .pagebreak { break-after: always }
+}
+</style>
+
+
 _**Document**_: n2436  
 _**Previous Revisions**_: n2431  
 _**Audience**_: WG14  
@@ -87,13 +95,19 @@ This serves as the core motivation for this proposal.
 
 # Prior Art
 
-The Small Device C Compiler (SDCC) has already begun some of this work. One of its principle contributors, Philip K. Krause, wrote papers addressing exactly this problem[[1]](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2282.htm).
+The Small Device C Compiler (SDCC) has already begun some of this work. One of its principle contributors, Philip K. Krause, wrote papers addressing exactly this problem[[1]](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2282.htm). Krause's work focuses entirely on non-restartable conversions from Multibyte Strings to `char16_t`. and `char32_t`. There is no need for a conversion to a UTF8 `char` style string for SDCC, since the Multibyte String in SDCC is always UTF8. This means that `mbstoc16s` and `mbstoc32s` and the "reverse direction" functions encompass an entire ecosystem of UTF8, UTF16, and UTF32.
+
+While this is good for SDCC, this is not quite enough for other developers who attempt to write code in a cross-platform manner. While the non-restartable functions can save quite a bit of code size (see [[1]](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2282.htm)), unfortunately there are many encodings which are not as nice and require state to be processed correctly (e.g., Shift JIS and other ISO-2022 encodings). Not being able to retain that state between potential calls in a `mbstate_t` is detrimental to the ability to move forward with any encoding endeavor that wishes to bridge the gap between these disparate platform encodings and the current locale.
+
+SDCC's work is still important, however: it demonstrates that these functions are implementable, even for small devices. With additional work being done to implement them for other platforms, there is strong evidence that this can be implemented in a cross-platform manner and thusly is suitable for the Standard Library.
+
+<div class="pagebreak"></div>
 
 
 
 # Proposed Changes
 
-To understand what this paper proposes, we must first fully explain the current landscape. The below table is meant to be read as being `{row}(r)to{column}`. The symbols mean as follows:
+To understand what this paper proposes, an explanation of the current landscape is in order. The below table is meant to be read as being `{row}(r)to{column}`. The symbols provide the following information:
 
 - ✔️: Function exists in both its restartable (function name has the indicative `r` in it) and non-restartable form.
 - 🇷: Function exists only in its restartable form.
@@ -102,34 +116,314 @@ To understand what this paper proposes, we must first fully explain the current 
 
 Here is what exists in the C Standard Library so far:
 
-|      | mb | wc | mbs | wcs | c8 | c16 | c32 | c8s | c16s | c32s |
-|:----:|:--:|:--:|:---:|:---:|:--:|:---:|:---:|:---:|:----:|:----:|
-|  mb  |  ➖ |  ✔️ |     |     |  ❌ |   🇷 |   🇷 |     |      |      |
-|  wc  |  ✔️ |  ➖ |     |     |  ❌ |  ❌  |  ❌  |     |      |      |
-|  mbs |    |    |  ➖  |  ✔️  |    |     |     |  ❌  |   ❌  |   ❌  |
-|  wcs |    |    |  ✔️  |  ➖  |    |     |     |  ❌  |   ❌  |   ❌  |
-|  c8  |  ❌ |  ❌ |     |     |  ➖ |  ❌  |  ❌  |     |      |      |
-|  c16 |  🇷 |  ❌ |     |     |  ❌ |  ➖  |  ❌  |     |      |      |
-|  c32 |  🇷 |  ❌ |     |     |  ❌ |  ❌  |  ➖  |     |      |      |
-|  c8s |    |    |  ❌  |  ❌  |    |     |     |  ➖  |   ❌  |   ❌  |
-| c16s |    |    |  ❌  |  ❌  |    |     |     |  ❌  |   ➖  |   ❌  |
-| c32s |    |    |  ❌  |  ❌  |    |     |     |  ❌  |   ❌  |   ➖  |
+<style type="text/css">
+.tg  {border-collapse:collapse;border-spacing:0;}
+.tg td{padding:10px 10px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:black;}
+.tg th{font-weight:normal;padding:10px 10px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:black;}
+.tg .tg-c3ow{border-color:inherit;text-align:center;vertical-align:top}
+</style>
+<table class="tg">
+  <tr>
+    <th class="tg-c3ow"></th>
+    <th class="tg-c3ow">mb</th>
+    <th class="tg-c3ow">wc</th>
+    <th class="tg-c3ow">mbs</th>
+    <th class="tg-c3ow">wcs</th>
+    <th class="tg-c3ow">c8</th>
+    <th class="tg-c3ow">c16</th>
+    <th class="tg-c3ow">c32</th>
+    <th class="tg-c3ow">c8s</th>
+    <th class="tg-c3ow">c16s</th>
+    <th class="tg-c3ow">c32s</th>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">mb</td>
+    <td class="tg-c3ow"> ➖ </td>
+    <td class="tg-c3ow"> ✔️ </td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"> ❌ </td>
+    <td class="tg-c3ow"> 🇷 </td>
+    <td class="tg-c3ow">🇷</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">wc</td>
+    <td class="tg-c3ow">✔️</td>
+    <td class="tg-c3ow">➖</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow"> ❌ </td>
+    <td class="tg-c3ow"> ❌ </td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">mbs</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">➖</td>
+    <td class="tg-c3ow">✔️</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"> ❌ </td>
+    <td class="tg-c3ow"> ❌ </td>
+    <td class="tg-c3ow"> ❌ </td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">wcs</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">✔️</td>
+    <td class="tg-c3ow">➖</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">❌</td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">c8</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">➖</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">c16</td>
+    <td class="tg-c3ow">🇷</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">➖</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">c32</td>
+    <td class="tg-c3ow">🇷</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">➖</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">c8s</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"> ❌ <br></td>
+    <td class="tg-c3ow"> ❌ </td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">➖</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">❌</td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">c16s</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">➖</td>
+    <td class="tg-c3ow">❌</td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">c32s</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">➖</td>
+  </tr>
+</table>
 
+<div class="pagebreak"></div>
 
 To support getting data losslessly out of `wchar_t` and `char` strings controlled firmly by the implementation -- and back into those types if the code units in the characters are supported --, the following functionality is proposed:
 
-|      | mb | wc | mbs | wcs | c8 | c16 | c32 | c8s | c16s | c32s |
-|:----:|:--:|:--:|:---:|:---:|:--:|:---:|:---:|:---:|:----:|:----:|
-|  mb  |  ➖ |  ✔️ |     |     | 🅿️🇷 |  🇷  |  🇷  |     |      |      |
-|  wc  |  ✔️ |  ➖ |     |     | 🅿️🇷 |  🅿️🇷 |  🅿️🇷 |     |      |      |
-|  mbs |    |    |  ➖  |  ✔️  |    |     |     |  🅿️✔️ |  🅿️✔️  |  🅿️✔️  |
-|  wcs |    |    |  ✔️  |  ➖  |    |     |     |  🅿️✔️ |  🅿️✔️  |  🅿️✔️  |
-|  c8  | 🅿️🇷 | 🅿️🇷 |     |     |  ➖ |  ❌  |  ❌  |     |      |      |
-|  c16 |  🇷 | 🅿️🇷 |     |     |  ❌ |  ➖  |  ❌  |     |      |      |
-|  c32 |  🇷 | 🅿️🇷 |     |     |  ❌ |  ❌  |  ➖  |     |      |      |
-|  c8s |    |    |  🅿️✔️ |  🅿️✔️ |    |     |     |  ➖  |   ❌  |   ❌  |
-| c16s |    |    |  🅿️✔️ |  🅿️✔️ |    |     |     |  ❌  |   ➖  |   ❌  |
-| c32s |    |    |  🅿️✔️ |  🅿️✔️ |    |     |     |  ❌  |   ❌  |   ➖  |
+<style type="text/css">
+.tg  {border-collapse:collapse;border-spacing:0;}
+.tg td{padding:10px 10px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:black;}
+.tg th{padding:10px 10px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:black;}
+.tg .tg-c3ow{border-color:inherit;text-align:center;vertical-align:top}
+.tg .tg-3ib7{border-color:inherit;text-align:center;vertical-align:top}
+</style>
+<table class="tg">
+  <tr>
+    <th class="tg-3ib7"></th>
+    <th class="tg-c3ow">mb</th>
+    <th class="tg-c3ow">wc</th>
+    <th class="tg-c3ow">mbs</th>
+    <th class="tg-c3ow">wcs</th>
+    <th class="tg-c3ow">c8</th>
+    <th class="tg-c3ow">c16</th>
+    <th class="tg-c3ow">c32</th>
+    <th class="tg-c3ow">c8s</th>
+    <th class="tg-c3ow">c16s</th>
+    <th class="tg-c3ow">c32s</th>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">mb</td>
+    <td class="tg-c3ow"> ➖ </td>
+    <td class="tg-c3ow"> ✔️ </td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">🅿️🇷</td>
+    <td class="tg-c3ow"> 🇷 </td>
+    <td class="tg-c3ow">🇷</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">wc</td>
+    <td class="tg-c3ow">✔️</td>
+    <td class="tg-c3ow">➖</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">🅿️🇷</td>
+    <td class="tg-c3ow">🅿️🇷</td>
+    <td class="tg-c3ow">🅿️🇷</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">mbs</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">➖</td>
+    <td class="tg-c3ow">✔️</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">🅿️✔</td>
+    <td class="tg-c3ow">🅿️✔</td>
+    <td class="tg-c3ow">🅿️✔</td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">wcs</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">✔️</td>
+    <td class="tg-c3ow">➖</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">🅿️✔</td>
+    <td class="tg-c3ow">🅿️✔</td>
+    <td class="tg-c3ow">🅿️✔</td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">c8</td>
+    <td class="tg-c3ow">🅿️🇷</td>
+    <td class="tg-c3ow">🅿️🇷</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">➖</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">c16</td>
+    <td class="tg-c3ow">🇷</td>
+    <td class="tg-c3ow">🅿️🇷</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">➖</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">c32</td>
+    <td class="tg-c3ow">🇷</td>
+    <td class="tg-c3ow">🅿️🇷</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">➖</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">c8s</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">🅿️✔</td>
+    <td class="tg-c3ow">🅿️✔</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">➖</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">❌</td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">c16s</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">🅿️✔</td>
+    <td class="tg-c3ow">🅿️✔</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">➖</td>
+    <td class="tg-c3ow">❌</td>
+  </tr>
+  <tr>
+    <td class="tg-c3ow">c32s</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">🅿️✔</td>
+    <td class="tg-c3ow">🅿️✔</td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow"></td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">❌</td>
+    <td class="tg-c3ow">➖</td>
+  </tr>
+</table>
 
 In particular, it is imperative to recognize that the implementation is the "sole proprietor" of the wide character (`wc`) and Multibyte (`mb`) encodings for its string literals (compiler) and library functions (standard library).
 
@@ -159,7 +453,7 @@ size_t wcrtocX(charX_t* pcX, const wchar_t* src, size_t src_len, mbstate_t* stat
 size_t cXrtowc(wchar_t* pwc, const charX_t* src, size_t src_len, mbstate_t* state);
 ```
 
-where `X` and `charX_t` is one of { `8`, `char` }, { `16`, `char16_t` }, or { `32`, `char32_t`} for the function's specification.
+where `X` and `charX_t` is one of { `8`, `char` }, { `16`, `char16_t` }, or { `32`, `char32_t` } for the function's specification.
 
 
 ## Multi-Unit Functions
@@ -200,7 +494,7 @@ size_t wcsrtocXs(charX_t* dest, const wchar_t** src, size_t dest_len, mbstate_t*
 size_t cXsrtowcs(wchar_t* dest, const charX_t** src, size_t dest_len, mbstate_t* state);
 ```
 
-where `X` and `charX_t` is one of { `8`, `char` }, { `16`, `char16_t` }, or { `32`, `char32_t`} for the function's specification.
+where `X` and `charX_t` is one of { `8`, `char` }, { `16`, `char16_t` }, or { `32`, `char32_t` } for the function's specification.
 
 
 ## What about UTF{X} 🔄 UTF{Y} functions?
@@ -263,6 +557,8 @@ This is a lot of functionality to ask for. Therefore, this paper was written mos
 # Acknowledgements
 
 Thank you to Philipp K. Krause for responding to the e-mails of a newcomer to matters of C and providing me with helpful guidance. Thank you to Rajan Bhakta, Daniel Plakosh, and David Keaton for guidance on how to submit these papers and get started in WG14. Thank you to Tom Honermann for lighting the passionate fire for proper text handling in me for not just C++, but for our sibling language C.
+
+<div class="pagebreak"></div>
 
 
 
