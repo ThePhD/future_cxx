@@ -14,7 +14,7 @@ _**Document**_: n2436
 _**Previous Revisions**_: n2431  
 _**Audience**_: WG14  
 _**Proposal Category**_: New Library Features  
-_**Target Audience**_: General Developers, Text Processing Developers
+_**Target Audience**_: General Developers, Text Processing Developers  
 _**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/C - Efficient Character Conversions.html](https://thephd.github.io/vendor/future_cxx/papers/source/C - Efficient Character Conversions.html)  
 
 <p style="text-align: center">
