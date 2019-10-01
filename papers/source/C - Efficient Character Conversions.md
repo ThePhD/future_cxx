@@ -1,16 +1,21 @@
 ---
 title: Restartable and Non-Restartable Functions for Efficient Character Conversions
 layout: page
-date: September 23rd, 2019
+date: October 1st, 2019
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
+redirect_from:
+  - /vendor/future_cxx/papers/source/n2431.html
+  - /vendor/future_cxx/papers/source/n2436.html
 hide: true
 ---
 
-_**Document**_: n2431  
+_**Document**_: n2436  
+_**Previous Revisions**_: n2431  
 _**Audience**_: WG14  
 _**Proposal Category**_: New Library Features  
 _**Target Audience**_: General Developers, Text Processing Developers
+_**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/C - Efficient Character Conversions.html](https://thephd.github.io/vendor/future_cxx/papers/source/C - Efficient Character Conversions.html)  
 
 <p style="text-align: center">
 <span style="font-style: italic; font-weight: bold">Abstract:</span>
@@ -271,4 +276,4 @@ Thank you to Philipp K. Krause for responding to the e-mails of a newcomer to ma
 \[6\]: Robot Martinho Fernandes. p1041. February 2019. Published: [https://wg21.link/p1041](https://wg21.link/p1041).  
 \[7\]: JeanHeyd Meneide. Ooficode (alpha version). September 2019. Published: [https://github.com/ThePhD/ooficode/tree/develop/source](https://github.com/ThePhD/ooficode/tree/develop/source).
 
-<sub><sub>May the Tower of Babel's curse be defeated.</sub></sub>
+<sub><sub><sub>May the Tower of Babel's curse be defeated.</sub></sub></sub>

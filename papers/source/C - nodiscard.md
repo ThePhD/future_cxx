@@ -4,6 +4,8 @@ layout: page
 date: September 23rd, 2019
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
+redirect_from:
+  - /vendor/future_cxx/papers/source/n2430.html
 hide: true
 ---
 
@@ -75,6 +77,7 @@ _**Document**_: n2430
 _**Audience**_: WG14  
 _**Proposal Category**_: New Features  
 _**Target Audience**_: General Developers, Compiler/Tooling Developers
+_**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/C - nodiscard.html](https://thephd.github.io/vendor/future_cxx/papers/source/C - nodiscard.html)
 
 <p style="text-align: center">
 <span style="font-style: italic; font-weight: bold">Abstract:</span>
