@@ -12,7 +12,7 @@ Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Date: 2019-01-21
 Markup Shorthands: markdown yes, biblio yes, markup yes
-Abstract: Currently, many of the new algorithms in std::ranges algorithms copy their boolean-returning predecessors by returning a single boolean value. And while this makes perfect sense, developers who build algorithms on top of the standard ones often have to replicate the information that these algorithms already perform. This proposal adjusts the return types of std::ranges algorithms to return more information and be less lossy, preventing people from redoing work already performed by the called algorithm and without having to replicate the internal metaprogramming and state information that implementations already come across as a natural consequence of the algorithm.
+Abstract: Currently, many of the new algorithms in std::ranges algorithms copy their `bool`-returning predecessors by returning a single `bool` value. And while this makes perfect sense, developers who build algorithms on top of the standard ones often have to replicate the information that these algorithms already perform. This proposal adjusts the return types of std::ranges algorithms to return more information and be less lossy, preventing people from redoing work already performed by the called algorithm and without having to replicate the internal metaprogramming and state information that implementations already come across as a natural consequence of the algorithm.
 </pre>
 
 <pre class=include>
@@ -85,7 +85,12 @@ This paper proposes Option 3, which is enhancing only the `std::ranges` versions
 
 # Design # {#design}
 
-The design here is fairly straightforward: we go through all algorithms returning `bool` in the standard library's `std::ranges` namespace and change it to have a return type similar to the below structure.  This proposal uses the same machinery that other range algorithms like `std::ranges::mismatch` and friends to produce an `X_result` type. Most algorithms only need a `predicate_result` type, while others require a little extra information. For example, the following result structure...
+The design here is fairly straightforward: we go through all algorithms returning `bool` in the standard library's `std::ranges` namespace and change it to have a return type similar to the below structure.  This proposal uses the same machinery that other range algorithms like `std::ranges::mismatch` and friends to produce an `X_result` type. Most algorithms only need a `predicate_result` type, while others require a little extra information.
+
+
+## Single-Boolean Predicate Returns ## {#design-predicate}
+
+The following result structure...
 
 ```
 namespace ranges {
@@ -124,6 +129,14 @@ namespace ranges {
   - `std::ranges::is_partitioned`;
   - and, `std::ranges::is_heap`.
 
+It is notable that `is_sorted`, `is_partitioned`, and `is_heap` all have versions of themselves that return an iterator and also do not have additional complexity requirements specified in the standard over their `is_{}_until` versions. Therefore, it may be prudent to just leave changes to these algorithms off entirely rather than also return both a convenience `bool` value and the iterator.
+
+Likewise, `any_of`, `all_of`, and `none_of` can be seen as wrappers around the `find_if(_not)` algorithms. None of them impose additional complexity requirements, nor do standard libraries today do anything particularly special in the general implementation of these wrappers either. While the information could be returned, simply using a lower-level facility would be suitable in the cases here.
+
+
+
+## Single-Boolean Comparison Returns ## {#design-comparison}
+
 Similarly, the following `comparison_result` structure...
 
 ```
@@ -157,13 +170,15 @@ namespace ranges {
 
 - In Non-modifying Algorithms [[alg.nonmodifying](http://eel.is/c++draft/alg.nonmodifying)]:
   - `std::ranges::equal`;
-  - `std::ranges::is_permutation`;
-  - and `std::ranges::none_of`.
+  - and, `std::ranges::is_permutation`.
 - In Sorting and related operations [[alg.sorting](eel.is/c++draft/alg.sorting)]:
   - `std::ranges::binary_search`;
-  - `std::ranges::is_sorted`;
-  - `std::ranges::includes`;
   - and, `std::ranges::lexicographic_compare`.
+
+Algorithms such as `std::ranges::includes` are not included in this fix up because that algorithm works with input ranges, and the iterators returned from it by the time the algorithm completes can essentially be empty husks that contain no valuable information. The goal would be to have a well-specified return value for the iterators on algorithm success, where logically that information implies the whole range was examined.
+
+`std::ranges::lexicographic_compare` returns whether or not the range is in lexicographic order: an enhancement to that would be to return the incremented-to-the-end `first1` and `first2` iterators in the case where the algorithm returns `true` for the result. Otherwise, the value of `in1` and `in2` are unspecified. Similarly for `std::ranges::equal`: the incremented iterators should be returned from `equal` in `in1` and `in2` if the algorithm returns true: otherwise, the value of the returned iterators is unspecified.
+
 
 
 ## Questions ## {#design-questions}
@@ -174,4 +189,4 @@ Question 1: These algorithms take in a range. We recognize that the result type 
 
 Question 2: Some of these algorithms are more or less trivial wrappers around their counterparts with no additional complexity requirements or guarantees obtain by metaprogramming checks. These are `std::ranges::is_sorted`, `std::ranges::is_partitioned`, and `std::ranges::is_heap`.
 
-> Is returning the iterator worth it when there are `X_until` versions of all these algorithms which do return the iterator?
+> Is returning the iterator worth it when there are `X_until` versions of all these algorithms which do return the iterator and can be defined as convenience wrappers?
