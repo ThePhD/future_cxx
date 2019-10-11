@@ -2,7 +2,7 @@
  <head>
   <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
   <meta content="width=device-width, initial-scale=1, shrink-to-fit=no" name="viewport">
-  <title>P1877R0: Saving Private Ranges: Recovering Lost Information from Comparison and Predicate Algorithms</title>
+  <title>P1939R0: if consteval { } -- fixing the std::is_constant_evaluated() trap</title>
 <style data-fill-with="stylesheet">/******************************************************************************
  *                   Style sheet for the W3C specifications                   *
  *
@@ -1228,7 +1228,6 @@ Possible extra rowspan handling
     }
   </style>
   <meta content="Bikeshed version 1cff2db4ee2c3bba7a4077d3007528ec73b0485d" name="generator">
-  <link href="https://thephd.github.io/vendor/future_cxx/papers/d1803.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
   <meta content="9202525ba970d4b9d9546d4dd5b77ae465bdc31a" name="document-revision">
 <style>
@@ -1502,23 +1501,21 @@ pre .property::before, pre .property::after {
  <body class="h-entry">
   <div class="head">
    <p data-fill-with="logo"></p>
-   <h1 class="p-name no-ref" id="title">P1877R0<br>Saving Private Ranges: Recovering Lost Information from Comparison and Predicate Algorithms</h1>
+   <h1 class="p-name no-ref" id="title">P1939R0<br>if consteval { } -- fixing the std::is_constant_evaluated() trap</h1>
    <h2 class="no-num no-toc no-ref heading settled" id="subtitle"><span class="content">Published Proposal, <time class="dt-updated" datetime="2019-10-07">2019-10-07</time></span></h2>
    <div data-fill-with="spec-metadata">
     <dl>
-     <dt>This version:
-     <dd><a class="u-url" href="https://thephd.github.io/vendor/future_cxx/papers/d1803.html">https://thephd.github.io/vendor/future_cxx/papers/d1803.html</a>
      <dt>Author:
      <dd>
       <dd class="editor p-author h-card vcard"><a class="p-name fn u-email email" href="mailto:phdofthehouse@gmail.com">JeanHeyd Meneide</a>
      <dt>Audience:
-     <dd>LEWG, LWG
+     <dd>EWG
      <dt>Project:
      <dd>ISO/IEC JTC1/SC22/WG21 14882: Programming Language — C++
      <dt>Target:
      <dd>C++20
      <dt>Latest:
-     <dd><a href="https://thephd.github.io/vendor/future_cxx/papers/d1803.html">https://thephd.github.io/vendor/future_cxx/papers/d1803.html</a>
+     <dd><a href="https://thephd.github.io/vendor/future_cxx/papers/d1939.html">https://thephd.github.io/vendor/future_cxx/papers/d1939.html</a>
     </dl>
    </div>
    <div data-fill-with="warning"></div>
@@ -1526,7 +1523,7 @@ pre .property::before, pre .property::after {
   </div>
   <div class="p-summary" data-fill-with="abstract">
    <h2 class="no-num no-toc no-ref heading settled" id="abstract"><span class="content">Abstract</span></h2>
-   <p>Currently, many of the new algorithms in std::ranges algorithms copy their `bool`-returning predecessors by returning a single `bool` value. And while this makes perfect sense, developers who build algorithms on top of the standard ones often have to replicate the information that these algorithms already perform. This proposal adjusts the return types of std::ranges algorithms to return more information and be less lossy, preventing people from redoing work already performed by the called algorithm and without having to replicate the internal metaprogramming and state information that implementations already come across as a natural consequence of the algorithm.</p>
+   <p>With the advent of std::is_constant_evaluated and consteval, we now have ways of specifying code that should only ever be executed at compile time. While the consteval function-marking keyword is fine, there is a sincere and deep ergonomic and readability problem with std::is_constant_evaluated and a serious trap that has already begun to cost eager adopting users time in not understanding how to use this new magic library function. This paper proposes a new syntax for the if (std::is_constant_evaluated()) { ... } paradigm, preventing user errors and serious footguns from proliferating and tainting C++'s name any further.</p>
   </div>
   <nav data-fill-with="table-of-contents" id="toc">
    <h2 class="no-num no-toc no-ref" id="contents">Table of Contents</h2>
@@ -1534,171 +1531,132 @@ pre .property::before, pre .property::after {
     <li>
      <a href="#changelog"><span class="secno">1</span> <span class="content">Revision History</span></a>
      <ol class="toc">
-      <li><a href="#changelog-r0"><span class="secno">1.1</span> <span class="content">Revision 0 - October 7th, 2019</span></a>
+      <li><a href="#changelog-r1"><span class="secno">1.1</span> <span class="content">Revision 0 - October 7th, 2019</span></a>
      </ol>
-    <li><a href="#motivation"><span class="secno">2</span> <span class="content">Motivation</span></a>
     <li>
-     <a href="#design"><span class="secno">3</span> <span class="content">Design</span></a>
+     <a href="#motivation"><span class="secno">2</span> <span class="content">Motivation</span></a>
      <ol class="toc">
-      <li><a href="#design-predicate"><span class="secno">3.1</span> <span class="content">Single-Boolean Predicate Returns</span></a>
-      <li><a href="#design-comparison"><span class="secno">3.2</span> <span class="content">Single-Boolean Comparison Returns</span></a>
-      <li><a href="#design-questions"><span class="secno">3.3</span> <span class="content">Questions</span></a>
+      <li><a href="#motivation-nope"><span class="secno">2.1</span> <span class="content">Nope.</span></a>
      </ol>
+    <li><a href="#design"><span class="secno">3</span> <span class="content">Design</span></a>
+    <li><a href="#acknowledgements"><span class="secno">4</span> <span class="content">Acknowledgements</span></a>
    </ol>
   </nav>
   <main>
    <h2 class="heading settled" data-level="1" id="changelog"><span class="secno">1. </span><span class="content">Revision History</span><a class="self-link" href="#changelog"></a></h2>
-   <h3 class="heading settled" data-level="1.1" id="changelog-r0"><span class="secno">1.1. </span><span class="content">Revision 0 - October 7th, 2019</span><a class="self-link" href="#changelog-r0"></a></h3>
+   <h3 class="heading settled" data-level="1.1" id="changelog-r1"><span class="secno">1.1. </span><span class="content">Revision 0 - October 7th, 2019</span><a class="self-link" href="#changelog-r1"></a></h3>
    <ul>
     <li data-md>
      <p>Initial release.</p>
    </ul>
    <h2 class="heading settled" data-level="2" id="motivation"><span class="secno">2. </span><span class="content">Motivation</span><a class="self-link" href="#motivation"></a></h2>
-   <p>When building wrapping ranges and iterators, it is useful for individuals working with these wrapped iterators to provide algorithms synonymous to the C++ Standard. For example, if someone is writing a <code class="highlight"><c- n>bit_iterator</c-></code> or a <code class="highlight"><c- n>code_point_iterator</c-></code> which wraps an underlying iterator and performs operations on the underlying iterator, one can optimize for the case where the wrapped iterators are potentially of the same <code class="highlight"><c- n>iterator_category</c-></code> (<code class="highlight"><c- n>iterator_concept</c-></code>) and have the same <code class="highlight"><c- n>value_type</c-></code>s. In an <a href="https://github.com/ThePhD/itsy_bitsy/blob/9556008313029b3deaabd67fabdcb3f5b84e8a3d/include/itsy/detail/algorithm.hpp#L166">example from real-world code</a>:</p>
-<pre class="highlight"><c- k>template</c-><c- o>&lt;</c-><c- k>typename</c-> <c- n>_It0</c-><c- p>,</c-> <c- k>typename</c-> <c- n>_It1</c-><c- o>></c->
-<c- k>constexpr</c-> <c- b>bool</c->
-<c- n>bit_equal</c-><c- p>(</c-><c- n>bit_iterator</c-><c- o>&lt;</c-><c- n>_It0</c-><c- o>></c-> <c- n>__first0</c-><c- p>,</c-> <c- n>bit_iterator</c-><c- o>&lt;</c-><c- n>_It0</c-><c- o>></c-> <c- n>__last0</c-><c- p>,</c-> 
-	<c- n>bit_iterator</c-><c- o>&lt;</c-><c- n>_It1</c-><c- o>></c-> <c- n>__first1</c-><c- p>)</c-> 
-<c- p>{</c->
-	<c- k>using</c-> <c- n>__iterator0</c->        <c- o>=</c-> <c- n>__bit_iterator</c-><c- o>&lt;</c-><c- n>_It0</c-><c- o>></c-><c- p>;</c->
-	<c- k>using</c-> <c- n>__iterator1</c->        <c- o>=</c-> <c- n>__bit_iterator</c-><c- o>&lt;</c-><c- n>_It1</c-><c- o>></c-><c- p>;</c->
-	<c- k>using</c-> <c- n>__difference_type0</c-> <c- o>=</c-> <c- k>typename</c-> <c- o>::</c-><c- n>std</c-><c- o>::</c-><c- n>iterator_traits</c-><c- o>&lt;</c-><c- n>__iterator0</c-><c- o>>::</c-><c- n>difference_type</c-><c- p>;</c->
-	<c- k>using</c-> <c- n>__iterator_category0</c-> <c- o>=</c-> <c- k>typename</c-> <c- n>__iterator0</c-><c- o>::</c-><c- n>iterator_category</c-><c- p>;</c->
-	<c- k>using</c-> <c- n>__iterator_category1</c-> <c- o>=</c-> <c- k>typename</c-> <c- n>__iterator1</c-><c- o>::</c-><c- n>iterator_category</c-><c- p>;</c->
-	<c- k>using</c-> <c- n>__base_iterator0</c->     <c- o>=</c-> <c- k>typename</c-> <c- n>__iterator0</c-><c- o>::</c-><c- n>iterator_type</c-><c- p>;</c->
-	<c- k>using</c-> <c- n>__base_iterator1</c->     <c- o>=</c-> <c- k>typename</c-> <c- n>__iterator1</c-><c- o>::</c-><c- n>iterator_type</c-><c- p>;</c->
-	<c- k>using</c-> <c- n>__base_value_type0</c-> <c- o>=</c-> <c- k>typename</c-> <c- o>::</c-><c- n>std</c-><c- o>::</c-><c- n>iterator_traits</c-><c- o>&lt;</c-><c- n>__base_iterator0</c-><c- o>>::</c-><c- n>value_type</c-><c- p>;</c->
-	<c- k>using</c-> <c- n>__base_value_type1</c-> <c- o>=</c-> <c- k>typename</c-> <c- o>::</c-><c- n>std</c-><c- o>::</c-><c- n>iterator_traits</c-><c- o>&lt;</c-><c- n>__base_iterator1</c-><c- o>>::</c-><c- n>value_type</c-><c- p>;</c->
-	<c- k>if</c-> <c- nf>constexpr</c-> <c- p>(</c-><c- o>::</c-><c- n>std</c-><c- o>::</c-><c- n>is_unsigned_v</c-><c- o>&lt;</c-><c- n>__base_value_type0</c-><c- o>></c-> <c- o>&amp;&amp;</c->
-				<c- o>::</c-><c- n>std</c-><c- o>::</c-><c- n>is_unsigned_v</c-><c- o>&lt;</c-><c- n>__base_value_type1</c-><c- o>></c-> <c- o>&amp;&amp;</c->
-				<c- o>::</c-><c- n>std</c-><c- o>::</c-><c- n>is_same_v</c-><c- o>&lt;</c-><c- n>__base_value_type0</c-><c- p>,</c-> <c- n>__base_value_type1</c-><c- o>></c-><c- p>)</c->
-	<c- p>{</c->
-		<c- k>if</c-> <c- k>constexpr</c-> <c- p>(</c-><c- n>__is_iterator_category_or_better_v</c-><c- o>&lt;::</c-><c- n>std</c-><c- o>::</c-><c- n>forward_iterator_tag</c-><c- p>,</c->
-				<c- n>__iterator_category0</c-><c- o>></c->
-			<c- o>&amp;&amp;</c-> <c- n>__is_iterator_category_or_better_v</c-><c- o>&lt;::</c-><c- n>std</c-><c- o>::</c-><c- n>forward_iterator_tag</c-><c- p>,</c->
-				<c- n>__iterator_category1</c-><c- o>></c-><c- p>)</c->
-			<c- p>{</c->
-				<c- c1>// get .base() and use internal algorithms...</c->
-			<c- p>}</c->
+<pre class="highlight"><c- k>constexpr</c-> <c- b>int</c-> <c- nf>func</c-> <c- p>()</c-> <c- p>{</c->
+	<c- k>if</c-> <c- k>constexpr</c-> <c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>is_constant_evaluated</c-><c- p>())</c-> <c- p>{</c->
+		<c- k>return</c-> <c- mi>42</c-><c- p>;</c->
 	<c- p>}</c->
-	<c- c1>// use baseline input algorithm...</c->
+	<c- k>else</c-> <c- p>{</c->
+		<c- k>return</c-> <c- mi>2</c-><c- p>;</c->
+	<c- p>}</c->
 <c- p>}</c->
 </pre>
-   <p>In the innermost branch after checking iterator categories, we would like to use <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>equal</c-></code> on the <code class="highlight"><c- p>.</c-><c- n>base</c-><c- p>()</c-></code> iterators, to compare whole words at a time or entire sequences at a time rather than just compare 1 bit at a time. The problem with using <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>equal</c-></code> here is that it only returns a <code class="highlight"><c- b>bool</c-></code> value: if there is any additional "work" left over after <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>equal</c-></code> is done comparing the fully populated underlying iterators, we now have to manually re-increment all the way to the end.</p>
-   <p>This problem is present with a large number of algorithms in the standard. From <code class="highlight"><c- n>copy</c-></code>/<code class="highlight"><c- n>copy_n</c-></code> to <code class="highlight"><c- n>equal</c-></code>, many algorithms advance the iterator or perform useful computation on the iterators that is then discarded, leaving higher levels to re-do that work and incur a performance penalty (violating the idea that it could not be done by hand better with optimizations turned on).</p>
-   <p>This performance penalty was fixed for certain <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-></code> algorithms. For example, <code class="highlight"><c- n>copy</c-></code>, where a <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>copy</c-></code> returns a <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>copy_result</c-><c- o>&lt;</c-><c- n>Iterator</c-><c- p>,</c-> <c- n>OutputIterator</c-><c- o>></c-></code>, allows someone to retrieve the underlying incremented <code class="highlight"><c- n>Iterator</c-></code> type.</p>
-   <p>There are three ways around the problem:</p>
-   <ol>
-    <li data-md>
-     <p>re-implement what the <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-></code> algorithms do now, <a href="https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/ext/algorithm#L79">which is what libstdc++ has done</a> for a handful of algorithms before <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-></code> came along. This works only for an individual library’s implementation of that algorithm;</p>
-    <li data-md>
-     <p>re-implement any of the time-complexity checks and then use a "lower level" algorithm to perform the rest of the work. For example, this would include duplicating logic from <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>equal</c-></code> to check sizes in the case of random access. After doing explicit <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>distance</c-></code> checks upon getting <code class="highlight"><c- n>random_access_iterator</c-></code>s or better to meet the complexity requirements of <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>equal</c-></code>, a developer would then dispatch to its "lower level" algorithmic form by calling <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>mismatch</c-></code>, which does return iterator information;</p>
-    <li data-md>
-     <p>or, return iterator information from the <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-></code> version of the algorithms that currently lose this information by returning only a <code class="highlight"><c- b>bool</c-></code>.</p>
-   </ol>
-   <p>This paper proposes Option 3, which is enhancing only the <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-></code> versions of these algorithms to return additional iterator information, in the same way <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>copy</c-></code> was enhanced over its non-<code class="highlight"><c- n>ranges</c-></code> counterpart. This is a backwards-compatible change since it does not touch the original algorithms.</p>
+   <p>The <code class="highlight"><c- k>else</c-></code> branch in this code is never run. <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>is_constant_evaluated</c-><c- p>()</c-></code> makes a compile-time choice, and when evaluated in an <code class="highlight"><c- k>if</c-> <c- k>constexpr</c-></code> branch it somewhat counterintuitively returns <code class="highlight">false</code>. It must be written like this:</p>
+<pre class="highlight"><c- k>constexpr</c-> <c- b>int</c-> <c- nf>func</c-> <c- p>()</c-> <c- p>{</c->
+	<c- k>if</c-> <c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>is_constant_evaluated</c-><c- p>())</c-> <c- p>{</c->
+		<c- k>return</c-> <c- mi>42</c-><c- p>;</c->
+	<c- p>}</c->
+	<c- k>else</c-> <c- p>{</c->
+		<c- k>return</c-> <c- mi>2</c-><c- p>;</c->
+	<c- p>}</c->
+<c- p>}</c->
+</pre>
+   <p>One would think that this syntax is not that harmful, and that this only happens to a handful of users and that finding the fix would be easy for a common user to arrive upon.</p>
+   <h3 class="heading settled" data-level="2.1" id="motivation-nope"><span class="secno">2.1. </span><span class="content">Nope.</span><a class="self-link" href="#motivation-nope"></a></h3>
+   <p>I wish.</p>
+   <p>Not only is this syntax obscenely counter-intuitive, almost nobody -- not even Committee Members who attended the meetings in which <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>is_constant_evaluated</c-><c- p>()</c-></code> was standardized -- wrote this correctly the first time they used it (names removed to protect the innocent):</p>
+   <blockquote>
+    <p>why not <code class="highlight"><c- k>if</c-> <c- k>constexpr</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>is_constant_evaluated</c-><c- p>())</c-></code></p>
+   </blockquote>
+   <blockquote>
+    <p><code class="highlight"><c- k>if</c-> <c- k>constexpr</c-> <c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>is_constant_evaluated</c-><c- p>())</c-></code> is the <code class="highlight"><c- k>static_assert</c-><c- p>(</c->false<c- p>)</c-></code> of C++20.</p>
+   </blockquote>
+   <blockquote>
+    <p>why does this code fully inline the consteval function into my runtime output? We’re heavily confused over here</p>
+   </blockquote>
+   <blockquote>
+    <p>I expect that to be a very common mistake</p>
+   </blockquote>
+   <blockquote>
+    <p>can we somehow make <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>is_constant_evaluated</c-><c- p>()</c-></code> not usable in an if constexpr, or warn on it somehow?</p>
+   </blockquote>
+   <blockquote>
+    <p>... lol youre kidding me, right? this makes no sense lmao</p>
+   </blockquote>
+   <blockquote>
+    <p>sweet, a brand new mechanism for introducing subtle, hard-to-find bugs into my code 👌</p>
+   </blockquote>
+   <blockquote>
+    <p>I do not expect anyone to use this correctly the first time around.</p>
+   </blockquote>
+   <p>Even cppreference leaves this Note behind for developers:</p>
+   <blockquote>
+    <p>When directly used as the condition of static_assert declaration or constexpr if statement, <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>is_constant_evaluated</c-><c- p>()</c-></code> always returns true. — <a href="https://en.cppreference.com/w/cpp/types/is_constant_evaluated">cppreference</a></p>
+   </blockquote>
+   <p>There is already a question on Stack Overflow where a user made the mistake and came to some very quick and very alarming conclusions:</p>
+   <blockquote>
+    <p>According to these results, I extracted the following conclusions:</p>
+    <ul>
+     <li data-md>
+      <p>if constexpr (std::is_constant_evaluated()) always evaluates the true branch. Therefore, it makes no sense to use this construct.</p>
+     <li data-md>
+      <p>If the compiler evaluates a variable at compile time, std::is_constant_evaluated()) is true, no matter whether that variable is explicitly annotated constexpr or not.</p>
+    </ul>
+    <p>— <a href="https://stackoverflow.com/questions/54251530/stdis-constant-evaluated-behavior">StackOverflow, metalfox’s question</a></p>
+   </blockquote>
+   <p>Somehow, we have managed to create a feature so baffling to the users that it generates moderately upvoted Stack Overflow traffic within less a month of its Plenary Approval and has compiler developers <a href="https://gcc.gnu.org/bugzilla/show_bug.cgi?id=91428">running to implement warnings for it</a>.</p>
+   <p>A C++Weekly describing this pitfall:</p>
+   <blockquote>
+    <p>Now, the first thing you might be thinking, having looked at this, is "wait shouldn’t this be using <code class="highlight"><c- k>if</c-> <c- k>constexpr</c-></code> here" -- like this -- and what you might notice is that you’re going to get the value <code class="highlight"><c- mi>5</c-></code> returned in all cases...</p>
+    <p>— <a href="https://youtu.be/nkhhV5uSSLk?t=195">Jason Turner, C++Weekly 165</a></p>
+   </blockquote>
+   <p>Is this really a service to our users?</p>
+   <p>This paper proposes that the answer to that particular question is "absolutely not", and that we need a new syntax that rewards user intuition and does not punish them with the esoterica and minutiae of the language for the 99% case for <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>is_constant_evaluated</c-><c- p>()</c-></code>.</p>
    <h2 class="heading settled" data-level="3" id="design"><span class="secno">3. </span><span class="content">Design</span><a class="self-link" href="#design"></a></h2>
-   <p>The design here is fairly straightforward: we go through all algorithms returning <code class="highlight"><c- b>bool</c-></code> in the standard library’s <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-></code> namespace and change it to have a return type similar to the below structure.  This proposal uses the same machinery that other range algorithms like <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>mismatch</c-></code> and friends to produce an <code class="highlight"><c- n>X_result</c-></code> type. Most algorithms only need a <code class="highlight"><c- n>predicate_result</c-></code> type, while others require a little extra information.</p>
-   <h3 class="heading settled" data-level="3.1" id="design-predicate"><span class="secno">3.1. </span><span class="content">Single-Boolean Predicate Returns</span><a class="self-link" href="#design-predicate"></a></h3>
-   <p>The following result structure...</p>
-<pre class="highlight"><c- k>namespace</c-> <c- n>ranges</c-> <c- p>{</c->
-	<c- k>template</c-><c- o>&lt;</c-><c- k>class</c-> <c- nc>I1</c-><c- o>></c->
-	<c- k>struct</c-> <c- n>predicate_result</c-> <c- p>{</c->
-		<c- p>[[</c-><c- n>no_unique_address</c-><c- p>]]</c-> <c- n>I1</c-> <c- n>in</c-><c- p>;</c->
-		<c- b>bool</c-> <c- n>value</c-><c- p>;</c->
-		
-		<c- k>template</c-><c- o>&lt;</c-><c- k>class</c-> <c- nc>II1</c-><c- o>></c->
-			<c- n>requires</c-> <c- n>convertible_to</c-><c- o>&lt;</c-><c- k>const</c-> <c- n>I1</c-><c- o>&amp;</c-><c- p>,</c-> <c- n>II1</c-><c- o>></c->
-			<c- k>operator</c-> <c- n>predicate_result</c-><c- o>&lt;</c-><c- n>II1</c-><c- o>></c-><c- p>()</c-> <c- k>const</c-> <c- o>&amp;</c-> <c- p>{</c->
-				<c- k>return</c-> <c- p>{</c-><c- n>in</c-><c- p>,</c-> <c- n>value</c-><c- p>};</c->
-			<c- p>}</c->
-
-		<c- k>template</c-><c- o>&lt;</c-><c- k>class</c-> <c- nc>II1</c-><c- o>></c->
-			<c- n>requires</c-> <c- n>convertible_to</c-><c- o>&lt;</c-><c- n>I1</c-><c- o>></c-> <c- o>&amp;&amp;</c-> <c- n>convertible_to</c-><c- o>&lt;</c-><c- n>I2</c-><c- o>></c->
-			<c- k>operator</c-> <c- n>predicate_result</c-><c- o>&lt;</c-><c- n>II1</c-><c- o>></c-><c- p>()</c-> <c- o>&amp;&amp;</c-> <c- p>{</c->
-				<c- k>return</c-> <c- p>{</c-><c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>in</c-><c- p>),</c-> <c- n>value</c-><c- p>};</c->
-			<c- p>}</c->
-
-		<c- k>explicit</c-> <c- k>operator</c-> <c- b>bool</c-> <c- p>()</c-> <c- k>const</c-> <c- p>{</c->
-			<c- k>return</c-> <c- n>value</c-><c- p>;</c->
-		<c- p>}</c->
-	<c- p>};</c->
+   <p>The design is very simple and is as follows:</p>
+<pre class="highlight"><c- k>constexpr</c-> <c- b>int</c-> <c- nf>func</c-> <c- p>()</c-> <c- p>{</c->
+	<c- k>if</c-> <c- n>consteval</c-> <c- p>{</c->
+		<c- k>return</c-> <c- mi>42</c-><c- p>;</c->
+	<c- p>}</c->
+	<c- k>else</c-> <c- p>{</c->
+		<c- k>return</c-> <c- mi>5</c-><c- p>;</c->
+	<c- p>}</c->
 <c- p>}</c->
 </pre>
-   <p>... works for the following algorithm return types.</p>
+   <p>This syntax is:</p>
    <ul>
     <li data-md>
-     <p>In Non-modifying Algorithms <a href="http://eel.is/c++draft/alg.nonmodifying">[alg.nonmodifying</a>]:</p>
+     <p>Unambiguous with other features;</p>
     <li data-md>
-     <p><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>all_of</c-></code>;</p>
+     <p>Clean, easy to read, and entirely self-documenting;</p>
     <li data-md>
-     <p><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>any_of</c-></code>;</p>
-    <li data-md>
-     <p>and, <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>none_of</c-></code>.</p>
-    <li data-md>
-     <p>In Sorting and related operations <a href="eel.is/c++draft/alg.sorting">[alg.sorting</a>]:</p>
-    <li data-md>
-     <p><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>is_sorted</c-></code>;</p>
-    <li data-md>
-     <p><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>is_partitioned</c-></code>;</p>
-    <li data-md>
-     <p>and, <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>is_heap</c-></code>.</p>
+     <p>and, provides none of the pitfalls of the previous code.</p>
    </ul>
-   <p>It is notable that <code class="highlight"><c- n>is_sorted</c-></code>, <code class="highlight"><c- n>is_partitioned</c-></code>, and <code class="highlight"><c- n>is_heap</c-></code> all have versions of themselves that return an iterator and also do not have additional complexity requirements specified in the standard over their <code class="highlight"><c- n>is_</c-><c- p>{}</c-><c- n>_until</c-></code> versions. Therefore, it may be prudent to just leave changes to these algorithms off entirely rather than also return both a convenience <code class="highlight"><c- b>bool</c-></code> value and the iterator.</p>
-   <p>Likewise, <code class="highlight"><c- n>any_of</c-></code>, <code class="highlight"><c- n>all_of</c-></code>, and <code class="highlight"><c- n>none_of</c-></code> can be seen as wrappers around the <code class="highlight"><c- n>find_if</c-><c- p>(</c-><c- n>_not</c-><c- p>)</c-></code> algorithms. None of them impose additional complexity requirements, nor do standard libraries today do anything particularly special in the general implementation of these wrappers either. While the information could be returned, simply using a lower-level facility would be suitable in the cases here.</p>
-   <h3 class="heading settled" data-level="3.2" id="design-comparison"><span class="secno">3.2. </span><span class="content">Single-Boolean Comparison Returns</span><a class="self-link" href="#design-comparison"></a></h3>
-   <p>Similarly, the following <code class="highlight"><c- n>comparison_result</c-></code> structure...</p>
-<pre class="highlight"><c- k>namespace</c-> <c- n>ranges</c-> <c- p>{</c->
-	<c- k>template</c-><c- o>&lt;</c-><c- k>class</c-> <c- nc>I1</c-><c- p>,</c-> <c- k>class</c-> <c- nc>I2</c-><c- o>></c->
-	<c- k>struct</c-> <c- n>comparison_result</c-> <c- p>{</c->
-		<c- p>[[</c-><c- n>no_unique_address</c-><c- p>]]</c-> <c- n>I1</c-> <c- n>in1</c-><c- p>;</c->
-		<c- p>[[</c-><c- n>no_unique_address</c-><c- p>]]</c-> <c- n>I2</c-> <c- n>in2</c-><c- p>;</c->
-		<c- b>bool</c-> <c- n>value</c-><c- p>;</c->
-		
-		<c- k>template</c-><c- o>&lt;</c-><c- k>class</c-> <c- nc>II1</c-><c- p>,</c-> <c- k>class</c-> <c- nc>II2</c-><c- o>></c->
-			<c- n>requires</c-> <c- n>convertible_to</c-><c- o>&lt;</c-><c- k>const</c-> <c- n>I1</c-><c- o>&amp;</c-><c- p>,</c-> <c- n>II1</c-><c- o>></c-> <c- o>&amp;&amp;</c-> <c- n>convertible_to</c-><c- o>&lt;</c-><c- k>const</c-> <c- n>I2</c-><c- o>&amp;</c-><c- p>,</c-> <c- n>II2</c-><c- o>></c->
-			<c- k>operator</c-> <c- n>comparison_result</c-><c- o>&lt;</c-><c- n>II1</c-><c- p>,</c-> <c- n>II2</c-><c- o>></c-><c- p>()</c-> <c- k>const</c-> <c- o>&amp;</c-> <c- p>{</c->
-				<c- k>return</c-> <c- p>{</c-><c- n>in1</c-><c- p>,</c-> <c- n>in2</c-><c- p>,</c-> <c- n>value</c-><c- p>};</c->
-			<c- p>}</c->
-
-		<c- k>template</c-><c- o>&lt;</c-><c- k>class</c-> <c- nc>II1</c-><c- p>,</c-> <c- k>class</c-> <c- nc>II2</c-><c- o>></c->
-			<c- n>requires</c-> <c- n>convertible_to</c-><c- o>&lt;</c-><c- n>I1</c-><c- p>,</c-> <c- n>II1</c-><c- o>></c-> <c- o>&amp;&amp;</c-> <c- n>convertible_to</c-><c- o>&lt;</c-><c- n>I2</c-><c- p>,</c-> <c- n>II2</c-><c- o>></c->
-			<c- k>operator</c-> <c- n>predicate_result</c-><c- o>&lt;</c-><c- n>II1</c-><c- p>,</c-> <c- n>II2</c-><c- o>></c-><c- p>()</c-> <c- o>&amp;&amp;</c-> <c- p>{</c->
-				<c- k>return</c-> <c- p>{</c-><c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>in1</c-><c- p>),</c-> <c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>in2</c-><c- p>),</c-> <c- n>value</c-><c- p>};</c->
-			<c- p>}</c->
-
-		<c- k>explicit</c-> <c- k>operator</c-> <c- b>bool</c-> <c- p>()</c-> <c- k>const</c-> <c- p>{</c->
-			<c- k>return</c-> <c- n>value</c-><c- p>;</c->
+   <p>The benefit is that this can also be used to implement the library function, without special compiler built-in magic:</p>
+<pre class="highlight"><c- k>namespace</c-> <c- n>std</c-> <c- p>{</c->
+	<c- k>constexpr</c-> <c- b>bool</c-> <c- n>is_constant_evaluated</c-><c- p>()</c-> <c- k>noexcept</c-> <c- p>{</c->
+		<c- k>if</c-> <c- n>consteval</c-> <c- p>{</c->
+			<c- k>return</c-> true<c- p>;</c->
 		<c- p>}</c->
-	<c- p>};</c->
+		<c- k>else</c-> <c- p>{</c->
+			<c- k>return</c-> false<c- p>;</c->
+		<c- p>}</c->
+	<c- p>}</c->
 <c- p>}</c->
 </pre>
-   <p>... works for algorithms which take 2 ranges.</p>
-   <ul>
-    <li data-md>
-     <p>In Non-modifying Algorithms <a href="http://eel.is/c++draft/alg.nonmodifying">[alg.nonmodifying</a>]:</p>
-    <li data-md>
-     <p><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>equal</c-></code>;</p>
-    <li data-md>
-     <p>and, <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>is_permutation</c-></code>.</p>
-    <li data-md>
-     <p>In Sorting and related operations <a href="eel.is/c++draft/alg.sorting">[alg.sorting</a>]:</p>
-    <li data-md>
-     <p><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>binary_search</c-></code>;</p>
-    <li data-md>
-     <p>and, <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>lexicographic_compare</c-></code>.</p>
-   </ul>
-   <p>Algorithms such as <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>includes</c-></code> are not included in this fix up because that algorithm works with input ranges, and the iterators returned from it by the time the algorithm completes can essentially be empty husks that contain no valuable information. The goal would be to have a well-specified return value for the iterators on algorithm success, where logically that information implies the whole range was examined.</p>
-   <p><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>lexicographic_compare</c-></code> returns whether or not the range is in lexicographic order: an enhancement to that would be to return the incremented-to-the-end <code class="highlight"><c- n>first1</c-></code> and <code class="highlight"><c- n>first2</c-></code> iterators in the case where the algorithm returns <code class="highlight">true</code> for the result. Otherwise, the value of <code class="highlight"><c- n>in1</c-></code> and <code class="highlight"><c- n>in2</c-></code> are unspecified. Similarly for <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>equal</c-></code>: the incremented iterators should be returned from <code class="highlight"><c- n>equal</c-></code> in <code class="highlight"><c- n>in1</c-></code> and <code class="highlight"><c- n>in2</c-></code> if the algorithm returns true: otherwise, the value of the returned iterators is unspecified.</p>
-   <h3 class="heading settled" data-level="3.3" id="design-questions"><span class="secno">3.3. </span><span class="content">Questions</span><a class="self-link" href="#design-questions"></a></h3>
-   <p>Question 1: These algorithms take in a range. We recognize that the result type is likely more ergonomic and efficient in terms of the amount of times an iterator has to be moved to store the result, and so recommended return types that return iterators like the other modified <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-></code> algorithms. Still,</p>
-   <blockquote>
-    <p>is it worthwhile to have the return results return a <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-><c- o>&lt;</c-><c- p>...</c-><c- o>></c-></code> type, rather than just a <code class="highlight"><c- n>result</c-></code> type with the iterators?</p>
-   </blockquote>
-   <p>Question 2: Some of these algorithms are more or less trivial wrappers around their counterparts with no additional complexity requirements or guarantees obtain by metaprogramming checks. These are <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>is_sorted</c-></code>, <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>is_partitioned</c-></code>, and <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>is_heap</c-></code>.</p>
-   <blockquote>
-    <p>Is returning the iterator worth it when there are <code class="highlight"><c- n>X_until</c-></code> versions of all these algorithms which do return the iterator and can be defined as convenience wrappers?</p>
-   </blockquote>
+   <p>The implementation of the library function clearly shows exactly how the feature is intended to be used, in a succinct and beautiful moment where the code is readable by the utmost beginner and absolutely teachable, rather than being a compiler builtin that may or may not be documented by the implementation.</p>
+   <p>Let us not let a chance to have good defaults, understandable code, and clean syntax slip us by. We have a chance to make a storm of confusion for the greater amount of 4 million plus developers be much easier to handle.</p>
+   <p>Please consider <code class="highlight"><c- k>if</c-> <c- n>consteval</c-></code> for C++20.</p>
+   <h2 class="heading settled" data-level="4" id="acknowledgements"><span class="secno">4. </span><span class="content">Acknowledgements</span><a class="self-link" href="#acknowledgements"></a></h2>
+   <p>Thank you to Peter Bindels for running headlong into this problem. Thank you to all the developers at CppCon whose confusion confirmed my own suspicions. Thank you to Barry Revzin for the initial suggestion.</p>
   </main>
 <script>
 (function() {
