@@ -6,7 +6,7 @@ author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
 redirect_from:
   - /vendor/future_cxx/papers/source/n2431.html
-  - /vendor/future_cxx/papers/source/n2400.html
+  - /vendor/future_cxx/papers/source/n2440.html
 hide: true
 ---
 
