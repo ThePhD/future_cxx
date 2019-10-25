@@ -1,11 +1,12 @@
 ---
 title: nodiscard("should have a reason")
 layout: page
-date: September 23rd, 2019
+date: October 24th, 2019
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
+  - Isabella Muerte \<<https://twitter.com/slurpsmadrips/>\>
 redirect_from:
-  - /vendor/future_cxx/papers/source/n2430.html
+  - /vendor/future_cxx/papers/source/NXXXX.html
 hide: true
 ---
 
@@ -73,15 +74,15 @@ div.newnumbered li:before {
 }
 </style>
 
-_**Document**_: n2430  
+_**Document**_: NXXXX  
 _**Audience**_: WG14  
 _**Proposal Category**_: New Features  
-_**Target Audience**_: General Developers, Compiler/Tooling Developers
+_**Target Audience**_: General Developers, Compiler/Tooling Developers  
 _**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/C - nodiscard.html](https://thephd.github.io/vendor/future_cxx/papers/source/C - nodiscard.html)
 
 <p style="text-align: center">
 <span style="font-style: italic; font-weight: bold">Abstract:</span>
-<p>Many functions return a value, however, not all function return values are of equal importance to the caller. The recent `[[nodiscard]]` attribute allows compilers to issue a diagnostics, but only hands the user a generic error message. This proposal enhances the `[[nodiscard]]` attribute in the same manner as the `[[deprecated]]` attribute, giving developers the same power to guide their users to better APIs with the aid of the compiler by providing a `string-literal` attribute argument clause.</p>
+<p>Many functions return a value, however, not all function return values are of equal importance to the caller. The recent `[[nodiscard]]` attribute allows compilers to issue a diagnostics, but only hands the user a generic error message. This proposal enhances the `[[nodiscard]]` attribute in the same manner as the `[[deprecated]]` attribute, giving developers the same power to guide their users to better APIs with the aid of the compiler by providing a `string literal` attribute argument clause.</p>
 </p>
 
 
@@ -124,9 +125,9 @@ const int kHandles = ...;
 int main (int, char*[]) {
 
   foo* foo_handles[kHandles + 1] = { };
-  foo_handles[0] = create(BASE_FOO, NULL);
+  foo_handles[0] = foo_create(BASE_FOO, NULL);
   for (int i = 1; i < kHandles; ++i) {
-    foo_handles[i] = create(FOO_LINK_TYPE, foo_handles[0])
+    foo_handles[i] = foo_create(FOO_LINK_TYPE, foo_handles[0])
   }
   
   /* sometime later */
@@ -158,9 +159,9 @@ const int kHandles = ...;
 int main (int, char*[]) {
 
   struct foo* foo_handles[kHandles + 1] = { };
-  foo_handles[0] = create(BASE_FOO, NULL);
+  foo_handles[0] = foo_create(BASE_FOO, NULL);
   for (int i = 1; i < kHandles; ++i) {
-    foo_handles[i] = create(FOO_LINK_TYPE, foo_handles[0])
+    foo_handles[i] = foo_create(FOO_LINK_TYPE, foo_handles[0])
   }
   
   /* sometime later */
@@ -204,27 +205,28 @@ Rewrite §6.7.11.2 "The nodiscard attribute"'s **Constraint** subsection as foll
 > The nodiscard attribute shall be applied to the identifier in a function declarator or to the definition of a structure, union, or enumeration type. It shall appear at most once in each attribute list. If an attribute argument clause is present, it shall have the form:
 > 
 > ( *string-literal* )
+
 </ins>
 
-Add additional clauses in the **Semantics** subsection as follows:
+Add a clause just beneath the first clause in the **Recommended Practice** subsection as follows:
 
 <ins>
-> A name or entity declared without the nodiscard attribute can later be redeclared with the attribute and vice-versa. Redeclarations using different forms of the attribute (with or without the attribute-argument-clause or with different attribute-argument-clauses) are allowed.
-> 
-> [  Note: Thus, an entity initially declared without the attribute can be marked as nodiscard by a subsequent redeclaration. However, after an entity is marked as nodiscard, later redeclarations do not remove the nodiscard from the entity. —  end note  ]
+> The diagnostic message may include text provided by the string literal within the attribute argument clause of any nodiscard attribute applied to the name or entity.
+
 </ins>
 
 Add a third example after the first two in the **Recommended Practice** subsection as follows:
 
 <ins>
-> ```c++
-> [[nodiscard("must check armed state")]] 
-> bool arm_detonator(int);
-> 
-> void call(void) {
->   arm_detonator(3);
->   detonate();
-> }
-> ```
-> A diagnostic for the call to `arm_detonator` using the *string-literal* in the *attribute-argument-clause* is encouraged.
+> > ```c++
+> > [[nodiscard("must check armed state")]] 
+> > bool arm_detonator(int);
+> > 
+> > void call(void) {
+> >   arm_detonator(3);
+> >   detonate();
+> > }
+> > ```
+> > A diagnostic for the call to `arm_detonator` using the *string literal* `"must check armed state"` from the *attribute argument clause* is encouraged.
+
 </ins>

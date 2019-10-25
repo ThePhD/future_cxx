@@ -7,6 +7,7 @@ author:
 redirect_from:
   - /vendor/future_cxx/papers/source/n2431.html
   - /vendor/future_cxx/papers/source/n2440.html
+  - /vendor/future_cxx/papers/source/C - Efficient CharacterConversions.html
 hide: true
 ---
 
