@@ -188,7 +188,7 @@ Adding a reason to nodiscard allows implementers of the standard library, librar
 
 # Implementation Experience
 
-This is in the official C++ Standard, and has been [merged into Clang already](http://lists.llvm.org/pipermail/cfe-commits/Week-of-Mon-20190715/280158.html). A patch is out for [GCC](https://gcc.gnu.org/ml/gcc-patches/2019-09/msg00858.html). It would be good to maintain parity with C++ to allow headers that work in both languages to continue to use the same syntax, since this is going to be an increasingly useful existing practice.
+This is in the official C++ Standard, and has been [merged into Clang already](http://lists.llvm.org/pipermail/cfe-commits/Week-of-Mon-20190715/280158.html) as well as [merged into GCC](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=91368). It would be good to maintain parity with C++ to allow headers that work in both languages to continue to use the same syntax, since this is going to be an increasingly useful existing practice.
 
 
 
