@@ -6,7 +6,8 @@ author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
   - Isabella Muerte \<<https://twitter.com/slurpsmadrips/>\>
 redirect_from:
-  - /vendor/future_cxx/papers/source/NXXXX.html
+  - /vendor/future_cxx/papers/source/n2431.html
+  - /vendor/future_cxx/papers/source/n2448.html
 hide: true
 ---
 
@@ -74,11 +75,12 @@ div.newnumbered li:before {
 }
 </style>
 
-_**Document**_: NXXXX  
+_**Document**_: n2448  
+_**Previous Revisions**_: n2430  
 _**Audience**_: WG14  
 _**Proposal Category**_: New Features  
 _**Target Audience**_: General Developers, Compiler/Tooling Developers  
-_**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/C - nodiscard.html](https://thephd.github.io/vendor/future_cxx/papers/source/C - nodiscard.html)
+_**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/n2448.html](https://thephd.github.io/vendor/future_cxx/papers/source/n2448.html)
 
 <p style="text-align: center">
 <span style="font-style: italic; font-weight: bold">Abstract:</span>
