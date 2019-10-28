@@ -5,6 +5,7 @@ date: October 1st, 2019
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
 redirect_from:
+  - /vendor/future_cxx/papers/source/nXXX1.html
   - /vendor/future_cxx/papers/source/n2431.html
   - /vendor/future_cxx/papers/source/n2440.html
   - /vendor/future_cxx/papers/source/C - Efficient CharacterConversions.html
@@ -446,12 +447,12 @@ The forms of such functions would be as follows:
 
 ```cpp
 /* Multibyte Character, Single Unit (UTF8): */
-size_t mbrtoc8(char* pc8, const char* src, size_t src_len, mbstate_t* state);
-size_t c8rtomb(char* pc, const char* src, size_t src_len, mbstate_t* state);
+size_t mbrtoc8(char* restrict pc8, const char* restrict src, size_t src_len, mbstate_t* restrict state);
+size_t c8rtomb(char* restrict pc, const char* restrict src, size_t src_len, mbstate_t* restrict state);
 
 /* Wide Character, Single Unit: */
-size_t wcrtocX(charX_t* pcX, const wchar_t* src, size_t src_len, mbstate_t* state);
-size_t cXrtowc(wchar_t* pwc, const charX_t* src, size_t src_len, mbstate_t* state);
+size_t wcrtocX(charX_t* restrict pcX, const wchar_t* restrict src, size_t src_len, mbstate_t* restrict state);
+size_t cXrtowc(wchar_t* restrict pwc, const charX_t* restrict src, size_t src_len, mbstate_t* restrict state);
 ```
 
 where `X` and `charX_t` is one of { `8`, `char` }, { `16`, `char16_t` }, or { `32`, `char32_t` } for the function's specification.
@@ -483,16 +484,16 @@ The forms of such functions would be as follows:
 
 ```cpp
 /* Multibyte Character Strings: */
-size_t mbstocXs(charX_t* dest, const char* src, size_t dest_len);
-size_t cXstombs(char* dest, const charX_t* src, size_t dest_len);
-size_t mbsrtocXs(charX_t* dest, const char** src, size_t dest_len, mbstate_t* state);
-size_t cXsrtombs(char* dest, const charX_t** src, size_t dest_len, mbstate_t* state);
+size_t mbstocXs(charX_t* restrict dest, const char* restrict src, size_t dest_len);
+size_t cXstombs(char* restrict dest, const charX_t* restrict src, size_t dest_len);
+size_t mbsrtocXs(charX_t* restrict dest, const char** restrict src, size_t dest_len, mbstate_t* restrict state);
+size_t cXsrtombs(char* dest, const charX_t** restrict src, size_t dest_len, mbstate_t* restrict state);
 
 /* Wide Character Strings: */
-size_t wcstocXs(charX_t* dest, const wchar_t* src, size_t dest_len);
-size_t cXstowcs(wchar_t* dest, const charX_t* src, size_t dest_len);
-size_t wcsrtocXs(charX_t* dest, const wchar_t** src, size_t dest_len, mbstate_t* state);
-size_t cXsrtowcs(wchar_t* dest, const charX_t** src, size_t dest_len, mbstate_t* state);
+size_t wcstocXs(charX_t* restrict dest, const wchar_t* restrict src, size_t dest_len);
+size_t cXstowcs(wchar_t* restrict dest, const charX_t* restrict src, size_t dest_len);
+size_t wcsrtocXs(charX_t* restrict dest, const wchar_t** restrict src, size_t dest_len, mbstate_t* state);
+size_t cXsrtowcs(wchar_t* restrict dest, const charX_t** restrict src, size_t dest_len, mbstate_t* restrict state);
 ```
 
 where `X` and `charX_t` is one of { `8`, `char` }, { `16`, `char16_t` }, or { `32`, `char32_t` } for the function's specification.
@@ -535,16 +536,16 @@ The forms of such functions would be as follows:
 
 ```cpp
 /* Multibyte Character Strings: */
-size_t mbsntocXs(charX_t* dest, const char* src, size_t dest_len, size_t src_len);
-size_t cXsntombs(char* dest, const charX_t* src, size_t dest_len, size_t src_len);
-size_t mbsnrtocXs(charX_t* dest, const char** src, size_t dest_len, size_t src_len, mbstate_t* state);
-size_t cXsnrtombs(char* dest, const charX_t** src, size_t dest_len, size_t src_len, mbstate_t* state);
+size_t mbsntocXs(charX_t* restrict dest, const char* restrict src, size_t dest_len, size_t src_len);
+size_t cXsntombs(char* restrict dest, const charX_t* restrict src, size_t dest_len, size_t src_len);
+size_t mbsnrtocXs(charX_t* restrict dest, const char** restrict src, size_t dest_len, size_t src_len, mbstate_t* restrict state);
+size_t cXsnrtombs(char* restrict dest, const charX_t** restrict src, size_t dest_len, size_t src_len, mbstate_t* restrict state);
 
 /* Wide Character Strings: */
-size_t wcsntocXs(charX_t* dest, const wchar_t* src, size_t dest_len);
-size_t cXsntowcs(wchar_t* dest, const charX_t* src, size_t dest_len);
-size_t wcsnrtocXs(charX_t* dest, const wchar_t** src, size_t dest_len, size_t src_len, mbstate_t* state);
-size_t cXsnrtowcs(wchar_t* dest, const charX_t** src, size_t dest_len, size_t src_len, mbstate_t* state);
+size_t wcsntocXs(charX_t* restrict dest, const wchar_t* restrict src, size_t dest_len);
+size_t cXsntowcs(wchar_t* restrict dest, const charX_t* restrict src, size_t dest_len);
+size_t wcsnrtocXs(charX_t* restrict dest, const wchar_t** restrict src, size_t dest_len, size_t src_len, mbstate_t* restrict state);
+size_t cXsnrtowcs(wchar_t* restrict dest, const charX_t** restrict src, size_t dest_len, size_t src_len, mbstate_t* restrict state);
 ```
 
 where `X` and `charX_t` is one of { `8`, `char` }, { `16`, `char16_t` }, or { `32`, `char32_t` } for the function’s specification. Similar additions can be made for the currently existing `mbs(r)towcs` and `wcs(r)tombs` functions as well.
