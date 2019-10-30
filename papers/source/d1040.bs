@@ -7,7 +7,7 @@ Status: D
 Group: WG21
 URL: 
 !Latest: <a href="https://thephd.github.io/vendor/future_cxx/papers/d1040.html">https://thephd.github.io/vendor/future_cxx/papers/d1040.html</a>
-!Implementation: <a href="https://github.com/ThePhD/embed-implementation">https://github.com/ThePhD/embed-implementation</a>
+!Implementation: <a href="https://github.com/ThePhD/embed">https://github.com/ThePhD/embed</a>
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 !Reply To: <a href="phdofthehouse@gmail.com">JeanHeyd Meneide</a>, <a href="https://twitter.com/thephantomderp">@thephantomderp</a>
@@ -24,6 +24,14 @@ path: wording_style.bs
 
 
 # Revision History # {#changelog}
+
+
+
+## Revision 5 - October 31st, 2019 ## {#changelog-r5}
+
+	- Added `#embed` and `#embed_str` preprocessor options.
+	- Added publicly available implementation.
+	- Waiting for EWG(I) to pull the trigger for or against this one.
 
 
 
@@ -134,14 +142,35 @@ int main (int char*[]) {
 ```
 		</td>
 		<td>
+‏‏<br/>
+‏‏<br/>
+‏‏<br/>
+‏‏<br/>
 ```c++
 #include <embed>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 int main (int, char*[]) {
 	constexpr std::span<const std::byte> 
 	fxaa_binary = 
 		std::embed( "fxaa.spirv" );
 	
+
+
 	// assert this is a SPIRV 
 	// file, at compile-time	
 	static_assert(fxaa_binary[0] == 0x03 
@@ -174,30 +203,33 @@ int main (int, char*[]) {
 </table>
 
 
-Every C and C++ programmer -- at some point -- attempts to `#include` large chunks of non-C++ data into their code. Of course, `#include` expects the format of the data to be source code, and thusly the program fails with spectacular lexer errors. Thusly, many different tools and practices were adapted to handle this, as far back as 1995 with the `xxd` tool. Many industries need such functionality, including (but hardly limited to):
+A very large amount of C and C++ programmer -- at some point -- attempts to `#include` large chunks of non-C++ data into their code. Of course, `#include` expects the format of the data to be source code, and thusly the program fails with spectacular lexer errors. Thusly, many different tools and practices were adapted to handle this, as far back as 1995 with the `xxd` tool. Many industries need such functionality, including (but hardly limited to):
 
 - Financial Development
 	- representing coefficients and numeric constants for performance-critical algorithms;
 - Game Development
-	- assets that do not change at runtime, such as icons, fixed textures and other data
+	- assets that do not change at runtime, such as icons, fixed textures and other data;
 	- Shader and scripting code;
 - Embedded Development
-	- storing large chunks of binary, such as firmware, in a well-compressed format
+	- storing large chunks of binary, such as firmware, in a well-compressed format;
 	- placing data in memory on chips and systems that do not have an operating system or file system;
 - Application Development
 	- compressed binary blobs representing data
-	- non-C++ script code that is not changed at runtime; and
+	- non-C++ script code that is not changed at runtime;
 - Server Development
-	- configuration parameters which are known at build-time and are baked in to set limits and give compile-time information to tweak performance under certain loads
-	- SSL/TLS Certificates hard-coded into your executable (requiring a rebuild and potential authorization before deploying new certificates).
+	- configuration parameters which are known at build-time and are baked in to set limits and give compile-time information to tweak performance under certain loads;
+	- SSL/TLS Certificates hard-coded into your executable (requiring a rebuild and potential authorization before deploying new certificates), and;
+- Static Analyzers
+	- Static analyzers suffer -- much like their binary code generating friends -- from having to parse extremely large array literals;
+	- Reduces memory pressure and enables better information tracking and potential sanitization (file source is not lost in build system).
 
-In the pursuit of this goal, these tools have proven to have inadequacies and contribute poorly to the C++ development cycle as it continues to scale up for larger and better low-end devices and high-performance machines, bogging developers down with menial build tasks and trying to cover-up disappointing differences between platforms.
+In the pursuit of this goal, these tools have proven to have inadequacies and contribute poorly to the C++ development cycle as it continues to scale up for larger and better low-end devices and high-performance machines, bogging developers down with menial build tasks and trying to cover-up disappointing differences between platforms. It also absolutely destroys state-of-the-art compilers due to the extremely high memory overhead of producing an Abstract Syntax Tree for a braced initializer list of several tens of thousands of integral constants with numeric values at 255 or less.
 
 MongoDB has been kind enough to share some of their code [[#appendix-mongo|below]]. Other companies have had their example code anonymized or simply not included directly out of shame for the things they need to do to support their workflows. The author thanks MongoDB for their courage and their support for `std::embed`.
 
 The request for some form of `#include_string` or similar dates back quite a long time, with one of the oldest stack overflow questions asked-and-answered about it dating back nearly 10 years. Predating even that is a plethora of mailing list posts and forum posts asking how to get script code and other things that are not likely to change into the binary.
 
-This paper proposes `<embed>` to make this process much more efficient, portable, and streamlined.
+This paper proposes `<embed>` to make this process much more efficient, portable, and streamlined. It also proposes a preprocessor directive, `#embed`.
 
 
 
@@ -205,6 +237,8 @@ This paper proposes `<embed>` to make this process much more efficient, portable
 # Scope and Impact # {#scope}
 
 `consteval span<const byte> embed( string_view resource_identifier )` is an extension to the language proposed entirely as a library construct. The goal is to have it implemented with compiler intrinsics, builtins, or other suitable mechanisms. It does not affect the language. The proposed header to expose this functionality is `<embed>`, making the feature entirely-opt-in by checking if either the proposed feature test macro or header exists.
+
+Similarly, the preprocessor directive `#embed` is an extension to the language.
 
 
 
@@ -293,17 +327,50 @@ Because the proposal used a string literal, several questions came up as to the 
 
 ## Design Goals ## {#design-goals}
 
-Because of the aforementioned reasons, it seems more prudent to take a "compiler intrinsic"/"magic function" approach. The function takes the form:
+Because of the aforementioned reasons, it seems more prudent to take a "compiler intrinsic"/"magic function" approach. The function overload takes the form:
 
 <xmp>
 template <typename T = byte>
 consteval span<const T> embed( 
 	string_view resource_identifier
 );
+
+template <typename T = byte>
+consteval span<const T> embed( 
+	string_view resource_identifier, size_t limit
+);
 </xmp>
 
-`resource_identifier` is a `string_view` processed in an implementation-defined manner to find and pull resources into C++ at constexpr time. The most obvious source will be the file system, with the intention of having this evaluated as a core constant expression. We do not attempt to restrict the `string_view` to a specific subset: whatever the implementation accepts (typically expected to be a relative or absolute file path, but can be other identification scheme), the implementation should use.
+`resource_identifier` is a `string_view` processed in an implementation-defined manner to find and pull resources into C++ at constexpr time. `limit` is the maximum number of bytes the function call can produce (but it may produce less). The most obvious source will be the file system, with the intention of having this evaluated as a core constant expression. We do not attempt to restrict the `string_view` to a specific subset: whatever the implementation accepts (typically expected to be a relative or absolute file path, but can be other identification scheme), the implementation should use.
 
+There is also a form for use with the preprocessor, which eases the burden of dependency scanning tools for simple functionality:
+
+<xmp>
+constexpr const unsigned char 
+foo_txt_arr[] =
+	// non-null-terminated
+	#embed <foo.txt>
+;
+
+constexpr const unsigned char 
+data_bin_arr[] =
+	// non-null-terminated, 24 bytes maximum
+	#embed 24 "data.bin"
+;
+
+constexpr const char 
+c_string_data_bin_arr[] =
+	// null-terminated
+	#embed_str "foo.txt"
+;
+constexpr const char 
+c_string_data_bin_arr[] =
+	// null-terminated, 42 bytes maximum
+	#embed_str 42 <data.bin>
+;
+</xmp>
+
+This form is necessary to allow for current-gen dependency tracking to keep up, and also allows distributed compilation tools (such as `distcc` and `icecc`) to not have to scan for uses of `embed` that may result in false positive. It is also guaranteed to be evaluated before performing full Phase 7 compilation and without needing to consult the compiler's Constant Evaluation engine.
 
 ### Implementation Defined ### {#design-goals-impldefn}
 
@@ -320,6 +387,11 @@ Creating two separate forms or options for loading data that is meant to be a "s
 ### Constexpr Compatibility ### {#design-goals-constexpr}
 
 The entire implementation must be usable in a `constexpr` context. It is not just for the purposes of processing the data at compile time, but because it matches existing implementations that store strings and huge array literals into a variable via `#include`. These variables can be `constexpr`: to not have a constexpr implementation is to leave many of the programmers who utilize this behavior without a proper standardized tool.
+
+
+### Optional Limit ### {#design-goals-limit}
+
+Consider some file-based resources that are otherwise un-sizeable and un-seek/tellable in various implementations such as `/dev/urandom`. Telling the compiler to go fetch data from this resource infinitely can result in compiler lockups or worse: therefore, the user can specify another parameter -- a numeric limit to stop things.
 
 
 ### Statically Polymorphic ### {#design-goals-templated}
@@ -348,11 +420,58 @@ The wording also explicitly disallows the usage of the function outside of a cor
 
 ## Proposed Feature Test Macro ## {#wording-feature}
 
-The proposed feature test macro is `__cpp_lib_embed`.
+The proposed feature test macros are `__cpp_lib_embed` for the library and `__cpp_embed` for the preprocessor functionality.
 
 
 
 ## Proposed Wording ## {#wording-proposed}
+
+Append to §14.8.1 Predefined macro names [**cpp.predefined**]'s **Table 16** with one additional entry:
+
+<blockquote>
+<table>
+<tr>
+	<th>Macro name</th>
+	<th>Value</th>
+</tr>
+<tr>
+	<td><ins>__cpp_embed</ins></td>
+	<td><ins>202006L</ins></td>
+</tr>
+</table>
+</blockquote>
+
+Add a new section §15.4 Resource inclusion [**cpp.res**]:
+
+<blockquote>
+<ins>
+**15.4 Resource inclusion** [**cpp.res**]
+
+<sup>1</sup> A `#embed` directive shall identify a resource file that can be processed by the implementation.
+
+<sup>2</sup> A preprocessing directive of the form
+
+<p>
+&emsp; &emsp; &num; embed <i>digit-sequence</i><sub>opt</sub> `<` <i>h-char-sequence</i> `>` <i>new-line</i>
+</p>
+<p>
+&emsp; &emsp; &num; embed <i>digit-sequence</i><sub>opt</sub> `"` <i>q-char-sequence</i> `"` <i>new-line</i>
+</p>
+<p>
+&emsp; &emsp; &num; embed <i>digit-sequence</i><sub>opt</sub> `<` <i>h-char-sequence</i> `>` <i>new-line</i>
+</p>
+<p>
+&emsp; &emsp; &num; embed <i>digit-sequence</i><sub>opt</sub> `"` <i>q-char-sequence</i> `"` <i>new-line</i>
+</p>
+
+searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the `<` and `>` or the `"` and `"` delimiters. How the places are specified or the resource identified is implementation-defined.
+
+<sup>3</sup> An `#embed` directive is replaced by the entire contents of the resource as if with a <i>brace-initializer-list</i> containing a sequence of <i>integer-literal</i>s. The contents are mapped in an implementation-defined manner to that <i>integer-literal</i> sequence. Each value of the <i>integer-literal</i> will not be greater than 2<sup><i>N</i></sup>, where <i>N</i> is the width of unsigned char [<b>[tab:basic.fundamental.width](http://eel.is/c++draft/basic.fundamental#tab:basic.fundamental.width)</b>].
+
+<sup>4</sup> If a <i>digit-sequence</i> is specified, it shall be positive and the replacement of the directive will be as if the mapped contents within the <i>brace-initializer-list</i> contain at most <i>digit-sequence</i> <i>integer-literal</i>s.
+</ins>
+</blockquote>
+
 
 Append to §16.3.1 General [**support.limits.general**]'s **Table 35** one additional entry:
 
@@ -364,7 +483,7 @@ Append to §16.3.1 General [**support.limits.general**]'s **Table 35** one addit
 </tr>
 <tr>
 	<td><ins>__cpp_lib_embed</ins></td>
-	<td><ins>201902L</ins></td>
+	<td><ins>202006L</ins></td>
 </tr>
 </table>
 </blockquote>
@@ -394,7 +513,7 @@ Add a new section §19.20 Compile-time Resources [**const.res**]:
 
 **19.20.1** In general [**const.res.general**]
 
-Compile-time resources allow the implementation to retrieve data into a program from implementation-defined sources.
+Compile-time resources allow the implementation to retrieve data into a program from implementation-defined places.
 
 **19.20.2** Header `embed` synopsis [**embed.syn**]
 
@@ -402,6 +521,9 @@ Compile-time resources allow the implementation to retrieve data into a program 
 namespace std {
 	template <typename T>
 	consteval span<const T> embed( string_view resource_identifier ) noexcept;
+
+	template <typename T>
+	consteval span<const T> embed( string_view resource_identifier, size_t limit ) noexcept;
 }
 ```
 
@@ -411,14 +533,19 @@ namespace std {
 namespace std {
 	template <typename T = byte>
 	consteval span<const T> embed( string_view resource_identifier ) noexcept;
+
+	template <typename T = byte>
+	consteval span<const T> embed( string_view resource_identifier, size_t limit ) noexcept;
 }
 ```
 
-<sup>1</sup> Constraints: `T` shall satisfy `std::is_trivial_v<T>`. [<i>Note—</i> This constraint ensures that types with non-trivial destructors do not need to be run for the compiler-provided unknown storage. <i>— end Note</i>].
+<sup>1</sup> Mandates: `std::is_trivial_v<T>` is true. [ <i>Note—</i> This provides that types with non-trivial destructors do not need to be run for the implementation-provided storage. <i>— end Note</i> ].
 
-<sup>2</sup> Returns: A contiguous sequence of `T` representing the resource provided by the implementation.
+<sup>2</sup> <i>Returns: A contiguous sequence of `T` representing the resource provided by the implementation.
 
-<sup>3</sup> Remarks: Accepts a `string_view` whose value is used to search a sequence of implementation-defined places for a resource identified uniquely by the resource identifier specified by the `string_view` argument. The entire contents are made available as a contiguous sequence of `T` in the returned `span`. If the implementation cannot find the resource specified after exhausting the sequence of implementation-defined search locations, the implementation shall error. [<i>Note—</i> Implementations should provide a mechanism similar to include paths to find the specified resource. <i>— end Note</i>]
+<sup>3</sup> <i>Ensures</i>: `.size()` of the returned object is `<= limit` for the second overload.
+
+<sup>4</sup> <i>Remarks</i>: The value of `resource_identifier` is used to search a sequence of implementation-defined places for a resource identified uniquely by the resource identifier specified by `resource_identifier`. The contents are made available as a contiguous sequence of `T` in the returned `span`, up to and including `limit`. If the implementation cannot find the resource specified after exhausting the sequence of implementation-defined search locations, the program is ill-formed. [ <i>Note—</i> Implementations should provide a mechanism similar to include paths to find the specified resource. <i>— end Note</i> ]
 </ins>
 </blockquote>
 
