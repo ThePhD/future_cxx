@@ -3,7 +3,7 @@ Title: reconstructible_range - a concept for putting ranges back together
 Shortname: P1664
 Revision: 1
 Audience: LEWG, LWG
-Status: D
+Status: P
 Group: WG21
 URL:
 !Target: C++20
@@ -11,7 +11,7 @@ URL:
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Hannes Hauswedell, h2@fsfe.org
-Date: 2019-11-06
+Date: 2019-11-07
 Markup Shorthands: markdown yes, biblio yes, markup yes
 Abstract: This paper proposes new concepts to the Standard Library for ranges called Reconstructible Ranges for the purpose of ensuring a range/view broken down into its two iterators can be "glued" back together using a constructor taking its iterator and sentinel type.
 </pre>
@@ -31,6 +31,7 @@ path: wording_style.bs
 
 	- Change to `snake_case` concepts.
 	- Update wording to target [[n4835]].
+	- Moved by LWG! 🎉
 
 
 
@@ -242,13 +243,13 @@ There is also a problem where there are a wide variety of ranges that could conc
 The design is simple and is given in 2 exposition-only concepts added to the standard:
 
 ```
-template <typename R>
+template <class R>
 concept pair-reconstructible-range =
     ranges::range<R> &&
     forwarding-range<remove_reference_t<R>> &&
     constructible_from<R, ranges::iterator_t<R>, ranges::sentinel_t<R>>;
 
-template <typename R>
+template <class R>
 concept reconstructible-range =
     ranges::range<R> &&
     forwarding-range<remove_reference_t<R>> &&
@@ -346,45 +347,37 @@ For ease of reading, the necessary portions of other proposal's wording is dupli
 
 ## Proposed Library Wording ## {#wording-library}
 
-Append to §17.3.1 General [[support.limits.general](http://eel.is/c++draft/support.limits.general)]'s **Table 35** one additional entry:
+Add a feature test macro `__cpp_lib_reconstructible_range`.
+
+Insert into §24.4.2 Ranges [[range.range](http://eel.is/c++draft/range.req#range.range)]'s after paragraph 7, one additional paragraph:
 
 <blockquote>
-<table>
-<tr>
-	<th>Macro name</th>
-	<th>Value</th>
-	<th>Header(s)</th>
-</tr>
-<tr>
-	<td><ins>__cpp_lib_reconstructible_range</ins></td>
-	<td><ins>201911L</ins></td>
-	<td><ins>`<string_view>`, <br/>`<ranges>`, `<span>`</ins></td>
-</tr>
-</table>
-</blockquote>
-
-Insert into §24.4.2 Ranges [[range.range](http://eel.is/c++draft/range.req#range.range)]'s after clause 7, one additional clause:
-
-<blockquote>
-<ins><sup>8</sup> The exposition-only <i>pair-reconstructible-range</i> and <i>reconstructible-range</i> concepts denote ranges whose iterator and sentinel pair can be used to efficiently construct an object of the type from which they originated.
+<ins><sup>8</sup> The exposition-only <i>pair-reconstructible-range</i> and <i>reconstructible-range</i> concepts describe the requirements on ranges that are efficiently constructible from values of their iterator and sentinel types.
 
 ```
-template <typename R>
-concept pair-reconstructible-range =
+template <class R>
+concept pair-reconstructible-range =    // exposition only
     ranges::range<R> &&
     forwarding-range<remove_reference_t<R>> &&
-    constructible_from<R, ranges::iterator_t<R>, ranges::sentinel_t<R>>;
+    constructible_from<
+        remove_cvref_t<R>, 
+        ranges::iterator_t<R>, 
+        ranges::sentinel_t<R>
+    >;
 
-template <typename R>
-concept reconstructible-range =
+template <class R>
+concept reconstructible-range =        // exposition only
     ranges::range<R> &&
     forwarding-range<remove_reference_t<R>> &&
-    constructible_from<R, ranges::subrange<ranges::iterator_t<R>, ranges::sentinel_t<R>>>;
+    constructible_from<
+        remove_cvref_t<R>, 
+        ranges::subrange<ranges::iterator_t<R>, ranges::sentinel_t<R>>
+    >;
 ```
 </ins>
 </blockquote>
 
-Add to §24.6.1.2 Class template `empty_view` [[range.empty.view](http://eel.is/c++draft/range.empty.view)], a constructor in the synopsis and a new clause for constructor definitions:
+Add to §24.6.1.2 Class template `empty_view` [[range.empty.view](http://eel.is/c++draft/range.empty.view)], a constructor in the synopsis and a new paragraph for constructor definitions:
 
 <blockquote>
 ```
@@ -396,8 +389,8 @@ namespace std::ranges {
 ```
 <ins>
 ```
-    constexpr empty_view() noexcept = default;
-    constexpr empty_view(T* first, T* last) noexcept;
+    empty_view() = default;
+    constexpr empty_view(T* first, T* last);
 ```
 </ins>
 ```
@@ -415,15 +408,16 @@ namespace std::ranges {
 <ins>
 <p>**24.6.1.3** **Constructors** <span style="float:right">[**range.empty.cons**]</span></p>
 ```
-empty_view(T* first, T* last) noexcept;
+constexpr empty_view(T* first, T* last);
 ```
-<p><sup>1</sup> <i>Expects:</i> `first == last`.</p>
-<p><sup>2</sup> <i>Effects:</i> none.</p>
+<p><sup>1</sup> <i>Expects:</i> `first == last` is `true`.</p>
+<p><sup>2</sup> <i>Effects:</i> None.</p>
+<p><sup>3</sup> <i>Throws:</i> Nothing.</p>
 </ins>
 </blockquote>
 
 
-Add to §24.6.3 Class template `iota_view` [[range.iota.view](http://eel.is/c++draft/range.iota.view)]'s clause 2, a constructor to the synopsis:
+Add to §24.6.3 Class template `iota_view` [[range.iota.view](http://eel.is/c++draft/range.iota.view)]'s paragraph 2, a constructor to the synopsis:
 
 <blockquote>
 ```
@@ -453,7 +447,7 @@ namespace std::ranges {
 ```
 <ins>
 ```
-    constexpr iota_view(iterator first, sentinel last);
+    constexpr iota_view(iterator first, sentinel last) : iota_view(*first, last.bound_) {}
 ```
 </ins>
 ```
@@ -463,8 +457,8 @@ namespace std::ranges {
 ```
 <ins>
 ```
-    constexpr friend iterator begin(iota_view v);
-    constexpr friend auto end(iota_view v);
+    constexpr friend iterator begin(iota_view v) { return v.begin(); }
+    constexpr friend auto end(iota_view v) { return v.end(); }
 ```
 </ins>
 ```
@@ -482,56 +476,27 @@ namespace std::ranges {
 ```
 </blockquote>
 
-Add to §24.6.3 Class template `iota_view` [[range.iota.view](http://eel.is/c++draft/range.iota.view)], after clause 8, a constructor:
-
-<blockquote>
-<ins>
-```
-constexpr iota_view(iterator first, sentinel last);
-```
-<p><sup>9</sup> <i>Effects:</i> Equivalent to: `iota_view(*first, last.bound_)`</p>
-</ins>
-</blockquote>
-
-Add to §24.6.3 Class template `iota_view` [[range.iota.view](http://eel.is/c++draft/range.iota.view)], after clause 11 (old) / 12 (new):
-
-<blockquote>
-<ins>
-```
-constexpr friend iterator begin(iota_view v);
-```
-<p><sup>13</sup> <i>Effects:</i> Equivalent to: `return v.begin();`</p>
-
-```
-constexpr friend auto end(iota_view v);
-```
-<p><sup>14</sup> <i>Effects:</i> Equivalent to: `return v.end();`</p>
-</ins>
-</blockquote>
-
 Modify §24.7.6.4 `views::take` [[range.take.adaptor](http://eel.is/c++draft/range.take.adaptor)] as follows:
 
 <blockquote>
-<p><sup>1</sup> The name `views::take` denotes a a range adaptor object ([range.adaptor.object]). <del>For some subexpressions `E` and `F`, the expression `views::take(E, F)` is expression-equivalent to `take_­view{E, F}`.</del></p>
+<p><sup>1</sup> The name `views::take` denotes a range adaptor object ([range.adaptor.object]). <del>For some subexpressions `E` and `F`, the expression `views::take(E, F)` is expression-equivalent to `take_­view{E, F}`.</del></p>
 <p><ins><sup>2</sup> Let `E` and `F` be expressions, and let T be `remove_cvref_t<decltype((E))>`. The expression `views::take(E, F)` is expression-equivalent to:</ins></p>
 <dl>
-	<dd><ins>— `T{ranges::begin(E), ranges::begin(E) + min<iter_­difference_­t<ranges::iterator_t<decltype((E))>>>(ranges::size(E), F)}` if `T` models `ranges::random_access_range`, `ranges::sized_range` and <i>pair-reconstructible-range</i>;</ins></dd>
-	<dd><ins>— `T{ranges::subrange{ranges::begin(E), ranges::begin(E) + min<iter_­difference_­t<ranges::iterator_t<decltype((E))>>>(ranges::size(E), F)}}` if `T` models `ranges::random_access_range`, `ranges::sized_range` and <i>reconstructible-range</i>;</ins></dd>
-	<dd><ins>— `ranges::take_­view{E, F}` if that is well-formed;</ins></dd>
-	<dd><ins>— otherwise, `views::take(E, F)` is ill-formed.</ins></dd>
+	<dd><ins>— `T{ranges::begin(E), ranges::begin(E) + min<range_­difference_­t<decltype((E))>>(ranges::size(E), F)}` if `T` models `ranges::random_access_range`, `ranges::sized_range` and <i>pair-reconstructible-range</i>, except that `E` is only evaluated once.</ins></dd>
+	<dd><ins>— Otherwise, `T{ranges::subrange{ranges::begin(E), ranges::begin(E) + min<range_­difference_­t<decltype((E))>>(ranges::size(E), F)}}` if `T` models `ranges::random_access_range`, `ranges::sized_range` and <i>reconstructible-range</i>, except that `E` is only evaluated once.</ins></dd>
+	<dd><ins>— Otherwise, `ranges::take_­view{E, F}`.</ins></dd>
 </dl>
 </blockquote>
 
 Modify §24.7.8 `views::drop` [[range.drop.adaptor](http://eel.is/c++draft/range.drop.adaptor)] as follows:
 
 <blockquote>
-<p><sup>1</sup> The name `views::drop` denotes a a range adaptor object ([range.adaptor.object]).
+<p><sup>1</sup> The name `views::drop` denotes a range adaptor object ([range.adaptor.object]).
 <del>For some subexpressions E and F, the expression views::drop(E, F) is expression-equivalent to drop_­view{E, F}.</del><ins> Let `E` and `F` be expressions, and let `T` be `remove_cvref_t<decltype((E))>`. Then, the expression `views::drop(E, F)` is expression-equivalent to:</ins></p>
 <dl>
-	<dd><ins>— `T{ranges::begin(E) + min<iter_­difference_­t<ranges::iterator_t<decltype((E))>>>(ranges::size(E), F), ranges::end(E)}` if `T` models `ranges::random_access_range`, `ranges::sized_range` and <i>pair-reconstructible-range</i>;</ins></dd>
-	<dd><ins>— `T{ranges::subrange{ranges::begin(E) + min<iter_­difference_­t<ranges::iterator_t<decltype((E))>>>(ranges::size(E), F), ranges::end(E)}}` if `T` models `ranges::random_access_range`, `ranges::sized_range` and <i>reconstructible-range</i>;</ins></dd>
-	<dd><ins>— `ranges::drop_­view{E, F}` if the expression is well-formed;</ins></dd>
-	<dd><ins>— otherwise, `views::drop(E, F)` is ill-formed.</ins></dd>
+	<dd><ins>— `T{ranges::begin(E) + min<range_­difference_­t<decltype((E))>>(ranges::size(E), F), ranges::end(E)}` if `T` models `ranges::random_access_range`, `ranges::sized_range` and <i>pair-reconstructible-range</i>, except that `E` is only evaluated once.</ins></dd>
+	<dd><ins>— Otherwise, `T{ranges::subrange{ranges::begin(E) + min<range_difference_t<decltype((E))>>(ranges::size(E), F), ranges::end(E)}}` if `T` models `ranges::random_access_range`, `ranges::sized_range` and <i>reconstructible-range</i>, except that `E` is only evaluated once.</ins></dd>
+	<dd><ins>— Otherwise, `ranges::drop_­view{E, F}`.</ins></dd>
 </dl>
 </blockquote>
 
@@ -542,8 +507,8 @@ Modify §24.7.12 `views::counted` as follows:
 <dl>
 	<dd><ins>— If `T` models `input_or_output_iterator` and `decltype((F))` models `convertible_to<iter_­difference_­t<T>>`,</ins></dd>
 	<dl>
-		<dd><ins>— `span{addressof(*E), static_­cast<iter_­difference_­t<T>>(F)}` if `T` models `contiguous_iterator`.</ins></dd>
-		<dd>— `subrange{E, E + static_­cast<iter_­difference_­t<T>>(F)}` if `T` models `random_access_iterator`.</dd>
+		<dd><ins>— `span{to_address(E), static_­cast<iter_­difference_­t<T>>(F)}` if `T` models `contiguous_iterator`.</ins></dd>
+		<dd>— <ins>Otherwise, </ins>`subrange{E, E + static_­cast<iter_­difference_­t<T>>(F)}` if `T` models `random_access_iterator`<ins>, except that `E` is only evaluated once</ins>.</dd>
 		<dd>— Otherwise, `subrange{counted_­iterator{E, F}, default_­sentinel}`.</dd>
 	</dl>
 	<dd>— Otherwise, `views::counted(E, F)` is ill-formed. [ <i>Note</i>: This case can result in substitution failure when `views::counted(E, F)` appears in the immediate context of a template instantiation. —<i> end note</i>]</dd>
