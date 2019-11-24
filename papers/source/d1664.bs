@@ -13,7 +13,7 @@ Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Hannes Hauswedell, h2@fsfe.org
 Date: 2019-11-24
 Markup Shorthands: markdown yes, biblio yes, markup yes
-Abstract: This paper proposes new concepts to the Standard Library for ranges called Reconstructible Ranges for the purpose of ensuring a range/view broken down into its two iterators can be "glued" back together using a constructor taking its iterator and sentinel type.
+Abstract: This paper proposes new concepts to the Standard Library for ranges called Reconstructible Ranges for the purpose of ensuring a range/view broken down into its two iterators can be "glued" back together using an ADL-found function taking its iterator and sentinel type.
 </pre>
 
 <pre class=include>
@@ -233,7 +233,7 @@ This makes it work with any two pair of iterators, but quickly becomes undesirab
 
 Unfortunately, this decreases usability for end users. Users who have, for example a `std::string_view`, would prefer to have the same type after calling an algorithm. There is little reason why the original type needs to be discarded if it supports being put back together from its iterators. This break-it-apart-and-then-generic-subrange approach also discards any range-specific storage optimizations and layout considerations, leaving us with the most bland kind of range similar to the "pair of iterators" model. Compilation time goes up as well: users must spawn a fresh `std::ranges::subrange<I, S, K>` for every different set of iterator/sentinel/kind triplet, or handle deeply nested templates in templates as the input types. This makes it impossible to compile interfaces as dynamic libraries without having to explicitly materialize or manually cajole a `std::ranges::subrange` into something more palatable for the regular world.
 
-There is also a problem where there are a wide variety of ranges that could conceivably meet this criterion, but do not. The author of this paper was not the only one to see utility in such operations. [[p1739r0]] does much the same that this paper does, without the introduction of a concept to formalize the behavior it presents. In particular, it selects views which can realistically have their return types changed to match the input range and operations being performed (or a similarly powerful alternative) by asking whether they are constructible from a subrange of the iterators with the expressions acted upon. This paper does not depend on any other papers, but note that the changes from [[p1739r0]], [[p1391r2]] and [[p1394r2]] all follow down to the logical conclusion laid out here:
+There is also a problem where there are a wide variety of ranges that could conceivably meet this criterion, but do not. The author of this paper was not the only one to see utility in such operations. [[p1739r0]] does much the same that this paper does, without the introduction of a concept to formalize the behavior it presents. In particular, it selects views which can realistically have their return types changed to match the input range and operations being performed (or a similarly powerful alternative) by asking whether they can be called with a function called `reconstruct` from a subrange of the iterators with the expressions acted upon. This paper does not depend on any other papers, but note that the changes from [[p1739r0]], [[p1391r2]] and [[p1394r2]] all follow down to the logical conclusion laid out here:
 
 - Ranges should be reconstructible from their iterators (or subrange of their iterators) where applicable;
 - and, reconstructible ranges serve a useful purpose in generic algorithms, including not losing information and returning it in a much more cromulent and desirable form.
@@ -280,7 +280,7 @@ Both concepts require that the type with any references removed model the concep
 
 ## Should this apply to all Ranges? ## {#design-all}
 
-Not all ranges can meet this requirement. Some ranges contain state which cannot be trivially propagated into the iterators, or state that cannot be reconstructed from the iterator/sentinel pair itself. However, most of the common ranges representing unbounded views, empty views, iterations viewing some section of non-owned storage, or similar can all be constructed from their iterator/iterator or iterator/sentinel pair.
+Not all ranges can meet this requirement. Some ranges contain state which cannot be trivially propagated into the iterators, or state that cannot be reconstructed from the iterator/sentinel pair itself. However, most of the common ranges representing unbounded views, empty views, iterations viewing some section of non-owned storage, or similar can all be reconstructed from their iterator/iterator or iterator/sentinel pair.
 
 For example `std::ranges::single_view` contains a [exposition *semiregular-box* template type (ranges.semi.wrap)](http://eel.is/c++draft/range.semi.wrap) which holds a value to iterate over. It would not be possible to reconstruct the exact same range (e.g., iterators pointing to the exact same object) with the semi-regular wrapper.
 
@@ -305,7 +305,7 @@ Note that these changes will greatly aid other algorithm writers who want to pre
 
 ## Two Concepts ## {#design-dual}
 
-By giving these ranges `Iterator, Sentinel`, and/or `std::ranges::subrange<Iterator, Sentinel>` constructors, we can enable a greater degree of interface fidelity without having to resort to `std::ranges::subrange` for all generic algorithms. There should be a preference for `Type(Iterator, Sentinel)` constructors, because one-argument constructors have extremely overloaded meanings in many containers and some views and may result in having to fight with other constructor calls in a complicated overload set. It also produces less compiler boilerplate to achieve the same result of reconstructing the range when one does not have to go through `std::ranges::subrange<I, S, K>`. However, it is important to attempt to move away from the iterator, sentinel model being deployed all the time: `std::ranges::subrange` offers a single type that can accurately represent the intent and can be fairly easy to constrain overload sets on (most of the time).
+By giving these ranges `Iterator, Sentinel`, and/or `std::ranges::subrange<Iterator, Sentinel>` reconstruction functions, we can enable a greater degree of interface fidelity without having to resort to `std::ranges::subrange` for all generic algorithms. There should be a preference for `Type(Iterator, Sentinel)` reconstruction, because one-argument functions can have extremely overloaded meanings. It also produces less compiler boilerplate to achieve the same result of reconstructing the range when one does not have to go through `std::ranges::subrange<I, S, K>`. However, it is important to attempt to move away from the iterator, sentinel model being deployed all the time: `std::ranges::subrange` offers a single type that can accurately represent the intent and can be fairly easy to constrain overload sets on (most of the time).
 
 This paper includes two concepts that cover both reconstructible methods.
 
@@ -328,7 +328,7 @@ The following wording is relative to the latest C++ Draft paper.
 
 ## Feature Test Macro ## {#wording-feature}
 
-This paper results in a concept to help guide the further development of standard ranges and simplify their usages in generic contexts. There is one proposed feature test macro, `__cpp_lib_reconstructible_range`, which is to be input into the standard and then explicitly updated every time a constructor from a pre-existing type is changed to reflect the new wording. We hope that by putting this in the standard early, most incoming ranges will be checked for compatibility with `pair_reconstructible_range` and `reconstructible_range`.
+This paper results in a concept to help guide the further development of standard ranges and simplify their usages in generic contexts. There is one proposed feature test macro, `__cpp_lib_reconstructible_range`, which is to be input into the standard and then explicitly updated every time a `reconstruct` from a is added to reflect the new wording. We hope that by putting this in the standard early, most incoming ranges will be checked for compatibility with `pair_reconstructible_range` and `reconstructible_range`.
 
 
 ## Intent ## {#wording-intent}
