@@ -78,7 +78,7 @@ div.newnumbered li:before {
 }
 </style>
 
-_**Document**_: WG14 n2448 | WG21 P1967  
+_**Document**_: WG14 nXXXX | WG21 p1967  
 _**Previous Revisions**_: n/a  
 _**Audience**_: WG14, WG21  
 _**Proposal Category**_: New Features  
