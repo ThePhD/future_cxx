@@ -382,12 +382,12 @@ Thank you to the Lounge<C++> for their continued support, and to Robot M. F. for
 
 
 
-## Sadness
+## Existing Tools
 
-This section categorizes some of the platform-specific techniques used to work with C++ and some of the challenges they face. Other techniques used include pre-processing data, link-time based tooling, and assembly-time runtime loading. They are detailed below, for a complete picture of today's sad landscape of options. They include both C and C++ options.
+This section categorizes some of the platform-specific techniques used to work with C++ and some of the challenges they face. Other techniques used include pre-processing data, link-time based tooling, and assembly-time runtime loading. They are detailed below, for a complete picture of today's landscape of options. They include both C and C++ options.
 
 
-### Pre-Processing Tools Sadness
+### Pre-Processing Tools
 
 1. Run the tool over the data (`xxd -i xxd_data.bin > xxd_data.h`) to obtain the generated file (`xxd_data.h`) and add a null terminator if necessary:
 
@@ -428,7 +428,7 @@ Binary data as C(++) arrays provide the overhead of having to comma-delimit ever
 This scales poorly with larger files, and build times suffer for any non-trivial binary file, especially when it scales into Megabytes in size (e.g., firmware and similar).
 
 
-### `python` Sadness
+### `python`
 
 Other companies are forced to create their own ad-hoc tools to embed data and files into their C++ code. MongoDB uses a [custom python script](https://github.com/mongodb/mongo/blob/master/site_scons/site_tools/jstoh.py), just to format their data for compiler consumption:
 
@@ -486,7 +486,7 @@ if __name__ == "__main__":
 MongoDB were brave enough to share their code with me and make public the things they have to do: other companies have shared many similar concerns, but do not have the same bravery. We thank MongoDB for sharing.
 
 
-### `ld` Sadness
+### `ld`
 
 A complete example (does not compile on Visual C++):
 
@@ -540,6 +540,6 @@ This scales a little bit better in terms of raw compilation time but is shocking
 N.B.: Because these declarations are `extern`, the values in the array cannot be accessed at compilation/translation-time.
 
 
-### `incbin` Sadness
+### `incbin`
 
 There is a tool called [`incbin`](https://github.com/graphitemaster/incbin) which is a 3rd party attempt at pulling files in at "assembly time". Its approach is incredibly similar to `ld`, with the caveat that files must be shipped with their binary. It unfortunately falls prey to the same problems of cross-platform woes when dealing with Visual C, requiring additional pre-processing to work out in full.
