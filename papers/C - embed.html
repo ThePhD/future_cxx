@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="JeanHeyd Meneide &lt;phdofthehouse@gmail.com&gt;" />
-  <title>Preprocessor embed</title>
+  <title>Preprocessor embed - Binary Resource Inclusion</title>
   <style>
       code{white-space: pre-wrap;}
       span.smallcaps{font-variant: small-caps;}
@@ -82,9 +82,9 @@ code span.wa { color: #8f5902; font-weight: bold; font-style: italic; } /* Warni
 </head>
 <body>
 <header id="title-block-header">
-<h1 class="title">Preprocessor embed</h1>
+<h1 class="title">Preprocessor embed - Binary Resource Inclusion</h1>
 <p class="author">JeanHeyd Meneide &lt;<a href="mailto:phdofthehouse@gmail.com" class="email">phdofthehouse@gmail.com</a>&gt;</p>
-<p class="date">October 24th, 2019</p>
+<p class="date">January 13th, 20120</p>
 </header>
 <style>
 pre {
@@ -154,7 +154,7 @@ div.newnumbered li:before {
   .pagebreak { break-after: always }
 }
 </style>
-<p><em><strong>Document</strong></em>: WG14 n2448 | WG21 P1967<br />
+<p><em><strong>Document</strong></em>: WG14 n2470 | WG21 p1967<br />
 <em><strong>Previous Revisions</strong></em>: n/a<br />
 <em><strong>Audience</strong></em>: WG14, WG21<br />
 <em><strong>Proposal Category</strong></em>: New Features<br />
@@ -166,7 +166,7 @@ div.newnumbered li:before {
 Pulling binary data into a program often involves external tools and build system coordination. Many programs need binary data such as images, encoded text, icons and other data in a specific format. Current state of the art for working with such static data in C includes creating files which contain solely string literals, directly invoking the linker to create data blobs to access through carefully named extern variables, or generating large brace-delimited lists of integers to place into arrays. As binary data has grown larger, these approaches have begun to have drawbacks and issues scaling. From parsing 5 megabytes worth of integer literal expressions into AST nodes to arbitrary string literal length limits in compilers, portably putting binary data in a C program has become an arduous task that taxes build infrastructure and compilation memory and time.
 </p>
 <p>
-We propose a flexible preprocessor directive for making this data available to the user in a straightforward manner.
+This proposal provides a flexible preprocessor directive for making this data available to the user in a straightforward manner.
 </p>
 </p>
 <div class="pagebreak">
@@ -176,70 +176,190 @@ We propose a flexible preprocessor directive for making this data available to t
 <p>For well over 40 years, people have been trying to plant data into executables for varying reasons. Whether it is to provide a base image with which to flash hardware in a hard reset, icons that get packaged with an application, or scripts that are intrinsically tied to the program at compilation time, there has always been a strong need to couple and ship binary data with an application.</p>
 <p>C does not make this easy for users to do, resulting in many individuals reaching for utilities such as <code>xxd</code>, writing python scripts, or engaging in highly platform-specific linker calls to set up <code>extern</code> variables pointing at their data. Each of these approaches come with benefits and drawbacks. For example, while working with the linker directly allows injection of vary large amounts of data (5 MB and upwards), it does not allow accessing that data at any other point except runtime. Conversely, Doing all of these things portably across systems and additionally maintaining the dependencies of all these resources and files in build systems both like and unlike <code>make</code> is a tedious task.</p>
 <p>Thusly, we propose a new preprocessor directive whose sole purpose is to be <code>#include</code>, but for binary data: <code>#embed</code>.</p>
+<h2 id="motivation"><span class="header-section-number">1.1</span> Motivation</h2>
+<p>The reason this needs a new language feature is simple: at present we currently poorly indicate the intent of the compiler to “produce”</p>
+<p>Many different options as opposed to this proposal were seriously evaluated. Implementations were attempted in at least 2 production-use compilers, and more in private. To give an idea of usage and size, here are results for various compilers on a machine with the following specification:</p>
+<ul>
+<li>Intel Core i7 @ 2.60 GHz</li>
+<li>24.0 GB RAM</li>
+<li>Debian Sid or Windows 10</li>
+<li>Method: Execute command hundreds of times, stare extremely hard at <code>htop</code>/Task Manager</li>
+</ul>
+<p>While <code>time</code> and <code>Measure-Command</code> work well for getting accurate timing information and can be run several times in a loop to produce a good average value, tracking memory consumption without intrusive efforts was much harder and thusly relied on OS reporting with fixed-interval probes. Memory usage is therefore approximate and may not represent the actual maximum of consumed memory. All of these are using the latest compiler built from source if available, or the latest technology preview if available. Optimizations at <code>-O2</code> (GCC &amp; Clang style)/<code>/O2 /Ob2</code> or equivalent were employed to generate the final executable.</p>
+<h3 id="speed-size"><span class="header-section-number">1.1.1</span> Speed Size</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Strategy</th>
+<th>40 kilobytes</th>
+<th>400 kilobytes</th>
+<th>4 megabytes</th>
+<th>40 megabytes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>#embed</code> GCC</td>
+<td>0.236 s</td>
+<td>0.231 s</td>
+<td>0.300 s</td>
+<td>1.069 s</td>
+</tr>
+<tr class="even">
+<td><code>xxd</code>-generated GCC</td>
+<td>0.406 s</td>
+<td>2.135 s</td>
+<td>23.567 s</td>
+<td>225.290 s</td>
+</tr>
+<tr class="odd">
+<td><code>xxd</code>-generated Clang</td>
+<td>0.366 s</td>
+<td>1.063 s</td>
+<td>8.309 s</td>
+<td>83.250 s</td>
+</tr>
+<tr class="even">
+<td><code>xxd</code>-generated MSVC</td>
+<td>0.552 s</td>
+<td>3.806 s</td>
+<td>52.397 s</td>
+<td>Out of Memory</td>
+</tr>
+</tbody>
+</table>
+<h3 id="memory-size"><span class="header-section-number">1.1.2</span> Memory Size</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Strategy</th>
+<th>40 kilobytes</th>
+<th>400 kilobytes</th>
+<th>4 megabytes</th>
+<th>40 megabytes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>#embed</code> GCC</td>
+<td>17.26 MB</td>
+<td>17.96 MB</td>
+<td>53.42 MB</td>
+<td>341.72 MB</td>
+</tr>
+<tr class="even">
+<td><code>xxd</code>-generated GCC</td>
+<td>24.85 MB</td>
+<td>134.34 MB</td>
+<td>1,347.00 MB</td>
+<td>12,622.00 MB</td>
+</tr>
+<tr class="odd">
+<td><code>xxd</code>-generated Clang</td>
+<td>41.83 MB</td>
+<td>103.76 MB</td>
+<td>718.00 MB</td>
+<td>7,116.00 MB</td>
+</tr>
+<tr class="even">
+<td><code>xxd</code>-generated MSVC</td>
+<td>~48.60 MB</td>
+<td>~477.30 MB</td>
+<td>~5,280.00 MB</td>
+<td>Out of Memory</td>
+</tr>
+</tbody>
+</table>
+<h3 id="analysis"><span class="header-section-number">1.1.3</span> Analysis</h3>
+<p>The numbers here are not particularly reassuring. Furthermore, privately owned compilers and other static analysis tools perform almost exponentially poorly here, taking vastly more memory and thrashing CPUs to 100% for several minutes (to sometimes several hours if e.g. the Swap is engaged due to lack of main memory). Every compiler must always consume a certain amount of memory in a relationship directly linear to the number of tokens produced. After that, it is largely implementation-dependent what happens to the data.</p>
+<p>The GNU Compiler Collection (GCC) uses a tree representation and has many places where it spawns extra “garbage”, as its called in the various bug reports and work items from implementers. There has been a 16+ year effort on the part of GCC to reduce its memory usage and speed up initializers (<a href="https://gcc.gnu.org/bugzilla/show_bug.cgi?id=12245">C Bug Report</a> and <a href="https://gcc.gnu.org/bugzilla/show_bug.cgi?id=14179">C++ Bug Report</a>). Significant improvements have been made and there is plenty of room for GCC to improve here with respect to compiler and memory size.</p>
+<p>LLVM’s Clang, on the other hand, is much more optimized. They maintain a much better scaling and ratio but still suffer the pain of their token overhead and Abstract Syntax Tree representation, though to a much lesser degree than GCC. A bug report was filed but talk from two prominent LLVM/Clang developers made it clear that optimizing things any further would <a href="https://bugs.llvm.org/show_bug.cgi?id=44399">require an extremely large refactor and functionality add of parser internals</a>, with potentially dubious gains.</p>
+<p>Microsoft Visual C (MSVC) scales the worst of all the compilers, even when given the benefit of being on its native operating system. Both Clang and GCC outperform MSVC on Windows 10 or WINE as of the time of writing.</p>
+<p>Linker tricks on all platforms perform better with time (though slower than <code>#embed</code> implementation), but force the data to be optimizer-opaque (even on the most aggressive “Link Time Optimization” or “Whole Program Optimization” modes compilers had). Linker tricks are also exceptionally non-portable: whether it is the <code>incbin</code> assembly command supported by certain compilers, specific invocations of <code>rc.exe</code>/<code>objcopy</code> or others, non-portability plagues their usefulness in writing Cross-Platform C (see Appendix for listing of techniques). This makes C decidedly unlike the “portable assembler” advertised by its proponents (and my Professors and co-workers).</p>
 <h1 id="design"><span class="header-section-number">2</span> Design</h1>
 <p>There are two design goals at play here, sculpted to specifically cover industry standard practices with build systems and C programs. The first is to enable developers to get binary content quickly and easily into their applications. This can be icons/images, scripts, tiny sound effects, hardcoded firmware binaries, and more. In order to support this use case, this feature was designed for simplicity and builds upon widespread existing practice.</p>
 <h2 id="first-principle-simplicity-and-familiarity"><span class="header-section-number">2.1</span> First Principle: Simplicity and Familiarity</h2>
 <p>Providing a directive that mirrors <code>#include</code> makes it natural and easy to understand and use this new directive. It accepts both chevron-delimited (<code>&lt;&gt;</code>) and quote-delimited (<code>""</code>) strings like <code>#include</code> does. This matches the way people have been generating files to <code>#include</code> in their programs, libraries and applications: matching the semantics here preserves the same mental model. This makes it easy to teach and use, since it follows the same principles:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1"></a><span class="at">const</span> <span class="dt">char</span> reset_blob[] =</span>
-<span id="cb1-2"><a href="#cb1-2"></a>    <span class="pp">#</span><span class="er">embed &quot;data.bin&quot;</span></span>
-<span id="cb1-3"><a href="#cb1-3"></a>; <span class="co">// regular ol&#39; char array</span></span>
-<span id="cb1-4"><a href="#cb1-4"></a></span>
-<span id="cb1-5"><a href="#cb1-5"></a><span class="at">const</span> <span class="dt">unsigned</span> <span class="dt">char</span> icon_display_data[] =</span>
-<span id="cb1-6"><a href="#cb1-6"></a>    <span class="pp">#</span><span class="er">embed &quot;art.png&quot;</span></span>
-<span id="cb1-7"><a href="#cb1-7"></a>; <span class="co">/* initialize unsigned char data too */</span></span></code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1"></a><span class="co">/* default is unsigned char */</span></span>
+<span id="cb1-2"><a href="#cb1-2"></a><span class="at">const</span> <span class="dt">unsigned</span> <span class="dt">char</span> icon_display_data[] =</span>
+<span id="cb1-3"><a href="#cb1-3"></a>    <span class="pp">#</span><span class="er">embed &quot;art.png&quot;</span></span>
+<span id="cb1-4"><a href="#cb1-4"></a>;</span>
+<span id="cb1-5"><a href="#cb1-5"></a></span>
+<span id="cb1-6"><a href="#cb1-6"></a><span class="co">/* specify a type-name to change array type */</span></span>
+<span id="cb1-7"><a href="#cb1-7"></a><span class="at">const</span> <span class="dt">char</span> reset_blob[] =</span>
+<span id="cb1-8"><a href="#cb1-8"></a>    <span class="pp">#</span><span class="er">embed char &quot;data.bin&quot;</span></span>
+<span id="cb1-9"><a href="#cb1-9"></a>;</span></code></pre></div>
 <p>Because of its design, it also lends itself to being usable in a wide variety of contexts and with a wide variety of vendor extensions. For example:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1"></a><span class="at">const</span> <span class="dt">char</span> aligned_data_str[] <span class="ex">__attribute__ ((aligned (8)))</span> =</span>
-<span id="cb2-2"><a href="#cb2-2"></a>    <span class="pp">#</span><span class="er">embed &quot;natural_text.xml&quot;</span></span>
-<span id="cb2-3"><a href="#cb2-3"></a>; <span class="co">/* attributes work fine too */</span></span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1"></a><span class="co">/* attributes work just as well */</span></span>
+<span id="cb2-2"><a href="#cb2-2"></a><span class="at">const</span> <span class="dt">signed</span> <span class="dt">char</span> aligned_data_str[] <span class="ex">__attribute__ ((aligned (8)))</span> =</span>
+<span id="cb2-3"><a href="#cb2-3"></a>    <span class="pp">#</span><span class="er">embed signed char &quot;attributes.xml&quot;</span></span>
+<span id="cb2-4"><a href="#cb2-4"></a>;</span></code></pre></div>
 <p>The above code obeys the alignment requirements for an implementation that understands GCC directives, without needing to add special support in the <code>#embed</code> directive for it: it is just another array initializer, like everything else.</p>
-<h3 id="existing-practice---search-paths"><span class="header-section-number">2.1.1</span> Existing Practice - Search Paths</h3>
+<h3 id="type-flexibility"><span class="header-section-number">2.1.1</span> Type Flexibility</h3>
+<p>As hinted at in previous sections’s code snippets, a type can be specified after the <code>#embed</code> to view the data in a very specific manner. This allows data to initialized as exactly that type.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1"></a><span class="co">/* specify a type-name to change array type */</span></span>
+<span id="cb3-2"><a href="#cb3-2"></a><span class="at">const</span> <span class="dt">int</span> shorten_flac[] =</span>
+<span id="cb3-3"><a href="#cb3-3"></a>    <span class="pp">#</span><span class="er">embed int &quot;stripped_music.flac&quot;</span></span>
+<span id="cb3-4"><a href="#cb3-4"></a>;</span></code></pre></div>
+<p>The contents of the resource are mapped in an implementation-defined manner to the data, such that it will use <code>sizeof(type-name) * CHAR_BIT</code> bits for each element. If the file does not have enough bits to fill out a multiple of <code>sizeof(type-name) * CHAR_BIT</code> bits, then a diagnostic is required.</p>
+<h3 id="existing-practice---search-paths"><span class="header-section-number">2.1.2</span> Existing Practice - Search Paths</h3>
 <p>It follows the same implementation experience guidelines as <code>#include</code> by leaving the search paths implementation defined, with the understand that implementations are not monsters and will generally provide <code>-fembed-path</code>/<code>-fembed-path=</code> and other related flags as their users require for their systems. This gives implementers the space they need to serve the needs of their constituency.</p>
-<h3 id="existing-practice---discoverable-and-distributable"><span class="header-section-number">2.1.2</span> Existing Practice - Discoverable and Distributable</h3>
+<h3 id="existing-practice---discoverable-and-distributable"><span class="header-section-number">2.1.3</span> Existing Practice - Discoverable and Distributable</h3>
 <p>Build systems today understand the make dependency format, typically through use of the compiler flags <code>-(M)MD</code> and friends. This sees widespread support, from CMake, Meson and Bazel to ninja and make. Even VC++ has a version of this flag – <code>/showIncludes</code> – that gets parsed by build systems.</p>
 <p>This preprocessor directive fits perfectly into existing build architecture by being discoverable in the same way with the same tooling formats. It also blends perfectly with existing distributed build systems which preprocess their files with <code>-frewrite-includes</code> before sending it up to the build farm, as <code>distcc</code> and <code>icecc</code> do.</p>
 <h2 id="second-principle-efficiency"><span class="header-section-number">2.2</span> Second Principle: Efficiency</h2>
-<p>The second principle guiding the design of this feature is facing the increasing problems with <code>#include</code> and typical source-style rewriting of binary data. Array literals do not scale. Processing large comma-delimited, brace-init-lists of data-as-numbers produces excessive compilation times. Compiler memory usage reaches extraordinary levels that are often ten to twenty times (or more) of the original desired data file (e.g., Clang as of November 23rd will take about 2 GiB of memory to process a 20 MiB binary file embedded as source with no other files brought in to the translation unit).</p>
+<p>The second principle guiding the design of this feature is facing the increasing problems with <code>#include</code> and typical source-style rewriting of binary data. Array literals do not scale. Processing large comma-delimited, <em>brace-init-lists</em> of data-as-numbers produces excessive compilation times. Compiler memory usage reaches extraordinary levels that are often ten to twenty times (or more) of the original desired data file (see above tables in the Motivation section). Part of this is endemic to the compiler: the preprocessor demands that tokens be</p>
 <p>String literals do not suffer the same compilation times or memory scaling issues, but the C Standard has limits on the maximum size of string literals (§5.2.4.1, “— 4095 characters in a string literal (after concatenation)”). One implementation takes the C Standard quite almost exactly at face value: it allows 4095 bytes in a single string <em>piece</em>, so multiple quoted pieces each no larger than 4095 bytes must be used to create large enough string literals to handle the work.</p>
 <p><code>#embed</code>’s specification is such that it behaves “as if” it expands to a brace-delimited, comma-separated sequence of integral literals. This means an implementation does not have to run the full gamut of producing an abstract syntax tree of an expression. It does not need a fully generic expression list that spans several AST nodes for what is logically just a sequence of numeric literals. A more direct representation can be used internally in the compiler, drastically speeding up processing and embedding of the binary data into the translation unit for use by the program. One of the test implementations uses such a direct representation and achieves drastically reduced memory and compile time footprint, making large binary data accessible in C programs in an affordable manner.</p>
 <h3 id="infinity-files"><span class="header-section-number">2.2.1</span> Infinity Files</h3>
 <p>The earliest adopters and testers of the implementation reported problems when trying to access POSIX-style <code>char</code> devices and pseudo-files that do not have a logical limitation. These “infinity files” served as the motivation for introducing the “limit” parameter; there are a number of resources which are logically infinite and thusly having a compiler read all of the data would result an Out of Memory error, much like with <code>#include</code> if someone did <code>#include "/dev/urandom"</code>.</p>
 <p>The limit parameter is specified before the resource name in <code>#embed</code>, like so:</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1"></a><span class="at">const</span> <span class="dt">char</span> please_dont_oom_kill_me[] =</span>
-<span id="cb3-2"><a href="#cb3-2"></a>    <span class="pp">#</span><span class="er">embed 32 &quot;/dev/urandom&quot;</span></span>
-<span id="cb3-3"><a href="#cb3-3"></a>;</span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1"></a><span class="at">const</span> <span class="dt">int</span> please_dont_oom_kill_me[] =</span>
+<span id="cb4-2"><a href="#cb4-2"></a>    <span class="pp">#</span><span class="er">embed int 32 &quot;/dev/urandom&quot;</span></span>
+<span id="cb4-3"><a href="#cb4-3"></a>;</span></code></pre></div>
 <p>This prevents locking compilers in an infinite loop of reading from potentially limitless resources. Note the parameter is a hard upper bound, and not an exact requirement. A resource may expand to 16 elements and not the maximum of 32.</p>
 <h1 id="implementation-experience"><span class="header-section-number">3</span> Implementation Experience</h1>
 <p>An implementation of this functionality is available in branches of both GCC and Clang, accessible right now with an internet connection through the online utility Compiler Explorer. The Clang compiler with this functionality is called <a href="https://godbolt.org/z/h2aRa9">“x86-64 clang (std::embed)”</a> and the GCC compiler is called <a href="https://godbolt.org/z/yJPtKT">“x86-64 gcc (std::embed)”</a> in the Compiler Explorer UI.</p>
 <div class="pagebreak">
 
 </div>
-<h1 id="wording---c"><span class="header-section-number">4</span> Wording - C</h1>
+<h1 id="alternative-syntax"><span class="header-section-number">4</span> Alternative Syntax</h1>
+<p>There has been concerns expressed about the form of this feature – whether or not it could be a preprocessor directive itself, or a magical macro introduced in the language, or a special pragma. Each of these has their own specific syntax tradeoffs. The primary choice and the one advocated for is the syntax as shown above: a plain preprocessor directive analogous to <code>#include</code>. It is written as <code>#embed</code>, but other names (previously recommended by the Community) are <code>#include_bin</code>, <code>#include_binary</code>, or <code>#load_binary</code>.</p>
+<p>The syntax can also be adjusted. A preprocessor directive is preferred because that allows it to be findable by the end of Preprocessor.</p>
+<h1 id="wording---c"><span class="header-section-number">5</span> Wording - C</h1>
 <p>This wording is relative to C’s <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2454.pdf">N2454</a>.</p>
-<h2 id="intent"><span class="header-section-number">4.1</span> Intent</h2>
+<h2 id="intent"><span class="header-section-number">5.1</span> Intent</h2>
 <p>The intent of the wording is to provide a preprocessing directive that:</p>
 <ul>
 <li>takes a string literal identifier – potentially from the expansion of a macro – and uses it to find a unique resource on the command line;</li>
 <li>maps the contents of the file in an implementation-defined manner to a sequence of integer literals, each whose value is no greater than the maximum representable value of a single <code>unsigned char</code>;</li>
 <li>and, present such contents as if by a brace-enclosed list of integer literals, such that it can be used to initialize arrays of known and unknown bound.</li>
 </ul>
-<h2 id="proposed-language-wording"><span class="header-section-number">4.2</span> Proposed Language Wording</h2>
-<p>Add another preprocessing directive to §6.10 Preprocessing Directives, Syntax, paragraph 1, <em>control-line</em>:</p>
+<h2 id="proposed-language-wording"><span class="header-section-number">5.2</span> Proposed Language Wording</h2>
+<p>Add another <em>control-line</em> production and a new <em>parenthesized-non-header</em> to §6.10 Preprocessing Directives, Syntax, paragraph 1:</p>
 <blockquote>
+<p>
+<i>control-line:</i><br/>       <i>…</i><br/>      <ins><b>#</b> <b>embed</b> <i>pp-tokens</i> <i>new-line</i></ins>
+</p>
+<p>
 <ins>
-<b>#</b> <b>embed</b> <i>pp-tokens</i> <i>new-line</i>
+<i>parenthesized-non-header:</i><br/>      <b>(</b><sub>opt</sub> <i>pp-tokens</i> <b>)</b><sub>opt</sub>
 </ins>
+</p>
 </blockquote>
-<p>Add a new subclause as §6.10.� (� is a stand-in character to be replaced by the editor) to §6.10 Preprocessing Directives, preferably after §6.10.2 Source file inclusion:</p>
+<p>Add a new sub clause as §6.10.� (� is a stand-in character to be replaced by the editor) to §6.10 Preprocessing Directives, preferably after §6.10.2 Source file inclusion:</p>
 <blockquote>
 <ins>
 <p>
-§6.10.� Resource embedding
+<h3>
+<b>§6.10.�     Resource embedding</b>
+</h3>
 </p>
 <p>
 <b>Constraints</b>
 </p>
 <p>
-<sup>1</sup>A <b>#embed</b> directive shall identify a resource that can be processed by the implementation as a sequence of binary data.
+<sup>1</sup>A <b><code>#embed</code></b> directive shall identify a resource that can be processed by the implementation as a sequence of binary data.
 </p>
 <p>
 <b>Semantics</b>
@@ -248,28 +368,37 @@ We propose a flexible preprocessor directive for making this data available to t
 <sup>2</sup> A preprocessing directive of the form
 </p>
 <p>
-    <b>#</b> <b>embed</b> <i>digit-sequence</i><sub>opt</sub> <code>&lt;</code> <i>h-char-sequence</i> <code>&gt;</code> <i>new-line</i>
+    <b>#</b> <b>embed</b> <i>parenthesized-non-header<sub>opt</sub></i> <i>digit-sequence<sub>opt</sub></i> <b><code>&lt;</code></b> <i>h-char-sequence</i> <b><code>&gt;</code></b> <i>new-line</i>
 </p>
 <p>
-searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&lt;</code> and <code>&gt;</code> or the <code>“</code> and <code>”</code> delimiters. How the places are specified or the resource identified is implementation-defined.
+searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&lt;</code> and <code>&gt;</code>. The named resource is searched for in an implementation-defined manner.
 </p>
 <p>
 <sup>3</sup> A preprocessing directive of the form
 </p>
 <p>
-    <b>#</b> <b>embed</b> <i>digit-sequence</i><sub>opt</sub> <code>“</code> <i>q-char-sequence</i> <code>”</code> <i>new-line</i>
+    <b>#</b> <b>embed</b> <i>parenthesized-non-header<sub>opt</sub></i> <i>digit-sequence<sub>opt</sub></i> <code>“</code> <i>q-char-sequence</i> <code>”</code> <i>new-line</i>
 </p>
 <p>
-searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>“</code> and <code>”</code> delimiters. How the places are specified or the resource identified is implementation-defined.
+searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>"</code>, or <code>&lt;</code> and <code>&gt;</code>, delimiters. The named resource is searched for in an implementation-defined manner. If this search is not supported, or if the search fails, the directive is reprocessed as if it read
 </p>
 <p>
-<sup>4</sup> Either form of the <code>#embed</code> directive is replaced by the contents of the resource as if with a <code>{</code> and <code>}</code> delimited <i>initializer-list</i> containing a sequence of <i>integer-constant</i>s. The contents are mapped in an implementation-defined manner to such an <i>integer-constant</i> sequence. Each value of the <i>integer-constant</i> sequence will not be greater than is representable by an <b><code>unsigned char</code></b> (6.2.5).
+    <b>#</b> <b>embed</b> <i>parenthesized-non-header</i><sub>opt</sub> <i>digit-sequence</i><sub>opt</sub> <code>&lt;</code> <i>h-char-sequence</i> <code>&gt;</code> <i>new-line</i>
 </p>
 <p>
-<sup>5</sup> If a <i>digit-sequence</i> is specified, it shall be an unsigned <i>integer-constant</i>. The replacement of the directive will be as if the mapped contents within the <code>{</code> and <code>}</code> delimited <i>initializer-list</i> contain up to but not more than <i>digit-sequence</i> <i>integer-constant</i>s.
+with the identical contained <i>q-char-sequence</i> (including &gt; characters, if any) from the original directive.
 </p>
 <p>
-<sup>6</sup> A preprocessing directive of the form
+<sup>4</sup> If a <i>parenthesized-non-header</i> is not specified, then the directive behaves as if the tokens of the <i>parenthesized-non-header</i> are <code>unsigned char</code>. If a <i>parenthesized-non-header</i> is specified, outer parenthesis must be present if it contains one or more of <code>"</code>, <code>&lt;</code> or <code>&gt;</code>.
+</p>
+<p>
+<sup>5</sup> Let the <i>parenthesized-non-header</i> tokens be <code>T</code>. Either form of the <b><code>#embed</code></b> directive specified previously behave as if it is replaced by the contents of the resource a <code>{</code> and <code>}</code> delimited <i>initializer-list</i>. The <i>initializer-list</i> represents an implementation-defined mapping from the contents of the resource to the elements of the <i>initializer-list</i>.
+</p>
+<p>
+<sup>6</sup> If a <i>digit-sequence</i> is specified, it shall be an unsigned <i>integer-constant</i>. The implementation-defined mapping from the contents of the resource to the elements of the <i>initializer-list</i> shall produce no more than <i>digit-sequence</i> elements.
+</p>
+<p>
+<sup>7</sup> A preprocessing directive of the form
 </p>
 <p>
     <b>#</b> <b>embed</b> <i>pp-tokens</i> <i>new-line</i>
@@ -282,43 +411,43 @@ searches a sequence of implementation-defined places for a resource identified u
 <p>Add 2 new Example paragraphs below the above text in §6.10.� Resource embedding:</p>
 <blockquote>
 <ins>
-<sup>7</sup> <strong>EXAMPLE 1</strong> Placing a small image file.
+<sup>8</sup> <strong>EXAMPLE 1</strong> Placing a small image resource.
 </ins>
 <blockquote>
-<div class="sourceCode" id="cb4"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1"></a><span class="pp">#include </span><span class="im">&lt;stddef.h&gt;</span></span>
-<span id="cb4-2"><a href="#cb4-2"></a></span>
-<span id="cb4-3"><a href="#cb4-3"></a><span class="dt">void</span> have_you_any_wool(<span class="at">const</span> <span class="dt">unsigned</span> <span class="dt">char</span>*, <span class="dt">size_t</span>);</span>
-<span id="cb4-4"><a href="#cb4-4"></a></span>
-<span id="cb4-5"><a href="#cb4-5"></a><span class="dt">int</span> main (<span class="dt">int</span>, <span class="dt">char</span>*[]) {</span>
-<span id="cb4-6"><a href="#cb4-6"></a>    <span class="at">const</span> <span class="dt">unsigned</span> <span class="dt">char</span> baa_baa[] =</span>
-<span id="cb4-7"><a href="#cb4-7"></a><span class="pp">#</span><span class="er">embed &quot;black_sheep.ico&quot;</span></span>
-<span id="cb4-8"><a href="#cb4-8"></a>    ;</span>
-<span id="cb4-9"><a href="#cb4-9"></a></span>
-<span id="cb4-10"><a href="#cb4-10"></a>    have_you_any_wool(baa_baa, </span>
-<span id="cb4-11"><a href="#cb4-11"></a>        <span class="kw">sizeof</span>(baa_baa) / <span class="kw">sizeof</span>(*baa_baa));</span>
-<span id="cb4-12"><a href="#cb4-12"></a></span>
-<span id="cb4-13"><a href="#cb4-13"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
-<span id="cb4-14"><a href="#cb4-14"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1"></a><span class="pp">#include </span><span class="im">&lt;stddef.h&gt;</span></span>
+<span id="cb5-2"><a href="#cb5-2"></a></span>
+<span id="cb5-3"><a href="#cb5-3"></a><span class="dt">void</span> have_you_any_wool(<span class="at">const</span> <span class="dt">unsigned</span> <span class="dt">char</span>*, <span class="dt">size_t</span>);</span>
+<span id="cb5-4"><a href="#cb5-4"></a></span>
+<span id="cb5-5"><a href="#cb5-5"></a><span class="dt">int</span> main (<span class="dt">int</span>, <span class="dt">char</span>*[]) {</span>
+<span id="cb5-6"><a href="#cb5-6"></a>    <span class="at">const</span> <span class="dt">unsigned</span> <span class="dt">char</span> baa_baa[] =</span>
+<span id="cb5-7"><a href="#cb5-7"></a><span class="pp">#</span><span class="er">embed &quot;black_sheep.ico&quot;</span></span>
+<span id="cb5-8"><a href="#cb5-8"></a>    ;</span>
+<span id="cb5-9"><a href="#cb5-9"></a></span>
+<span id="cb5-10"><a href="#cb5-10"></a>    have_you_any_wool(baa_baa, </span>
+<span id="cb5-11"><a href="#cb5-11"></a>        <span class="kw">sizeof</span>(baa_baa) / <span class="kw">sizeof</span>(*baa_baa));</span>
+<span id="cb5-12"><a href="#cb5-12"></a></span>
+<span id="cb5-13"><a href="#cb5-13"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
+<span id="cb5-14"><a href="#cb5-14"></a>}</span></code></pre></div>
 </blockquote>
 <ins>
-<sup>8</sup> <strong>EXAMPLE 2</strong> Checking the first 4 elements of a resource.
+<sup>9</sup> <strong>EXAMPLE 2</strong> Checking the first 4 elements of a sound resource.
 </ins>
 <blockquote>
-<div class="sourceCode" id="cb5"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1"></a><span class="pp">#include </span><span class="im">&lt;assert.h&amp;&gt;</span></span>
-<span id="cb5-2"><a href="#cb5-2"></a></span>
-<span id="cb5-3"><a href="#cb5-3"></a><span class="dt">int</span> main (<span class="dt">int</span>, <span class="dt">char</span>*[]) {</span>
-<span id="cb5-4"><a href="#cb5-4"></a>    <span class="at">const</span> <span class="dt">char</span> sound_signature[] =</span>
-<span id="cb5-5"><a href="#cb5-5"></a><span class="pp">#</span><span class="er">embed 4 &lt;sdk/jump.wav&gt;</span></span>
-<span id="cb5-6"><a href="#cb5-6"></a>    ;</span>
-<span id="cb5-7"><a href="#cb5-7"></a></span>
-<span id="cb5-8"><a href="#cb5-8"></a>    <span class="co">// PCM WAV resource?</span></span>
-<span id="cb5-9"><a href="#cb5-9"></a>    <span class="ot">assert</span>(sound_signature[<span class="dv">0</span>] == <span class="ch">&#39;R&#39;</span>);</span>
-<span id="cb5-10"><a href="#cb5-10"></a>    <span class="ot">assert</span>(sound_signature[<span class="dv">1</span>] == <span class="ch">&#39;I&#39;</span>);</span>
-<span id="cb5-11"><a href="#cb5-11"></a>    <span class="ot">assert</span>(sound_signature[<span class="dv">2</span>] == <span class="ch">&#39;F&#39;</span>);</span>
-<span id="cb5-12"><a href="#cb5-12"></a>    <span class="ot">assert</span>(sound_signature[<span class="dv">3</span>] == <span class="ch">&#39;F&#39;</span>);</span>
-<span id="cb5-13"><a href="#cb5-13"></a></span>
-<span id="cb5-14"><a href="#cb5-14"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
-<span id="cb5-15"><a href="#cb5-15"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1"></a><span class="pp">#include </span><span class="im">&lt;assert.h&gt;</span></span>
+<span id="cb6-2"><a href="#cb6-2"></a></span>
+<span id="cb6-3"><a href="#cb6-3"></a><span class="dt">int</span> main (<span class="dt">int</span>, <span class="dt">char</span>*[]) {</span>
+<span id="cb6-4"><a href="#cb6-4"></a>    <span class="at">const</span> <span class="dt">char</span> sound_signature[] =</span>
+<span id="cb6-5"><a href="#cb6-5"></a><span class="pp">#</span><span class="er">embed char 4 &lt;sdk/jump.wav&gt;</span></span>
+<span id="cb6-6"><a href="#cb6-6"></a>    ;</span>
+<span id="cb6-7"><a href="#cb6-7"></a></span>
+<span id="cb6-8"><a href="#cb6-8"></a>    <span class="co">// PCM WAV resource?</span></span>
+<span id="cb6-9"><a href="#cb6-9"></a>    <span class="ot">assert</span>(sound_signature[<span class="dv">0</span>] == <span class="ch">&#39;R&#39;</span>);</span>
+<span id="cb6-10"><a href="#cb6-10"></a>    <span class="ot">assert</span>(sound_signature[<span class="dv">1</span>] == <span class="ch">&#39;I&#39;</span>);</span>
+<span id="cb6-11"><a href="#cb6-11"></a>    <span class="ot">assert</span>(sound_signature[<span class="dv">2</span>] == <span class="ch">&#39;F&#39;</span>);</span>
+<span id="cb6-12"><a href="#cb6-12"></a>    <span class="ot">assert</span>(sound_signature[<span class="dv">3</span>] == <span class="ch">&#39;F&#39;</span>);</span>
+<span id="cb6-13"><a href="#cb6-13"></a></span>
+<span id="cb6-14"><a href="#cb6-14"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
+<span id="cb6-15"><a href="#cb6-15"></a>}</span></code></pre></div>
 </blockquote>
 <hr>
 <ins>
@@ -331,18 +460,19 @@ searches a sequence of implementation-defined places for a resource identified u
 <div class="pagebreak">
 
 </div>
-<h1 id="wording---c-1"><span class="header-section-number">5</span> Wording - C++</h1>
-<p>This wording is relative to C++’s <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/n4835.pdf">N4835</a>.</p>
-<h2 id="intent-1"><span class="header-section-number">5.1</span> Intent</h2>
+<h1 id="wording---c-1"><span class="header-section-number">6</span> Wording - C++</h1>
+<p>This wording is relative to C++’s <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/n4842.pdf">N4835</a>.</p>
+<h2 id="intent-1"><span class="header-section-number">6.1</span> Intent</h2>
 <p>The intent of the wording is to provide a preprocessing directive that:</p>
 <ul>
 <li>takes a string literal enclosed in <code>&lt;&gt;</code> or <code>""</code> – potentially from the expansion of a macro – and use it to find a unique resource on implementation-defined search paths;</li>
-<li>maps the contents of the file in an implementation-defined manner to a sequence of integer literals, each whose value is no greater than the maximum representable value of a single <code>unsigned char</code>;</li>
+<li>maps the contents of the file in an implementation-defined manner to a sequence of <em><code>type-name</code></em> values;</li>
+<li>produces a diagnostic if the contents do not have enough data to fill out the binary representation of <em><code>type-name</code></em> values;</li>
 <li>and, present such contents as if by a brace-enclosed list of integer literals, such that it can be used to initialize arrays of known and unknown bound.</li>
 </ul>
-<h2 id="proposed-feature-test-macro"><span class="header-section-number">5.2</span> Proposed Feature Test Macro</h2>
-<p>The proposed feature test macro is <code>__cpp_embed</code> for the preprocessor functionality.</p>
-<h2 id="proposed-language-wording-1"><span class="header-section-number">5.3</span> Proposed Language Wording</h2>
+<h2 id="proposed-feature-test-macro"><span class="header-section-number">6.2</span> Proposed Feature Test Macro</h2>
+<p>The proposed feature test macro is <code>__cpp_pp_embed</code> for the preprocessor functionality.</p>
+<h2 id="proposed-language-wording-1"><span class="header-section-number">6.3</span> Proposed Language Wording</h2>
 <p>Append to §14.8.1 Predefined macro names [<strong>cpp.predefined</strong>]’s <strong>Table 16</strong> with one additional entry:</p>
 <blockquote>
 <table>
@@ -357,7 +487,7 @@ Value
 <tr>
 <td>
 <ins>
-__cpp_embed
+__cpp_pp_embed
 </ins>
 </td>
 <td>
@@ -367,6 +497,20 @@ __cpp_embed
 </td>
 </tr>
 </table>
+</blockquote>
+<p>Add a new <em>control-line</em> production to §15.1 Preamble [<strong>cpp.pre</strong>] and a new grammar production:</p>
+<blockquote>
+<p>
+<i>control-line</i>:<br/>     …<br/>     <ins><code># embed</code> <i>pp-tokens</i> <i>new-line</i></ins><br/>
+</p>
+<p>
+<p>
+…
+</p>
+<ins>
+<i>parenthesized-non-header</i>:<br/>     (<sub>opt</sub> <i>pp-tokens</i> <sub>opt</sub>)
+</ins>
+</p>
 </blockquote>
 <p>Add a new sub-clause §15.4 Resource inclusion [<strong>cpp.res</strong>]:</p>
 <blockquote>
@@ -381,160 +525,180 @@ __cpp_embed
 <sup>2</sup> A preprocessing directive of the form
 </p>
 <p>
-    # embed <i>digit-sequence</i><sub>opt</sub> <code>&lt;</code> <i>h-char-sequence</i> <code>&gt;</code> <i>new-line</i>
+    <code># embed</code> <i>parenthesized-non-header<sub>opt</sub></i> <i>digit-sequence<sub>opt</sub></i> <code>&lt;</code> <i>h-char-sequence</i> <code>&gt;</code> <i>new-line</i>
 </p>
 <p>
 or
 </p>
 <p>
-    # embed <i>digit-sequence</i><sub>opt</sub> <code>“</code> <i>q-char-sequence</i> <code>”</code> <i>new-line</i>
+    <code># embed</code> <i>parenthesized-non-header<sub>opt</sub></i> <i>digit-sequence<sub>opt</sub></i> <code>“</code> <i>q-char-sequence</i> <code>”</code> <i>new-line</i>
 </p>
 <p>
 searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&lt;</code> and <code>&gt;</code> or the <code>“</code> and <code>”</code> delimiters. How the places are specified or the resource identified is implementation-defined.
 </p>
 <p>
-<sup>3</sup> An <code>#embed</code> directive is replaced by the entire contents of the resource as if with a <i>brace-initializer-list</i> containing a sequence of <i>integer-literal</i>s. The contents are mapped in an implementation-defined manner to that <i>integer-literal</i> sequence. Each value of the <i>integer-literal</i> will not be greater than 2<sup><i>N</i></sup>, where <i>N</i> is the width of unsigned char [<b><a href="http://eel.is/c++draft/basic.fundamental#tab:basic.fundamental.width">tab:basic.fundamental.width</a></b>].
+<sup>3</sup> If there is no <i>parenthesized-non-header</i>, then the directive behaves as if the tokens of the <i>parenthesized-non-header</i> are <code>unsigned char</code>. If a <i>parenthesized-non-header</i> is specified, outer parenthesis must be present if the <i>pp-token</i>s contains one or more of <code>"</code>, <code>&lt;</code> or <code>&gt;</code>.
 </p>
-<sup>4</sup> If a <i>digit-sequence</i> is specified, it shall be an unsigned <i>integer-literal</i> and the replacement of the directive will be as if the mapped contents within the <i>brace-initializer-list</i> contain at most <i>digit-sequence</i> <i>integer-literal</i>s.
+<p>
+<sup>4</sup> An <code>#embed</code> directive behaves as-if replaced by the contents of the resource in a <i>brace-initializer-list</i>. The brace-delimited <i>initializer-list</i> represents an implementation-defined mapping from the contents of the resource to the elements of the <i>initializer-list</i>.
+</p>
+<p>
+<sup>5</sup> If a <i>digit-sequence</i> is specified, it shall be an unsigned <i>integer-literal</i> and the <i>brace-initializer-list</i> will contain no more than <i>digit-sequence</i> elements.
+</p>
+<p>
+<sup>6</sup> Let <code>T</code> be the <i>parenthesized-non-header</i> tokens. If the implemented-defined bit size of the resource’s contents are not a multiple of <code>sizeof( T ) * CHAR_BIT</code> or <code>T</code> does not denote a trivial type, then the program is ill-formed.
+</p>
 </ins>
 </blockquote>
-<h1 id="acknowledgements"><span class="header-section-number">6</span> Acknowledgements</h1>
-<p>Thank you to Alex Gilding for bolstering this proposal with additional ideas and motivation. Thank you to Aaron Ballman, David Keaton, and Rhajan Bhakta for early feedback on this proposal. Thank you to the <a href="https://www.includecpp.org/">#include&lt;C++&gt;</a> for bouncing lots of ideas off the idea in their Discord. for bouncing valuable ideas for this feature off of C.</p>
+<h1 id="acknowledgements"><span class="header-section-number">7</span> Acknowledgements</h1>
+<p>Thank you to Alex Gilding for bolstering this proposal with additional ideas and motivation. Thank you to Aaron Ballman, David Keaton, and Rhajan Bhakta for early feedback on this proposal. Thank you to the <a href="https://www.includecpp.org/">#include&lt;C++&gt;</a> for bouncing lots of ideas off the idea in their Discord.</p>
 <p>Thank you to the Lounge&lt;C++&gt; for their continued support, and to Robot M. F. for the valuable early implementation feedback.</p>
 <div class="pagebreak">
 
 </div>
-<h1 id="appendix"><span class="header-section-number">7</span> Appendix</h1>
-<h2 id="sadness"><span class="header-section-number">7.1</span> Sadness</h2>
-<p>This section categorizes some of the platform-specific techniques used to work with C++ and some of the challenges they face. Other techniques used include pre-processing data, link-time based tooling, and assembly-time runtime loading. They are detailed below, for a complete picture of today’s sad landscape of options. They include both C and C++ options.</p>
-<h3 id="pre-processing-tools-sadness"><span class="header-section-number">7.1.1</span> Pre-Processing Tools Sadness</h3>
+<h1 id="appendix"><span class="header-section-number">8</span> Appendix</h1>
+<h2 id="existing-tools"><span class="header-section-number">8.1</span> Existing Tools</h2>
+<p>This section categorizes some of the platform-specific techniques used to work with C++ and some of the challenges they face. Other techniques used include pre-processing data, link-time based tooling, and assembly-time runtime loading. They are detailed below, for a complete picture of today’s landscape of options. They include both C and C++ options.</p>
+<h3 id="pre-processing-tools"><span class="header-section-number">8.1.1</span> Pre-Processing Tools</h3>
 <ol type="1">
 <li>Run the tool over the data (<code>xxd -i xxd_data.bin &gt; xxd_data.h</code>) to obtain the generated file (<code>xxd_data.h</code>) and add a null terminator if necessary:</li>
 </ol>
-<div class="sourceCode" id="cb6"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1"></a><span class="dt">unsigned</span> <span class="dt">char</span> xxd_data_bin[] = {</span>
-<span id="cb6-2"><a href="#cb6-2"></a>  <span class="bn">0x48</span>, <span class="bn">0x65</span>, <span class="bn">0x6c</span>, <span class="bn">0x6c</span>, <span class="bn">0x6f</span>, <span class="bn">0x2c</span>, <span class="bn">0x20</span>, <span class="bn">0x57</span>, <span class="bn">0x6f</span>, <span class="bn">0x72</span>, <span class="bn">0x6c</span>, <span class="bn">0x64</span>,</span>
-<span id="cb6-3"><a href="#cb6-3"></a>  <span class="bn">0x0a</span>, <span class="bn">0x00</span></span>
-<span id="cb6-4"><a href="#cb6-4"></a>};</span>
-<span id="cb6-5"><a href="#cb6-5"></a><span class="dt">unsigned</span> <span class="dt">int</span> xxd_data_bin_len = <span class="dv">13</span>;</span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1"></a><span class="dt">unsigned</span> <span class="dt">char</span> xxd_data_bin[] = {</span>
+<span id="cb7-2"><a href="#cb7-2"></a>  <span class="bn">0x48</span>, <span class="bn">0x65</span>, <span class="bn">0x6c</span>, <span class="bn">0x6c</span>, <span class="bn">0x6f</span>, <span class="bn">0x2c</span>, <span class="bn">0x20</span>, <span class="bn">0x57</span>, <span class="bn">0x6f</span>, <span class="bn">0x72</span>, <span class="bn">0x6c</span>, <span class="bn">0x64</span>,</span>
+<span id="cb7-3"><a href="#cb7-3"></a>  <span class="bn">0x0a</span>, <span class="bn">0x00</span></span>
+<span id="cb7-4"><a href="#cb7-4"></a>};</span>
+<span id="cb7-5"><a href="#cb7-5"></a><span class="dt">unsigned</span> <span class="dt">int</span> xxd_data_bin_len = <span class="dv">13</span>;</span></code></pre></div>
 <ol start="2" type="1">
 <li>Compile <code>main.c</code>:</li>
 </ol>
-<div class="sourceCode" id="cb7"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1"></a><span class="pp">#include </span><span class="im">&lt;stdlib.h&gt;</span></span>
-<span id="cb7-2"><a href="#cb7-2"></a><span class="pp">#include </span><span class="im">&lt;stdio.h&gt;</span></span>
-<span id="cb7-3"><a href="#cb7-3"></a></span>
-<span id="cb7-4"><a href="#cb7-4"></a><span class="co">// prefix as const,</span></span>
-<span id="cb7-5"><a href="#cb7-5"></a><span class="co">// even if it generates some warnings in g++/clang++</span></span>
-<span id="cb7-6"><a href="#cb7-6"></a><span class="at">const</span></span>
-<span id="cb7-7"><a href="#cb7-7"></a><span class="pp">#include </span><span class="im">&quot;xxd_data.h&quot;</span></span>
-<span id="cb7-8"><a href="#cb7-8"></a></span>
-<span id="cb7-9"><a href="#cb7-9"></a><span class="pp">#define SIZE_OF_ARRAY </span>(arr)<span class="pp"> </span>(<span class="kw">sizeof</span>(arr)<span class="pp"> </span>/<span class="pp"> </span><span class="kw">sizeof</span>(*arr))</span>
-<span id="cb7-10"><a href="#cb7-10"></a></span>
-<span id="cb7-11"><a href="#cb7-11"></a><span class="dt">int</span> main() {</span>
-<span id="cb7-12"><a href="#cb7-12"></a>    <span class="at">const</span> <span class="dt">char</span>* data = <span class="kw">reinterpret_cast</span>&lt;<span class="at">const</span> <span class="dt">char</span>*&gt;(xxd_data_bin);</span>
-<span id="cb7-13"><a href="#cb7-13"></a>    puts(data); <span class="co">// Hello, World!</span></span>
-<span id="cb7-14"><a href="#cb7-14"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
-<span id="cb7-15"><a href="#cb7-15"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb8-1"><a href="#cb8-1"></a><span class="pp">#include </span><span class="im">&lt;stdlib.h&gt;</span></span>
+<span id="cb8-2"><a href="#cb8-2"></a><span class="pp">#include </span><span class="im">&lt;stdio.h&gt;</span></span>
+<span id="cb8-3"><a href="#cb8-3"></a></span>
+<span id="cb8-4"><a href="#cb8-4"></a><span class="co">// prefix as const,</span></span>
+<span id="cb8-5"><a href="#cb8-5"></a><span class="co">// even if it generates some warnings in g++/clang++</span></span>
+<span id="cb8-6"><a href="#cb8-6"></a><span class="at">const</span></span>
+<span id="cb8-7"><a href="#cb8-7"></a><span class="pp">#include </span><span class="im">&quot;xxd_data.h&quot;</span></span>
+<span id="cb8-8"><a href="#cb8-8"></a></span>
+<span id="cb8-9"><a href="#cb8-9"></a><span class="pp">#define SIZE_OF_ARRAY </span>(arr)<span class="pp"> </span>(<span class="kw">sizeof</span>(arr)<span class="pp"> </span>/<span class="pp"> </span><span class="kw">sizeof</span>(*arr))</span>
+<span id="cb8-10"><a href="#cb8-10"></a></span>
+<span id="cb8-11"><a href="#cb8-11"></a><span class="dt">int</span> main() {</span>
+<span id="cb8-12"><a href="#cb8-12"></a>    <span class="at">const</span> <span class="dt">char</span>* data = <span class="kw">reinterpret_cast</span>&lt;<span class="at">const</span> <span class="dt">char</span>*&gt;(xxd_data_bin);</span>
+<span id="cb8-13"><a href="#cb8-13"></a>    puts(data); <span class="co">// Hello, World!</span></span>
+<span id="cb8-14"><a href="#cb8-14"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
+<span id="cb8-15"><a href="#cb8-15"></a>}</span></code></pre></div>
 <p>Others still use python or other small scripting languages as part of their build process, outputting data in the exact C++ format that they require.</p>
-<p>There are problems with the <code>xxd -i</code> or similar tool-based approach. Lexing and Parsing data-as-source-code adds an enormous overhead to actually reading and making that data available.</p>
+<p>There are problems with the <code>xxd -i</code> or similar tool-based approach. Tokenization and Parsing data-as-source-code adds an enormous overhead to actually reading and making that data available.</p>
 <p>Binary data as C(++) arrays provide the overhead of having to comma-delimit every single byte present, it also requires that the compiler verify every entry in that array is a valid literal or entry according to the C++ language.</p>
 <p>This scales poorly with larger files, and build times suffer for any non-trivial binary file, especially when it scales into Megabytes in size (e.g., firmware and similar).</p>
-<h3 id="python-sadness"><span class="header-section-number">7.1.2</span> <code>python</code> Sadness</h3>
+<h3 id="python"><span class="header-section-number">8.1.2</span> <code>python</code></h3>
 <p>Other companies are forced to create their own ad-hoc tools to embed data and files into their C++ code. MongoDB uses a <a href="https://github.com/mongodb/mongo/blob/master/site_scons/site_tools/jstoh.py">custom python script</a>, just to format their data for compiler consumption:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1"></a><span class="im">import</span> os</span>
-<span id="cb8-2"><a href="#cb8-2"></a><span class="im">import</span> sys</span>
-<span id="cb8-3"><a href="#cb8-3"></a></span>
-<span id="cb8-4"><a href="#cb8-4"></a><span class="kw">def</span> jsToHeader(target, source):</span>
-<span id="cb8-5"><a href="#cb8-5"></a>    outFile <span class="op">=</span> target</span>
-<span id="cb8-6"><a href="#cb8-6"></a>    h <span class="op">=</span> [</span>
-<span id="cb8-7"><a href="#cb8-7"></a>        <span class="st">&#39;#include &quot;mongo/base/string_data.h&quot;&#39;</span>,</span>
-<span id="cb8-8"><a href="#cb8-8"></a>        <span class="st">&#39;#include &quot;mongo/scripting/engine.h&quot;&#39;</span>,</span>
-<span id="cb8-9"><a href="#cb8-9"></a>        <span class="st">&#39;namespace mongo {&#39;</span>,</span>
-<span id="cb8-10"><a href="#cb8-10"></a>        <span class="st">&#39;namespace JSFiles{&#39;</span>,</span>
-<span id="cb8-11"><a href="#cb8-11"></a>    ]</span>
-<span id="cb8-12"><a href="#cb8-12"></a>    <span class="kw">def</span> lineToChars(s):</span>
-<span id="cb8-13"><a href="#cb8-13"></a>        <span class="cf">return</span> <span class="st">&#39;,&#39;</span>.join(<span class="bu">str</span>(<span class="bu">ord</span>(c)) <span class="cf">for</span> c <span class="kw">in</span> (s.rstrip() <span class="op">+</span> <span class="st">&#39;</span><span class="ch">\n</span><span class="st">&#39;</span>)) <span class="op">+</span> <span class="st">&#39;,&#39;</span></span>
-<span id="cb8-14"><a href="#cb8-14"></a>    <span class="cf">for</span> s <span class="kw">in</span> source:</span>
-<span id="cb8-15"><a href="#cb8-15"></a>        filename <span class="op">=</span> <span class="bu">str</span>(s)</span>
-<span id="cb8-16"><a href="#cb8-16"></a>        objname <span class="op">=</span> os.path.split(filename)[<span class="dv">1</span>].split(<span class="st">&#39;.&#39;</span>)[<span class="dv">0</span>]</span>
-<span id="cb8-17"><a href="#cb8-17"></a>        stringname <span class="op">=</span> <span class="st">&#39;_jscode_raw_&#39;</span> <span class="op">+</span> objname</span>
-<span id="cb8-18"><a href="#cb8-18"></a></span>
-<span id="cb8-19"><a href="#cb8-19"></a>        h.append(<span class="st">&#39;constexpr char &#39;</span> <span class="op">+</span> stringname <span class="op">+</span> <span class="st">&quot;[] = {&quot;</span>)</span>
-<span id="cb8-20"><a href="#cb8-20"></a></span>
-<span id="cb8-21"><a href="#cb8-21"></a>        <span class="cf">with</span> <span class="bu">open</span>(filename, <span class="st">&#39;r&#39;</span>) <span class="im">as</span> f:</span>
-<span id="cb8-22"><a href="#cb8-22"></a>            <span class="cf">for</span> line <span class="kw">in</span> f:</span>
-<span id="cb8-23"><a href="#cb8-23"></a>                h.append(lineToChars(line))</span>
-<span id="cb8-24"><a href="#cb8-24"></a></span>
-<span id="cb8-25"><a href="#cb8-25"></a>        h.append(<span class="st">&quot;0};&quot;</span>)</span>
-<span id="cb8-26"><a href="#cb8-26"></a>        <span class="co"># symbols aren&#39;t exported w/o this</span></span>
-<span id="cb8-27"><a href="#cb8-27"></a>        h.append(<span class="st">&#39;extern const JSFile </span><span class="sc">%s</span><span class="st">;&#39;</span> <span class="op">%</span> objname)</span>
-<span id="cb8-28"><a href="#cb8-28"></a>        h.append(<span class="st">&#39;const JSFile </span><span class="sc">%s</span><span class="st"> = { &quot;</span><span class="sc">%s</span><span class="st">&quot;, StringData(</span><span class="sc">%s</span><span class="st">, sizeof(</span><span class="sc">%s</span><span class="st">) - 1) };&#39;</span> <span class="op">%</span></span>
-<span id="cb8-29"><a href="#cb8-29"></a>                 (objname, filename.replace(<span class="st">&#39;</span><span class="ch">\\</span><span class="st">&#39;</span>, <span class="st">&#39;/&#39;</span>), stringname, stringname))</span>
-<span id="cb8-30"><a href="#cb8-30"></a></span>
-<span id="cb8-31"><a href="#cb8-31"></a>    h.append(<span class="st">&quot;} // namespace JSFiles&quot;</span>)</span>
-<span id="cb8-32"><a href="#cb8-32"></a>    h.append(<span class="st">&quot;} // namespace mongo&quot;</span>)</span>
-<span id="cb8-33"><a href="#cb8-33"></a>    h.append(<span class="st">&quot;&quot;</span>)</span>
-<span id="cb8-34"><a href="#cb8-34"></a></span>
-<span id="cb8-35"><a href="#cb8-35"></a>    text <span class="op">=</span> <span class="st">&#39;</span><span class="ch">\n</span><span class="st">&#39;</span>.join(h)</span>
-<span id="cb8-36"><a href="#cb8-36"></a></span>
-<span id="cb8-37"><a href="#cb8-37"></a>    <span class="cf">with</span> <span class="bu">open</span>(outFile, <span class="st">&#39;wb&#39;</span>) <span class="im">as</span> out:</span>
-<span id="cb8-38"><a href="#cb8-38"></a>        <span class="cf">try</span>:</span>
-<span id="cb8-39"><a href="#cb8-39"></a>            out.write(text)</span>
-<span id="cb8-40"><a href="#cb8-40"></a>        <span class="cf">finally</span>:</span>
-<span id="cb8-41"><a href="#cb8-41"></a>            out.close()</span>
-<span id="cb8-42"><a href="#cb8-42"></a></span>
-<span id="cb8-43"><a href="#cb8-43"></a></span>
-<span id="cb8-44"><a href="#cb8-44"></a><span class="cf">if</span> <span class="va">__name__</span> <span class="op">==</span> <span class="st">&quot;__main__&quot;</span>:</span>
-<span id="cb8-45"><a href="#cb8-45"></a>    <span class="cf">if</span> <span class="bu">len</span>(sys.argv) <span class="op">&lt;</span> <span class="dv">3</span>:</span>
-<span id="cb8-46"><a href="#cb8-46"></a>        <span class="bu">print</span> <span class="st">&quot;Must specify [target] [source] &quot;</span></span>
-<span id="cb8-47"><a href="#cb8-47"></a>        sys.exit(<span class="dv">1</span>)</span>
-<span id="cb8-48"><a href="#cb8-48"></a>    jsToHeader(sys.argv[<span class="dv">1</span>], sys.argv[<span class="dv">2</span>:])</span></code></pre></div>
+<div class="sourceCode" id="cb9"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1"></a><span class="im">import</span> os</span>
+<span id="cb9-2"><a href="#cb9-2"></a><span class="im">import</span> sys</span>
+<span id="cb9-3"><a href="#cb9-3"></a></span>
+<span id="cb9-4"><a href="#cb9-4"></a><span class="kw">def</span> jsToHeader(target, source):</span>
+<span id="cb9-5"><a href="#cb9-5"></a>    outFile <span class="op">=</span> target</span>
+<span id="cb9-6"><a href="#cb9-6"></a>    h <span class="op">=</span> [</span>
+<span id="cb9-7"><a href="#cb9-7"></a>        <span class="st">&#39;#include &quot;mongo/base/string_data.h&quot;&#39;</span>,</span>
+<span id="cb9-8"><a href="#cb9-8"></a>        <span class="st">&#39;#include &quot;mongo/scripting/engine.h&quot;&#39;</span>,</span>
+<span id="cb9-9"><a href="#cb9-9"></a>        <span class="st">&#39;namespace mongo {&#39;</span>,</span>
+<span id="cb9-10"><a href="#cb9-10"></a>        <span class="st">&#39;namespace JSFiles{&#39;</span>,</span>
+<span id="cb9-11"><a href="#cb9-11"></a>    ]</span>
+<span id="cb9-12"><a href="#cb9-12"></a>    <span class="kw">def</span> lineToChars(s):</span>
+<span id="cb9-13"><a href="#cb9-13"></a>        <span class="cf">return</span> <span class="st">&#39;,&#39;</span>.join(<span class="bu">str</span>(<span class="bu">ord</span>(c)) <span class="cf">for</span> c <span class="kw">in</span> (s.rstrip() <span class="op">+</span> <span class="st">&#39;</span><span class="ch">\n</span><span class="st">&#39;</span>)) <span class="op">+</span> <span class="st">&#39;,&#39;</span></span>
+<span id="cb9-14"><a href="#cb9-14"></a>    <span class="cf">for</span> s <span class="kw">in</span> source:</span>
+<span id="cb9-15"><a href="#cb9-15"></a>        filename <span class="op">=</span> <span class="bu">str</span>(s)</span>
+<span id="cb9-16"><a href="#cb9-16"></a>        objname <span class="op">=</span> os.path.split(filename)[<span class="dv">1</span>].split(<span class="st">&#39;.&#39;</span>)[<span class="dv">0</span>]</span>
+<span id="cb9-17"><a href="#cb9-17"></a>        stringname <span class="op">=</span> <span class="st">&#39;_jscode_raw_&#39;</span> <span class="op">+</span> objname</span>
+<span id="cb9-18"><a href="#cb9-18"></a></span>
+<span id="cb9-19"><a href="#cb9-19"></a>        h.append(<span class="st">&#39;constexpr char &#39;</span> <span class="op">+</span> stringname <span class="op">+</span> <span class="st">&quot;[] = {&quot;</span>)</span>
+<span id="cb9-20"><a href="#cb9-20"></a></span>
+<span id="cb9-21"><a href="#cb9-21"></a>        <span class="cf">with</span> <span class="bu">open</span>(filename, <span class="st">&#39;r&#39;</span>) <span class="im">as</span> f:</span>
+<span id="cb9-22"><a href="#cb9-22"></a>            <span class="cf">for</span> line <span class="kw">in</span> f:</span>
+<span id="cb9-23"><a href="#cb9-23"></a>                h.append(lineToChars(line))</span>
+<span id="cb9-24"><a href="#cb9-24"></a></span>
+<span id="cb9-25"><a href="#cb9-25"></a>        h.append(<span class="st">&quot;0};&quot;</span>)</span>
+<span id="cb9-26"><a href="#cb9-26"></a>        <span class="co"># symbols aren&#39;t exported w/o this</span></span>
+<span id="cb9-27"><a href="#cb9-27"></a>        h.append(<span class="st">&#39;extern const JSFile </span><span class="sc">%s</span><span class="st">;&#39;</span> <span class="op">%</span> objname)</span>
+<span id="cb9-28"><a href="#cb9-28"></a>        h.append(<span class="st">&#39;const JSFile </span><span class="sc">%s</span><span class="st"> = { &quot;</span><span class="sc">%s</span><span class="st">&quot;, StringData(</span><span class="sc">%s</span><span class="st">, sizeof(</span><span class="sc">%s</span><span class="st">) - 1) };&#39;</span> <span class="op">%</span></span>
+<span id="cb9-29"><a href="#cb9-29"></a>                 (objname, filename.replace(<span class="st">&#39;</span><span class="ch">\\</span><span class="st">&#39;</span>, <span class="st">&#39;/&#39;</span>), stringname, stringname))</span>
+<span id="cb9-30"><a href="#cb9-30"></a></span>
+<span id="cb9-31"><a href="#cb9-31"></a>    h.append(<span class="st">&quot;} // namespace JSFiles&quot;</span>)</span>
+<span id="cb9-32"><a href="#cb9-32"></a>    h.append(<span class="st">&quot;} // namespace mongo&quot;</span>)</span>
+<span id="cb9-33"><a href="#cb9-33"></a>    h.append(<span class="st">&quot;&quot;</span>)</span>
+<span id="cb9-34"><a href="#cb9-34"></a></span>
+<span id="cb9-35"><a href="#cb9-35"></a>    text <span class="op">=</span> <span class="st">&#39;</span><span class="ch">\n</span><span class="st">&#39;</span>.join(h)</span>
+<span id="cb9-36"><a href="#cb9-36"></a></span>
+<span id="cb9-37"><a href="#cb9-37"></a>    <span class="cf">with</span> <span class="bu">open</span>(outFile, <span class="st">&#39;wb&#39;</span>) <span class="im">as</span> out:</span>
+<span id="cb9-38"><a href="#cb9-38"></a>        <span class="cf">try</span>:</span>
+<span id="cb9-39"><a href="#cb9-39"></a>            out.write(text)</span>
+<span id="cb9-40"><a href="#cb9-40"></a>        <span class="cf">finally</span>:</span>
+<span id="cb9-41"><a href="#cb9-41"></a>            out.close()</span>
+<span id="cb9-42"><a href="#cb9-42"></a></span>
+<span id="cb9-43"><a href="#cb9-43"></a></span>
+<span id="cb9-44"><a href="#cb9-44"></a><span class="cf">if</span> <span class="va">__name__</span> <span class="op">==</span> <span class="st">&quot;__main__&quot;</span>:</span>
+<span id="cb9-45"><a href="#cb9-45"></a>    <span class="cf">if</span> <span class="bu">len</span>(sys.argv) <span class="op">&lt;</span> <span class="dv">3</span>:</span>
+<span id="cb9-46"><a href="#cb9-46"></a>        <span class="bu">print</span> <span class="st">&quot;Must specify [target] [source] &quot;</span></span>
+<span id="cb9-47"><a href="#cb9-47"></a>        sys.exit(<span class="dv">1</span>)</span>
+<span id="cb9-48"><a href="#cb9-48"></a>    jsToHeader(sys.argv[<span class="dv">1</span>], sys.argv[<span class="dv">2</span>:])</span></code></pre></div>
 <p>MongoDB were brave enough to share their code with me and make public the things they have to do: other companies have shared many similar concerns, but do not have the same bravery. We thank MongoDB for sharing.</p>
-<h3 id="ld-sadness"><span class="header-section-number">7.1.3</span> <code>ld</code> Sadness</h3>
+<h3 id="ld"><span class="header-section-number">8.1.3</span> <code>ld</code></h3>
 <p>A complete example (does not compile on Visual C++):</p>
 <ol type="1">
 <li><p>Have a file ld_data.bin with the contents <code>Hello, World!</code>.</p></li>
 <li><p>Run <code>ld -r binary -o ld_data.o ld_data.bin</code>.</p></li>
 <li><p>Compile the following <code>main.cpp</code> with <code>c++ -std=c++17 ld_data.o main.cpp</code>:</p></li>
 </ol>
-<div class="sourceCode" id="cb9"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb9-1"><a href="#cb9-1"></a><span class="pp">#include </span><span class="im">&lt;stdlib.h&gt;</span></span>
-<span id="cb9-2"><a href="#cb9-2"></a><span class="pp">#include </span><span class="im">&lt;stdio.h&gt;</span></span>
-<span id="cb9-3"><a href="#cb9-3"></a></span>
-<span id="cb9-4"><a href="#cb9-4"></a><span class="pp">#ifdef __APPLE__</span></span>
-<span id="cb9-5"><a href="#cb9-5"></a><span class="pp">#include </span><span class="im">&lt;mach-o/getsect.h&gt;</span></span>
-<span id="cb9-6"><a href="#cb9-6"></a></span>
-<span id="cb9-7"><a href="#cb9-7"></a><span class="pp">#define DECLARE_LD</span>(NAME)<span class="pp"> </span><span class="at">extern</span><span class="pp"> </span><span class="at">const</span><span class="pp"> </span><span class="dt">unsigned</span><span class="pp"> </span><span class="dt">char</span><span class="pp"> </span>_section<span class="er">$</span>__DATA__<span class="pp">##</span>NAME[];</span>
-<span id="cb9-8"><a href="#cb9-8"></a><span class="pp">#define LD_NAME</span>(NAME)<span class="pp"> </span>_section<span class="er">$</span>__DATA__<span class="pp">##</span>NAME</span>
-<span id="cb9-9"><a href="#cb9-9"></a><span class="pp">#define LD_SIZE</span>(NAME)<span class="pp"> </span>(getsectbyname(<span class="st">&quot;__DATA&quot;</span>,<span class="pp"> </span><span class="st">&quot;__&quot;</span><span class="pp"> #</span>NAME)-&gt;size)</span>
-<span id="cb9-10"><a href="#cb9-10"></a></span>
-<span id="cb9-11"><a href="#cb9-11"></a><span class="pp">#elif (defined __MINGW32__) </span><span class="co">/* mingw */</span></span>
-<span id="cb9-12"><a href="#cb9-12"></a></span>
-<span id="cb9-13"><a href="#cb9-13"></a><span class="pp">#define DECLARE_LD</span>(NAME)<span class="pp">                                 </span>\</span>
-<span id="cb9-14"><a href="#cb9-14"></a><span class="pp">    </span><span class="at">extern</span><span class="pp"> </span><span class="at">const</span><span class="pp"> </span><span class="dt">unsigned</span><span class="pp"> </span><span class="dt">char</span><span class="pp"> </span><span class="va">binary_</span><span class="pp">##</span>NAME<span class="pp">##</span>_start[];<span class="pp"> </span>\</span>
-<span id="cb9-15"><a href="#cb9-15"></a><span class="pp">    </span><span class="at">extern</span><span class="pp"> </span><span class="at">const</span><span class="pp"> </span><span class="dt">unsigned</span><span class="pp"> </span><span class="dt">char</span><span class="pp"> </span><span class="va">binary_</span><span class="pp">##</span>NAME<span class="pp">##</span>_end[];</span>
-<span id="cb9-16"><a href="#cb9-16"></a><span class="pp">#define LD_NAME</span>(NAME)<span class="pp"> </span><span class="va">binary_</span><span class="pp">##</span>NAME<span class="pp">##</span>_start</span>
-<span id="cb9-17"><a href="#cb9-17"></a><span class="pp">#define LD_SIZE</span>(NAME)<span class="pp"> </span>((<span class="va">binary_</span><span class="pp">##</span>NAME<span class="pp">##</span>_end)<span class="pp"> </span>-<span class="pp"> </span>(<span class="va">binary_</span><span class="pp">##</span>NAME<span class="pp">##</span>_start))</span>
-<span id="cb9-18"><a href="#cb9-18"></a></span>
-<span id="cb9-19"><a href="#cb9-19"></a><span class="pp">#else </span><span class="co">/* gnu/linux ld */</span></span>
-<span id="cb9-20"><a href="#cb9-20"></a></span>
-<span id="cb9-21"><a href="#cb9-21"></a><span class="pp">#define DECLARE_LD</span>(NAME)<span class="pp">                                  </span>\</span>
-<span id="cb9-22"><a href="#cb9-22"></a><span class="pp">    </span><span class="at">extern</span><span class="pp"> </span><span class="at">const</span><span class="pp"> </span><span class="dt">unsigned</span><span class="pp"> </span><span class="dt">char</span><span class="pp"> </span>_binary_<span class="pp">##</span>NAME<span class="pp">##</span>_start[];<span class="pp"> </span>\</span>
-<span id="cb9-23"><a href="#cb9-23"></a><span class="pp">    </span><span class="at">extern</span><span class="pp"> </span><span class="at">const</span><span class="pp"> </span><span class="dt">unsigned</span><span class="pp"> </span><span class="dt">char</span><span class="pp"> </span>_binary_<span class="pp">##</span>NAME<span class="pp">##</span>_end[];</span>
-<span id="cb9-24"><a href="#cb9-24"></a><span class="pp">#define LD_NAME</span>(NAME)<span class="pp"> </span>_binary_<span class="pp">##</span>NAME<span class="pp">##</span>_start</span>
-<span id="cb9-25"><a href="#cb9-25"></a><span class="pp">#define LD_SIZE</span>(NAME)<span class="pp"> </span>((_binary_<span class="pp">##</span>NAME<span class="pp">##</span>_end)<span class="pp"> </span>-<span class="pp"> </span>(_binary_<span class="pp">##</span>NAME<span class="pp">##</span>_start))</span>
-<span id="cb9-26"><a href="#cb9-26"></a><span class="pp">#endif</span></span>
-<span id="cb9-27"><a href="#cb9-27"></a></span>
-<span id="cb9-28"><a href="#cb9-28"></a>DECLARE_LD(ld_data_bin);</span>
-<span id="cb9-29"><a href="#cb9-29"></a></span>
-<span id="cb9-30"><a href="#cb9-30"></a><span class="dt">int</span> main() {</span>
-<span id="cb9-31"><a href="#cb9-31"></a>    <span class="at">const</span> <span class="dt">char</span>* p_data = <span class="kw">reinterpret_cast</span>&lt;<span class="at">const</span> <span class="dt">char</span>*&gt;(LD_NAME(ld_data_bin));</span>
-<span id="cb9-32"><a href="#cb9-32"></a>    <span class="co">// impossible, not null-terminated</span></span>
-<span id="cb9-33"><a href="#cb9-33"></a>    <span class="co">//puts(p_data);</span></span>
-<span id="cb9-34"><a href="#cb9-34"></a>    <span class="co">// must copy instead</span></span>
-<span id="cb9-35"><a href="#cb9-35"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
-<span id="cb9-36"><a href="#cb9-36"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb10"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb10-1"><a href="#cb10-1"></a><span class="pp">#include </span><span class="im">&lt;stdlib.h&gt;</span></span>
+<span id="cb10-2"><a href="#cb10-2"></a><span class="pp">#include </span><span class="im">&lt;stdio.h&gt;</span></span>
+<span id="cb10-3"><a href="#cb10-3"></a></span>
+<span id="cb10-4"><a href="#cb10-4"></a><span class="pp">#define STRINGIZE_</span>(x)<span class="pp"> #</span>x</span>
+<span id="cb10-5"><a href="#cb10-5"></a><span class="pp">#define STRINGIZE</span>(x)<span class="pp"> </span>STRINGIZE_(x)</span>
+<span id="cb10-6"><a href="#cb10-6"></a></span>
+<span id="cb10-7"><a href="#cb10-7"></a><span class="pp">#ifdef __APPLE__</span></span>
+<span id="cb10-8"><a href="#cb10-8"></a><span class="pp">#include </span><span class="im">&lt;mach-o/getsect.h&gt;</span></span>
+<span id="cb10-9"><a href="#cb10-9"></a></span>
+<span id="cb10-10"><a href="#cb10-10"></a><span class="pp">#define DECLARE_LD_</span>(LNAME)<span class="pp"> </span><span class="at">extern</span><span class="pp"> </span><span class="at">const</span><span class="pp"> </span><span class="dt">unsigned</span><span class="pp"> </span><span class="dt">char</span><span class="pp"> </span>_section<span class="er">$</span>__DATA__<span class="pp">##</span>LNAME[];</span>
+<span id="cb10-11"><a href="#cb10-11"></a><span class="pp">#define LD_NAME_</span>(LNAME)<span class="pp"> </span>_section<span class="er">$</span>__DATA__<span class="pp">##</span>LNAME</span>
+<span id="cb10-12"><a href="#cb10-12"></a><span class="pp">#define LD_SIZE_</span>(LNAME)<span class="pp"> </span>(getsectbyLNAME(<span class="st">&quot;__DATA&quot;</span>,<span class="pp"> </span><span class="st">&quot;__&quot;</span><span class="pp"> </span>STRINGIZE(LNAME))-&gt;size)</span>
+<span id="cb10-13"><a href="#cb10-13"></a><span class="pp">#define DECLARE_LD</span>(LNAME)<span class="pp"> </span>DECLARE_LD_(LNAME)</span>
+<span id="cb10-14"><a href="#cb10-14"></a><span class="pp">#define LD_NAME</span>(LNAME)<span class="pp"> </span>LD_NAME_(LNAME)</span>
+<span id="cb10-15"><a href="#cb10-15"></a><span class="pp">#define LD_SIZE</span>(LNAME)<span class="pp"> </span>LD_SIZE_(LNAME)</span>
+<span id="cb10-16"><a href="#cb10-16"></a></span>
+<span id="cb10-17"><a href="#cb10-17"></a><span class="pp">#elif (defined __MINGW32__) </span><span class="co">/* mingw */</span></span>
+<span id="cb10-18"><a href="#cb10-18"></a></span>
+<span id="cb10-19"><a href="#cb10-19"></a><span class="pp">#define DECLARE_LD</span>(LNAME)<span class="pp">                                 </span>\</span>
+<span id="cb10-20"><a href="#cb10-20"></a><span class="pp">  </span><span class="at">extern</span><span class="pp"> </span><span class="at">const</span><span class="pp"> </span><span class="dt">unsigned</span><span class="pp"> </span><span class="dt">char</span><span class="pp"> </span><span class="va">binary_</span><span class="pp">##</span>LNAME<span class="pp">##</span>_start[];<span class="pp">    </span>\</span>
+<span id="cb10-21"><a href="#cb10-21"></a><span class="pp">  </span><span class="at">extern</span><span class="pp"> </span><span class="at">const</span><span class="pp"> </span><span class="dt">unsigned</span><span class="pp"> </span><span class="dt">char</span><span class="pp"> </span><span class="va">binary_</span><span class="pp">##</span>LNAME<span class="pp">##</span>_end[];</span>
+<span id="cb10-22"><a href="#cb10-22"></a><span class="pp">#define LD_NAME</span>(LNAME)<span class="pp"> </span><span class="va">binary_</span><span class="pp">##</span>LNAME<span class="pp">##</span>_start</span>
+<span id="cb10-23"><a href="#cb10-23"></a><span class="pp">#define LD_SIZE</span>(LNAME)<span class="pp"> </span>((<span class="va">binary_</span><span class="pp">##</span>LNAME<span class="pp">##</span>_end)<span class="pp"> </span>-<span class="pp"> </span>(<span class="va">binary_</span><span class="pp">##</span>LNAME<span class="pp">##</span>_start))</span>
+<span id="cb10-24"><a href="#cb10-24"></a><span class="pp">#define DECLARE_LD</span>(LNAME)<span class="pp"> </span>DECLARE_LD_(LNAME)</span>
+<span id="cb10-25"><a href="#cb10-25"></a><span class="pp">#define LD_NAME</span>(LNAME)<span class="pp"> </span>LD_NAME_(LNAME)</span>
+<span id="cb10-26"><a href="#cb10-26"></a><span class="pp">#define LD_SIZE</span>(LNAME)<span class="pp"> </span>LD_SIZE_(LNAME)</span>
+<span id="cb10-27"><a href="#cb10-27"></a></span>
+<span id="cb10-28"><a href="#cb10-28"></a><span class="pp">#else </span><span class="co">/* gnu/linux ld */</span></span>
+<span id="cb10-29"><a href="#cb10-29"></a></span>
+<span id="cb10-30"><a href="#cb10-30"></a><span class="pp">#define DECLARE_LD_</span>(LNAME)<span class="pp">                                  </span>\</span>
+<span id="cb10-31"><a href="#cb10-31"></a><span class="pp">  </span><span class="at">extern</span><span class="pp"> </span><span class="at">const</span><span class="pp"> </span><span class="dt">unsigned</span><span class="pp"> </span><span class="dt">char</span><span class="pp"> </span>_binary_<span class="pp">##</span>LNAME<span class="pp">##</span>_start[];<span class="pp">     </span>\</span>
+<span id="cb10-32"><a href="#cb10-32"></a><span class="pp">  </span><span class="at">extern</span><span class="pp"> </span><span class="at">const</span><span class="pp"> </span><span class="dt">unsigned</span><span class="pp"> </span><span class="dt">char</span><span class="pp"> </span>_binary_<span class="pp">##</span>LNAME<span class="pp">##</span>_end[];</span>
+<span id="cb10-33"><a href="#cb10-33"></a><span class="pp">#define LD_NAME_</span>(LNAME)<span class="pp"> </span>_binary_<span class="pp">##</span>LNAME<span class="pp">##</span>_start</span>
+<span id="cb10-34"><a href="#cb10-34"></a><span class="pp">#define LD_SIZE_</span>(LNAME)<span class="pp"> </span>((_binary_<span class="pp">##</span>LNAME<span class="pp">##</span>_end)<span class="pp"> </span>-<span class="pp"> </span>(_binary_<span class="pp">##</span>LNAME<span class="pp">##</span>_start))</span>
+<span id="cb10-35"><a href="#cb10-35"></a><span class="pp">#define DECLARE_LD</span>(LNAME)<span class="pp"> </span>DECLARE_LD_(LNAME)</span>
+<span id="cb10-36"><a href="#cb10-36"></a><span class="pp">#define LD_NAME</span>(LNAME)<span class="pp"> </span>LD_NAME_(LNAME)</span>
+<span id="cb10-37"><a href="#cb10-37"></a><span class="pp">#define LD_SIZE</span>(LNAME)<span class="pp"> </span>LD_SIZE_(LNAME)</span>
+<span id="cb10-38"><a href="#cb10-38"></a><span class="pp">#endif</span></span>
+<span id="cb10-39"><a href="#cb10-39"></a></span>
+<span id="cb10-40"><a href="#cb10-40"></a>DECLARE_LD(ld_data_bin);</span>
+<span id="cb10-41"><a href="#cb10-41"></a></span>
+<span id="cb10-42"><a href="#cb10-42"></a><span class="dt">int</span> main() {</span>
+<span id="cb10-43"><a href="#cb10-43"></a>    <span class="at">const</span> <span class="dt">char</span>* p_data = <span class="kw">reinterpret_cast</span>&lt;<span class="at">const</span> <span class="dt">char</span>*&gt;(LD_NAME(ld_data_bin));</span>
+<span id="cb10-44"><a href="#cb10-44"></a>    <span class="co">// impossible, not null-terminated</span></span>
+<span id="cb10-45"><a href="#cb10-45"></a>    <span class="co">//puts(p_data);</span></span>
+<span id="cb10-46"><a href="#cb10-46"></a>    <span class="co">// must copy instead</span></span>
+<span id="cb10-47"><a href="#cb10-47"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
+<span id="cb10-48"><a href="#cb10-48"></a>}</span></code></pre></div>
 <p>This scales a little bit better in terms of raw compilation time but is shockingly OS, vendor and platform specific in ways that novice developers would not be able to handle fully. The macros are required to erase differences, lest subtle differences in name will destroy one’s ability to use these macros effectively. We omitted the code for handling VC++ resource files because it is excessively verbose than what is present here.</p>
 <p>N.B.: Because these declarations are <code>extern</code>, the values in the array cannot be accessed at compilation/translation-time.</p>
-<h3 id="incbin-sadness"><span class="header-section-number">7.1.4</span> <code>incbin</code> Sadness</h3>
+<h3 id="incbin"><span class="header-section-number">8.1.4</span> <code>incbin</code></h3>
 <p>There is a tool called <a href="https://github.com/graphitemaster/incbin"><code>incbin</code></a> which is a 3rd party attempt at pulling files in at “assembly time”. Its approach is incredibly similar to <code>ld</code>, with the caveat that files must be shipped with their binary. It unfortunately falls prey to the same problems of cross-platform woes when dealing with Visual C, requiring additional pre-processing to work out in full.</p>
 </body>
 </html>

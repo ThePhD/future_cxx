@@ -1,11 +1,12 @@
 ---
-title: Preprocessor embed
+title: Preprocessor embed - Binary Resource Inclusion
 layout: page
-date: October 24th, 2019
+date: January 13th, 20120
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
 redirect_from:
   - /vendor/future_cxx/papers/source/d1967.html
+  - /vendor/future_cxx/papers/source/n2470.html
 hide: true
 ---
 
@@ -78,7 +79,7 @@ div.newnumbered li:before {
 }
 </style>
 
-_**Document**_: WG14 nXXXX | WG21 p1967  
+_**Document**_: WG14 n2470 | WG21 p1967  
 _**Previous Revisions**_: n/a  
 _**Audience**_: WG14, WG21  
 _**Proposal Category**_: New Features  
@@ -89,7 +90,7 @@ _**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source
 <span style="font-style: italic; font-weight: bold">Abstract:</span>
 <p>Pulling binary data into a program often involves external tools and build system coordination. Many programs need binary data such as images, encoded text, icons and other data in a specific format. Current state of the art for working with such static data in C includes creating files which contain solely string literals, directly invoking the linker to create data blobs to access through carefully named extern variables, or generating large brace-delimited lists of integers to place into arrays. As binary data has grown larger, these approaches have begun to have drawbacks and issues scaling. From parsing 5 megabytes worth of integer literal expressions into AST nodes to arbitrary string literal length limits in compilers, portably putting binary data in a C program has become an arduous task that taxes build infrastructure and compilation memory and time.
 </p>
-<p>We propose a flexible preprocessor directive for making this data available to the user in a straightforward manner.</p>
+<p>This proposal provides a flexible preprocessor directive for making this data available to the user in a straightforward manner.</p>
 </p>
 
 <div class="pagebreak"></div>
@@ -107,10 +108,59 @@ Thusly, we propose a new preprocessor directive whose sole purpose is to be `#in
 
 
 
+## Motivation
+
+The reason this needs a new language feature is simple: at present we currently poorly indicate the intent of the compiler to "produce"
+
+Many different options as opposed to this proposal were seriously evaluated. Implementations were attempted in at least 2 production-use compilers, and more in private. To give an idea of usage and size, here are results for various compilers on a machine with the following specification:
+
+- Intel Core i7 @ 2.60 GHz
+- 24.0 GB RAM
+- Debian Sid or Windows 10
+- Method: Execute command hundreds of times, stare extremely hard at `htop`/Task Manager
+
+While `time` and `Measure-Command` work well for getting accurate timing information and can be run several times in a loop to produce a good average value, tracking memory consumption without intrusive efforts was much harder and thusly relied on OS reporting with fixed-interval probes. Memory usage is therefore approximate and may not represent the actual maximum of consumed memory. All of these are using the latest compiler built from source if available, or the latest technology preview if available. Optimizations at `-O2` (GCC & Clang style)/`/O2 /Ob2` or equivalent were employed to generate the final executable.
+
+### Speed Size
+
+| Strategy              |  40 kilobytes  | 400 kilobytes |  4 megabytes  |  40 megabytes |
+|-----------------------|----------------|---------------|---------------|---------------|
+| `#embed` GCC          |     0.236 s    |    0.231 s    |     0.300 s   |     1.069 s   |
+| `xxd`-generated GCC   |     0.406 s    |    2.135 s    |    23.567 s   |   225.290 s   |
+| `xxd`-generated Clang |     0.366 s    |    1.063 s    |     8.309 s   |    83.250 s   |
+| `xxd`-generated MSVC  |     0.552 s    |    3.806 s    |    52.397 s   | Out of Memory |
+
+
+
+### Memory Size
+
+| Strategy              |  40 kilobytes  | 400 kilobytes |  4 megabytes  |  40 megabytes |
+|-----------------------|----------------|---------------|---------------|---------------|
+| `#embed` GCC          |    17.26 MB    |    17.96 MB   |     53.42 MB  |    341.72 MB  |
+| `xxd`-generated GCC   |    24.85 MB    |   134.34 MB   |  1,347.00 MB  | 12,622.00 MB  |
+| `xxd`-generated Clang |    41.83 MB    |   103.76 MB   |    718.00 MB  |  7,116.00 MB  |
+| `xxd`-generated MSVC  |    ~48.60 MB   |  ~477.30 MB   | ~5,280.00 MB  | Out of Memory |
+
+
+### Analysis
+
+The numbers here are not particularly reassuring. Furthermore, privately owned compilers and other static analysis tools perform almost exponentially poorly here, taking vastly more memory and thrashing CPUs to 100% for several minutes (to sometimes several hours if e.g. the Swap is engaged due to lack of main memory). Every compiler must always consume a certain amount of memory in a relationship directly linear to the number of tokens produced. After that, it is largely implementation-dependent what happens to the data.
+
+The GNU Compiler Collection (GCC) uses a tree representation and has many places where it spawns extra "garbage", as its called in the various bug reports and work items from implementers. There has been a 16+ year effort on the part of GCC to reduce its memory usage and speed up initializers ([C Bug Report](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=12245) and [C++ Bug Report](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=14179)). Significant improvements have been made and there is plenty of room for GCC to improve here with respect to compiler and memory size.
+
+LLVM's Clang, on the other hand, is much more optimized. They maintain a much better scaling and ratio but still suffer the pain of their token overhead and Abstract Syntax Tree representation, though to a much lesser degree than GCC. A bug report was filed but talk from two prominent LLVM/Clang developers made it clear that optimizing things any further would [require an extremely large refactor and functionality add of parser internals](https://bugs.llvm.org/show_bug.cgi?id=44399), with potentially dubious gains.
+
+Microsoft Visual C (MSVC) scales the worst of all the compilers, even when given the benefit of being on its native operating system. Both Clang and GCC outperform MSVC on Windows 10 or WINE as of the time of writing.
+
+Linker tricks on all platforms perform better with time (though slower than `#embed` implementation), but force the data to be optimizer-opaque (even on the most aggressive "Link Time Optimization" or "Whole Program Optimization" modes compilers had). Linker tricks are also exceptionally non-portable: whether it is the `incbin` assembly command supported by certain compilers, specific invocations of `rc.exe`/`objcopy` or others, non-portability plagues their usefulness in writing Cross-Platform C (see Appendix for listing of techniques). This makes C decidedly unlike the "portable assembler" advertised by its proponents (and my Professors and co-workers).
+
+
+
 
 # Design
 
 There are two design goals at play here, sculpted to specifically cover industry standard practices with build systems and C programs. The first is to enable developers to get binary content quickly and easily into their applications. This can be icons/images, scripts, tiny sound effects, hardcoded firmware binaries, and more. In order to support this use case, this feature was designed for simplicity and builds upon widespread existing practice.
+
 
 
 ## First Principle: Simplicity and Familiarity
@@ -118,24 +168,41 @@ There are two design goals at play here, sculpted to specifically cover industry
 Providing a directive that mirrors `#include` makes it natural and easy to understand and use this new directive. It accepts both chevron-delimited (`<>`) and quote-delimited (`""`) strings like `#include` does. This matches the way people have been generating files to `#include` in their programs, libraries and applications: matching the semantics here preserves the same mental model. This makes it easy to teach and use, since it follows the same principles:
 
 ```cpp
-const char reset_blob[] =
-    #embed "data.bin"
-; // regular ol' char array
-
+/* default is unsigned char */
 const unsigned char icon_display_data[] =
     #embed "art.png"
-; /* initialize unsigned char data too */
+;
+
+/* specify a type-name to change array type */
+const char reset_blob[] =
+    #embed char "data.bin"
+;
 ```
 
 Because of its design, it also lends itself to being usable in a wide variety of contexts and with a wide variety of vendor extensions. For example:
 
 ```cpp
-const char aligned_data_str[] __attribute__ ((aligned (8))) =
-    #embed "natural_text.xml"
-; /* attributes work fine too */
+/* attributes work just as well */
+const signed char aligned_data_str[] __attribute__ ((aligned (8))) =
+    #embed signed char "attributes.xml"
+;
 ```
 
 The above code obeys the alignment requirements for an implementation that understands GCC directives, without needing to add special support in the `#embed` directive for it: it is just another array initializer, like everything else.
+
+
+### Type Flexibility
+
+As hinted at in previous sections's code snippets, a type can be specified after the `#embed` to view the data in a very specific manner. This allows data to initialized as exactly that type.
+
+```cpp
+/* specify a type-name to change array type */
+const int shorten_flac[] =
+    #embed int "stripped_music.flac"
+;
+```
+
+The contents of the resource are mapped in an implementation-defined manner to the data, such that it will use `sizeof(type-name) * CHAR_BIT` bits for each element. If the file does not have enough bits to fill out a multiple of `sizeof(type-name) * CHAR_BIT` bits, then a diagnostic is required.
 
 
 ### Existing Practice - Search Paths
@@ -153,7 +220,7 @@ This preprocessor directive fits perfectly into existing build architecture by b
 
 ## Second Principle: Efficiency
 
-The second principle guiding the design of this feature is facing the increasing problems with `#include` and typical source-style rewriting of binary data. Array literals do not scale. Processing large comma-delimited, brace-init-lists of data-as-numbers produces excessive compilation times. Compiler memory usage reaches extraordinary levels that are often ten to twenty times (or more) of the original desired data file (e.g., Clang as of November 23rd will take about 2 GiB of memory to process a 20 MiB binary file embedded as source with no other files brought in to the translation unit).
+The second principle guiding the design of this feature is facing the increasing problems with `#include` and typical source-style rewriting of binary data. Array literals do not scale. Processing large comma-delimited, _brace-init-lists_ of data-as-numbers produces excessive compilation times. Compiler memory usage reaches extraordinary levels that are often ten to twenty times (or more) of the original desired data file (see above tables in the Motivation section). Part of this is endemic to the compiler: the preprocessor demands that tokens be 
 
 String literals do not suffer the same compilation times or memory scaling issues, but the C Standard has limits on the maximum size of string literals (§5.2.4.1, "— 4095 characters in a string literal (after concatenation)"). One implementation takes the C Standard quite almost exactly at face value: it allows 4095 bytes in a single string _piece_, so multiple quoted pieces each no larger than 4095 bytes must be used to create large enough string literals to handle the work.
 
@@ -167,8 +234,8 @@ The earliest adopters and testers of the implementation reported problems when t
 The limit parameter is specified before the resource name in `#embed`, like so:
 
 ```cpp
-const char please_dont_oom_kill_me[] =
-    #embed 32 "/dev/urandom"
+const int please_dont_oom_kill_me[] =
+    #embed int 32 "/dev/urandom"
 ;
 ```
 
@@ -184,6 +251,12 @@ An implementation of this functionality is available in branches of both GCC and
 <div class="pagebreak"></div>
 
 
+
+# Alternative Syntax
+
+There has been concerns expressed about the form of this feature -- whether or not it could be a preprocessor directive itself, or a magical macro introduced in the language, or a special pragma. Each of these has their own specific syntax tradeoffs. The primary choice and the one advocated for is the syntax as shown above: a plain preprocessor directive analogous to `#include`. It is written as `#embed`, but other names (previously recommended by the Community) are `#include_bin`, `#include_binary`, or `#load_binary`.
+
+The syntax can also be adjusted. A preprocessor directive is preferred because that allows it to be findable by the end of Preprocessor.
 
 
 # Wording - C
@@ -202,43 +275,60 @@ The intent of the wording is to provide a preprocessing directive that:
 
 ## Proposed Language Wording
 
-Add another preprocessing directive to §6.10 Preprocessing Directives, Syntax, paragraph 1, _control-line_:
+Add another _control-line_ production and a new _parenthesized-non-header_ to §6.10 Preprocessing Directives, Syntax, paragraph 1:
 
 <blockquote>
+<p><i>control-line:</i><br/>
+&emsp; &emsp; &emsp; <i>...</i><br/>
+&emsp; &emsp; &emsp;<ins><b>#</b> <b>embed</b> <i>pp-tokens</i> <i>new-line</i></ins>
+</p>
+<p>
 <ins>
-<b>#</b> <b>embed</b> <i>pp-tokens</i> <i>new-line</i>
+<i>parenthesized-non-header:</i><br/>
+&emsp; &emsp; &emsp;<b>(</b><sub>opt</sub> <i>pp-tokens</i> <b>)</b><sub>opt</sub>
 </ins>
+</p>
 </blockquote>
 
-Add a new subclause as §6.10.� (� is a stand-in character to be replaced by the editor) to §6.10 Preprocessing Directives, preferably after §6.10.2 Source file inclusion:
+Add a new sub clause as §6.10.� (� is a stand-in character to be replaced by the editor) to §6.10 Preprocessing Directives, preferably after §6.10.2 Source file inclusion:
 
 <blockquote>
 <ins>
-<p>§6.10.� Resource embedding</p>
+<p><h3><b>§6.10.� &emsp; &emsp; Resource embedding</b></h3></p>
+
 <p><b>Constraints</b></p>
-<p><sup>1</sup>A <b>&num;embed</b> directive shall identify a resource that can be processed by the implementation as a sequence of binary data.</p>
+<p><sup>1</sup>A <b><code>&num;embed</code></b> directive shall identify a resource that can be processed by the implementation as a sequence of binary data.</p>
+
 <p><b>Semantics</b></p>
 <p><sup>2</sup> A preprocessing directive of the form</p>
 
 <p>
-&emsp; &emsp; <b>&num;</b> <b>embed</b> <i>digit-sequence</i><sub>opt</sub> <code>&lt;</code> <i>h-char-sequence</i> <code>&gt;</code> <i>new-line</i>
+&emsp; &emsp; <b>&num;</b> <b>embed</b> <i>parenthesized-non-header<sub>opt</sub></i> <i>digit-sequence<sub>opt</sub></i> <b><code>&lt;</code></b> <i>h-char-sequence</i> <b><code>&gt;</code></b> <i>new-line</i>
 </p>
 
-<p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&lt;</code> and <code>&gt;</code> or the <code>&quot;</code> and <code>&quot;</code> delimiters. How the places are specified or the resource identified is implementation-defined.</p>
+<p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&lt;</code> and <code>&gt;</code>. The named resource is searched for in an implementation-defined manner.</p>
 
 <p><sup>3</sup> A preprocessing directive of the form</p>
 
 <p>
-&emsp; &emsp; <b>&num;</b> <b>embed</b> <i>digit-sequence</i><sub>opt</sub> <code>&quot;</code> <i>q-char-sequence</i> <code>&quot;</code> <i>new-line</i>
+&emsp; &emsp; <b>&num;</b> <b>embed</b> <i>parenthesized-non-header<sub>opt</sub></i> <i>digit-sequence<sub>opt</sub></i> <code>&quot;</code> <i>q-char-sequence</i> <code>&quot;</code> <i>new-line</i>
 </p>
 
-<p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&quot;</code> and <code>&quot;</code> delimiters. How the places are specified or the resource identified is implementation-defined.</p>
+<p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&quot;</code>, or <code>&lt;</code> and <code>&gt;</code>, delimiters. The named resource is searched for in an implementation-defined manner. If this search is not supported, or if the search fails, the directive is reprocessed as if it read</p>
 
-<p><sup>4</sup> Either form of the <code>&num;embed</code> directive is replaced by the contents of the resource as if with a <code>{</code> and <code>}</code> delimited <i>initializer-list</i> containing a sequence of <i>integer-constant</i>s. The contents are mapped in an implementation-defined manner to such an <i>integer-constant</i> sequence. Each value of the <i>integer-constant</i> sequence will not be greater than is representable by an <b><code>unsigned char</code></b> (6.2.5).</p>
+<p>
+&emsp; &emsp; <b>&num;</b> <b>embed</b> <i>parenthesized-non-header</i><sub>opt</sub> <i>digit-sequence</i><sub>opt</sub> <code>&lt;</code> <i>h-char-sequence</i> <code>&gt;</code> <i>new-line</i>
+</p>
 
-<p><sup>5</sup> If a <i>digit-sequence</i> is specified, it shall be an unsigned <i>integer-constant</i>. The replacement of the directive will be as if the mapped contents within the <code>{</code> and <code>}</code> delimited <i>initializer-list</i> contain up to but not more than <i>digit-sequence</i> <i>integer-constant</i>s.</p>
+<p>with the identical contained <i>q-char-sequence</i> (including &gt; characters, if any) from the original directive.</p>
 
-<p><sup>6</sup> A preprocessing directive of the form</p>
+<p><sup>4</sup> If a <i>parenthesized-non-header</i> is not specified, then the directive behaves as if the tokens of the <i>parenthesized-non-header</i> are <code>unsigned char</code>. If a <i>parenthesized-non-header</i> is specified, outer parenthesis must be present if it contains one or more of <code>"</code>, <code>&lt;</code> or <code>&gt;</code>.</p>
+
+<p><sup>5</sup> Let the <i>parenthesized-non-header</i> tokens be <code>T</code>. Either form of the <b><code>&num;embed</code></b> directive specified previously behave as if it is replaced by the contents of the resource a <code>{</code> and <code>}</code> delimited <i>initializer-list</i>. The <i>initializer-list</i> represents an implementation-defined mapping from the contents of the resource to the elements of the <i>initializer-list</i>.</p>
+
+<p><sup>6</sup> If a <i>digit-sequence</i> is specified, it shall be an unsigned <i>integer-constant</i>. The implementation-defined mapping from the contents of the resource to the elements of the <i>initializer-list</i> shall produce no more than <i>digit-sequence</i> elements.</p>
+
+<p><sup>7</sup> A preprocessing directive of the form</p>
 
 <p>&emsp; &emsp; <b>&num;</b> <b>embed</b> <i>pp-tokens</i> <i>new-line</i></p>
 
@@ -248,7 +338,7 @@ Add a new subclause as §6.10.� (� is a stand-in character to be replaced by
 
 Add 2 new Example paragraphs below the above text in §6.10.� Resource embedding:
 
-> <ins><sup>7</sup> **EXAMPLE 1** Placing a small image file.</ins>
+> <ins><sup>8</sup> **EXAMPLE 1** Placing a small image resource.</ins>
 > 
 > > ```cpp 
 > > #include <stddef.h>
@@ -268,14 +358,14 @@ Add 2 new Example paragraphs below the above text in §6.10.� Resource embeddi
 > > ```
 > 
 > 
-> <ins><sup>8</sup> **EXAMPLE 2** Checking the first 4 elements of a resource.</ins>
+> <ins><sup>9</sup> **EXAMPLE 2** Checking the first 4 elements of a sound resource.</ins>
 > 
 > > ```cpp
-> > #include <assert.h&>
+> > #include <assert.h>
 > > 
 > > int main (int, char*[]) {
 > > 	const char sound_signature[] =
-> > #embed 4 <sdk/jump.wav>
+> > #embed char 4 <sdk/jump.wav>
 > > 	;
 > > 
 > > 	// PCM WAV resource?
@@ -301,21 +391,24 @@ Add 2 new Example paragraphs below the above text in §6.10.� Resource embeddi
 
 # Wording - C++
 
-This wording is relative to C++'s [N4835](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/n4835.pdf).
+This wording is relative to C++'s [N4835](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/n4842.pdf).
+
+
 
 ## Intent
 
 The intent of the wording is to provide a preprocessing directive that:
 
 - takes a string literal enclosed in `<>` or `""` -- potentially from the expansion of a macro -- and use it to find a unique resource on implementation-defined search paths;
-- maps the contents of the file in an implementation-defined manner to a sequence of integer literals, each whose value is no greater than the maximum representable value of a single `unsigned char`;
+- maps the contents of the file in an implementation-defined manner to a sequence of _`type-name`_ values;
+- produces a diagnostic if the contents do not have enough data to fill out the binary representation of _`type-name`_ values;
 - and, present such contents as if by a brace-enclosed list of integer literals, such that it can be used to initialize arrays of known and unknown bound.
 
 
 
 ## Proposed Feature Test Macro
 
-The proposed feature test macro is `__cpp_embed` for the preprocessor functionality.
+The proposed feature test macro is `__cpp_pp_embed` for the preprocessor functionality.
 
 
 
@@ -330,11 +423,30 @@ Append to §14.8.1 Predefined macro names [**cpp.predefined**]'s **Table 16** wi
 	<th>Value</th>
 </tr>
 <tr>
-	<td><ins>__cpp_embed</ins></td>
+	<td><ins>__cpp_pp_embed</ins></td>
 	<td><ins>202006L</ins></td>
 </tr>
 </table>
 </blockquote>
+
+
+Add a new _control-line_ production to §15.1 Preamble [**cpp.pre**] and a new grammar production:
+
+<blockquote>
+<p>
+<i>control-line</i>:<br/>
+&emsp; &emsp; ...<br/>
+&emsp; &emsp; <ins><code># embed</code> <i>pp-tokens</i> <i>new-line</i></ins><br/>
+</p>
+<p>
+<p>...</p>
+<ins>
+<i>parenthesized-non-header</i>:<br/>
+&emsp; &emsp; (<sub>opt</sub> <i>pp-tokens</i> <sub>opt</sub>)
+</ins>
+</p>
+</blockquote>
+
 
 Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 
@@ -347,20 +459,24 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 <p><sup>2</sup> A preprocessing directive of the form</p>
 
 <p>
-&emsp; &emsp; &num; embed <i>digit-sequence</i><sub>opt</sub> <code>&lt;</code> <i>h-char-sequence</i> <code>&gt;</code> <i>new-line</i>
+&emsp; &emsp; <code>&num; embed</code> <i>parenthesized-non-header<sub>opt</sub></i> <i>digit-sequence<sub>opt</sub></i> <code>&lt;</code> <i>h-char-sequence</i> <code>&gt;</code> <i>new-line</i>
 </p>
 
 <p>or</p>
 
 <p>
-&emsp; &emsp; &num; embed <i>digit-sequence</i><sub>opt</sub> <code>&quot;</code> <i>q-char-sequence</i> <code>&quot;</code> <i>new-line</i>
+&emsp; &emsp; <code>&num; embed</code> <i>parenthesized-non-header<sub>opt</sub></i> <i>digit-sequence<sub>opt</sub></i> <code>&quot;</code> <i>q-char-sequence</i> <code>&quot;</code> <i>new-line</i>
 </p>
 
 <p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&lt;</code> and <code>&gt;</code> or the <code>&quot;</code> and <code>&quot;</code> delimiters. How the places are specified or the resource identified is implementation-defined.</p>
 
-<p><sup>3</sup> An <code>&num;embed</code> directive is replaced by the entire contents of the resource as if with a <i>brace-initializer-list</i> containing a sequence of <i>integer-literal</i>s. The contents are mapped in an implementation-defined manner to that <i>integer-literal</i> sequence. Each value of the <i>integer-literal</i> will not be greater than 2<sup><i>N</i></sup>, where <i>N</i> is the width of unsigned char [<b><a href="http://eel.is/c++draft/basic.fundamental#tab:basic.fundamental.width">tab:basic.fundamental.width</a></b>].</p>
+<p><sup>3</sup> If there is no <i>parenthesized-non-header</i>, then the directive behaves as if the tokens of the <i>parenthesized-non-header</i> are <code>unsigned char</code>. If a <i>parenthesized-non-header</i> is specified, outer parenthesis must be present if the <i>pp-token</i>s contains one or more of <code>"</code>, <code>&lt;</code> or <code>&gt;</code>.</p>
 
-<sup>4</sup> If a <i>digit-sequence</i> is specified, it shall be an unsigned <i>integer-literal</i> and the replacement of the directive will be as if the mapped contents within the <i>brace-initializer-list</i> contain at most <i>digit-sequence</i> <i>integer-literal</i>s.
+<p><sup>4</sup> An <code>&num;embed</code> directive behaves as-if replaced by the contents of the resource in a <i>brace-initializer-list</i>. The brace-delimited <i>initializer-list</i> represents an implementation-defined mapping from the contents of the resource to the elements of the <i>initializer-list</i>.</p>
+
+<p><sup>5</sup> If a <i>digit-sequence</i> is specified, it shall be an unsigned <i>integer-literal</i> and the <i>brace-initializer-list</i> will contain no more than <i>digit-sequence</i> elements.</p>
+
+<p><sup>6</sup> Let <code>T</code> be the <i>parenthesized-non-header</i> tokens. If the implemented-defined bit size of the resource's contents are not a multiple of <code>sizeof( T ) * CHAR_BIT</code> or <code>T</code> does not denote a trivial type, then the program is ill-formed.</p>
 </ins>
 </blockquote>
 
@@ -369,7 +485,7 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 
 # Acknowledgements
 
-Thank you to Alex Gilding for bolstering this proposal with additional ideas and motivation. Thank you to Aaron Ballman, David Keaton, and Rhajan Bhakta for early feedback on this proposal. Thank you to the [#include<C++>](https://www.includecpp.org/) for bouncing lots of ideas off the idea in their Discord. for bouncing valuable ideas for this feature off of C.
+Thank you to Alex Gilding for bolstering this proposal with additional ideas and motivation. Thank you to Aaron Ballman, David Keaton, and Rhajan Bhakta for early feedback on this proposal. Thank you to the [#include<C++>](https://www.includecpp.org/) for bouncing lots of ideas off the idea in their Discord.
 
 Thank you to the Lounge<C++> for their continued support, and to Robot M. F. for the valuable early implementation feedback.
 
@@ -421,7 +537,7 @@ int main() {
 
 Others still use python or other small scripting languages as part of their build process, outputting data in the exact C++ format that they require.
 
-There are problems with the `xxd -i` or similar tool-based approach. Lexing and Parsing data-as-source-code adds an enormous overhead to actually reading and making that data available.
+There are problems with the `xxd -i` or similar tool-based approach. Tokenization and Parsing data-as-source-code adds an enormous overhead to actually reading and making that data available.
 
 Binary data as C(++) arrays provide the overhead of having to comma-delimit every single byte present, it also requires that the compiler verify every entry in that array is a valid literal or entry according to the C++ language.
 
@@ -500,28 +616,40 @@ A complete example (does not compile on Visual C++):
 #include <stdlib.h>
 #include <stdio.h>
 
+#define STRINGIZE_(x) #x
+#define STRINGIZE(x) STRINGIZE_(x)
+
 #ifdef __APPLE__
 #include <mach-o/getsect.h>
 
-#define DECLARE_LD(NAME) extern const unsigned char _section$__DATA__##NAME[];
-#define LD_NAME(NAME) _section$__DATA__##NAME
-#define LD_SIZE(NAME) (getsectbyname("__DATA", "__" #NAME)->size)
+#define DECLARE_LD_(LNAME) extern const unsigned char _section$__DATA__##LNAME[];
+#define LD_NAME_(LNAME) _section$__DATA__##LNAME
+#define LD_SIZE_(LNAME) (getsectbyLNAME("__DATA", "__" STRINGIZE(LNAME))->size)
+#define DECLARE_LD(LNAME) DECLARE_LD_(LNAME)
+#define LD_NAME(LNAME) LD_NAME_(LNAME)
+#define LD_SIZE(LNAME) LD_SIZE_(LNAME)
 
 #elif (defined __MINGW32__) /* mingw */
 
-#define DECLARE_LD(NAME)                                 \
-	extern const unsigned char binary_##NAME##_start[]; \
-	extern const unsigned char binary_##NAME##_end[];
-#define LD_NAME(NAME) binary_##NAME##_start
-#define LD_SIZE(NAME) ((binary_##NAME##_end) - (binary_##NAME##_start))
+#define DECLARE_LD(LNAME)                                 \
+  extern const unsigned char binary_##LNAME##_start[];    \
+  extern const unsigned char binary_##LNAME##_end[];
+#define LD_NAME(LNAME) binary_##LNAME##_start
+#define LD_SIZE(LNAME) ((binary_##LNAME##_end) - (binary_##LNAME##_start))
+#define DECLARE_LD(LNAME) DECLARE_LD_(LNAME)
+#define LD_NAME(LNAME) LD_NAME_(LNAME)
+#define LD_SIZE(LNAME) LD_SIZE_(LNAME)
 
 #else /* gnu/linux ld */
 
-#define DECLARE_LD(NAME)                                  \
-	extern const unsigned char _binary_##NAME##_start[]; \
-	extern const unsigned char _binary_##NAME##_end[];
-#define LD_NAME(NAME) _binary_##NAME##_start
-#define LD_SIZE(NAME) ((_binary_##NAME##_end) - (_binary_##NAME##_start))
+#define DECLARE_LD_(LNAME)                                  \
+  extern const unsigned char _binary_##LNAME##_start[];     \
+  extern const unsigned char _binary_##LNAME##_end[];
+#define LD_NAME_(LNAME) _binary_##LNAME##_start
+#define LD_SIZE_(LNAME) ((_binary_##LNAME##_end) - (_binary_##LNAME##_start))
+#define DECLARE_LD(LNAME) DECLARE_LD_(LNAME)
+#define LD_NAME(LNAME) LD_NAME_(LNAME)
+#define LD_SIZE(LNAME) LD_SIZE_(LNAME)
 #endif
 
 DECLARE_LD(ld_data_bin);
