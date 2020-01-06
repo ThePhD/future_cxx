@@ -1,7 +1,7 @@
 <pre class='metadata'>
 Title: reconstructible_range - a concept for putting ranges back together
 Shortname: P1664
-Revision: 1
+Revision: 2
 Audience: LEWG
 Status: P
 Group: WG21
@@ -27,6 +27,12 @@ path: wording_style.bs
 
 
 
+## Revision 2 - January 13th, 2020 ## {#changelog-r2}
+
+	- Improve wording and add more explanation in the design sections for the changes.
+
+
+
 ## Revision 1 - November 24th, 2019 ## {#changelog-r1}
 
 	- Change to `snake_case` concepts. (November 6th)
@@ -34,7 +40,7 @@ path: wording_style.bs
 	- Moved by LWG! 🎉 (November 6th)
 	- Last minute objection to this paper in plenary.
 	- Withdrawn; targeting C++23 instead with better design.
-	- Explore 3 different designs offline: settle on 1.
+	- Explored 3 different designs offline: settle on 1 (thanks, Oktal).
 
 
 
@@ -186,7 +192,8 @@ auto operate_on_and_return_updated_range (Range&& range) {
 int main () {
 	std::string_view meow_view = "나는 유리를 먹을 수 있어요. 그래도 아프지 않아요";
 	// this line will error
-	std::string_view sub_view = operate_on_and_return_updated_range(meow_view);
+	std::string_view sub_view
+		= operate_on_and_return_updated_range(meow_view);
 	return 0;
 }
 ```
@@ -221,7 +228,8 @@ auto operate_on_and_return_updated_range (Range&& range) {
 
 int main () {
 	std::string_view meow_view = "나는 유리를 먹을 수 있어요. 그래도 아프지 않아요";
-	auto sub_view = operate_on_and_return_updated_range(meow_view);
+	auto sub_view
+		= operate_on_and_return_updated_range(meow_view);
 	// decltype(sub_view) ==
 	//   std::ranges::subrange<std::string_view::iterator,std::string_view::iterator>
 	//   which is nowhere close to ideal.
@@ -246,21 +254,21 @@ There is also a problem where there are a wide variety of ranges that could conc
 The design is given in 2 concepts added to the standard:
 
 ```
-template <class R, 
-	class It = ranges::iterator_t<remove_reference_t<R>>, 
+template <class R,
+	class It = ranges::iterator_t<remove_reference_t<R>>,
 	class Sen = ranges::sentinel_t<remove_reference_t<R>>>
 concept pair_reconstructible_range =
 	ranges::range<R> &&
 	safe_range<remove_reference_t<R>> &&
 	requires (It first, Sen last) {
 		reconstruct(
-			in_place_type<remove_cvref_t<R>>, 
-			std::move(first), 
+			in_place_type<remove_cvref_t<R>>,
+			std::move(first),
 			std::move(last)
 		);
 	};
 
-template <class R, 
+template <class R,
 	class It = ranges::iterator_t<remove_reference_t<R>>,
 	class Sen = ranges::sentinel_t<remove_reference_t<R>>>
 concept reconstructible_range =
@@ -268,8 +276,8 @@ concept reconstructible_range =
 	safe_range<remove_reference_t<R>> &&
 	requires (ranges::subrange<It, Sen> first_last) {
 		reconstruct(
-			in_place_type<remove_cvref_t<R>>, 
-			std::move(first_last).begin(), 
+			in_place_type<remove_cvref_t<R>>,
+			std::move(first_last).begin(),
 			std::move(first_last).end()
 		);
 	};
@@ -280,11 +288,34 @@ It is the formalization that a range can be reconstructed from its begin iterato
 Both concepts require that the type with any references removed model the concept `safe_range`. This ensures that the validity of the iterators is in fact independent of the lifetime of the range they originate from and that a "reconstructed" range does not depend on the original. We remove reference before performing this check, because all reference types that model `Range` also model `safe_range` and the intent of the proposed changes is narrower: (re)construction is assumed to be in constant time (this typically implies that `R` also models `View`, but it is sufficient to check `safe_range<remove_reference_t<R>>`). Note that this explicitly excludes types like `std::vector<int> const &` from being reconstructible.
 
 
+
 ## Should this apply to all Ranges? ## {#design-all}
 
 Not all ranges can meet this requirement. Some ranges contain state which cannot be trivially propagated into the iterators, or state that cannot be reconstructed from the iterator/sentinel pair itself. However, most of the common ranges representing unbounded views, empty views, iterations viewing some section of non-owned storage, or similar can all be reconstructed from their iterator/iterator or iterator/sentinel pair.
 
 For example `std::ranges::single_view` contains a [exposition *semiregular-box* template type (ranges.semi.wrap)](http://eel.is/c++draft/range.semi.wrap) which holds a value to iterate over. It would not be possible to reconstruct the exact same range (e.g., iterators pointing to the exact same object) with the semi-regular wrapper.
+
+Finally, there are ranges which could be reconstructible by just the definition of a constructor that takes iterators or a `subrange`. While this was a benefit in that the majority of conforming ranges were reconstructible, it made a situation where someone could write a strange range. For example, consider this alternative implementation of `rng | views::drop(1)`:
+
+```cpp
+class pop_front_view {
+private:
+	int *begin_, *end_;
+
+public:
+	pop_front_view() = default;
+
+	pop_front_view(int* begin, int* end)
+		: begin_(begin==end?begin:begin+1), end_(end)
+	{}
+
+	int* begin() const { return begin_; }
+
+	int* end() const { return end_; }
+};
+```
+
+Reconstructing this range using the constructors is a surefire way to have a developer scratching at their head, wondering what is going on. Therefore, rather than require reconstruction through the constructor, we rely instead on an Customization Point Object design instead.
 
 
 
@@ -305,11 +336,13 @@ And there are further range adaptor closure objects that could make use of this 
 Note that these changes will greatly aid other algorithm writers who want to preserve the same input ranges. In the future, the standard may provide an `ranges::reconstruct(...)` algorithm for these types.
 
 
+
 ## Two Concepts ## {#design-dual}
 
-By giving these ranges `Iterator, Sentinel`, and/or `std::ranges::subrange<Iterator, Sentinel>` reconstruction functions, we can enable a greater degree of interface fidelity without having to resort to `std::ranges::subrange` for all generic algorithms. There should be a preference for `Type(Iterator, Sentinel)` reconstruction, because one-argument functions can have extremely overloaded meanings. It also produces less compiler boilerplate to achieve the same result of reconstructing the range when one does not have to go through `std::ranges::subrange<I, S, K>`. However, it is important to attempt to move away from the iterator, sentinel model being deployed all the time: `std::ranges::subrange` offers a single type that can accurately represent the intent and can be fairly easy to constrain overload sets on (most of the time).
+By giving these ranges `Iterator, Sentinel`, and/or `std::ranges::subrange<Iterator, Sentinel>` reconstruction functions, we can enable a greater degree of interface fidelity without having to resort to `std::ranges::subrange` for all generic algorithms. There should be a preference for `reconstruct(std::inplace_type<R>, Iterator, Sentinel)` reconstruction, because one-argument functions can have extremely overloaded meanings. It also produces less compiler boilerplate to achieve the same result of reconstructing the range when one does not have to go through `std::ranges::subrange<I, S, K>`. However, it is important to attempt to move away from the iterator, sentinel model being deployed all the time: `std::ranges::subrange` offers a single type that can accurately represent the intent and can be fairly easy to constrain overload sets on (most of the time).
 
 This paper includes two concepts that cover both reconstructible methods.
+
 
 
 
@@ -321,6 +354,9 @@ This changed in the face of [[p1739r0]]. Hauswedell's paper here makes it clear 
 
 Note that this is a separate concept. It is not to be added to the base `Range` concept, or added to any other concept. It is to be applied separately to the types which can reasonably support it for the benefit of algorithms and code which can enhance the quality of their implementation.
 
+Unfortunately, the paper was removed from consideration due to new information during the C++ November 2019 Belfast Standardization Meeting. It is to be re-litigated at the C++ February 2020 Prague Standardization Meeting, maybe.
+
+
 
 
 # Proposed Changes # {#wording}
@@ -328,9 +364,11 @@ Note that this is a separate concept. It is not to be added to the base `Range` 
 The following wording is relative to the latest C++ Draft paper.
 
 
+
 ## Feature Test Macro ## {#wording-feature}
 
 This paper results in a concept to help guide the further development of standard ranges and simplify their usages in generic contexts. There is one proposed feature test macro, `__cpp_lib_reconstructible_range`, which is to be input into the standard and then explicitly updated every time a `reconstruct` from a is added to reflect the new wording. We hope that by putting this in the standard early, most incoming ranges will be checked for compatibility with `pair_reconstructible_range` and `reconstructible_range`.
+
 
 
 ## Intent ## {#wording-intent}
@@ -344,6 +382,7 @@ The intent of this wording is to provide greater generic coding guarantees and o
 If *safe_range* is changed to the `safe_range` concept name, then this entire proposal will rename all its uses of *safe_range*.
 
 For ease of reading, the necessary portions of other proposal's wording is duplicated here, with the changes necessary for the application of reconstructible range concepts. Such sections are clearly marked.
+
 
 
 ## Proposed Library Wording ## {#wording-library}
@@ -385,8 +424,8 @@ concept pair_reconstructible_range =
 	safe_range<remove_reference_t<R>> &&
 	requires (It first, Sen last) {
 		reconstruct(
-			in_place_type<remove_cvref_t<R>>, 
-			std::move(first), 
+			in_place_type<remove_cvref_t<R>>,
+			std::move(first),
 			std::move(last)
 		);
 	};
@@ -399,8 +438,8 @@ concept reconstructible_range =
 	safe_range<remove_reference_t<R>> &&
 	requires (ranges::subrange<It, Sen> first_last) {
 		reconstruct(
-			in_place_type<remove_cvref_t<R>>, 
-			std::move(first_last).begin(), 
+			in_place_type<remove_cvref_t<R>>,
+			std::move(first_last).begin(),
 			std::move(first_last).end()
 		);
 	};
@@ -442,6 +481,9 @@ Insert a new sub-clause "§24.3.13 `ranges::reconstruct` [**range.prim.recons**]
 </p>
 </ins>
 </blockquote>
+
+
+
 
 # Acknowledgements # {#acknowledgements}
 

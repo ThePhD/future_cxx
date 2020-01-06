@@ -1,9 +1,9 @@
 <pre class='metadata'>
 Title: std::embed
-Shortname: D1040
+Shortname: P1040
 Revision: 5
-Audience: EWGI, EWG
-Status: D
+Audience: EWG, SG7
+Status: P
 Group: WG21
 URL: 
 !Latest: <a href="https://thephd.github.io/vendor/future_cxx/papers/d1040.html">https://thephd.github.io/vendor/future_cxx/papers/d1040.html</a>
@@ -12,7 +12,7 @@ Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 !Reply To: <a href="phdofthehouse@gmail.com">JeanHeyd Meneide</a>, <a href="https://twitter.com/thephantomderp">@thephantomderp</a>
 Abstract: A proposal for a function that allows pulling resources at compile-time into a program.
-Date: 2019-01-21
+Date: 2020-01-13
 Markup Shorthands: markdown yes, biblio yes, markup yes
 </pre>
 
@@ -27,11 +27,12 @@ path: wording_style.bs
 
 
 
-## Revision 5 - October 31st, 2019 ## {#changelog-r5}
+## Revision 5 - January 13th, 2020 ## {#changelog-r5}
 
-	- Added `#embed` and `#embed_str` preprocessor options.
-	- Added publicly available implementation.
-	- Waiting for EWG(I) to pull the trigger for or against this one.
+	- Split `#embed` into a new paper.
+	- Add memory and time benchmarks from various implementation strategies in the [[#design-practice|new Current Practice section]].
+	- Address concerns for a generic API and similar in the [[#design-practice-analysis|new Results Analysis section]].
+	- Retarget to EWG and SG 7.
 
 
 
@@ -209,10 +210,9 @@ se-shell@virt-deb> python gen_cxx_random_data.py \
 
 ```c++
  
-
-
 #include <cstdint>
 #include <utility>
+
 
 constexpr std::uint64_t val_64_const 
 	= 0xcbf29ce484222325u;
@@ -234,13 +234,13 @@ hash_64_fnv1a_const(const char* const ptr,
 		);
 }
 
-#include <include/data/random_data.h>
+#include <gen/random_data.h>
 
 int main () {
 
 
-	constexpr std::uint64_t actual 
-		= hash_64_fnv1a_const(&random_data[0], 
+	constexpr std::uint64_t actual
+		= hash_64_fnv1a_const(&random_data[0],
 			std::size(random_data));
 
 	return static_cast<int>(actual);
@@ -248,18 +248,19 @@ int main () {
 ```
 		</td>
 		<td>
-‏‏<br/>
-‏‏<br/>
-‏‏<br/>
+```
+ 
+ 
+```
 ```c++
 #include <embed>
-	
 #include <cstdint>
 
 
-constexpr std::uint64_t val_64_const 
+
+constexpr std::uint64_t val_64_const
 	= 0xcbf29ce484222325u;
-constexpr std::uint64_t prime_64_const 
+constexpr std::uint64_t prime_64_const
 	= 0x100000001b3u;
 
 inline constexpr std::uint64_t
@@ -290,7 +291,7 @@ int main () {
 	return static_cast<int>(actual);
 }
 ```
-([Works here.](https://godbolt.org/z/PPAWM0))
+([Works here.](https://godbolt.org/z/zqsvWD))
 		</td>
 	</tr>
 </table>
@@ -318,33 +319,446 @@ A very large amount of C and C++ programmer -- at some point -- attempts to `#in
 
 In the pursuit of this goal, these tools have proven to have inadequacies and contribute poorly to the C++ development cycle as it continues to scale up for larger and better low-end devices and high-performance machines, bogging developers down with menial build tasks and trying to cover-up disappointing differences between platforms. It also absolutely destroys state-of-the-art compilers due to the extremely high memory overhead of producing an Abstract Syntax Tree for a braced initializer list of several tens of thousands of integral constants with numeric values at 255 or less.
 
-MongoDB has been kind enough to share some of their code [[#appendix-mongo|below]]. Other companies have had their example code anonymized or simply not included directly out of shame for the things they need to do to support their workflows. The author thanks MongoDB for their courage and their support for `std::embed`.
-
 The request for some form of `#include_string` or similar dates back quite a long time, with one of the oldest stack overflow questions asked-and-answered about it dating back nearly 10 years. Predating even that is a plethora of mailing list posts and forum posts asking how to get script code and other things that are not likely to change into the binary.
 
-This paper proposes `<embed>` to make this process much more efficient, portable, and streamlined. It also proposes a preprocessor directive, `#embed`.
+This paper proposes `<embed>` to make this process much more efficient, portable, and streamlined.
 
 
 
 
 # Scope and Impact # {#scope}
 
-`consteval span<const byte> embed( string_view resource_identifier )` is an extension to the language proposed entirely as a library construct. The goal is to have it implemented with compiler intrinsics, builtins, or other suitable mechanisms. It does not affect the language. The proposed header to expose this functionality is `<embed>`, making the feature entirely-opt-in by checking if either the proposed feature test macro or header exists.
-
-Similarly, the preprocessor directive `#embed` is an extension to the language.
+`template <typename T = byte> consteval span<const T> embed( string_view resource_identifier )` is an extension to the language proposed entirely as a library construct. The goal is to have it implemented with compiler intrinsics, builtins, or other suitable mechanisms. It does not affect the language. The proposed header to expose this functionality is `<embed>`, making the feature entirely-opt-in by checking if either the proposed feature test macro or header exists.
 
 
 
 
 # Design Decisions # {#design}
 
-`<embed>` avoids using the preprocessor or defining new string literal syntax like its predecessors, preferring the use of a free function in the `std` namespace. `<embed>`'s design is derived heavily from community feedback plus the rejection of the prior art up to this point, as well as the community needs demonstrated by existing practice and their pit falls.
+`<embed>` avoids using the preprocessor or defining new string literal syntax like its predecessors, preferring the use of a free function in the `std` namespace. This gives `std::embed` a greater degree of power and advantage over `<embed>`'s design is derived heavily from community feedback plus the rejection of the prior art up to this point, as well as the community needs demonstrated by existing practice and their pit falls.
 
 
 
 ## Current Practice ## {#design-practice}
 
-Here, we examine current practice, their benefits, and their pitfalls. There are a few cross-platform (and not-so-cross-platform) paths for getting data into an executable.
+Here, we examine current practice, their benefits, and their pitfalls. There are a few cross-platform (and not-so-cross-platform) paths for getting data into an executable. We also scrutinize the performance, with numbers for both [memory overhead](https://github.com/ThePhD/embed#memory-size-results) and [speed overhead](https://github.com/ThePhD/embed#speed-results) available at the repository that houses the [current implementation](https://github.com/ThePhD/embed). For ease of access, the numbers as of January 2020 with the latest versions of the indicated compilers and tools are replicated below.
+
+All three major implementations were explored, plus an early implementation of this functionality in GCC. A competing implementation in a separate C++-like meta language called [Circle](https://www.circle-lang.org/) was also looked at by the behest of Study Group 7.
+
+
+### Speed Results ### {#design-practice-speed}
+
+Below are timing results for a file of random bytes using a specific strategy. The file is of the size specified at the top of the column. Files are kept the same between strategies and tests.
+
+- Intel Core i7 @ 2.60 GHz
+- 24.0 GB RAM
+- Debian Sid or Windows 10
+- Method: Gather timings from `time` *nix program or `Measure-Command { ... }` PowerShell, compute mean
+
+<p>
+<table>
+  <tr>
+    <th>Strategy</th>
+    <th>4 bytes</th>
+    <th>40 bytes</th>
+    <th>400 bytes</th>
+    <th>4 kilobytes</th>
+  </tr>
+  <tr>
+    <td>`#embed` GCC</td>
+    <td>0.201 s</td>
+    <td>0.208 s</td>
+    <td>0.207 s</td>
+    <td>0.218 s</td>
+  </tr>
+  <tr>
+    <td>`phd::embed` GCC</td>
+    <td>0.709 s</td>
+    <td>0.724 s</td>
+    <td>0.711 s</td>
+    <td>0.715 s</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated GCC</td>
+    <td>0.225 s</td>
+    <td>0.215 s</td>
+    <td>0.237 s</td>
+    <td>0.247 s</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated Clang</td>
+    <td>0.272 s</td>
+    <td>0.275 s</td>
+    <td>0.272 s</td>
+    <td>0.272 s</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated MSVC</td>
+    <td>0.204 s</td>
+    <td>0.229 s</td>
+    <td>0.209 s</td>
+    <td>0.232 s</td>
+  </tr>
+  <tr>
+    <td>Circle `@array`</td>
+    <td>0.353 s</td>
+    <td>0.359 s</td>
+    <td>0.361 s</td>
+    <td>0.361 s</td>
+  </tr>
+  <tr>
+    <td>Circle `@embed`</td>
+    <td>0.199 s</td>
+    <td>0.208 s</td>
+    <td>0.204 s</td>
+    <td>0.368 s</td>
+  </tr>
+  <tr>
+    <td>`objcopy` (linker)</td>
+    <td>0.501 s</td>
+    <td>0.482 s</td>
+    <td>0.519 s</td>
+    <td>0.527 s</td>
+  </tr>
+</table>
+</p>
+
+<p>
+<table>
+  <tr>
+    <th>Strategy</th>
+    <th>40 kilobytes</th>
+    <th>400 kilobytes</th>
+    <th>4 megabytes</th>
+    <th>40 megabytes</th>
+  </tr>
+  <tr>
+    <td>`#embed` GCC</td>
+    <td>0.236 s</td>
+    <td>0.231 s</td>
+    <td>0.300 s</td>
+    <td>1.069 s</td>
+  </tr>
+  <tr>
+    <td>`phd::embed` GCC</td>
+    <td>0.705 s</td>
+    <td>0.713 s</td>
+    <td>0.772 s</td>
+    <td>1.135 s</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated GCC</td>
+    <td>0.406 s</td>
+    <td>2.135 s</td>
+    <td>23.567 s</td>
+    <td>225.290 s</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated Clang</td>
+    <td>0.366 s</td>
+    <td>1.063 s</td>
+    <td>8.309 s</td>
+    <td>83.250 s</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated MSVC</td>
+    <td>0.552 s</td>
+    <td>3.806 s</td>
+    <td>52.397 s</td>
+    <td>Out of Memory</td>
+  </tr>
+  <tr>
+    <td>Circle `@array`</td>
+    <td>0.353 s</td>
+    <td>0.363 s</td>
+    <td>0.421 s</td>
+    <td>0.585 s</td>
+  </tr>
+  <tr>
+    <td>Circle `@embed`</td>
+    <td>0.238 s</td>
+    <td>0.199 s</td>
+    <td>0.219 s</td>
+    <td>0.368 s</td>
+  </tr>
+  <tr>
+    <td>`objcopy` (linker)</td>
+    <td>0.500 s</td>
+    <td>0.497 s</td>
+    <td>0.555 s</td>
+    <td>2.183 s</td>
+  </tr>
+</table>
+</p>
+
+<p>
+<table>
+  <tr>
+    <th>Strategy</th>
+    <th>400 megabytes</th>
+    <th>1 gigabyte</th>
+  </tr>
+  <tr>
+    <td>`#embed` GCC</td>
+    <td>9.803 s</td>
+    <td>26.383 s</td>
+  </tr>
+  <tr>
+    <td>`phd::embed` GCC</td>
+    <td>4.170 s</td>
+    <td>11.887 s</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated GCC</td>
+    <td>Out of Memory</td>
+    <td>Out of Memory</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated Clang</td>
+    <td>Out of Memory</td>
+    <td>Out of Memory</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated MSVC</td>
+    <td>Out of Memory</td>
+    <td>Out of Memory</td>
+  </tr>
+  <tr>
+    <td>Circle `@array`</td>
+    <td>2.655 s</td>
+    <td>6.023 s</td>
+  </tr>
+  <tr>
+    <td>Circle `@embed`</td>
+    <td>1.886 s</td>
+    <td>4.762 s</td>
+  </tr>
+  <tr>
+    <td>`objcopy` (linker)</td>
+    <td>22.654 s</td>
+    <td>58.204 s</td>
+  </tr>
+</table>
+</p>
+
+
+### Memory Size Results ### {#design-practice-memory}
+
+Below is the peak memory usage (heap usage) for a file of random bytes using a specific strategy. The file is of the size specified at the top of the column. Files are kept the same between strategies and tests.
+
+- Intel Core i7 @ 2.60 GHz
+- 24.0 GB RAM
+- Debian Sid or Windows 10
+- Method: `/usr/bin/time -v` or Execute command hundreds of times, stare at Task Manager
+
+<p>
+<table>
+  <tr>
+    <th>Strategy</th>
+    <th>4 bytes</th>
+    <th>40 bytes</th>
+    <th>400 bytes</th>
+    <th>4 kilobytes</th>
+  </tr>
+  <tr>
+    <td>`#embed` GCC</td>
+    <td>17.26 MB</td>
+    <td>17.26 MB</td>
+    <td>17.26 MB</td>
+    <td>17.27 MB</td>
+  </tr>
+  <tr>
+    <td>`phd::embed` GCC</td>
+    <td>38.82 MB</td>
+    <td>38.77 MB</td>
+    <td>38.80 MB</td>
+    <td>38.80 MB</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated GCC</td>
+    <td>17.26 MB</td>
+    <td>17.26 MB</td>
+    <td>17.26 MB</td>
+    <td>17.27 MB</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated Clang</td>
+    <td>35.12 MB</td>
+    <td>35.22 MB</td>
+    <td>35.31 MB</td>
+    <td>35.88 MB</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated MSVC</td>
+    <td>&lt; 30.00 MB</td>
+    <td>&lt; 30.00 MB</td>
+    <td>&lt; 33.00 MB</td>
+    <td>&lt; 38.00 MB</td>
+  </tr>
+  <tr>
+    <td>Circle `@array`</td>
+    <td>53.56 MB</td>
+    <td>53.60 MB</td>
+    <td>53.53 MB</td>
+    <td>53.88 MB</td>
+  </tr>
+  <tr>
+    <td>Circle `@embed`</td>
+    <td>33.35 MB</td>
+    <td>33.34 MB</td>
+    <td>33.34 MB</td>
+    <td>33.35 MB</td>
+  </tr>
+  <tr>
+    <td>`objcopy` (linker)</td>
+    <td>17.32 MB</td>
+    <td>17.31 MB</td>
+    <td>17.31 MB</td>
+    <td>17.31 MB</td>
+  </tr>
+</table>
+</p>
+
+<p>
+<table>
+  <tr>
+    <th>Strategy</th>
+    <th>40 kilobytes</th>
+    <th>400 kilobytes</th>
+    <th>4 megabytes</th>
+    <th>40 megabytes</th>
+  </tr>
+  <tr>
+    <td>`#embed` GCC</td>
+    <td>17.26 MB</td>
+    <td>17.96 MB</td>
+    <td>53.42 MB</td>
+    <td>341.72 MB</td>
+  </tr>
+  <tr>
+    <td>`phd::embed` GCC</td>
+    <td>38.80 MB</td>
+    <td>40.10 MB</td>
+    <td>59.06 MB</td>
+    <td>208.52 MB</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated GCC</td>
+    <td>24.85 MB</td>
+    <td>134.34 MB</td>
+    <td>1,347.00 MB</td>
+    <td>12,622.00 MB</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated Clang</td>
+    <td>41.83 MB</td>
+    <td>103.76 MB</td>
+    <td>718.00 MB</td>
+    <td>7,116.00 MB</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated MSVC</td>
+    <td>~48.60 MB</td>
+    <td>~477.30 MB</td>
+    <td>~5,280.00 MB</td>
+    <td>Out of Memory</td>
+  </tr>
+  <tr>
+    <td>Circle `@array`</td>
+    <td>53.69 MB</td>
+    <td>54.73 MB</td>
+    <td>65.88 MB</td>
+    <td>176.44 MB</td>
+  </tr>
+  <tr>
+    <td>Circle `@embed`</td>
+    <td>33.34 MB</td>
+    <td>33.34 MB</td>
+    <td>39.41 MB</td>
+    <td>113.12 MB</td>
+  </tr>
+  <tr>
+    <td>`objcopy` (linker)</td>
+    <td>17.31 MB</td>
+    <td>17.31 MB</td>
+    <td>17.31 MB</td>
+    <td>57.13 MB</td>
+  </tr>
+</table>
+</p>
+
+<p>
+<table>
+  <tr>
+    <th>Strategy</th>
+    <th>400 megabytes</th>
+    <th>1 gigabyte</th>
+  </tr>
+  <tr>
+    <td>`#embed` GCC</td>
+    <td>3,995.34 MB</td>
+    <td>9,795.31 MB</td>
+  </tr>
+  <tr>
+    <td>`phd::embed` GCC</td>
+    <td>1,494.66 MB</td>
+    <td>5,279.37 MB</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated GCC</td>
+    <td>Out of Memory</td>
+    <td>Out of Memory</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated Clang</td>
+    <td>Out of Memory</td>
+    <td>Out of Memory</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated MSVC</td>
+    <td>Out of Memory</td>
+    <td>Out of Memory</td>
+  </tr>
+  <tr>
+    <td>Circle `@array`</td>
+    <td>1,282.34 MB</td>
+    <td>3,199.28 MB</td>
+  </tr>
+  <tr>
+    <td>Circle `@embed`</td>
+    <td>850.40 MB</td>
+    <td>2,128.36 MB</td>
+  </tr>
+  <tr>
+    <td>`objcopy` (linker)</td>
+    <td>425.77 MB</td>
+    <td>1,064.74 MB</td>
+  </tr>
+</table>
+</p>
+
+
+### Results Analysis ### {#design-practice-analysis}
+
+The above clearly demonstrates the superiority of `std::embed` over latest optimized trunk builds of various compilers. It is also notable that originally the Circle language did not have an `@embed` keyword, but it was added in December 2019. When the compiler author was spoken to about Study Group 7's aspirations for a more generic way of representing data from a file, the ultimate response was this:
+
+> I'll add a new @embed keyword that takes a type and a file path and loads the file and embeds it into an array prvalue of that type. This will cut out the interpreter and it'll run at max speed. Feed back like this is good. This is super low-hanging fruit.
+> 
+> [[circle-embed-tweet|– Sean Baxter, December 12th, 2019]]
+
+It was Circle's conclusion that a generic API was unsuitable and suffered from the same performance pitfalls that currently plagued current-generation compilers today. And it was SG7's insistence that a more generic API would be suitable, modeled on Circle's principles. Given that thorough exploration of the design space in Circle led to the same conclusion this proposal is making, and given the wide variety of languages providing a similar interface (D, Nim, Rust, etc.), it is clear that a more generic API is not desirable for functionality as fundamental and simple as this. This does not preclude a more generic solution being created, but it does prioritize the "Bird in the Hand" approach that the Direction Group and Bjarne Stroustrup have advocated for many times.
+
+Furthermore, inspecting compiler bug reports around this subject area reveal that this is not the first time GCC has suffered monumental memory blowup over unoptimized representation of data. In fact, this is a [[gcc-large-init-bug-c|16+ year old problem that GCC has been struggling with for a long time now]] (C++ version [[gcc-large-init-bug-cpp|here]]). That the above numbers is nearing the best that can be afforded by some of the most passionate volunteers and experts curating an extremely large codebase should be testament to how hard the language is this area for compiler developers, and how painful it is for regular developers using their tools.
+
+Clang, while having a better data representation and more optimized structures at its disposal, is similarly constrained. With significant implementation work, they are deeply constrained in what they can do:
+
+> It might be possible to introduce some sort of optimized representation specifically for initializer lists.  But it would be a big departure from existing AST handling.  And it wouldn't really open up new use cases, given that string literal handling is already reasonably efficient.
+> 
+> – [[clang-large-init-bug|Eli Friedman, December 29th 2019]]
+
+Is this really the best use of compiler developer energy?
+
+To provide a backdrop against which a big departure from current AST handling in can be compared, an implementation of the built-in necessary for this proposal is -- for an experienced developer -- at most a few day's work in either GCC or Clang. Other compiler engineers have reported similar ease of implementation and integration. Should this really be delegated to Quality of Implementation that will be need to be solved N times over by every implementation in their own particularly special way? Chipping away at what is essentially a fundamental inefficiency required by C++'s inescapable tokenization model from the preprocessor plus the sheer cost of an ever-growing language that makes simple constructs like a brace initializer list of integer constants expensive is, in this paper's demonstrated opinion, incredibly unwise.
 
 
 ### Manual Work ### {#design-practice-manual}
@@ -436,34 +850,6 @@ consteval span<const T> embed(
 
 `resource_identifier` is a `string_view` processed in an implementation-defined manner to find and pull resources into C++ at constexpr time. `limit` is the maximum number of bytes the function call can produce (but it may produce less). The most obvious source will be the file system, with the intention of having this evaluated as a core constant expression. We do not attempt to restrict the `string_view` to a specific subset: whatever the implementation accepts (typically expected to be a relative or absolute file path, but can be other identification scheme), the implementation should use.
 
-There is also a form for use with the preprocessor, which eases the burden of dependency scanning tools for simple functionality:
-
-<xmp>
-constexpr const unsigned char 
-foo_txt_arr[] =
-	// non-null-terminated
-	#embed <foo.txt>
-;
-
-constexpr const unsigned char 
-data_bin_arr[] =
-	// non-null-terminated, 24 bytes maximum
-	#embed 24 "data.bin"
-;
-
-constexpr const char 
-c_string_data_bin_arr[] =
-	// null-terminated
-	#embed_str "foo.txt"
-;
-constexpr const char 
-c_string_data_bin_arr[] =
-	// null-terminated, 42 bytes maximum
-	#embed_str 42 <data.bin>
-;
-</xmp>
-
-This form is necessary to allow for current-gen dependency tracking to keep up, and also allows distributed compilation tools (such as `distcc` and `icecc`) to not have to scan for uses of `embed` that may result in false positive. It is also guaranteed to be evaluated before performing full Phase 7 compilation and without needing to consult the compiler's Constant Evaluation engine.
 
 ### Implementation Defined ### {#design-goals-impldefn}
 
@@ -496,7 +882,7 @@ While returning `std::byte` is valuable, it is impossible to `reinterpret_cast` 
 
 # Changes to the Standard # {#wording}
 
-Wording changes are relative to [[n4778]].
+Wording changes are relative to [[n4842]].
 
 
 
@@ -528,40 +914,58 @@ Append to §14.8.1 Predefined macro names [**cpp.predefined**]'s **Table 16** wi
 	<th>Value</th>
 </tr>
 <tr>
-	<td><ins>__cpp_embed</ins></td>
+	<td><ins>__cpp_pp_depend</ins></td>
 	<td><ins>202006L</ins></td>
 </tr>
 </table>
 </blockquote>
 
-Add a new section §15.4 Resource inclusion [**cpp.res**]:
+Add a new section §15.4 Dependency Hints [**cpp.depend**]:
 
 <blockquote>
 <ins>
-**15.4 Resource inclusion** [**cpp.res**]
+**15.4 Dependency Specification** [**cpp.depend**]
 
-<sup>1</sup> A `#embed` directive shall identify a resource file that can be processed by the implementation.
+<p><sup>1</sup> A `#depend` directive shall identify inputs or family of inputs upon which this translation unit depends.</p>
 
-<sup>2</sup> A preprocessing directive of the form
-
+<p><sup>2</sup> A preprocessing directive of the form</p>
 <p>
-&emsp; &emsp; &num; embed <i>digit-sequence</i><sub>opt</sub> `<` <i>h-char-sequence</i> `>` <i>new-line</i>
-</p>
-<p>
-&emsp; &emsp; &num; embed <i>digit-sequence</i><sub>opt</sub> `"` <i>q-char-sequence</i> `"` <i>new-line</i>
-</p>
-<p>
-&emsp; &emsp; &num; embed <i>digit-sequence</i><sub>opt</sub> `<` <i>h-char-sequence</i> `>` <i>new-line</i>
-</p>
-<p>
-&emsp; &emsp; &num; embed <i>digit-sequence</i><sub>opt</sub> `"` <i>q-char-sequence</i> `"` <i>new-line</i>
+&emsp; &emsp; <code>&num; depend</code> `<` <i>h-char-sequence</i> `>` <i>new-line</i>
 </p>
 
-searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the `<` and `>` or the `"` and `"` delimiters. How the places are specified or the resource identified is implementation-defined.
+<p>
+or
+</p>
 
-<sup>3</sup> An `#embed` directive is replaced by the entire contents of the resource as if with a <i>brace-initializer-list</i> containing a sequence of <i>integer-literal</i>s. The contents are mapped in an implementation-defined manner to that <i>integer-literal</i> sequence. Each value of the <i>integer-literal</i> will not be greater than 2<sup><i>N</i></sup>, where <i>N</i> is the width of unsigned char [<b>[tab:basic.fundamental.width](http://eel.is/c++draft/basic.fundamental#tab:basic.fundamental.width)</b>].
+<p>
+&emsp; &emsp; <code>&num; depend</code> `"` <i>q-char-sequence</i> `"` <i>new-line</i>
+</p>
 
-<sup>4</sup> If a <i>digit-sequence</i> is specified, it shall be positive and the replacement of the directive will be as if the mapped contents within the <i>brace-initializer-list</i> contain at most <i>digit-sequence</i> <i>integer-literal</i>s.
+<p>provides a dependency name. The <i>q-char-sequence</i> or <i>h-char-sequence</i> may have 3 meanings, depending on the elements contained within the sequence.
+<dl>
+  <dd>– If the sequence contains a single `*` it denotes a <i>dependency family</i>.
+  <dd>– Otherwise, if it contains a `**` it denotes a <i>recursive dependency family</i>.
+  <dd>– Otherwise, it denotes a <i>single dependency</i>.
+</dl>
+
+If an implementation does not find meaning in the quote-delimited <i>q-char-sequence</i>, it may reprocess this directive as a <code>&num;depend</code> `<` <i>h-char-sequence</i> `>` <i>new-line</i> directive.
+</p>
+
+<p><sup>5</sup> [ <i>Example—</i>
+```cpp
+#depend "art.png" // this translation unit depends on 'art.png'
+
+#depend "assets/**" // this translation unit depends on all resources
+                    // the implementation can find along that start with
+                    // "asset/", recursively.
+
+#depend <config/*.json>" // this translation unit depends on all resources
+                          // the implementation can find that
+                          // end in ".json" and start with "config/".
+```
+<i>— end Example</i> ].</p>
+
+<p><sup>6</sup> Each of the <i>dependency family</i>, <i>recursive dependency family</i>, and <i>single dependency</i> must have an implementation-defined meaning which provides information about where to find <i>resources</i> (e.g., for `embed` [const.res]).</p>
 </ins>
 </blockquote>
 
@@ -602,21 +1006,23 @@ Add a new section §19.20 Compile-time Resources [**const.res**]:
 
 <blockquote>
 <ins>
-**19.20 Compile-time Resources** [**const.res**]
+**19.20 Constant Resources** [**const.res**]
 
 **19.20.1** In general [**const.res.general**]
 
-Compile-time resources allow the implementation to retrieve data into a program from implementation-defined places.
+Constant resources allow the implementation to retrieve data from a variety of sources -- including implementation-defined places -- and allows their processing during constant evaluation.
 
 **19.20.2** Header `embed` synopsis [**embed.syn**]
 
 ```
 namespace std {
-	template <typename T>
+
+	template <typename T = byte>
 	consteval span<const T> embed( string_view resource_identifier ) noexcept;
 
-	template <typename T>
+	template <typename T = byte>
 	consteval span<const T> embed( string_view resource_identifier, size_t limit ) noexcept;
+
 }
 ```
 
@@ -632,13 +1038,13 @@ namespace std {
 }
 ```
 
-<sup>1</sup> Mandates: `std::is_trivial_v<T>` is true. [ <i>Note—</i> This provides that types with non-trivial destructors do not need to be run for the implementation-provided storage. <i>— end Note</i> ].
+<sup>1</sup> Mandates: the implementation-defined bit size of the resource is a multiple of `sizeof(T) * CHAR_BIT` and `std::is_trivial_v<T>` is true. [ <i>Note—</i> This provides that types with non-trivial destructors do not need to be run for the implementation-provided static storage duration objects. <i>— end Note</i> ].
 
-<sup>2</sup> <i>Returns: A contiguous sequence of `T` representing the resource provided by the implementation.
+<sup>2</sup> <i>Returns</i>: A read-only view to a unique resource identified by the `resource_identifier` over a contiguous sequence of `T` objects with static storage duration. The mapping from the contents of the resource to the contiguous sequence of `T` objects is implementation-defined.
 
 <sup>3</sup> <i>Ensures</i>: `.size()` of the returned object is `<= limit` for the second overload.
 
-<sup>4</sup> <i>Remarks</i>: The value of `resource_identifier` is used to search a sequence of implementation-defined places for a resource identified uniquely by the resource identifier specified by `resource_identifier`. The contents are made available as a contiguous sequence of `T` in the returned `span`, up to and including `limit`. If the implementation cannot find the resource specified after exhausting the sequence of implementation-defined search locations, the program is ill-formed. [ <i>Note—</i> Implementations should provide a mechanism similar to include paths to find the specified resource. <i>— end Note</i> ]
+<sup>4</sup> <i>Remarks</i>: The value of `resource_identifier` is used to search a sequence of implementation-defined places for a <i>resource</i> identified uniquely by `resource_identifier`. If the implementation cannot find the resource specified after exhausting the sequence of implementation-defined search locations, the program is ill-formed. The mapping of the resource to the sequence of `T` is implementation-defined. [ <i>Note—</i> Implementations should provide a mechanism similar but not identical to `#include` (15.3 [cpp.include]) for finding the specified resource and in coordination with `#depend` (15.4 [cpp.depend]). <i>— end Note</i> ]
 </ins>
 </blockquote>
 
@@ -837,14 +1243,14 @@ For all this hard work, it is the author's hope to carry this into C++. It would
 
 <pre class=biblio>
 {
-	"n4778": {
+	"n4842": {
 		"authors": [
 			"ISO/IEC JTC1/SC22/WG21 - The C++ Standards Committee",
 			"Richard Smith"
 		],
 		"title": "N4778 - Working Draft, Standard for Programming Language C++",
-		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/n4778.pdf",
-		"date": "November 26th, 2018"
+		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/n4842.pdf",
+		"date": "November 27th, 2019"
 	},
 	"p1130": {
 		"authors": [
@@ -877,6 +1283,34 @@ For all this hard work, it is the author's hope to carry this into C++. It would
 		],
 		"title": "incbin: load files at 'assembly' time",
 		"href": "https://github.com/graphitemaster/incbin"
+	},
+	"gcc-large-init-bug-cpp": {
+		"authors": [
+			"GCC"
+		],
+		"title": "[8/9/10 regression] Uses lots of memory when compiling large initialized arrays",
+		"href": "https://gcc.gnu.org/bugzilla/show_bug.cgi?id=14179"
+	},
+	"gcc-large-init-bug-c": {
+		"authors": [
+			"GCC"
+		],
+		"title": "[8/9/10 regression] Uses lots of memory when compiling large initialized arrays",
+		"href": "https://gcc.gnu.org/bugzilla/show_bug.cgi?id=12245"
+	},
+	"clang-large-init-bug": {
+		"authors": [
+			"LLVM Foundation"
+		],
+		"title": "Memory Consumption Reduction for Large Array Initialization?",
+		"href": "https://bugs.llvm.org/show_bug.cgi?id=44399"
+	},
+	"circle-embed-tweet": {
+		"authors": [
+			"Sean Baxter"
+		],
+		"title": "@embed added to Circle",
+		"href": "https://twitter.com/seanbax/status/1205195567003045888"
 	}
 }
 </pre>
