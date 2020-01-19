@@ -277,8 +277,7 @@ concept reconstructible_range =
 	requires (ranges::subrange<It, Sen> first_last) {
 		reconstruct(
 			in_place_type<remove_cvref_t<R>>,
-			std::move(first_last).begin(),
-			std::move(first_last).end()
+			std::move(first_last)
 		);
 	};
 ```
@@ -339,7 +338,7 @@ Note that these changes will greatly aid other algorithm writers who want to pre
 
 ## Two Concepts ## {#design-dual}
 
-By giving these ranges `Iterator, Sentinel`, and/or `std::ranges::subrange<Iterator, Sentinel>` reconstruction functions, we can enable a greater degree of interface fidelity without having to resort to `std::ranges::subrange` for all generic algorithms. There should be a preference for `reconstruct(std::inplace_type<R>, Iterator, Sentinel)` reconstruction, because one-argument functions can have extremely overloaded meanings. It also produces less compiler boilerplate to achieve the same result of reconstructing the range when one does not have to go through `std::ranges::subrange<I, S, K>`. However, it is important to attempt to move away from the iterator, sentinel model being deployed all the time: `std::ranges::subrange` offers a single type that can accurately represent the intent and can be fairly easy to constrain overload sets on (most of the time).
+By giving these ranges `Iterator, Sentinel`, and/or `std::ranges::subrange<Iterator, Sentinel>` reconstruction functions, we can enable a greater degree of interface fidelity without having to resort to `std::ranges::subrange` for all generic algorithms. There should be a preference for `reconstruct(std::inplace_type<R>, Iterator, Sentinel)` reconstruction, because one-argument functions can have extremely overloaded meanings. It also produces less compiler boilerplate to achieve the same result of reconstructing the range when one does not have to go through `std::ranges::subrange<I, S, K>`. However, it is important to attempt to move away from the iterator, sentinel model being deployed all the time: `std::ranges::subrange` offers a single type that can accurately represent the intent and can be fairly easy to constrain overload sets on (most of the time) due to being a single family of types (anyone can check for a the type being a specialization of `ranges::subrange`, whereas iterators span multiple different families of types).
 
 This paper includes two concepts that cover both reconstructible methods.
 
@@ -439,8 +438,7 @@ concept reconstructible_range =
 	requires (ranges::subrange<It, Sen> first_last) {
 		reconstruct(
 			in_place_type<remove_cvref_t<R>>,
-			std::move(first_last).begin(),
-			std::move(first_last).end()
+			std::move(first_last)
 		);
 	};
 ```
@@ -473,10 +471,18 @@ Insert a new sub-clause "§24.3.13 `ranges::reconstruct` [**range.prim.recons**]
 
 <p><sup>2</sup> The expression `ranges​::reconstruct(in_place_type<R>, I, S)` for some type `R` and some sub-expressions `I` and `S` is expression-equivalent to:
 	<dl>
-		<dd><sup>(2.1)</sup> `reconstruct(in_place_type<R>, std::move(I), std::move(S))` if it is a valid expression and `R`, `I`, and `S` model `pair_reconstructible_range`.</dd>
-		<dd><sup>(2.2)</sup> Otherwise, `reconstruct(in_place_type<R>, ranges::subrange<I, S>(std::move(I), std::move(S)))` if it is a valid expression and `R`, `I`, and `S` model `reconstructible_range`.</dd>
+		<dd><sup>(2.1)</sup> `reconstruct(in_place_type<R>, std::move(I), std::move(S))` if it is a valid expression and `R`, `decltype(I)`, and `decltype(S)` model `pair_reconstructible_range`.</dd>
+		<dd><sup>(2.2)</sup> Otherwise, `reconstruct(in_place_type<R>, ranges::subrange<remove_cvref_t<decltype(I)>, remove_cvref_t<decltype(S)>>(std::move(I), std::move(S)))` if it is a valid expression and `R`, `decltype(I)`, and `decltype(S)` model `reconstructible_range`.</dd>
 		<dd><sup>(2.3)</sup> `ranges::subrange<remove_cvref_t<decltype(I)>, remove_cvref_t<decltype(S)>>(std::move(I), std::move(S))` if it is a valid expression.</dd>
 		<dd><sup>(2.4)</sup> Otherwise, `ranges::reconstruct(std::in_place_type<R>, I, S)` is ill-formed.</dd>
+	</dl>
+</p>
+
+<p><sup>3</sup> Let `SR` be some sub-expression. The expression `ranges​::reconstruct(in_place_type<R>, SR)` for some type `R` and sub-expression `SR` expression-equivalent to:
+	<dl>
+		<dd><sup>(2.1)</sup> `reconstruct(in_place_type<R>, std::move(SR))` if it is a valid expression and `R`, `range::iterator_t<decltype(SR)>`, and `range::sentinel_t<decltype(SR)>` model `reconstructible_range`.</dd>
+		<dd><sup>(2.2)</sup> Otherwise, `reconstruct(in_place_type<R>, ranges::begin(std::move(SR)), ranges::end(std::move(SR)))` if it is a valid expression and `R`, `range::iterator_t<decltype(SR)>`, and `range::sentinel_t<decltype(SR)>` model `pair_reconstructible_range`.</dd>
+		<dd><sup>(2.3)</sup> Otherwise, `return SR`.</dd>
 	</dl>
 </p>
 </ins>
