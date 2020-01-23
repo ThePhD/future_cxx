@@ -16,7 +16,7 @@ Markup Shorthands: markdown yes, biblio yes, markup yes
 </pre>
 
 <pre class=include>
-path: wording_style.bs
+path: include/wording_style.bs
 </pre>
 
 
@@ -36,7 +36,7 @@ path: wording_style.bs
 
 Originally, `std::optional<T>` -- where `T` denotes the name of a type -- contained a specialization to work with regular references, `std::optional<T&>`. When some of the semantics for references were called into question with respect to the assignment operator (assign into the value or rebind the reference inside the `optional`) and how comparisons would be performed (based on `operator<` exclusively or forwarding all operations directly to the underlying type), the debate was morally deadlocked for years and no full consensus was reached. Rather than remove just the operator or modify comparison operators, the entirety of `std::optional<T&>` was removed after some consensus was reached around forwarding comparison operations to the underlying type, if present. This left many codebases in an interesting limbo. Previous implementations and external implementations had support for references, while the standard did not and vigorously advocated itself as such through various Committee participants and related firmly asserting that there were two equally valid and hard to pick interpretations.
 
-This problem became apparent with other parameter and return abstractions such as `std::expected`, the Outcome library, `std::variant`, and more. Given the scope of the problem, qualitative research was necessary to help capture the uses and intent of references in vocabulary types. `optional` was chosen as the primary candidate to collect data, since it is widely used and reimplemented in the C++ ecosystem and broadly represents the challenge of reference wrapping types in C++. A survey conducted of 110+ programmers, (private) feedback from over a dozen companies, and several analyses of optional reference usage (or not) in the wild has yielded results as to quality of implementation, existence, and prevalence of references and their use.
+This problem became apparent with other parameter and return abstractions such as `std::expected`, the Outcome library, `std::variant`, and more. Given the scope of the problem, qualitative research was necessary to help capture the uses and intent of references in vocabulary types. `optional` was chosen as the primary candidate to collect data, since it is widely used and reimplemented in the C++ ecosystem and broadly represents the challenge of reference wrapping types in C++. [[optional-survey|A survey conducted of 110+ programmers]], (private) feedback from over a dozen companies, and several analyses of optional reference usage (or not) in the wild has yielded results as to quality of implementation, existence, and prevalence of references and their use.
 
 Pointedly: there is strong motivation to have references in base vocabulary types used for both parameters (variant, optional, expected, future, etc.) and a lot of existing practice to do so both before and after the standard settled on its current semantics for `std::optional` and `std::variant`. Furthermore, brief historical analysis and user communication reveals the Standards Committee actually had a "chilling effect" on reference support in implementations in large codebases, from private companies to open source projects.
 
@@ -50,7 +50,7 @@ A very large hole is left in many codebases that desire to wrap their non-null o
 
 This has forced many library authors in need of a vocabulary "optional" to have to add preprocessor-based switches to use different kinds of optional implementations. For a vocabulary type, `optional` contains an incredibly high fragmentation of implementations: some implementations are modeled for easy porting to the standard, but many still have custom support not found in the standard (void specializations, reference handling, monadic functions, and more). Implementation quality varies quite a bit among available optionals, supporting various standards, exception modes, trivial/explicit propagations, reference support, void support, and more.
 
-Eliminating the need for this by including common goals -- standard goals -- would greatly benefit both library developers and the ecosystem at large with which they interact.
+Eliminating the need for this by including common goals -- standard goals -- would greatly benefit both library developers and the ecosystem at large with which they interact. We cannot get to these common, standard goals if the landscape is not deliberately and methodically explored, hence this paper.
 
 
 
@@ -58,17 +58,17 @@ Eliminating the need for this by including common goals -- standard goals -- wou
 
 It has been over half a decade since `std::optional` was slated to end up in the standard, even if it only reached the International Standard in C++17. Now that C++ has come this far, this paper is going to take a survey of the landscape and of the many implementations of `optional` in order to analyze use cases and experience.
 
-In furthering this goal, a survey of developers from all experience levels and professional/hobbyist tracks. While there are public implementations of `std::optional` in various flavors and names, it is also important to capture private interests. Several e-mails were sent out as well, and this proposal will attempt to succinctly describe both those and the survey. While the e-mails are kept anonymous and confidential (as that is the condition upon which I have accepted private communications in order to assuage the concerns of employees/employers). This is mostly to protect the innocent and be careful.
+In furthering this goal, a survey of developers from all experience levels and professional/hobbyist tracks was taken. While there are public implementations of `std::optional` in various flavors and names, it is also important to capture private interests with similar types. Several e-mails were sent out as well, and this proposal will attempt to succinctly describe both those and the survey. The e-mails are kept anonymous and confidential (as that is the condition upon which this paper accepted private communications in order to assuage the concerns of employees/employers). This is mostly to protect the innocent and be careful.
 
-Furthermore, in the C++ 
+Furthermore, the C++ ecosystem has not had an honest evaluation of the design space since the conception of the original optional papers and Nevin's incredible work for `std::variant`. This paper seeks to rectify this.
 
 
 
 ## Impact for the Future ## {#motivation-future}
 
-The question of references being used in vocabulary types is not just for `optional`: all sorts of basic types where references might find their way in because they serve as a class of wrappers/composite/"transportation" types such as `std::variant`, `std::tuple`, `std::expected` and others. The decision here will rest of other vocabulary types, *except* the case of `std::tuple` where C++'s fate has already been decided by `std::tie`.
+The question of references being used in vocabulary types is not just for `optional`: all sorts of basic types where references might find their way in because they serve as a family of wrappers/composite/"transportation" types such as `std::variant`, `std::tuple`, `std::expected` and others. The decision here will rest of other vocabulary types, *except* the case of `std::tuple` where C++'s fate has already been decided by `std::tie`.
 
-The recommendation presented further along in this paper should be extended to the other necessary vocabulary types. Not doing so risks the same degree of questionable design choices for these other types and further indecision that leads to a permeation of implementations that try to do the same things but are subtly incompatible or not very well implemented. Already, `std::expected` is seeing a small degree of implementation churn on the outside (not quite as much as `optional`).
+The recommendation presented further along in this paper should be extended to the other necessary vocabulary types. Not doing so risks the same degree of questionable design choices for these other types and further indecision that leads to a permeation of implementations that try to do the same things but are subtly incompatible or not very well implemented. Already, `std::expected` is seeing a small degree of implementation churn on the outside (not quite as much as `optional`) in Boost.Outcome, LEAF, `tl::expected` and more; the community is trotting out the same story over and over again for basic, fundamental types of similar flavor. This should be done once, properly, and solved until new information is presented.
 
 
 
@@ -78,10 +78,10 @@ As mentioned previously, another key motivation of this paper is the surprising 
 
 
 
+
 # Design Considerations # {#design}
 
 This paper reviews implementation experience, models, and theory around what a composite / wrapper types like `optional`, `variant`, and `expected` should do. This paper also dives into a survey of 110+ developers (plus a few additional members who espoused their opinions directly VIA e-mail, instant messaging mediums, twitter, and elsewhere) to understand what is necessary in the optionals they use in real-world projects, company projects, hobby projects and more. The survey results are left in raw form [[optional-survey|at this location]] for anyone who wants to peruse them.
-
 
 
 
@@ -284,7 +284,7 @@ Below is a succinct synopsis of the options presented in this paper and their co
 
 ## Problems in the Design Space ## {#design-problems}
 
-As hinted at in the the table, there are numerous design tradeoffs and some that just have outright problems with them.
+As hinted at in the the table, there are numerous design tradeoffs and some that just have outright problems with various optional implementations.
 
 
 ### Problems: Assignment Semantics ### {#design-problems-assignment}
@@ -308,7 +308,7 @@ int main (int, char*[]) {
 }
 ```
 
-The contention is the "two plausible interpretations": under what is known as "Rebinding", the following results show:
+The contention is the "two plausible interpretations". Under what is known as "Rebinding", the following results show:
 
 ```cpp
 x is 5
@@ -322,7 +322,7 @@ x is 24
 y is 24
 ```
 
-This has become an explosive topic in the Committee and the C++ Community in general and is a heavy crux of contention that, unlike operator specification, could not be resolved before the final shipping date of the current `std::optional`.
+This has become an explosive topic in the Committee and the C++ Community in general and is a heavy crux of contention that, unlike comparison operator specification, could not be resolved before the final shipping date of the current `std::optional`.
 
 
 ### Problem: Status Quo, but Monadic? ### {#design-problems-monadic}
@@ -331,7 +331,7 @@ The highest feature request for optional from the conducted survey is monadic op
 
 Quantifiable performance impact is also easy to achieve. While code using small value types like `int` can mostly avoid this, structures which have more complicated copy and move semantics like `std::string` and `std::vector` suffer noticeable and tractable performance problems, even at miniscule sizes like a `vector` of 8 `int`s.
 
-The full code is [buildable with CMake and runnable with a pretty graph-visualizer](https://github.com/ThePhD/phd). There are a few things we test here. First, we test the basic case: cheap values that can fit in registers (integers, basically). We then have tests for another common type: std::vector<int>. We do not put anything special in the vector except integers, because that enables the memcpy optimizations where possible. As another layer, we compare doing only 1 monadic operation, compared to piping through 3 operations. Finally, for both of these, we test when the code is completely visible to the compiler (marked with _transparent in the name). This means it is available for inlining. We then also test the case where the code is completely invisible / opaque to the compiler. Anything without _transparent had its transform function call hidden behind a DLL call. This was to test if inlining was the defining performance gain factor or not.
+The full code is [buildable with CMake and runnable with a pretty graph-visualizer](https://github.com/ThePhD/phd). There are a few things tested here. First, the basic case is tested: cheap values that can fit in registers (integers, basically). Then, tests for another common type are done: `std::vector<int>`. Nothing special is put in the `vector` except integers, because that enables the `memcpy` optimizations (and lower general overhead to what is being measured) where possible. As another data point, comparisons between 1 monadic operation piping versus 3 monadic operation piping is checked for each type. Finally, for all of these cases, code is tested when it is completely visible to the compiler (marked with **_transparent** in the name). This means it is available for inlining. Conversely, the code is also tested for when it is completely invisible / opaque to the compiler. Anything without **_transparent** had its transforming work call hidden behind a DLL call. This provides clear controls for the benchmark with respect to inlining or RVO.
 
 As a slight addendum and a fail-safe to test if the code went wrong, there are also two sections: one is marked **_failure**, and this just means that the optional was empty so no work should have been done in the monadic functions. It’s essentially a basic litmus test for “is something haywire happening in the benchmarks right now?”. There is also **_success**, where the optional was filled with a value and everything worked out.
 
@@ -353,38 +353,40 @@ path: assets/d1683/vector 1x.bs
 path: assets/d1683/vector 3x.bs
 </pre>
 
-As we can see, even for tiny vectors, mapping once versus mapping three times produces a noticeable performance impact. This means today's optimizers -- in a case where the compiler can see the entire tiny function ("transparent") or not -- cannot elide the additional movies and copies in a value-based world. This has significant performance implications for applications wishing to take advantage of Sy Brand's excellent work for monadic operations and throws some potential shade on other monadic-capable types such as `variant`, `expected`, and more. This may also produce some noticeable problems for people attempting to work with pattern matching mixed with this feature in the future, albeit implications for such are presently unclear and speculative at best.
+As demonstrated can see, even for tiny vectors, mapping once versus mapping three times produces a noticeable performance impact. This means today's optimizers -- in a case where the compiler can see the entire tiny function ("transparent") or not -- cannot elide the additional movies and copies in a value-based world. This has significant performance implications for applications wishing to take advantage of Sy Brand's excellent work for monadic operations and throws some potential shade on other monadic-capable types such as `variant`, `expected`, and more. This may also produce some noticeable problems for people attempting to work with pattern matching mixed with this feature in the future, albeit implications for such are presently unclear and speculative at best.
+
+
 
 
 # Implementation/Deployment Experience # {#experience}
 
-[[#recommendations-rebind]] has long-standing design, implementation, and industry experience with several high-quality implementations and a handful of conference acceptances as well as research put into them. [[#experience-assign-through]] has not been reported to see much experience (any experience, currently), other than my anecdotal experimentation as a beginning programmer. There is supposedly one assign-through implementation of an optional
+[[#recommendations-rebind]] has long-standing design, implementation, and industry experience with several high-quality implementations and a handful of conference speakers's talks, as well as significant research and industry experience put into them. [[#experience-assign-through]] has not been reported to see much experience (any experience, currently), other than the authro's anecdotal experimentation as a beginning programmer, further experimentation before this proposal, and a single other Hobby Developer's long-term C++ project.
 
 
 
 ## Conservative and Rebinding ## {#experience-conservative-rebinding}
 
-The "simple" version is a much more tame version that has seen implementation experience for at least 6 years in [[akrzemi-optional|akrzemi/optional]], and 4 years in [[sol2|sol2]] (albeit the implementation has been changed to instead mimic the full complete version, migrated over with no complaints or problems with users). The simple version has also existed as the advised compiler-safe subset for [[boost-optional|Boost.Optional]] for 15 years, maybe more (this was mostly from warning about the inability of pre-C++11 to delete or restrict r-value bindings and how `const T&` could bind to more than was likely intended).
+The "conservative solution" proposed in [[p1175r0]] is a much more tame version that has seen implementation experience for at least 6 years in [[akrzemi-optional|akrzemi/optional]], and 4 years in [[sol2|sol2]] (albeit the implementation for sol2 has been changed to instead mimic the full complete version, migrated over with no complaints or problems with users). The simple version has also existed as the advised compiler-safe subset for [[boost-optional|Boost.Optional]] for 15 years, maybe more (this was mostly from warning about the inability of pre-C++11 to delete or restrict r-value bindings and how `const T&` could bind to more than was likely intended).
 
 The "complete" version has seen implementation experience for even longer for those who used the full functionality of [[boost-optional|Boost.Optional]]. It is also present in [[llama-optional|Sy Brand's optional]], a number of industry optionals, and the author's independent optional. The boost mailing list thread on this topic indicates much of the same potential confusion around references, but towards the end there was the realization that due to inconsistencies with how assign-through behaves the behavior of assign-through is far from ideal.
 
 Jonathan Müller's [[foonathan-optional|type_safe]] has it, but under a different name (`optional_ref`). From Müller's [[foonathan-cppnow|C++Now 2018 'Rethinking Pointers' Talk]], it is easy to see why: he argues that using a type which very explicitly demarcates its purpose with a name (`optional_ref<T>` as compared to `optional<T&>`) is better for an API interface. This works just as fine as any other argument, until the case of generic programming comes around. This is where the difference between `optional_ref` and `optional` as 2 distinctly named, strong types becomes noticeable and painful for any given developer. The library developer can add a level of indirection as mentioned in [[tcbrindle-post|Tristan Brindle's musings for Optional References]], but this is similar to the whackiness of having to explicitly `unref_unwrap<>` every type just in case `std::reference_wrapper` shows up in generic code. Every time you might expect to be dealing with `optional` and `optional` references, a developer has to furnish a number of metaprogramming tools and once more add special handling to functions and classes that should never had to think about these things.
 
-The explicit `optional_ref` methodology can be used as a way forward but costs generic programmers a useful vocabulary type.
+The explicit `optional_ref` methodology can be used as a way forward but costs generic programmers a useful vocabulary type and makes type duplication for reference categories a severe issue. For example, while this duplication works for `optional<T>` (`optional_ref<T>`) and `expected<T>` (`expected_ref<T>`), what happens to `variant<T...>`? A variant would easily want to mix reference and value types for many, many reasons: the `optional_ref` solution, while targeted and useful, does not scale as a generic and workable solution for either experts or beginners in need of more.
 
 
 
-## Assign-Through Deployment and experience ## {#experience-assign-through}
+## Assign-Through Deployment and Experience ## {#experience-assign-through}
 
 This variation of the recommended design [[#recommendations-rebind|found below]] is an assign-through `optional` that attempts to mimic the semantics of a reference as much as the `optional` specification allows it. This includes assign-through behavior when the `optional` is in an engaged state.
 
 Assign-through as a design is harmful to programmers due to its change-of-behavior depending purely on a runtime property (engaged vs. unengaged). As shown in [[#design-behavior]], many of the other options are much more consistent and have much less questions surrounding the totality of its behavior.
 
-Most notably is the lack of decided semantics for what happens in the engaged state versus the unengaged state with assignment. This version of an `optional<T&>` would have to rebind for assignment operators that take a right hand side of a l-value. Still, the more dangerous case is the r-value case. `int a = 24; int& a_ref = a; a_ref = 12;` is valid code. Many proponents of `std::optional<T&>` existence as a reference demand syntactic equivalence with references for consistency reasons. If we are attempting to achieve syntactic purity with respect to references here, then assignment of optionals would have to tolerate this use case.
+Most notably is the lack of decided semantics for what happens in the engaged state versus the unengaged state with assignment. This version of an `optional<T&>` would have to rebind for assignment operators that take a right hand side of a l-value. Still, the more dangerous case is the r-value case. `int a = 24; int& a_ref = a; a_ref = 12;` is valid code. Many proponents of `std::optional<T&>` who read it solely as an extension of references as they are in the language demand syntactic equivalence with references for "consistency" reasons. If syntactic purity is the goal with respect to references here, then assignment of optionals would have to tolerate this use case.
 
-If we do not make r-value assignment a compiler error, then we are left with handling the unengaged state for r-value assignment in an `optional`, of which there is no good answer: do we throw `bad_optional_access`? `terminate` so it can be `noexcept`? These answers and many more do not seem to adequately address the problem space for which these types may be used (potentially deferred returns, return types from lookup operations, and optional parameters), and other decisions like it are increasingly questionable in either utility or usefulness. Having optional references behave as the reference they contain is a poor design choice: trying to gloss over the fact that they are, indeed, optionals is bad in the case of references.
+If r-value assignment is not a compiler error, then the unengaged state with r-value assignment is left, of which there is no good answer: do we throw `bad_optional_access`? `terminate` so it can be `noexcept`? These answers and many more do not seem to adequately address the problem space for which these types may be used (potentially deferred returns, return types from lookup operations, and optional parameters), and other decisions like it are increasingly questionable in either utility or usefulness. Having optional references behave as the reference they contain is a poor design choice: trying to gloss over the fact that they are, indeed, optionals (nullability for any type) results in a poor quality abstraction that is hard to use, harder to reason about at compile and run time, and bug-prone.
 
-It is also extremely easy to write code using an assign-through optional where something that may or may not be a code smell cannot be detected simply by looking at the code. Consider the following snippet, adapted from [[foonathan-optional-problems]]:
+Specifically, with respect to its bug-prone nature, it is effortless to write code using an assign-through optional where something that may or may not be a code smell cannot be detected simply by looking at the code. Consider the following snippet, adapted from [[foonathan-optional-problems]]:
 
 ```
 int foo_bad(int x, optional<int&> maybe_y) {
@@ -467,11 +469,12 @@ bool ref_r1 = maybe_comp(maybe_ref_x, maybe_ref_y);
 assert(ref_r0 == ref_r1); // assertion fails
 ```
 
-We do not believe this model to have intuitive value to the developer, nor to provide a better base from which generic programming with references -- especially as it relates to return types from e.g. `self`-returning member function calls wrapped up -- can behave. The model is consistent, but breaks down because that consistency is applied to the wrong end of the spectrum -- reference semantics -- rather than sticking with C++'s value semantic identity. The salient property of a reference is its value, not its address, and creating a programming model where the address is the salient property to compare with is likely to lead to confusion and frustration.
+This model does not have intuitive value to the developer, nor does it provide a better base from which generic programming with references -- especially as it relates to return types from e.g. `self`-returning member function calls wrapped up -- can behave. The model is consistent, but breaks down because that consistency is applied to the wrong end of the spectrum -- reference semantics -- rather than adhering to C++'s value semantic identity. The salient property of a reference is its value, not its address, and creating a programming model where the address is the salient property to compare with is likely to lead to confusion and frustration.
 
 Furthermore, note that comparison of a pointer is a strict subset of comparison with a value. For `pointer == pointer`, the answer is true if the addresses are the same and you are dealing with the same object (modulo implementation shenanigans). For `value == value`, all of the same properties of `pointer == pointer` hold, in that if the two objects are than the values are the same. `value == value` for references, despite rebinding for construction and assignment, accurately subsume the `pointer == pointer` model, which means the salient observable properties of an `optional<T&>` are preserved equally -- if not better -- than the a pointer comparison model. What changes is what is denoted as false. In the case of C++, we have an expectation that if objects have the same value representation, they are meant to compare equal : this is an important point. `int` is, for the purposes of regular procedures, identical to `const int&` or even `int&`. They are "semantically equivalent" ([Elements of Programming](http://elementsofprogramming.com/eop_coloredlinks.pdf), Page 9). With two values that are the same, the address can be different. This means that for the purposes of a regular procedure, we are treating references as different when they happen to be wrapped in an optional. This is imposing different semantics on a wrapper type that is meant to expose the underlying `T`'s functionality if it is engaged.
 
 This is not a sound programming generic programming model and is in stark contrast with the fundamentals of C++.
+
 
 
 ## The Other Choice ## {#experience-none}
@@ -490,9 +493,12 @@ What this ultimately means is that the Standards Body has effectively poisoned t
 
 
 
-## So what about Pointers? ## {#experience-pointer}
+## Pointers? ## {#experience-pointer}
 
 Pointers have long been heralded as the proper way to have a rebindable optional reference. It's compact in size, already has a `none` value prepared in `nullptr`, and comes with the language itself. It seems to have everything needed. Unfortunately, pointers have problems: chief among them is the requirement that creation of a pointer must be explicit and must come from an l-value. This means that codebases which want to transition from either `boost::optional<const T&>` or from changing a `const T&` parameter to a `T const*` parameter suffer from hard compiler errors at every place of invocation. While this is not a big deal for some functions, it is an incredibly big deal for core APIs.
+
+
+### Temporaries? ### {#experience-pointer-temporaries}
 
 Pointers also introduce lifetime and scoping questions and issues: names have to be assigned to temporaries that otherwise had perfect lifetimes that fit exactly the duration of the function call expression: `foo_bar(5);` must become `int temp = 5; foo_bar(&temp);`. While this might be easy to do with integers, it becomes exceedingly complicated for more complex objects and other intricate types. One would have to explicitly control function call lifetime by manually sprinkling curly braces around the call site. This does not scale for older codebases wishing to move themselves to more idiomatic and expressive APIs, or for refactors that 
 
@@ -501,6 +507,133 @@ This is not a concern rooted in purely hypothetical thought: 2 survey respondent
 > Had reference support before upgrading to std::optional, porting those to pointers was quite some work... — Anonymous, July 9th, 2018
 
 There is an observable and significant difference between having to use a pointer and being able to just have the useful lifetime extension rules apply to something that binds to a `const` reference. It is especially painful when one wants to upgrade a function to take a parameter that may or may not have used `const T&` for a parameter that becomes optional. Another way to fix this problem is overloading, but that presents the problem of making it impossible to take the address of a function name without explicitly and directly performing a `static_cast<>`. The only solution that requires absolutely no effort on the part of the programmer is upgrading from `const T&` to `optional<const T&>`, with the caveat that the optional may accept more types than it should. Jonathan Müller talks about this as well [[foonathan-cppnow|in his C++Now 2018 talk 'Rethinking Pointers']].
+
+
+### API Clarity ### {#experience-pointers-clarity}
+
+Pointers with unclear semantics introduce severe user understanding glitches and can lead to programmer bugs due to unclear ownership models. Even programmers in modern C++ struggle deeply with ownership and lifetime, in no small part to the prevalence of pointers in APIs. While LLVM and Clang chose to use pointers for "optional rebindable references", that design decision incurred a huge penalty that the LLVM Community has been paying repeatedly. In some sense, literally: there has been an ongoing offering and a general to-do item to clean up pointer usage in LLVM and Clang as recent as 2017 (the request for using better pointers is gone from the documentation now). Now that they have a well-established convention with clear ownership, it has become harder to mess up.
+
+That unfortunately has not transitioned to all communities.
+
+sol2 has to have a very explicit and loud note in its documentation about how raw pointers are non-owning, complete with a devoted "quick-n-dirty" tutorial entry as well. This has not stopped programmers from shoving raw `new foo();` into entry and exit points to the binding generator and expected magic in terms of ownership reclamation. The Guidelines Support Library is trying to mark all owning raw pointers with a static-analysis capable `owner<T*>` type alias as well as a more fundamental class `non_null<T>`. They also spend time deleting arithmetic operations on the class types, specifically to prevent users from treating single-pointer types like arrays. The presence of the `not_null<T>` class in the Guidelines Support Library and the deletion of the operators on such types in many code bases indicates a world where a plain reference can handle `non_null<T>` is desirable behavior. Unfortunately, types like `non_null<T>` can travel through today's `std::optional<T>`, `std::variant<Ts...>`, and many forms of Standard-anticipating `expected`, while `T&` cannot. This hampers both interoperability (the standard will never create a `non_null<T>` for the reasonable future) and greatly impedes generic abstractions (invocation-or-error systems with `exoected`, delayed invocation systems with `optional`, fire-first result propagation systems with `variant`, and more).
+
+
+### Semantic Quality ### {#experience-pointers-semantic}
+
+A lot of code run under the assumption or behave as if the `T* ptr = nullptr` and a disengaged `optiona<T> opt;` are the same and can be used interchangeably. This is, unfortunately, not the case, especially when it comes to working with outside systems. Foreign Function Interfaces to languages and products that already have a concept of `nullptr` or `nil` can induce an extra burden on the system to perform more checks than necessary to check for the many different states involved. For example, consider a mapping between a system and a foreign system which has a notion of the types `T`, `none`, and `nil` for a single reference object:
+
+
+<table>
+	<tr>
+		<th colspan="4">Semantic Mapping</th>
+	</tr>
+	<tr>
+		<th>Type</th>
+		<th>T operation</th>
+		<th>none operation</th>
+		<th>nil/null operation</th>
+	</tr>
+	<tr>
+		<td>`T`</td>
+		<td>✔️</td>
+		<td>❌</td>
+		<td>❌</td>
+	</tr>
+	<tr>
+		<td>`T&`</td>
+		<td>✔️</td>
+		<td>❌</td>
+		<td>❌</td>
+	</tr>
+	<tr>
+		<td>`T*`</td>
+		<td>✔️</td>
+		<td>❌</td>
+		<td>✔️</td>
+	</tr>
+	<tr>
+		<td>`optional<T>`</td>
+		<td>✔️</td>
+		<td>✔️</td>
+		<td>❌</td>
+	</tr>
+	<tr>
+		<td>`optional<T&>`</td>
+		<td>✔️</td>
+		<td>✔️</td>
+		<td>❌</td>
+	</tr>
+	<tr>
+		<td>`optional<T*>`</td>
+		<td>✔️</td>
+		<td>✔️</td>
+		<td>✔️</td>
+	</tr>
+</table>
+
+On the tin, this table looks exactly as one would expect. Unfortunately, the reality and the expectation of users is far, far different when it comes to interoperating with the system and how pointers behave. Users -- for APIs like the v8 engine for interfacing with JavaScript, Python, Lua, Squirrel and other foreign system interfaces -- demand that the `none` case not result in a hard error from an API which returns a `T*`. That is, given this class and interface:
+
+```cpp
+class foreign_interface {
+	template <typename T, typename Key>
+	T retrieve(Key&& key) const;
+};
+```
+
+User's doing `foreign_interface system(...);` and then calling `my_class* p_mc = system.retrieve<my_class*>("some_key");` did not expect failure from the function call if the system only contained `none`. Throwing an error on `none` or invoking panic in this case was deemed actively user hostile and resulted in complaints and raised eyebrows. No matter how hard any library tries, the implicit assumption is that `T*` will -- magically -- only be populated with valid data if it exists, but in all other cases just be `nullptr`. It is part of the fact that we continually and perpetually cram more semantics into a single `T*` than any other type in C and C++. Pointers are a useful and powerful tool, but they have become an omnibus for communicating things at the type system level to the point that they become effectively useless.
+
+This was the source of a deep division in the community as well over how `nullptr` in `string_view` should be handled, see [[p0903r2]]. `nullptr` was not supposed to be part of the semantics for `string_view` but, invariably, it became a point of contention because the mental model for `const char*` included `nullptr` as a sentinel, not just an empty-sized `string_view`. Unfortunately, many C APIs conflated the two for decades and so pointers -- even pointers + size -- are invariably tainted by the discourse, resulting in a new table:
+
+
+<table>
+	<tr>
+		<th colspan="4">Semantic Mapping</th>
+	</tr>
+	<tr>
+		<th>Type</th>
+		<th>T operation</th>
+		<th>none operation</th>
+		<th>nil/null operation</th>
+	</tr>
+	<tr>
+		<td>`T`</td>
+		<td>✔️</td>
+		<td>❌</td>
+		<td>❌</td>
+	</tr>
+	<tr>
+		<td>`T&`</td>
+		<td>✔️</td>
+		<td>❌</td>
+		<td>❌</td>
+	</tr>
+	<tr>
+		<td>`T*`</td>
+		<td>✔️</td>
+		<td>✔️</td>
+		<td>✔️</td>
+	</tr>
+	<tr>
+		<td>`optional<T>`</td>
+		<td>✔️</td>
+		<td>✔️</td>
+		<td>❌</td>
+	</tr>
+	<tr>
+		<td>`optional<T&>`</td>
+		<td>✔️</td>
+		<td>✔️</td>
+		<td>❌</td>
+	</tr>
+	<tr>
+		<td>`optional<T*>`</td>
+		<td>✔️</td>
+		<td>✔️</td>
+		<td>✔️</td>
+	</tr>
+</table>
+
+It is unfortunate that `optional<T*>` and `T*` in many APIs will essentially result in the same level of work for foreign system interfaces like these. `empty`/`none` and `nullptr` are conflated in a way that only `optional<T&>` and `T*` are capable of fixing: the lack of this has resulted in clear overall loss for the community in general. If each of those columns was its own independent API check, then users relying on `T*` -- regardless of whether they are aware of the fine split between `nil`/`nullptr` and `none` -- get robbed of both efficiency (in checking only the minimal subset of things that they need to) and API space.
 
 
 
