@@ -203,23 +203,16 @@ This proposed wording is currently relative to Working Paper N2385. The intent o
 
 Rewrite §6.7.11.2 "The nodiscard attribute"'s **Constraint** subsection as follows:
 
-<ins>
-> The nodiscard attribute shall be applied to the identifier in a function declarator or to the definition of a structure, union, or enumeration type. It shall appear at most once in each attribute list. If an attribute argument clause is present, it shall have the form:
+> <ins>The nodiscard attribute shall be applied to the identifier in a function declarator or to the definition of a structure, union, or enumeration type. It shall appear at most once in each attribute list. If an attribute argument clause is present, it shall have the form:</ins>
 > 
-> ( *string-literal* )
-
-</ins>
+> <ins>( *string-literal* )</ins>
 
 Add a clause just beneath the first clause in the **Recommended Practice** subsection as follows:
 
-<ins>
-> The diagnostic message may include text provided by the string literal within the attribute argument clause of any nodiscard attribute applied to the name or entity.
-
-</ins>
+> <ins>The diagnostic message may include text provided by the string literal within the attribute argument clause of any nodiscard attribute applied to the name or entity.</ins>
 
 Add a third example after the first two in the **Recommended Practice** subsection as follows:
 
-<ins>
 > > ```c++
 > > [[nodiscard("must check armed state")]] 
 > > bool arm_detonator(int);
@@ -229,6 +222,5 @@ Add a third example after the first two in the **Recommended Practice** subsecti
 > >   detonate();
 > > }
 > > ```
-> > A diagnostic for the call to `arm_detonator` using the *string literal* `"must check armed state"` from the *attribute argument clause* is encouraged.
+> > <ins>A diagnostic for the call to `arm_detonator` using the *string literal* `"must check armed state"` from the *attribute argument clause* is encouraged.</ins>
 
-</ins>

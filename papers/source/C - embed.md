@@ -1,7 +1,7 @@
 ---
 title: Preprocessor embed - Binary Resource Inclusion
 layout: page
-date: January 13th, 20120
+date: March 15th, 2020
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
 redirect_from:
@@ -259,9 +259,12 @@ There has been concerns expressed about the form of this feature -- whether or n
 The syntax can also be adjusted. A preprocessor directive is preferred because that allows it to be findable by the end of Preprocessor.
 
 
+
+
 # Wording - C
 
-This wording is relative to C's [N2454](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2454.pdf).
+This wording is relative to C's latest working draft.
+
 
 ## Intent
 
@@ -274,6 +277,8 @@ The intent of the wording is to provide a preprocessing directive that:
 
 
 ## Proposed Language Wording
+
+Note: The � is a stand-in character to be replaced by the editor.
 
 Add another _control-line_ production and a new _parenthesized-non-header_ to §6.10 Preprocessing Directives, Syntax, paragraph 1:
 
@@ -290,14 +295,14 @@ Add another _control-line_ production and a new _parenthesized-non-header_ to §
 </p>
 </blockquote>
 
-Add a new sub clause as §6.10.� (� is a stand-in character to be replaced by the editor) to §6.10 Preprocessing Directives, preferably after §6.10.2 Source file inclusion:
+Add a new sub clause as §6.10.� to §6.10 Preprocessing Directives, preferably after §6.10.2 Source file inclusion:
 
 <blockquote>
 <ins>
 <p><h3><b>§6.10.� &emsp; &emsp; Resource embedding</b></h3></p>
 
 <p><b>Constraints</b></p>
-<p><sup>1</sup>A <b><code>&num;embed</code></b> directive shall identify a resource that can be processed by the implementation as a sequence of binary data.</p>
+<p><sup>1</sup>A <b><code>&num;embed</code></b> directive shall identify a resource that can be processed by the implementation as a binary data sequence of an optionally specified type.</p>
 
 <p><b>Semantics</b></p>
 <p><sup>2</sup> A preprocessing directive of the form</p>
@@ -322,11 +327,11 @@ Add a new sub clause as §6.10.� (� is a stand-in character to be replaced b
 
 <p>with the identical contained <i>q-char-sequence</i> (including &gt; characters, if any) from the original directive.</p>
 
-<p><sup>4</sup> If a <i>parenthesized-non-header</i> is not specified, then the directive behaves as if the tokens of the <i>parenthesized-non-header</i> are <code>unsigned char</code>. If a <i>parenthesized-non-header</i> is specified, outer parenthesis must be present if it contains one or more of <code>"</code>, <code>&lt;</code> or <code>&gt;</code>.</p>
+<p><sup>4</sup> If a <i>parenthesized-non-header</i> is not specified, then the directive behaves as if the tokens of the <i>parenthesized-non-header</i> are <code>unsigned char</code>. If a <i>parenthesized-non-header</i> is specified, outer parentheses must be present if it contains one or more of <code>"</code>, <code>&lt;</code> or <code>&gt;</code>.</p>
 
-<p><sup>5</sup> Let the <i>parenthesized-non-header</i> tokens be <code>T</code>. Either form of the <b><code>&num;embed</code></b> directive specified previously behave as if it is replaced by the contents of the resource a <code>{</code> and <code>}</code> delimited <i>initializer-list</i>. The <i>initializer-list</i> represents an implementation-defined mapping from the contents of the resource to the elements of the <i>initializer-list</i>.</p>
+<p><sup>5</sup> Let the <i>parenthesized-non-header</i> tokens be <code>T</code>. Either form of the <b><code>&num;embed</code></b> directive specified previously behave as if it is replaced by an implementation-defined mapping of the contents of the resource into an <i>initializer-list</i> suitable for initializing an array of <code>T</code>. If the implementation-defined bit size of the resource's contents are not a multiple of <code>sizeof(T) * CHAR_BIT</code>, then the implementation shall issue a diagnostic.</p>
 
-<p><sup>6</sup> If a <i>digit-sequence</i> is specified, it shall be an unsigned <i>integer-constant</i>. The implementation-defined mapping from the contents of the resource to the elements of the <i>initializer-list</i> shall produce no more than <i>digit-sequence</i> elements.</p>
+<p><sup>6</sup> If a <i>digit-sequence</i> is specified, it shall be an unsigned <i>integer-constant</i>. The implementation-defined mapping from the contents of the resource to the elements of the <i>initializer-list</i> shall have up to but no more than <i>digit-sequence</i> elements.</p>
 
 <p><sup>7</sup> A preprocessing directive of the form</p>
 
@@ -336,7 +341,7 @@ Add a new sub clause as §6.10.� (� is a stand-in character to be replaced b
 </ins>
 </blockquote>
 
-Add 2 new Example paragraphs below the above text in §6.10.� Resource embedding:
+Add 3 new Example paragraphs below the above text in §6.10.� Resource embedding:
 
 > <ins><sup>8</sup> **EXAMPLE 1** Placing a small image resource.</ins>
 > 
@@ -346,9 +351,9 @@ Add 2 new Example paragraphs below the above text in §6.10.� Resource embeddi
 > > void have_you_any_wool(const unsigned char*, size_t);
 > > 
 > > int main (int, char*[]) {
-> > 	const unsigned char baa_baa[] =
+> > 	const unsigned char baa_baa[] = {
 > > #embed "black_sheep.ico"
-> > 	;
+> > 	};
 > > 
 > > 	have_you_any_wool(baa_baa, 
 > > 		sizeof(baa_baa) / sizeof(*baa_baa));
@@ -364,20 +369,55 @@ Add 2 new Example paragraphs below the above text in §6.10.� Resource embeddi
 > > #include <assert.h>
 > > 
 > > int main (int, char*[]) {
-> > 	const char sound_signature[] =
+> > 	const char sound_signature[] = {
 > > #embed char 4 <sdk/jump.wav>
-> > 	;
+> > 	};
 > > 
 > > 	// PCM WAV resource?
 > > 	assert(sound_signature[0] == 'R');
 > > 	assert(sound_signature[1] == 'I');
 > > 	assert(sound_signature[2] == 'F');
 > > 	assert(sound_signature[3] == 'F');
+> > 	assert((sizeof(baa_baa) / sizeof(*baa_baa)) == 4);
 > > 
 > > 	return 0;
 > > }
 > > ```
 > 
+> <ins><sup>10</sup> **EXAMPLE 3** Diagnostic for resource which is too small.</ins>
+> 
+> > ```cpp
+> > 
+> > int main (int, char*[]) {
+> > 	const unsigned long long coefficients[] = {
+> > #embed unsigned long long "only_16_bits.bin"
+> > 	};
+> > 
+> > 	return 0;
+> > }
+> > ```
+> 
+> <ins>An implementation must produce a diagnostic where 16 bits (i.e., the implementation-defined bit size) is less than `sizeof(unsigned long long) * CHAR_BIT`, or the implementation-defined bit size modulo `sizeof(unsigned long long) * CHAR_BIT` is not 0.</ins>
+> 
+> <ins><sup>11</sup> **EXAMPLE 4** Extra elements added to array initializer.</ins>
+> 
+> > ```cpp
+> > #include <string.h>
+> > 
+> > #ifndef SHADER_TARGET
+> > #define SHADER_TARGET "phong.glsl"
+> > #endif
+> > 
+> > extern char* null_term_shader_data;
+> > 
+> > void fill_in_data () {
+> > 	const char internal_data[] = {
+> > #embed char SHADER_TARGET
+> > 	, 0 };
+> > 
+> > 	strcpy(null_term_shader_data, internal_data);
+> > }
+> > ```
 > <hr>
 > 
 > <ins><sup>18�)</sup><sub> Note that adjacent string literals are not concatenated into a single string literal (see the translation phases in 5.1.1.2); thus, an expansion that results in two string literals is an invalid directive.</sub></ins>
@@ -391,7 +431,7 @@ Add 2 new Example paragraphs below the above text in §6.10.� Resource embeddi
 
 # Wording - C++
 
-This wording is relative to C++'s [N4835](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/n4842.pdf).
+This wording is relative to C++'s latest working draft.
 
 
 
@@ -401,6 +441,7 @@ The intent of the wording is to provide a preprocessing directive that:
 
 - takes a string literal enclosed in `<>` or `""` -- potentially from the expansion of a macro -- and use it to find a unique resource on implementation-defined search paths;
 - maps the contents of the file in an implementation-defined manner to a sequence of _`type-name`_ values;
+- produces a core constant expression that can be used to initialize `constexpr` arrays;
 - produces a diagnostic if the contents do not have enough data to fill out the binary representation of _`type-name`_ values;
 - and, present such contents as if by a brace-enclosed list of integer literals, such that it can be used to initialize arrays of known and unknown bound.
 
@@ -470,15 +511,119 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 
 <p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&lt;</code> and <code>&gt;</code> or the <code>&quot;</code> and <code>&quot;</code> delimiters. How the places are specified or the resource identified is implementation-defined.</p>
 
-<p><sup>3</sup> If there is no <i>parenthesized-non-header</i>, then the directive behaves as if the tokens of the <i>parenthesized-non-header</i> are <code>unsigned char</code>. If a <i>parenthesized-non-header</i> is specified, outer parenthesis must be present if the <i>pp-token</i>s contains one or more of <code>"</code>, <code>&lt;</code> or <code>&gt;</code>.</p>
+<p><sup>3</sup> If there is no <i>parenthesized-non-header</i>, then the directive behaves as if the tokens of the <i>parenthesized-non-header</i> are <code>unsigned char</code>. If a <i>parenthesized-non-header</i> is specified, outer parenthesis must be present if the <i>pp-token</i>s contain one or more of <code>"</code>, <code>&lt;</code> or <code>&gt;</code>.</p>
 
-<p><sup>4</sup> An <code>&num;embed</code> directive behaves as-if replaced by the contents of the resource in a <i>brace-initializer-list</i>. The brace-delimited <i>initializer-list</i> represents an implementation-defined mapping from the contents of the resource to the elements of the <i>initializer-list</i>.</p>
+<p><sup>4</sup> An <code>&num;embed</code> directive behaves as-if replaced by the contents of the resource in a <i>initializer-list</i>. The <i>initializer-list</i> represents an implementation-defined mapping from the contents of the resource to the elements of the <i>initializer-list</i>.</p>
 
-<p><sup>5</sup> If a <i>digit-sequence</i> is specified, it shall be an unsigned <i>integer-literal</i> and the <i>brace-initializer-list</i> will contain no more than <i>digit-sequence</i> elements.</p>
+<p><sup>5</sup> If a <i>digit-sequence</i> is specified, it shall be an unsigned <i>integer-literal</i> and the <i>initializer-list</i> will have up to but no more than <i>digit-sequence</i> elements.</p>
 
-<p><sup>6</sup> Let <code>T</code> be the <i>parenthesized-non-header</i> tokens. If the implemented-defined bit size of the resource's contents are not a multiple of <code>sizeof( T ) * CHAR_BIT</code> or <code>T</code> does not denote a trivial type, then the program is ill-formed.</p>
+<p><sup>6</sup> Let <code>T</code> be the <i>parenthesized-non-header</i> tokens. If the implementation-defined bit size of the resource's contents are not a multiple of <code>sizeof(T) * CHAR_BIT</code> or <code>T</code> does not denote a trivial type (6.8 [basic.types]), then the program is ill-formed.</p>
 </ins>
 </blockquote>
+
+> <p><ins>[ Example:</ins></p>
+> 
+> ```cpp 
+> #include <cstddef>
+> 
+> void have_you_any_wool(const unsigned char*, std::size_t);
+> 
+> int main (int, char*[]) {
+> 	const unsigned char baa_baa[] = {
+> #embed "black_sheep.ico"
+> 	};
+> 
+> 	have_you_any_wool(baa_baa, 
+> 		sizeof(baa_baa) / sizeof(*baa_baa));
+> 
+> 	return 0;
+> }
+> ```
+> 
+> <p><ins>– end Example ]</ins></p>
+> 
+> <p><ins>[ Example:</ins></p>
+> 
+> ```cpp
+> #include <cassert>
+> 
+> int main (int, char*[]) {
+> 	const char sound_signature[] = {
+> #embed char 4 <sdk/jump.wav>
+> 	};
+> 
+> 	// PCM WAV resource?
+> 	assert(sound_signature[0] == 'R');
+> 	assert(sound_signature[1] == 'I');
+> 	assert(sound_signature[2] == 'F');
+> 	assert(sound_signature[3] == 'F');
+> 	assert((sizeof(baa_baa) / sizeof(*baa_baa)) == 4);
+> 
+> 	return 0;
+> }
+> ```
+> <p><ins>– end Example ]</ins></p>
+> 
+> <p><ins>[ Example:</ins></p>
+> 
+> ```cpp
+> int main (int, char*[]) {
+> 	const unsigned long long coefficients[] = {
+> // may produce diagnostic: 16 bits (i.e., implementation-defined bit size)
+> // is not enough for an unsigned long long
+> #embed unsigned long long "only_16_bits.bin"
+> 	};
+> 
+> 	const unsigned char byte_factors[] = {
+> // may produce diagnostic: 13 bits % CHAR_BIT may not be 0
+> #embed "13_bits.bin"
+> 	};
+> 
+> 	return 0;
+> }
+> ```
+> <p><ins>– end Example ]</ins></p>
+> 
+> <p><ins>[ Example:</ins></p>
+> 
+> ```cpp
+> struct non_trivial {
+> 	non_trivial(int);
+> };
+> 
+> int main (int, char*[]) {
+> 	const non_trivial nt_arr[] = {
+> // diagnostic: non_trivial is not a trivial type
+> #embed non_trivial "only_16_bits.bin"
+> 	};
+> 
+> 	return 0;
+> }
+> ```
+> <p><ins>– end Example ]</ins></p>
+> 
+> <p><ins>[ Example:</ins></p>
+> 
+> ```cpp
+> #include <algorithm>
+> #include <iterator>
+> 
+> #ifndef SHADER_TARGET
+> #define SHADER_TARGET "phong.glsl"
+> #endif
+> 
+> extern char* null_term_shader_data;
+> 
+> void get_data () {
+> 	const char internal_data[] = {
+> #embed char SHADER_TARGET
+> 	, 0 }; // additional element to null terminate content
+> 
+> 	std::copy_n(internal_data, std::size(internal_data),
+> 		null_term_shader_data);
+> }
+> ```
+> <p><ins>– end Example ]</ins></p>
 
 
 

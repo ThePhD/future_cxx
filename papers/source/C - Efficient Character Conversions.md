@@ -1,7 +1,7 @@
 ---
 title: Restartable and Non-Restartable Functions for Efficient Character Conversions | r1
 layout: page
-date: October 1st, 2019
+date: March 15th, 2020
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
 redirect_from:

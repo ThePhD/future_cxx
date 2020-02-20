@@ -1,6 +1,6 @@
 <pre class='metadata'>
 Title: std::embed
-Shortname: D1040
+Shortname: P1040
 Revision: 6
 Audience: EWG, SG7
 Status: D
@@ -12,7 +12,7 @@ Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 !Reply To: <a href="phdofthehouse@gmail.com">JeanHeyd Meneide</a>, <a href="https://twitter.com/thephantomderp">@thephantomderp</a>
 Abstract: A proposal for a function that allows pulling resources at compile-time into a program.
-Date: 2020-01-13
+Date: 2020-02-17
 Markup Shorthands: markdown yes, biblio yes, markup yes
 </pre>
 
@@ -27,9 +27,16 @@ path: include/wording_style.bs
 
 
 
-## Revision 6 - February 9th, 2020 ## {#changelog-r5}
+## Revision 6 - February 17th, 2020 ## {#changelog-r6}
 
-	- Wording Improvement
+	- Add new section [[#polls]].
+	- Add new section [[#design-goals-dependencies]].
+	- Add new section [[#design-goals-modules]].
+	- Improve section [[#design-goals-templated]].
+	- Add new section [[#design-goals-limit]].
+	- Add new section [[#design-goals-utf8]].
+	- Add new section [[#previous]].
+	- Improve wording and add static version (thanks, @lichray).
 
 
 
@@ -74,6 +81,54 @@ path: include/wording_style.bs
 ## Revision 0 - May 11th, 2018 ## {#changelog-r0}
 
     Initial release.
+
+
+
+
+# Relevant Polls # {#polls}
+
+The following polls are shaping the current design. Votes are in the form of SF (Strongly in Favor), F (in Favor), N (Neutral), A (Against), SA (Strongly Against).
+
+`#depend` - We would like to have this feature in C++(Something) and spend time figuring out the details.
+- `SF  F  N  A  SA`
+- `14 13  2  0   0`
+- Consensus: Do more work.
+
+`#depend <foo/**>` - We want recursive globs (recursively searching through directories) for #depend.
+- `SF F  N  A SA`
+- ` 2 3  9 12  4`
+- Consensus: Do not want.
+- Vote Commentary:
+  - A: Complexity?
+  - SA: Windows is slow with recursive globs.
+
+It should be mandatory that EVERY file for `std::embed` is specified by a `#depend`.
+- `SF  F  N  A SA`
+- ` 4 12  5  6  3`
+- Consensus: Split, no consensus. Add why/why not.
+- Vote Commentary:
+  - SF: This MUST exist. Both compiler and build system authors. (Implementers.)
+  - SA: Can make user experience sad face for common case. Build system should scream at you for making the mistake instead.
+
+
+`#depend` should form a Virtual File System / State that constrains the search and should be passed to std::embed.
+- `SF  F  N  A  SA`
+- ` 3 11  7  2   2`
+- Consensus: Do it.
+- Vote Commentary:
+  - SA: Hell to implement. (This was the author.)
+
+
+Make std::embed ill-formed inside of a module interface (with a plan to revisit later).
+- SF  F  N  A SA
+-  4  2  7  1  1
+- Consensus: Yes, but Meh.
+- Vote Commentary:
+  - SA: Modules are important we should make sure it interacts well with modules (figure it out now).
+  - SF: How does this work with #depend ?
+  - SF: std::embed is basically a #include -- why would we want it in interface? Just focus on getting feature working and doing it well.
+  - A: Jumping the gun. Space needs more exploration.
+  - N: We are highly undecided - need to answer more questions (especially about Modules).
 
 
 
@@ -345,7 +400,7 @@ This paper proposes `<embed>` to make this process much more efficient, portable
 
 
 
-## Current Practice ## {#design-practice}
+## Implementation Experience & Current Practice ## {#design-practice}
 
 Here, we examine current practice, their benefits, and their pitfalls. There are a few cross-platform (and not-so-cross-platform) paths for getting data into an executable. We also scrutinize the performance, with numbers for both [memory overhead](https://github.com/ThePhD/embed#memory-size-results) and [speed overhead](https://github.com/ThePhD/embed#speed-results) available at the repository that houses the [current implementation](https://github.com/ThePhD/embed). For ease of access, the numbers as of January 2020 with the latest versions of the indicated compilers and tools are replicated below.
 
@@ -773,15 +828,19 @@ Many developers also hand-wrap their files in (raw) string literals, or similar 
 
 0. Have a file `data.json` with some data, for example:
 
-<xmp>{ "Hello": "World!" }</xmp>
+```
+{ "Hello": "World!" }
+```
 
 1. Mangle that file with raw string literals, and save it as `raw_include_data.h`:
 
-<xmp>R"json({ "Hello": "World!" })json"</xmp>
+```
+R"json({ "Hello": "World!" })json"
+```
 
-2. Include it into a variable, optionally made `constexpr`, and use it in the program:
+1. Include it into a variable, optionally made `constexpr`, and use it in the program:
 
-<xmp>
+```cpp
 #include <iostream>
 #include <string_view>
 
@@ -794,7 +853,7 @@ int main() {
 	std::cout << json_view << std::endl;
 	return 0;
 }
-</xmp>
+```
 
 This happens often in the case of people who have not yet taken the "add a build step" mantra to heart. The biggest problem is that the above C++-ready source file is no longer valid in as its original representation, meaning the file as-is cannot be passed to any validation tools, schema checkers, or otherwise. This hurts the portability and interop story of C++ with other tools and languages.
 
@@ -845,16 +904,26 @@ Because of the aforementioned reasons, it seems more prudent to take a "compiler
 <xmp>
 template <typename T = byte>
 consteval span<const T> embed( 
-	string_view resource_identifier
+	u8string_view resource_identifier
+);
+
+template <size_t N, typename T = byte>
+consteval span<const T, N> embed( 
+	u8string_view resource_identifier
 );
 
 template <typename T = byte>
 consteval span<const T> embed( 
-	string_view resource_identifier, size_t limit
+	u8string_view resource_identifier, size_t limit
+);
+
+template <size_t N, typename T = byte>
+consteval span<const T, N> embed( 
+	u8string_view resource_identifier, size_t limit
 );
 </xmp>
 
-`resource_identifier` is a `string_view` processed in an implementation-defined manner to find and pull resources into C++ at constexpr time. `limit` is the maximum number of bytes the function call can produce (but it may produce less). The most obvious source will be the file system, with the intention of having this evaluated as a core constant expression. We do not attempt to restrict the `string_view` to a specific subset: whatever the implementation accepts (typically expected to be a relative or absolute file path, but can be other identification scheme), the implementation should use.
+`resource_identifier` is a `string_view` processed in an implementation-defined manner to find and pull resources into C++ at constexpr time. `limit` is the maximum number of elements the function call can produce (but it may produce less). The most obvious source will be the file system, with the intention of having this evaluated as a core constant expression. We do not attempt to restrict the `string_view` to a specific subset: whatever the implementation accepts (typically expected to be a relative or absolute file path, but can be other identification scheme), the implementation should use. The `N` template parameter is for specifying that the returned span has _at least_ `N` elements (to fit in the statically-sized `span`).
 
 
 ### Implementation Defined ### {#design-goals-impldefn}
@@ -862,6 +931,8 @@ consteval span<const T> embed(
 Calls such as `std::embed( "my_file.txt" );`, `std::embed( "data.dll" );`, and `std::embed<vertex>( "vertices.bin" );` are meant to be evaluated in a `constexpr` context (with "core constant expressions" only), where the behavior is implementation-defined. The function has unspecified behavior when evaluated in a non-constexpr context (with the expectation that the implementation will provide a failing diagnostic in these cases). This is similar to how include paths work, albeit `#include` interacts with the programmer through the preprocessor.
 
 There is precedent for specifying library features that are implemented only through compile-time compiler intrinsics (`type_traits`, `source_location`, and similar utilities). Core -- for other proposals such as [[p0466r1|p0466r1 - Layout-compatibility and Pointer-interconvertibility Traits ]] -- indicated their preference in using a `constexpr` magic function implemented by intrinsic in the standard library over some form of `template <auto X> thing { /* implementation specified */ value; };` construct. However, it is important to note that [[p0466r1]] proposes type traits, where as this has entirely different functionality, and so its reception and opinions may be different.
+
+Finally, we use "implementation defined" so that compilers can produce implementation-defined search path for their translation units and modules during compilation with flags. The current implementation uses `-fembed-path=some/path/here/` to indicate this, but when it is standardized there will probably be an `-RI` or `-resource-include` flag instead. It is up to the implementation to pick what works for their platform.
 
 
 ### Binary Only ### {#design-goals-binary}
@@ -874,15 +945,121 @@ Creating two separate forms or options for loading data that is meant to be a "s
 The entire implementation must be usable in a `constexpr` context. It is not just for the purposes of processing the data at compile time, but because it matches existing implementations that store strings and huge array literals into a variable via `#include`. These variables can be `constexpr`: to not have a constexpr implementation is to leave many of the programmers who utilize this behavior without a proper standardized tool.
 
 
-### Optional Limit ### {#design-goals-limit}
+### Dependency-Scanning Friendly with `#depend` ### {#design-goals-dependencies}
 
-Consider some file-based resources that are otherwise un-sizeable and un-seek/tellable in various implementations such as `/dev/urandom`. Telling the compiler to go fetch data from this resource infinitely can result in compiler lockups or worse: therefore, the user can specify another parameter -- a numeric limit to stop things.
+One of the biggest hurdles to generating consensus was the deep-seated issues with dependency scanning. The model with only dealing with `#include` as a way of adding extra code or data-as-code means that all dependencies -- at the time of compiler invocation -- can be completely and statically known by the end of Phase 4 of compilation. This greatly aided in speedy dependency pulling. `std::embed` throws a wrench in that model as it can affect the generation of code at Phase 7 time, which is when `constexpr` is evaluated. By taking a `std::(u8)string_view`, it makes it impossible to know all files which may be used by a translation or module unit.
+
+For this purpose, a new `#depend` preprocessor directive was introduced. It is intended to inform the compiler which translation units it depends on in order to make it simpler to retrieve all necessary dependencies. An advanced implementation can also replace all `#depend` directives with magical compiler builtins which instruct the compiler to cache the file's data as part of the translation unit.
+
+This makes it possible to send minimal compiler reproductions and test cases for bug vetting, as well as allow distributed systems to continue to use the `-fdirectives-only` or `-frewrite-includes` flags (or similar preprocessor flags). For example, the GCC and Clang implementations linked above have  `__builtin_init_array` and `__builtin_cache_array` methods that allow single translation units to be self-sufficient, while the compiler built-ins `__builtin_embed` will search the internally populated data cache from these entries in order to furnish data. This allows a complete system that keeps current tools working exactly as expected without any issues at all.
+
+The `#depend` directive works by allowing a user to specify a *single-dependency* or a *family-dependency*. They are analogous to a single resource name or a "glob" resource name. These would, in file system terms, name a single file or all the files in a directory (subject to pattern matching). There used to also be a "*recursive-family-dependency*" for specifying searching for files in a directory, recursively. They looked like this:
+
+```cpp
+// single-dependency directives
+#depend <config/graph.bin>
+#depend <foo.txt>
+// family-dependencies
+// do not "recurse" into directories
+#depend "art/*"
+#depend "art/mocks/*.json"
+// recursive-family-dependency
+// recurse through directories and similar
+#depend "assets/**"
+// mixed: all resources starting with
+// "translation/", with all files that end in ".po",
+// that have at least one "/" (one directory)
+// after the "translation/", found recursively
+#depend "translation/**/*.po"
+```
+
+Due to Windows being a pile of garbage for `FindFirstFile`-style directory iteration, it was voted to remove `**` as the recursive-family-dependency (see [[#polls]]). Benchmarks for different styles of iteration may prove helpful here to convince others to maybe not do this.
+
+`#depend` uses both the chevron-delimited `<foo.txt>` and the quote-delimited `"foo.txt"` formats. This is because one is for resources that are found only on the system / implementation paths similar to `-I` and `-isystem`, and then one that uses local look up plus the aforementioned resource paths. This can be useful for e.g. files that get embedded from system SDKs, like icons from Windows or Android build-time graphical resources or similar.
+
+
+### Modules ### {#design-goals-modules}
+
+TODO: Ye God Please Help Me.
 
 
 ### Statically Polymorphic ### {#design-goals-templated}
 
-While returning `std::byte` is valuable, it is impossible to `reinterpret_cast` or `bit_cast` certain things at compile time. This makes it impossible in a `constexpr` context to retrieve the actual data from a resource without tremendous boilerplate and work that every developer will have to do.
+While returning `std::byte` is valuable, it is impossible to `reinterpret_cast` or `bit_cast` certain things at compile time. This makes it impossible in a `constexpr` context to retrieve the actual data from a resource without tremendous boilerplate and work that every developer will have to do. While compile-time serialization is an important facet of this feature, there are many types where developers will end up just doing their own `bit_cast`-style `std::memcpy` of the bits to the target bits: to save on boilerplate, we instead offer the ability to do `std::embed<TYPE>`, where `TYPE` can be anything that satisfies trivial destructibility (e.g., `std::is_trivial_v<TYPE>` is `true`). This allows all C types and many types which are mirrored almost exactly in binary form to be pulled effortlessly into code.
 
+
+### Optional Limit ### {#design-goals-limit}
+
+Consider some file-based resources that are otherwise un-sizeable and un-seek/tellable in various implementations such as `/dev/urandom`. Telling the compiler to go fetch data from this resource infinitely can result in compiler lockups or worse: therefore, the user can specify an additional parameter to the function call such as `std::embed("/dev/infinity", 32);`. The `32` here is a `std::size_t limit` parameter in `std::embed`, and allows users to ask for up to but not more than `limit` elements in the returned `span`.
+
+Note that as per [[#design-goals-templated]], the limit is specified in terms of `T`s, not bytes. This means `sizeof(T) * CHAR_BIT` bits are required, and the implementation is mandated to require up to but not more than that many.
+
+Additionally, a user can provide a template argument `N` of type `std::size_t` to return a `span<T, N>`. This requires at _least_ `N` elements, but maybe more can exist. One can use both of these to request "exactly this many" elements, e.g. a call `std::embed<32>("/dev/infinity", 32);` requires up to but not more than 32 elements (the `limit` parameter passed to the function) and that the returned span has at least 32 elements (the template parameter passed between the `<` and the `>`). Similarly, one could use `std::embed("/dev/infinity", 32).first<32>();`. This fully covers the design space for what making a subset of the data is currently used for (e.g., prefixed data in a common model format that then has "back references" to the data contained in the first `n` elements).
+
+
+### UTF-8 Only ### {#design-goals-utf8}
+
+This is related to a serious problem for string literals, particularly those of Translation Phase 7. When a user types a string literal such as `"Fáuncy.softłer"`, that string literal -- at Phase 5 of compilation -- gets translated from an idealized internal compiler character set to the "Execution Source Character Set". What this means is that the compiler is allowed to perform an implementation-defined translation from the string literal's ideal compiler representation to the execution character set (often, the presumed target execution character set). While this is not a problem for Clang -- which always uses UTF-8 -- and GCC -- which always uses UTF-8 unless someone specifically passes `-fexec-charset={something}` -- other compilers will take the string `"Fáuncy.softłer"` and mangle it. This mangling does not have to come with warnings: in fact, MSVC will often times replace characters it cannot translate to the execution character set with either Mojibake or `"?"`.
+
+The solution that Study Group 16 recommended was to allow `std::u8string_view` and ONLY `std::u8string_view` as the parameter type. Others in SG-16 voiced concern that this would hamper general usability, but `u8` string literals and `char8_t` were put in the standard for reasons exactly such as this. The execution character set is an unknown and often lossy encoding on legacy systems: requiring UTF-8 with `std::u8string_view` matches most internal compiler representations of idealized text storage and provides a lossless way to work with the resource system.
+
+We note that it would be "maximally nice" to provide all of `std::[w|u8|u16|u32]string_view` overloads to the table which would allow individuals working in the `constexpr` space their choice of presumed encoding to work in, but deem that the additional flexibility is likely not worth the additional overloads (even if those overloads are cheap to implement).
+
+
+
+
+# Previous Implementations # {#previous}
+
+This section is primarily to address feedback from polls wherein different forms and implementation strategies were asked for by the Evolution Working Group and other implementers. A tour of the design and implementation these cases helps show what has been considered.
+
+
+
+## `#depend` Soft Warnings, Hard Errors? ## {#previous-#depend}
+
+The current specification makes it a hard error if a file has not been identified previously by a `#depend` directive. This makes the simple case of including a single file a bit more annoying than it needs to be, but also makes the case of general development with a non-distributed build system a pain. To be perfectly transparent, the author of this paper and almost 100% of the author's clients do not use distributed anything to build their code: errors at "file not found" are generally useful enough. Making the lack of matching `#depend` a hard error seems like pushing an important but nevertheless Committee-over-represented concern (i.e. distributed build tool users) onto all C++ users.
+
+While the author feels a lot better about it being a soft warning that can be turned into a hard error by use of `-Werror-depend` for distributed build users, we leave the specification to strongly encourage implementations to hard error on an inability to not only find the resource but match it with a previous `#depend` declaration.
+
+
+
+## String Table / Virtual File System ## {#previous-virtual}
+
+This implementation idea was floated twice, once during SG-7 discussion at the November 2019 Belfast meeting and again during the February 2020 Prague meeting. The crux of this version of `std::embed` is that it does not take resource identifiers related to e.g. the file system directly: a directive is used to build a "String Table" or "Translation Table" from system-specific paths to "friendly" names:
+
+```cpp
+// map "foo.txt" to file name "foo"
+#depend_name "foo.txt" "foo"
+
+#ifdef _WIN32
+  // map Windows-specific resource
+  // "win/bazunga.bin" to file name "baz"
+  #depend_name "win/bazunga.bin" "baz"
+#else
+  // map Unix-specific resource
+  // "nix/bazinga.bin" to file name "baz"
+  #depend_name "nix/bazooka.bin" "baz"
+#endif
+
+#include <embed>
+
+int main () {
+  // pulls foo.txt
+  constexpr std::span<std::byte> foo = std::embed("foo");
+  // pulls either bazunga or bazooka
+  constexpr std::span<std::byte> baz = std::embed("baz");
+  return foo[0] == 'f' && baz[2] == '\x3';
+}
+```
+
+On the tin, this seems to bring nice properties to the table. We get to "erase" platform-specific paths and give them common names, we have a static list of names that we always pull from, and more. However, there are several approaches to this problem. Consider one of the primary use cases for `std::embed` as a `constexpr` function: reading a resource and, based on its contents, `std::embed`-ing other resources.
+
+This becomes a problem: if `foo.txt` has a `get: bar.doc` line of text in it, we read that line from `foo.txt`, and then attempt to `std::embed("bar.doc")`, we get an error because we did not give `bar.doc` a string table name. This means we need to go back and not only mark it as a dependency with `#depend`, but also give it a static string-table based name.
+
+Even conquering that problem, we face another: resource files -- JSON, SPIR-V, Wavefront OBJ, HLSL/GLSL, python, Lua, HSAIL, whatever -- all of these do not speak "C++ String Table" to name their identifiers. Generally, these speak "File System": we are adding a level of indirection that makes it _impossible_ to keep working with the file system, especially when it comes to working with other systems. Most tools communicate and traffic interchange information VIA URIs or relative / local file paths. Forcing users to either adapt their code to play nice with the C++ file system or maintaining a translation table to and from "C++ String Table" to "C++ File System" is an order of magnitude additional complexity that is not both unnecessary but also painful.
+
+There is absolutely room for a (potentially `constexpr`) Virtual File System in C++. This is not the feature that should bring us there. As the current implementation does, manipulating `-fembed-path=` similar to the way `#include` is handled alongside `-I` flags is a much better use of not only implementer time, but user time. It fits perfectly into the mental model ("include, but for resources") and lets users keep their file names as the unit of interchange as far as names go.
+
+C++ does not need to make for itself a reputation of trying to be an extremely unique snowflake at the cost of usability and user friendliness.
 
 
 
@@ -947,33 +1124,26 @@ Add a new section §15.4 Dependency [**cpp.depend**]:
 <p>
 <dl>
   <dd>– If the sequence contains a `*` it denotes a <i>dependency-family</i>.
-  <dd>– Otherwise, if it contains a `**` it denotes a <i>recursive-dependency-family</i>.
   <dd>– Otherwise, it denotes a <i>single-dependency</i>.
 </dl>
 </p>
-
-<p>A `#depend` directive</p>
 
 <p><sup>4</sup> [ <i>Example—</i>
 ```cpp
 #depend "art.png" // this translation unit depends on 'art.png'
 
-#depend "assets/**" // this translation unit depends on all resources
-                    // the implementation can find along that start with
-                    // "assets/", recursively.
-
-#depend <config/*.json>" // this translation unit depends on all resources
+#depend <config/*.json> // this translation unit depends on all resources
                          // the implementation can find that
                          // end in ".json" and start with "config/".
 
-#depend <data/*/*.bin>" // this translation unit depends on all resources
+#depend <data/*/*.bin> // this translation unit depends on all resources
                         // the implementation can find that
                         // end in ".bin", start with "data/"
                         // and contain a single "/" in-between.
 ```
 <i>— end Example</i> ].</p>
 
-<p><sup>5</sup> Each of the <i>dependency-family</i>, <i>recursive-dependency-family</i>, and <i>single-dependency</i> shall have an implementation-defined meaning which establishes search information for implementation-defined <i>resources</i> (e.g., for 19.20 [const.res]).</p>
+<p><sup>5</sup> Each of the <i>dependency-family</i> and <i>single-dependency</i> shall have an implementation-defined meaning which establishes search information for implementation-defined <i>resources</i> (e.g., for 19.20 [const.res]).</p>
 </ins>
 </blockquote>
 
@@ -1031,6 +1201,9 @@ namespace std {
 	template <typename T = byte>
 	consteval span<const T> embed( string_view resource_identifier, size_t limit ) noexcept;
 
+	template <typename T, ::std::size_t N>
+	consteval span<const T, N> embed( string_view resource_identifier ) noexcept;
+
 }
 ```
 
@@ -1043,16 +1216,26 @@ namespace std {
 
 	template <typename T = byte>
 	consteval span<const T> embed( string_view resource_identifier, size_t limit ) noexcept;
+
+	template <typename T, ::std::size_t N>
+	consteval span<const T, N> embed( string_view resource_identifier ) noexcept;
+
+	template <typename T, ::std::size_t N>
+	consteval span<const T, N> embed( string_view resource_identifier, size_t limit ) noexcept;
 }
 ```
 
-<sup>1</sup> Mandates: the implementation-defined bit size of the resource is a multiple of `sizeof(T) * CHAR_BIT` and `std::is_trivial_v<T>` is `true`. [ <i>Note—</i> This provides that types with non-trivial destructors do not need to be run for the implementation-provided static storage duration objects. <i>— end Note</i> ].
+<sup>1</sup> Mandates: the implementation-defined bit size of the resource is a multiple of `sizeof(T) * CHAR_BIT` and `std::is_trivial_v<T>` is `true`. If the `limit` parameter is specified for the second or fourth overload, then then implementation-defined bit size of the resource must be less than or equal `limit * sizeof(T) * CHAR_BIT` and must be a multiple of `sizeof(T) * CHAR_BIT`. For the third and fourth overload, the implementation-defined bit size of the resource must be at least `sizeof(T) * CHAR_BIT * N`.
 
-<sup>2</sup> <i>Returns</i>: A read-only view to a unique resource identified by the `resource_identifier` over a contiguous sequence of `T` objects with static storage duration. The mapping from the contents of the resource to the contiguous sequence of `T` objects is implementation-defined.
+<sup>3</sup> [ <i>Note—</i> `std::is_trivial_v<T>` being true provides that types with non-trivial destructors do not need to be run for the implementation-provided static storage duration objects. <i>— end Note</i> ].
 
-<sup>3</sup> <i>Ensures</i>: `r.size() <= limit`, where `r` denotes the result of the function call for the second overload.
+<sup>4</sup> If the implementation cannot find the resource specified after exhausting the sequence of implementation-defined search locations, or if the implementation finds the resource specified but that same resource was not named by a previous `#depend` directive in some manner, then the program is ill-formed.
 
-<sup>4</sup> <i>Remarks</i>: The value of `resource_identifier` is used to search a sequence of implementation-defined places for a <i>resource</i> identified uniquely by `resource_identifier`. If the implementation cannot find the resource specified after exhausting the sequence of implementation-defined search locations, the program is ill-formed. The mapping of the resource to the sequence of `T` is implementation-defined. [ <i>Note—</i> Implementations should provide a mechanism similar but not identical to `#include` (15.3 [cpp.include]) for finding the specified resource and in coordination with `#depend` (15.4 [cpp.depend]). <i>— end Note</i> ]
+<sup>5</sup> <i>Returns</i>: A read-only view to a unique resource identified by the `resource_identifier` over a contiguous sequence of `T` objects with static storage duration. The mapping from the contents of the resource to the contiguous sequence of `T` objects is implementation-defined.
+
+<sup>6</sup> <i>Ensures</i>: For the second overload, let `r` denote the result of the function call. `r.size() <= limit` is true.
+
+<sup>7</sup> <i>Remarks</i>: The value of `resource_identifier` is used to search a sequence of implementation-defined places for a <i>resource</i> identified uniquely by `resource_identifier`. The mapping of the resource to the sequence of `T` is implementation-defined. [ <i>Note—</i> Implementations should provide a mechanism similar but not identical to `#include` (15.3 [cpp.include]) for finding the specified resource and in coordination with `#depend` (15.4 [cpp.depend]). <i>— end Note</i> ]
 </ins>
 </blockquote>
 
@@ -1072,15 +1255,15 @@ Other techniques used include pre-processing data, link-time based tooling, and 
 
 1. Run the tool over the data (`xxd -i xxd_data.bin > xxd_data.h`) to obtain the generated file (`xxd_data.h`):
 
-<xmp highlight="C++">
+```cpp
 unsigned char xxd_data_bin[] = {
   0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x2c, 0x20, 0x57, 0x6f, 0x72, 0x6c, 0x64,
   0x0a
 };
 unsigned int xxd_data_bin_len = 13;
-</xmp>
+```
 
-2. Compile `main.cpp`:
+1. Compile `main.cpp`:
 
 <xmp highlight="C++">
 #include <iostream>
@@ -1122,7 +1305,7 @@ This scales poorly with larger files, and build times suffer for any non-trivial
 
 Other companies are forced to create their own ad-hoc tools to embed data and files into their C++ code. MongoDB uses a [custom python script](https://github.com/mongodb/mongo/blob/master/site_scons/site_tools/jstoh.py), just to get their data into C++:
 
-<xmp>
+```python
 import os
 import sys
 
@@ -1171,7 +1354,7 @@ if __name__ == "__main__":
         print "Must specify [target] [source] "
         sys.exit(1)
     jsToHeader(sys.argv[1], sys.argv[2:])
-</xmp>
+```
 
 MongoDB were brave enough to share their code with me and make public the things they have to do: other companies have shared many similar concerns, but do not have the same bravery. We thank MongoDB for sharing.
 
@@ -1186,7 +1369,7 @@ A full, compilable example (except on Visual C++):
 
 2. Compile the following `main.cpp` with `c++ -std=c++17 ld_data.o main.cpp`:
 
-<xmp highlight="C++">
+```cpp
 #include <iostream>
 #include <string_view>
 
@@ -1226,9 +1409,9 @@ int main() {
 	std::cout << data_view << std::endl; // Hello, World!
 	return 0;
 }
-</xmp>
+```
 
-This scales a little bit better in terms of raw compilation time but is shockingly OS, vendor and platform specific in ways that novice developers would not be able to handle fully. The macros are required to erase differences, lest subtle differences in name will destroy one's ability to use these macros effectively. We ommitted the code for handling VC++ resource files because it is excessively verbose than what is present here.
+This scales a little bit better in terms of raw compilation time but is shockingly OS, vendor and platform specific in ways that novice developers would not be able to handle fully. The macros are required to erase differences, lest subtle differences in name will destroy one's ability to use these macros effectively. We omitted the code for handling VC++ resource files because it is excessively verbose than what is present here.
 
 N.B.: Because these declarations are `extern`, the values in the array cannot be accessed at compilation/translation-time.
 
