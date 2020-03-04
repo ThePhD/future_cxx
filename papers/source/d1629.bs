@@ -9,7 +9,7 @@ URL:
 !Latest: <a href="https://thephd.github.io/vendor/future_cxx/papers/d1629.html">https://thephd.github.io/vendor/future_cxx/papers/d1629.html</a>
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
-Editor: Shepherd, shepherd@soasis.org
+Editor: Shepherd (Shepherd's Oasis), shepherd@soasis.org
 Date: 2020-03-02
 Markup Shorthands: markdown yes, biblio yes, markup yes
 Abstract: The standard lacks facilities for transcoding text from one form into another, leaving a serious barrier to entry for individuals who want to process text in any sensible manner in the Standard Library. This paper explores and proposes a static interface for encoding that can be used and built upon for the creation of higher-level abstractions.
@@ -19,9 +19,9 @@ Abstract: The standard lacks facilities for transcoding text from one form into 
 path: include/wording_style.bs
 </pre>
 
-> "The majority of C++ is not done publicly. Most C++ is done privately, in the dark."
+> "In these meetings, these conferences, we only see a little. C++ is not done in the light. The majority of C++ is not done publicly. Most C++ is done privately, in the dark, and that is where it matters most."
 > 
-> – A Battle-Hardened Engineer, November 14<sup>th</sup>, 2019
+> – Daniela K. Engert, November 14<sup>th</sup>, 2019
 
 
 # Revision History # {#changelog}
@@ -30,14 +30,14 @@ path: include/wording_style.bs
 
 ## Revision 1 - March 2<sup>nd</sup>, 2020 ## {#changelog-r1}
 
-	- Thorough improve [[#motivation]].
-	- Rewrite most of paper to more thoroughly explain the API, especially the high level `validate`, `decode_count`, `encode_count`, and more APIs in the [[#design]] section.
-		- Include a new section [[#design-high-level]].
-		- Include a new section [[#design-high-level-free]].
-		- Include a new section [[#design-high-level-ranges]].
+	- Thoroughly improve [[#motivation]].
+		- Explicit state goals and non-goals in the [[#motivation-objectives]].
+	- Rewrite most of paper to more thoroughly explain the API, especially the [[#design-high-level]] section with `validate`, `decode_count`, `encode_count`, and more APIs.
+		- Include drastically improve the explanation for the free functions in [[#design-high-level-free]].
+		- Emphasize the need for ranges in [[#design-high-level-ranges]].
 	- Add new descriptions in the low-level API regarding error handling in [[#design-low-level-results-error_handler]].
 	- Describe customization points in full in [[#design-speed-customization]].
-	- The [[#implementation-visible|Implementation]] [did a magic trick](https://ThePhD.github.io/assets/snd/Crystal%20Carry%20Invisibility.mp3).
+	- The [[#implementation-visible|Implementation]] is now hidden, after [doing a magic trick](https://ThePhD.github.io/assets/snd/Crystal%20Carry%20Invisibility.mp3). Contact the author for access.
 	- Add [[#faq]].
 	- Going no-where, targeted at no-one.
 
@@ -60,20 +60,132 @@ This paper aims to explore the design space for both extremely high performing t
 
 The ultimate goal is to allow an interface that is correct by default but capable of being fast both by Standard Library implementer efforts but also program overridable ADL free functions. It will produce interfaces for encoding, decoding, and transcoding in eager and lazy forms.
 
-## The Basic Idea ## {#motivation-basic}
+## The Basic Ideas ## {#motivation-basic}
+
+While some of these types aren't contained in this paper, the end goal is to enable the following to be possible:
 
 ```cpp
-int main () {
+#include <encoding> // this proposal
+#include <text>     // future proposal
+
+int main (int, char*[]) {
 	using namespace std::literals;
-	std::text::u8text my_text = std::text::transcode<std::text::utf8>(“안녕하세요 👋”sv);
+	std::text::u8text my_text
+		= std::text::transcode(“안녕하세요 👋”sv, std::text::utf8{});
 	std::cout << my_text << std::endl; // prints 안녕하세요 👋 to a capable console
 	std::cout << std::hex;
 	for (const auto& cp : my_text) {
 		std::cout << static_cast<uint32_t>(cp) << “ “;
 	}
 	// 0000c548 0000b155 0000d558 0000c138 0000c694 00000020 0001f44b
+	return 0;
 }
 ```
+
+This paper is in support of reaching this goal. The following examples are more concretely tied to this proposal in particular.
+
+
+### Reading "Execution Encoding" Data ### {#motivation-basic-execution}
+
+The following is an example of opening a file handle on Windows after converting from the execution encoding of the system `argv` to the wide arguments for `CreateFileW`.
+
+```cpp
+#define WINDOWS_LEAN_AND_MEAN 1
+#include <windows.h>
+
+#include <encoding> // this proposal
+#include <iostream>
+
+int main (int argc, char* argv[]) {
+
+	if (argc < 2) {
+		std::cerr << "Path unspecified: exiting." << std::endl;
+		return -1;
+	}
+
+	std::wstring path_as_wstr = std::text::transcode(
+		std::string_view(argv[1]), std::text::wide_execution{});
+	
+	// Interop with Windows
+	std::unique_ptr<HANDLE, FileHandleDeleter> target_file =
+		CreateFileW(path_as_wstr.data(), GENERIC_WRITE,
+			0, NULL, CREATE_ALWAYS,
+			FILE_ATTRIBUTE_NORMAL);
+	
+	if (!target_file) {
+		// GetLastError(), etc...
+		return -2;
+	}
+
+	/* Use File... */
+
+	return 0;
+}
+```
+
+This paper directly enables such a use case.
+
+
+### Networking with Boost.Beast ### {#motivation-basic-networking}
+
+The following is an example using this proposal to do a byte-based read off the network of a UTF-16 Big Endian payload in any machine.
+
+```cpp
+#include <boost/beast.hpp>
+#include <boost/beast/http.hpp>
+#include <boost/asio/ip/tcp.hpp>
+
+#include <iostream>
+#include <encoding> // this proposal
+
+namespace beast = boost::beast;
+namespace http = beast::http;
+using tcp = boost::asio::ip::tcp;
+using results_type = tcp::resolver::results_type;
+
+class session : public std::enable_shared_from_this<session> {
+	/* ... */
+	http::request<http::empty_body> req_;
+	std::vector<std::byte> res_body_;
+	http::response<http::vector_body<std::byte:> res_;
+	std::u8string converted_body_;
+	
+	/* ... */
+	
+	void on_connect(beast::error_codeec, results_type::endpoint_type);
+	void on_resolve(beast::error_code ec, results_type results);
+
+	/* ... */
+
+	void on_read(beast::error_code ec, std::size_t bytes_transferred) {
+		if (ec) {
+			log_fail(ec, u8"read failed");
+			return;
+		}
+
+		std::span<std::byte> bytes(res_body_.data(), bytes_transferred);
+		std::ranges::unbounded_view output(std::back_inserter(converted_body_));
+
+		// utf16, but big endian
+		std::text::encoding_scheme<
+			std::text::utf16,
+			std::endian::big
+		> from_encoding{};
+
+		std::text::utf8 to_encoding{};
+		
+		// transcode from bytes that are UTF16, Big Endian,
+		// into unbounded output
+		std::text::transcode(bytes, output, from_encoding, to_encoding);
+		std::clog << converted_body_ << std::endl;
+		
+		/* Commit / clean up, etc. */
+	}
+};
+```
+
+This paper directly enables such a use case.
+
 
 
 ## Current Problems ## {#motivation-problems}
@@ -106,7 +218,7 @@ Part of this proposal is identifying exactly how those needs should be served. T
 - The standard library should be able to cannibalize all existing legacy encodings and -- by way of leading design -- encourage and promote the use of Unicode in the user's code. <span style="color: white">Embrace. Extend. Extinguish.</span>
 - The standard library (and its implementers) do not have time to implement every new, old, and existing encoding. Put bluntly: CJ Johnson's brilliance and Stephan T. Lavavej's passion is better spent improving their respective libraries and fixing bugs, not implementing EBCDIC or ISO/IEC 2022 CN, extended variant 2.
 - Unicode is the one and only language the standard speaks in its higher level text algorithms and functionality: legacy encodings must convert to Unicode to work with functionality built beyond this proposal. Future proposals will never need to concern themselves with encodings after this proposal is done.
-- Users may choose not to convert to Unicode, but they will need to spend the time and effort working out that trade off with their environment. The standard library will never have to care about text that willingly and deliberately exits the system.
+- Users may choose not to convert to Unicode, but they will need to spend the time and effort working out that trade off with their environment. The standard library will never have to care about text that willingly and deliberately exits the Unicode system.
 - Safety is not optional. Code that performs unsafe operations should require explicit opt-in and easily searchable patterns and names that make it clear the user has made a deliberate choice to open themselves up to vulnerabilities such as Undefined Behavior.
 - Performance is not optional, and [correctness isn't a tender suggestion achievable with insane workarounds](https://fasterthanli.me/blog/2020/i-want-off-mr-golangs-wild-ride/).
 - Simple function calls should be simple, but if the user wants to pry open the details they should be able to do so incrementally with ease.
@@ -114,6 +226,9 @@ Part of this proposal is identifying exactly how those needs should be served. T
 - Users should be able to do everything implementers can without undue clash between user functionality and implementer internal handling and extensions.
 - Octets -- delivered over the network, from IPC, or similar -- are an important input case that must be handled.
 - The design must be viable for low-memory environments, and prioritize zero allocation if a user cares enough to invest the time into the API with that goal.
+- At no point should we be introducing new container types for this functionality. Container wrappers / adaptors and range wrapper / adaptors are enough.
+
+
 
 
 # Design # {#design}
@@ -207,8 +322,6 @@ namespace std { namespace text {
 
 }}
 ```
-
-Advisement: Some of these error codes are perhaps too specific. There are other error states an encoding API may have that are not just the ones laid out here. It may be worth investigating the use of the `std::error_condition` and `std::error_code` APIs more thoroughly to provide a way to provide more information for `encode`/`decode` operations on legacy encodings while still having this top-level `error_condition`-ready type.
 
 The comments give some small amount of examples about what each one means. The reason 0 is used to signal success is very simple: the next part of the API creates an encoding_error_category class and hooks up the machinery for a `std::error_condition`:
 
@@ -583,6 +696,8 @@ Finally, there is a plan that for early C++26, the full gamut of WHATWG encoding
 Unicode specifies what are called Encoding Schemes for the encodings whose code unit size exceeds a single byte. This is essentially UTF16 and UTF32, of which there is UTF16 Little Endian (UTF16-LE), UTF16 Big Endian (UTF16-BE), UTF32 Little Endian (UTF32-LE), and UTF32 Big Endian (UTF32-BE). Encoding schemes can be generically handled without creating extremely specific encodings by creating an `encoding_scheme<...>` template. It will look much like so:
 
 ```cpp
+// header: <encoding>
+
 namespace std { namespace text {
 
 	template <typename Encoding,
@@ -608,6 +723,8 @@ This direction is far less boilerplate, and  has also already seen implementatio
 For interactions with encodings, there are times when a default encoding may be inferred from input and output types in [[#design-high-level]]'s functions. Thusly, 2 traits provide defaults that can be overridden by the program:
 
 ```cpp
+// header: <encoding>
+
 namespace std { namespace text {
 	template <typename T>
 	using default_code_unit_encoding_t = /* ... */;
@@ -719,6 +836,8 @@ The `decode` free function provides a High Level API for decoding text. It allow
 The surface of the `decode` API is as follows:
 
 ```cpp
+// header: <encoding>
+
 namespace std { namespace text {
 
 	template <typename Input, typename Output, typename Encoding,
@@ -779,6 +898,8 @@ The `encode` free function provides a High Level API for decoding text. It allow
 The surface of the `encode` API is as follows:
 
 ```cpp
+// header: <encoding>
+
 namespace std { namespace text {
 
 	template <typename Input, typename Output, typename Encoding,
@@ -846,6 +967,8 @@ The `transcode` free function provides a High Level API for transforming text fr
 The surface of the `transcode` API is as follows:
 
 ```cpp
+// header: <encoding>
+
 namespace std { namespace text {
 
 	template <typename Input, typename FromEncoding,
@@ -951,6 +1074,8 @@ The `validate` free function provides a High Level API for checking that a range
 The function signature for `validate` is a little different than the above functions that actually do the transcoding. Specifically, this function needs 2 states, one for the `decode_one` call and one for the `encode_one` call. This is problematic for [[#design-low-level-stateful|potential stateful encodings]], but for most other encodings this is fine.
 
 ```cpp
+// header: <encoding>
+
 namespace std { namespace text {
 
 	template <typename Input, typename Encoding,
@@ -980,7 +1105,7 @@ Interestingly, we come to a conundrum here with "self-referential" encodings. We
 
 #### Free Functions `decode_count` and `encode_count` #### {#design-high-level-free-count}
 
-This proposal will not spoon feed the reader everything: the decode_count and encode_count functions will be left as an exercise to the reader. (Hint: it's not much different from how the actual encode or decode core default is implemented.)
+This proposal will not spoon feed the reader everything: the `decode_count` and `encode_count` functions will be left as an exercise to the reader. (Hint: it's not much different from how the actual encode or decode core default is implemented.)
 
 
 ### Safety with the Free Functions ### {#design-high-level-safety}
@@ -990,23 +1115,25 @@ The second problem is the ability to _lose_ data due to not using lossless encod
 Therefore, an error at compile-time is wanted if a user uses the above high-level free functions, but does not explicitly specify an error handler in the case where a conversion is lossy. Taking an example [from this presentation](https://youtu.be/BdUipluIf1E?t=2425), this puppy emoji cannot fit in ASCII. In general, most Unicode Code Points cannot fit in an ASCII string: this is a dangerous conversion! So, unless you use a non-default error handler, the library will `static_assert` or perform other shenanigans to loudly complain at compile-time:
 
 ```cpp
-// Compiler Error: lossy encoding, specify non-default error handler
-std::string ascii_emoji0 = std::text::encode(U“🐶”, std::text::ascii{});
+int main (int, char*[]) {
+	// Compiler Error: lossy encoding, specify non-default error handler
+	std::string ascii_emoji0 = std::text::encode(U“🐶”, std::text::ascii{});
 
-// Compiler Error: lossy encoding, specify non-default error handler
-std::string ascii_emoji1 = std::text::encode(U“🐶”, std::text::ascii{},
-	std::text::default_handler{});
+	// Compiler Error: lossy encoding, specify non-default error handler
+	std::string ascii_emoji1 = std::text::encode(U“🐶”, std::text::ascii{},
+		std::text::default_handler{});
 
-// Okay: you asked for it!
-std::string ascii_emoji2 = std::text::encode(U“🐶”, std::text::ascii{},
-	std::text::replacement_handler{});
-// ascii_emoji2 contains '?'
+	// Okay: you asked for it!
+	std::string ascii_emoji2 = std::text::encode(U“🐶”, std::text::ascii{},
+		std::text::replacement_handler{});
+	// ascii_emoji2 contains '?'
 
-// Okay: undefined behavior, but you asked for it.
-std::string ascii_emoji3 = std::text::encode(U“🐶”, std::text::ascii{},
-	std::text::assume_valid_handler{});
-// ascii_emoji3 has no guarantees
-// at this point: undefined behaivor was invoked!
+	// Okay: undefined behavior, but you asked for it.
+	std::string ascii_emoji3 = std::text::encode(U“🐶”, std::text::ascii{},
+		std::text::assume_valid_handler{});
+	// ascii_emoji3 has no guarantees
+	// at this point: undefined behaivor was invoked!
+}
 ```
 
 
@@ -1014,11 +1141,15 @@ std::string ascii_emoji3 = std::text::encode(U“🐶”, std::text::ascii{},
 
 One of the biggest problems with `std::text::encode(_into)`, `std::text::decode(_into)`, and `std::text::transcode(_into)` is exactly their eager consumption. The defaults for these APIs will create owning containers by default of `std::basic_string<code_unit>`/`std::basic_string<code_point>` and fill them up as much as they possibly can. This makes these High Level free functions untenable for users in memory-constrained environments. The C++ standard is meant to serve everyone, both high-performance _and_ memory-constrained environments. Therefore, lazy ranges are required to provide low-footprint encode, decode, and transcode operations to everyone.
 
+Most importantly, wrappers around other ranges are employed here. This is important: nobody has time to rewrite all of this functionality just because the API strongly mixed `std::basic_string_view` concerns with encoding concerns. There are spans, string views, and other things outside of the standard that are perfectly suitable for iterating over code units: excluding them by not having this be a wrapper type is a non-starter for getting these abstractions wide adoption in the ecosystem.
+
 #### `decode_view` and `decode_iterator` #### {#design-high-level-ranges-decode}
 
 `decode_view<Encoding, Range, ErrorHandler, State>` is a templated type that takes the for loop found in [[#design-high-level]] and turns it into a one-by-one, iterative process that produces iterators as powerful as the iterator category/concept of the `Range` type it is supplied with. It is also meant to work with `std::reference_wrapper`s of `Encoding`, `Range`, `ErrorHandler` and `State` types (to allow views to be instantiated over pre-existing Encodings and Ranges and used to make algorithms work). `decode_iterator<Encoding, Range, ErrorHandler, State>` is also specified as well:
 
 ```cpp
+// header: <encoding>
+
 namespace std { namespace text {
 
 	template <typename _Encoding,
@@ -1139,6 +1270,8 @@ This is accomplished by first calling `.decode_one` on the incoming `input` with
 To speed this process up, the free function `text_transcode_one` can be defined by by the user to skip the round trip:
 
 ```cpp
+// in any related namespace in which ADL can find it
+
 template <typename Input, typename FromEncoding,
 	typename Output, typename ToEncoding,
 	typename FromErrorHandler, typename ToErrorHandler,
@@ -1207,6 +1340,8 @@ It is important to note that the above example customization point only works fo
 The free functions are the chance for the user to optimize bulk encoding. This is an area that becomes very important to users all over the world. Many people have already written optimized routines to convert from one encoding to another: it would be a shame if all of this work could not interoperate with the standard as it is. That is why there are 3 ADL-found free functions that are checked for well-formedness, and if so are called by the implementation in `std::text::decode_into`, `std::text::encode_into`, and `std::text::transcode_into`. They are as follows:
 
 ```cpp
+// in any related namespace in which ADL can find it
+
 template <typename Input,
 	typename Encoding, typename Output,
 	typename State, typename ErrorHandler>
@@ -1286,17 +1421,19 @@ Advisement: Even if this is possible, it is absolutely expected for implementati
 The `std::text::validate` function also needs a customization point, as well as `std::text::encode_count` and `std::text::decode_count`. To start, there are efficient ways to count code units (e.g., in UTF-8) that do not require synthesizing the full code point value. This can be used to save on speed when counting the size of a very large buffer of text. Similarly, `validate` can be done cheaply and efficiently when compared to the common loop outlined in [[#design-high-level-free-validate]]. Therefore, there are ADL customization points that are as follows:
 
 ```cpp
-template <typename Input,
-	typename Encoding, typename Output,
-	typename State, typename ErrorHandler>
-count_result<Input, Output, State> text_decode_count(Input input, const Encoding& encoding,
-	Output output, State& state, ErrorHandler&& error_handler);
+// in any related namespace in which ADL can find it
 
 template <typename Input,
 	typename Encoding, typename Output,
 	typename State, typename ErrorHandler>
-count_result<Input, Output, State> text_encode_count(Input input, const Encoding& encoding,
-	Output output, State& state, ErrorHandler&& error_handler);
+count_result<Input, State> text_decode_count(Input input, const Encoding& encoding,
+	State& state, ErrorHandler&& error_handler);
+
+template <typename Input,
+	typename Encoding, typename Output,
+	typename State, typename ErrorHandler>
+count_result<Input, State> text_encode_count(Input input, const Encoding& encoding,
+	State& state, ErrorHandler&& error_handler);
 
 template <typename Input, typename Encoding,
 	typename DecodeState, typename EncodeState>
@@ -1310,7 +1447,7 @@ validate_result<Input, DecodeState> text_validate(Input input, const Encoding& e
 
 Notably, there are two `text_validate` functions that can be opted into that take 3 or 4 arguments, respectively. This is for the rare case of an encoding that both cannot create a default state, like ones where `is_self_state_encoding_v<Encoding>` is true (e.g. the `any_encoding`/`variant_encoding<Enc0, Enc1, ...>` described in this proposal).
 
-In this case, we need a customization point wherein such an encoding, using internal/secret knowledge, can do its validation without needing to rely on the 4th `std::text::validate` overload and the core default loop's specification. This satisfies the ability of self-state encodings. 
+In this case, we need a customization point wherein such an encoding, using internal/secret knowledge, can do its validation without needing to rely on the 4-argument `std::text::validate` overload and the core default loop's specification. This satisfies the ability of self-state encodings to escape the need to pass itself twice to the `validate` function.
 
 
 
@@ -1323,7 +1460,7 @@ There are implementations of this work, taking some of it in part or in full.
 
 ## Previous Work ## {#implementation-previous}
 
-While the ideas presented in this paper have been explored in various different forms, the ideas have never been succinctly composed into a single distributable library. Therefore, the author of this paper is working on an implementation that synthesizes all of the learning from [[icu]], [[boost.text]], [[text_view]] and [[libogonek]].
+While the ideas presented in this paper have been explored in various different forms, the ideas have never been succinctly composed into a single distributable library. Therefore, the author of this paper is working on an implementation that synthesizes all of the learning from [[icu]], [[boost.text]], [[text_view]] and [[libogonek]]. Reportedly, an implementation using a similar system exists in a few Fortune 500 company codebases. [[copperspice]] also has a somewhat similar implementation, but differs in a few places.
 
 
 
@@ -1491,6 +1628,15 @@ And thank you to those of you who grew tired of an ASCII-only world and supporte
 		"href": "https://thephd.github.io/vendor/future_cxx/papers/source/n2440",
 		"title": "Restartable and Non-Restartable Functions for Efficient Character Conversions",
 		"publisher": "WG14",
+		"date": "March 2nd, 2020"
+	},
+	"copperspice": {
+		"authors": [
+			"CopperSpice C++ Libraries"
+		],
+		"href": "https://github.com/copperspice/cs_string",
+		"title": "CsString",
+		"publisher": "GitHub",
 		"date": "March 2nd, 2020"
 	}
 }

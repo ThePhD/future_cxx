@@ -1,9 +1,10 @@
 ---
-title: Restartable and Non-Restartable Functions for Efficient Character Conversions | r1
+title: Restartable and Non-Restartable Functions for Efficient Character Conversions | r2
 layout: page
-date: March 15th, 2020
+date: March 2nd, 2020
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
+  - Shepherd (Shepherd's Oasis) \<<shepherd@soasis.org>\>
 redirect_from:
   - /vendor/future_cxx/papers/source/nXXX1.html
   - /vendor/future_cxx/papers/source/n2431.html
@@ -499,16 +500,7 @@ size_t cXsrtowcs(wchar_t* restrict dest, const charX_t** restrict src, size_t de
 where `X` and `charX_t` is one of { `8`, `char` }, { `16`, `char16_t` }, or { `32`, `char32_t` } for the function's specification.
 
 
-## What about UTF{X} 🔄 UTF{Y} functions?
-
-Function interconverting between different Unicode Transformation Formats are not proposed here because -- while useful -- both sides of the encoding are statically known by the developer. The C Standard only wants to consider functionality strictly in the case where the implementation has more information / private information that the developer cannot access in a well-defined and standard manner. A developer can write their own Unicode Transformation Format conversion routines and get them completely right, whereas a developer cannot write the Wide Character and Multibyte Character functions without incredible heroics and/or error-prone assumptions.
-
-This brings up an interesting point, however: if `__STD_C_UTF16__` and `__STD_C_UTF32__` both exist, does that not mean the implementation controls what `c16` and `c32` mean? This is true, **however**: within a (admittedly limited) survey of implementations, there has been no suggestion or report of an implementation which does not use UTF16 and UTF32 for their `char16_t` and `char32_t` literals, respectively. This motivation was, in fact, why a paper percolating through the WG21 Committee -- [p1041 "Make `char16_t`/`char32_t` literals be UTF16/UTF32"[6]](https://wg21.link/p1041) -- was accepted. If this changes, then the conversion functions `c{X}toc{Y}` marked with an ❌ will become important.
-
-Thankfully, that does not seem to be the case at this time. If such changes or such an implementation is demonstrated, these functions can be added to what should be added.
-
-
-## Potential Extension: Sized Conversion Functions
+## Sized Conversion Functions
 
 Following the conventions of the string-based conversion functions already present, the above functions will use null termination as a marker for stopping. Many streams of text data today have embedded nulls in them, and have thusly required many creative solutions for avoiding embedded nulls (including encodings like Modified UTF-8 (MUTF8)). Thusly, as an extension for this proposal targeting the Standard Library, sized versions of the above functions which take a `size_t` are also proposed. This parameter would specify the number of code units in the source string.
 
@@ -536,23 +528,70 @@ The forms of such functions would be as follows:
 
 ```cpp
 /* Multibyte Character Strings: */
-size_t mbsntocXs(charX_t* restrict dest, const char* restrict src, size_t dest_len, size_t src_len);
-size_t cXsntombs(char* restrict dest, const charX_t* restrict src, size_t dest_len, size_t src_len);
-size_t mbsnrtocXs(charX_t* restrict dest, const char** restrict src, size_t dest_len, size_t src_len, mbstate_t* restrict state);
-size_t cXsnrtombs(char* restrict dest, const charX_t** restrict src, size_t dest_len, size_t src_len, mbstate_t* restrict state);
+size_t mbsntocXs(size_t dest_len, charX_t* restrict dest, size_t src_len, const char* restrict src);
+size_t cXsntombs(size_t dest_len, char* restrict dest, size_t src_len, const charX_t* restrict src);
+size_t mbsnrtocXs(size_t dest_len, charX_t* restrict dest, size_t src_len, const char** restrict src, mbstate_t* restrict state);
+size_t cXsnrtombs(size_t dest_len, char* restrict dest, size_t src_len, const charX_t** restrict src, mbstate_t* restrict state);
 
 /* Wide Character Strings: */
-size_t wcsntocXs(charX_t* restrict dest, const wchar_t* restrict src, size_t dest_len);
-size_t cXsntowcs(wchar_t* restrict dest, const charX_t* restrict src, size_t dest_len);
-size_t wcsnrtocXs(charX_t* restrict dest, const wchar_t** restrict src, size_t dest_len, size_t src_len, mbstate_t* restrict state);
-size_t cXsnrtowcs(wchar_t* restrict dest, const charX_t** restrict src, size_t dest_len, size_t src_len, mbstate_t* restrict state);
+size_t wcsntocXs(size_t dest_len, charX_t* restrict dest, const wchar_t* restrict src);
+size_t cXsntowcs(size_t dest_len, wchar_t* restrict dest, const charX_t* restrict src);
+size_t wcsnrtocXs(size_t dest_len, charX_t* restrict dest, size_t src_len, const wchar_t** restrict src, mbstate_t* restrict state);
+size_t cXsnrtowcs(size_t dest_len, wchar_t* restrict dest, size_t src_len, const charX_t** restrict src, mbstate_t* restrict state);
 ```
 
 where `X` and `charX_t` is one of { `8`, `char` }, { `16`, `char16_t` }, or { `32`, `char32_t` } for the function’s specification. Similar additions can be made for the currently existing `mbs(r)towcs` and `wcs(r)tombs` functions as well.
 
+
+## What about UTF{X} 🔄 UTF{Y} functions?
+
+Function interconverting between different Unicode Transformation Formats are not proposed here because -- while useful -- both sides of the encoding are statically known by the developer. The C Standard only wants to consider functionality strictly in the case where the implementation has more information / private information that the developer cannot access in a well-defined and standard manner. A developer can write their own Unicode Transformation Format conversion routines and get them completely right, whereas a developer cannot write the Wide Character and Multibyte Character functions without incredible heroics and/or error-prone assumptions.
+
+This brings up an interesting point, however: if `__STD_C_UTF16__` and `__STD_C_UTF32__` both exist, does that not mean the implementation controls what `c16` and `c32` mean? This is true, **however**: within a (admittedly limited) survey of implementations, there has been no suggestion or report of an implementation which does not use UTF16 and UTF32 for their `char16_t` and `char32_t` literals, respectively. This motivation was, in fact, why a paper percolating through the WG21 Committee -- [p1041 "Make `char16_t`/`char32_t` literals be UTF16/UTF32"[6]](https://wg21.link/p1041) -- was accepted. If this changes, then the conversion functions `c{X}toc{Y}` marked with an ❌ will become important.
+
+Thankfully, that does not seem to be the case at this time. If such changes or such an implementation is demonstrated, these functions can be added to what should be added.
+
+
+# Wording
+
+Conspicuously, you will notice that the below wording is missing the `c8` functions from the above listing. This is because Tom Honermann has made it clear he would like to get `char8_t` into the C Language to maintain parity with C++ and its changes. Seeing as there is already a `u8` character literal type, it is prudent to hold off on giving direct wording to specify any interfaces which may be better served with `char8_t`, especially as such conversions intend to work explicitly with UTF-8.
+
+## Intent
+
+The intent of these changes is to add the following 4 character functions.
+
+- Add `wcrtoc16`, `c16rtowc` functions (restartable, c16, wide, null-terminated)
+- Add `wcrtoc32`, `c32rtowc` functions (restartable, c32, wide, null-terminated)
+
+The character functions already existing and presented above will serve as the basis for the following 32 string functions:
+
+- Add `mbstoc16s`, `c16stombs` functions (non-restartable, char16_t, multi byte, null-terminated)
+- Add `mbsrtoc16s`, `c16srtombs` functions (restartable, char16_t, multi byte, null-terminated)
+- Add `mbsntoc16s`, `c16sntombs` functions (non-restartable, char16_t, multi byte, sized)
+- Add `mbsnrtoc16s`, `c16snrtombs` functions (restartable, char16_t, multi byte, sized)
+
+- Add `mbstoc32s`, `c32stombs` functions (non-restartable, char32_t, multi byte, null-terminated)
+- Add `mbsrtoc32s`, `c32srtombs` functions (restartable, char32_t, multi byte, null-terminated)
+- Add `mbsntoc32s`, `c32sntombs` functions (non-restartable, char32_t, multi byte, sized)
+- Add `mbsnrtoc32s`, `c32snrtombs` functions (restartable, char32_t, multi byte, sized)
+
+- Add `wcstoc16s`, `c16stowcs` functions (non-restartable, char16_t, wide, null-terminated)
+- Add `wcsrtoc16s`, `c16srtowcs` functions (restartable, char16_t, wide, null-terminated)
+- Add `wcsntoc16s`, `c16sntowcs` functions (non-restartable, char16_t, wide, sized)
+- Add `wcsnrtoc16s`, `c16snrtowcs` functions (restartable, char16_t, wide, sized)
+
+- Add `wcstoc32s`, `c32stowcs` functions (non-restartable, char32_t, wide, null-terminated)
+- Add `wcsrtoc32s`, `c32srtowcs` functions (restartable, char32_t, wide, null-terminated)
+- Add `wcsntoc32s`, `c32sntowcs` functions (non-restartable, char32_t, wide, sized)
+- Add `wcsnrtoc32s`, `c32snrtowcs` functions (restartable, char32_t, wide, sized)
+
+## Library Wording
+
+Add to §7.28.1 a new section
+
 # Conclusion
 
-This is a lot of functionality to ask for. Therefore, this paper was written mostly to obtain the Committee's general feedback about the ideas present here. An independent library implementation[[7]](https://github.com/ThePhD/ooficode/tree/develop/source) is underway, and already this implementation has come up against all of the issues above. The goal is to submit patches to glibc, musl libc, and other Standard Library implementations when the time comes. However, getting early feedback from the C Committee about this functionality is crucial to ensuring that hardworking contributors to these open source implementations do not feel as if their time is being wasted by pursuing this functionality.
+This is a lot of functionality to ask for. Therefore, this paper was written mostly to obtain the Committee's general feedback about the ideas present here. An independent library implementation, _cuneicode_<sup>\[7\]</sup> is available upon request to the author. A patch to musl-libc will be available by the 2020 Freiburg, Germany meeting.
 
 
 
@@ -572,6 +611,6 @@ Thank you to Philipp K. Krause for responding to the e-mails of a newcomer to ma
 \[4\]: Henri Sivonen. `encoding_rs`: a Web-Compatible Character Encoding Library in Rust. December 2018. Published: [https://hsivonen.fi/encoding_rs/#results](https://hsivonen.fi/encoding_rs/#results).  
 \[5\]: Bob Steagall. Fast Conversion From UTF-8 with C++, DFAs, an SSE Intrinsics. September 2018. Published: [https://www.youtube.com/watch?v=5FQ87-Ecb-A](https://www.youtube.com/watch?v=5FQ87-Ecb-A)  
 \[6\]: Robot Martinho Fernandes. p1041. February 2019. Published: [https://wg21.link/p1041](https://wg21.link/p1041).  
-\[7\]: JeanHeyd Meneide. Ooficode (alpha version). September 2019. Published: [https://github.com/ThePhD/ooficode/tree/develop/source](https://github.com/ThePhD/ooficode/tree/develop/source).
+\[7\]: JeanHeyd Meneide. Cuneicode. November 2019. Published Meeting C++: [https://www.youtube.com/watch?v=FQHofyOgQtM](https://www.youtube.com/watch?v=FQHofyOgQtM).
 
 <sub><sub><sub>May the Tower of Babel's curse be defeated.</sub></sub></sub>
