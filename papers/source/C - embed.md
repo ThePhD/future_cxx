@@ -5,8 +5,10 @@ date: March 2nd, 2020
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
 redirect_from:
+  - /vendor/future_cxx/papers/source/nXXX2.html
   - /vendor/future_cxx/papers/source/d1967.html
   - /vendor/future_cxx/papers/source/n2470.html
+  - /vendor/future_cxx/papers/source/n2499.html
 hide: true
 ---
 
