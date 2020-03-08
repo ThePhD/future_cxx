@@ -14,6 +14,68 @@ hide: true
 ---
 
 <style>
+pre {
+  margin-top: 0px;
+  margin-bottom: 0px;
+}
+.ins, ins, ins *, span.ins, span.ins * {
+  background-color: rgb(200, 250, 200);
+  color: rgb(0, 136, 0);
+  text-decoration: underline;
+}
+.del, del, del *, span.del, span.del * {
+  background-color: rgb(250, 200, 200);
+  color: rgb(255, 0, 0);
+  text-decoration: line-through;
+  text-decoration-color: rgb(255, 0, 0);
+}
+math, span.math {
+  font-family: serif;
+  font-style: italic;
+}
+ul {
+  list-style-type: "— ";
+}
+blockquote {
+  counter-reset: paragraph;
+}
+div.numbered, div.newnumbered {
+  margin-left: 2em;
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+div.numbered:before, div.newnumbered:before {
+  position: absolute;
+  margin-left: -2em;
+  display-style: block;
+}
+div.numbered:before {
+  content: counter(paragraph);
+  counter-increment: paragraph;
+}
+div.newnumbered:before {
+  content: "�";
+}
+div.numbered ul, div.newnumbered ul {
+  counter-reset: list_item;
+}
+div.numbered li, div.newnumbered li {
+  margin-left: 3em;
+}
+div.numbered li:before, div.newnumbered li:before {
+  position: absolute;
+  margin-left: -4.8em;
+  display-style: block;
+}
+div.numbered li:before {
+  content: "(" counter(paragraph) "." counter(list_item) ")";
+  counter-increment: list_item;
+}
+div.newnumbered li:before {
+  content: "(�." counter(list_item) ")";
+  counter-increment: list_item;
+}
+
 @media print
 {
   .pagebreak { break-after: always }
@@ -569,29 +631,655 @@ The character functions already existing and presented above will serve as the b
 - Add `mbsrtoc16s`, `c16srtombs` functions (restartable, char16_t, multi byte, null-terminated)
 - Add `mbsntoc16s`, `c16sntombs` functions (non-restartable, char16_t, multi byte, sized)
 - Add `mbsnrtoc16s`, `c16snrtombs` functions (restartable, char16_t, multi byte, sized)
-
 - Add `mbstoc32s`, `c32stombs` functions (non-restartable, char32_t, multi byte, null-terminated)
 - Add `mbsrtoc32s`, `c32srtombs` functions (restartable, char32_t, multi byte, null-terminated)
 - Add `mbsntoc32s`, `c32sntombs` functions (non-restartable, char32_t, multi byte, sized)
 - Add `mbsnrtoc32s`, `c32snrtombs` functions (restartable, char32_t, multi byte, sized)
-
 - Add `wcstoc16s`, `c16stowcs` functions (non-restartable, char16_t, wide, null-terminated)
 - Add `wcsrtoc16s`, `c16srtowcs` functions (restartable, char16_t, wide, null-terminated)
 - Add `wcsntoc16s`, `c16sntowcs` functions (non-restartable, char16_t, wide, sized)
 - Add `wcsnrtoc16s`, `c16snrtowcs` functions (restartable, char16_t, wide, sized)
 
-- Add `wcstoc32s`, `c32stowcs` functions (non-restartable, char32_t, wide, null-terminated)
-- Add `wcsrtoc32s`, `c32srtowcs` functions (restartable, char32_t, wide, null-terminated)
-- Add `wcsntoc32s`, `c32sntowcs` functions (non-restartable, char32_t, wide, sized)
-- Add `wcsnrtoc32s`, `c32snrtowcs` functions (restartable, char32_t, wide, sized)
+There is no wording for `c8`-style functions due to waiting for a proper decision regarding `char8_t` from Tom Honermann's paper.
+
+
 
 ## Library Wording
 
-Add to §7.28.1 a new section
+Add to §7.28.1 "Restartable multibyte/wide character conversion functions" new subsections for the `wcrtoc16`, `c16rtowc`, `wcrtoc32`, and `c32rtowc` functions:
+
+> <p><ins><b>7.28.1.� The <code>wcrtoc16</code> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <sup>1</sup> 
+> ```cpp
+> #include <uchar.h>
+> size_t wcrtoc16(char16_t * restrict pc16, wchar_t * restrict s, size_t n, mbstate_t * ps);
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> If <code>s</code> is a null pointer, the <b><code>wcrtoc16</code></b> function is equivalent to the call:</ins></p>
+> ```cpp
+> wcrtoc16(NULL, L"", 1, ps)
+> ```
+> 
+> <p><ins>In this case, the values of the parameters <code>pc16</code> and <code>n</code> are ignored.</ins></p>
+> 
+> <p><ins><sup>3</sup> If <code>s</code> is not a null pointer, the <b><code>wcrtoc16</code></b> function inspects at most <code>n</code> elements pointed to by <code>s</code> to determine the number of elements needed to complete the next wide character (including any shift sequences). If the function determines the next wide character is complete and valid, it determines the values of the corresponding <code>char16_t</code> characters and then, if <code>pc16</code> is not a null pointer, stores the value of the first (or only) such character in the object pointer to by <code>pc16</code>. Subsequent calls will store successive <code>char16_t</code> characters without consuming additional input until all the <code>char16_t</code> characters have been stored. If the corresponding <code>char16_t</code> character is the null character, the resulting state described is the initial conversion state.</ins></p>
+> 
+> <p><ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> The <b><code>wcrtoc16</code></b> function returns the first of the following that applies (given the current conversion state):</ins></p>
+> <dl>
+> <ins><dt><code>0</code></dt> <dd>if the next <code>n</code> or fewer elements complete the wide character that corresponds to the null <code>char16_t</code> character (which is the value stored).</dd></ins>
+> 
+> <ins><dt><i>between</i> <code>1</code> <i>and</i> <code>n</code> <i>inclusive</i></dt> <dd>if the next <code>n</code> or fewer elements complete a valid wide character (which is the value stored); the value returned is the number of elements that complete the wide character.</dd></ins>
+> 
+> <ins><dt><code>(size_t)(-3)</code></dt> <dd>if the next <code>char16_t</code> character resulting from a previous call has been stored (no wide characters from the input have been consumed by this call).</dd></ins>
+> 
+> <ins><dt><code>(size_t)(-2)</code></dt> <dd>if the next <code>n</code> or fewer elements contribute to an incomplete (but potentially valid) <code>char16_t</code> character, and all <code>n</code> elements have been processed (no value is stored).</dd></ins>
+> 
+> <ins><dt><code>(size_t)(-1)</code></dt> <dd>if an encoding error occurs, in which case the next <code>n</code> or fewer elements do not contribute to complete or valid <code>char16_t</code> characters: the function stores the value of the macro <code><b>EILSEQ</b></code> in <code><b>errno</b></code>.</dd></ins>
+> </dl>
+
+> <p><ins><b>7.28.1.� The <code>c16rtowc</code> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <ins><sup>1</sup></ins>
+> ```cpp
+> #include <uchar.h>
+> size_t c16rtowc(wchar_t * restrict pwc, char16_t * restrict s, size_t n, mbstate_t * restrict ps);
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> If <code>s</code> is a null pointer, the <b><code>c16rtowc</code></b> function is equivalent to the call:</ins></p>
+> ```cpp
+> c16rtowc(NULL, u"", 1, ps)
+> ```
+> 
+> <p><ins>In this case, the values of the parameters <code>pwc</code> and <code>n</code> are ignored.</ins></p>
+> 
+> <p><ins><sup>3</sup> If <code>s</code> is not a null pointer, the <b><code>c16rtowc</code></b> function inspects at most <code>n</code> elements pointed to by <code>s</code> to determine the number of elements needed to complete the next <code>char16_t</code> character (including any shift sequences). If the function determines the next <code>char16_t</code> character is complete and valid, it determines the values of the corresponding wide characters and then, if <code>pwc</code> is not a null pointer, stores the value of the first (or only) such character in the object pointer to by <code>pwc</code>. Subsequent calls will store successive wide characters without consuming additional input until all the wide characters have been stored. If the corresponding wide character is the null character, the resulting state described is the initial conversion state.</ins></p>
+> 
+> <p><ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> The <b><code>c16rtowc</code></b> function returns the first of the following (including conversion state):
+> <dl>
+> <ins><dt><code>0</code></dt> <dd>if the next <code>n</code> or fewer elements complete the <code>char16_t</code> character that corresponds to the null wide character (which is the value stored).</dd></ins>
+> 
+> <ins><dt><i>between</i> <code>1</code> <i>and</i> <code>n</code> <i>inclusive</i></dt> <dd>if the next <code>n</code> or fewer elements complete a valid <code>char16_t</code> character (which is the value stored); the value returned is the number of elements that complete the <code>char16_t</code> character.</dd></ins>
+> 
+> <ins><dt><code>(size_t)(-3)</code></dt> <dd>if the next wide character resulting from a previous call has been stored (no <code>char16_t</code> characters from the input have been consumed by this call).</dd></ins>
+> 
+> <ins><dt><code>(size_t)(-2)</code></dt> <dd>if the next <code>n</code> or fewer elements contribute to an incomplete (but potentially valid) wide character, and all <code>n</code> elements have been processed (no value is stored).</dd></ins>
+> 
+> <ins><dt><code>(size_t)(-1)</code></dt> <dd>if an encoding error occurs, in which case the next <code>n</code> or fewer elements do not contribute to complete or valid wide characters: the function stores the value of the macro <code><b>EILSEQ</b></code> in <code><b>errno</b></code>.</dd></ins>
+> </dl>
+
+> <p><ins><b>7.28.1.� The <code>wcrtoc32</code> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <ins><sup>1</sup></ins>
+> ```cpp
+> #include <uchar.h>
+> size_t wcrtoc32(char32_t * restrict pc32, wchar_t * restrict s, size_t n, mbstate_t * ps);
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> If <code>s</code> is a null pointer, the <b><code>wcrtoc32</code></b> function is equivalent to the call:</ins></p>
+> ```cpp
+> wcrtoc32(NULL, L"", 1, ps)
+> ```
+> 
+> <p><ins>In this case, the values of the parameters <code>pc32</code> and <code>n</code> are ignored.</ins></p>
+> 
+> <p><ins><sup>3</sup> If <code>s</code> is not a null pointer, the <b><code>wcrtoc32</code></b> function inspects at most <code>n</code> elements pointed to by <code>s</code> to determine the number of elements needed to complete the next wide character (including any shift sequences). If the function determines the next wide character is complete and valid, it determines the values of the corresponding <code>char32_t</code> characters and then, if <code>pc32</code> is not a null pointer, stores the value of the first (or only) such character in the object pointer to by <code>pc32</code>. Subsequent calls will store successive <code>char32_t</code> characters without consuming additional input until all the <code>char32_t</code> characters have been stored. If the corresponding <code>char32_t</code> character is the null character, the resulting state described is the initial conversion state.</ins></p>
+> 
+> <p><ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> The <b><code>wcrtoc32</code></b> function returns the first of the following that applies (given the current conversion state):</ins></p>
+> <dl>
+> <ins><dt><code>0</code></dt> <dd>if the next <code>n</code> or fewer elements complete the wide character that corresponds to the null <code>char32_t</code> character (which is the value stored).</dd></ins>
+> 
+> <ins><dt><i>between</i> <code>1</code> <i>and</i> <code>n</code> <i>inclusive</i></dt> <dd>if the next <code>n</code> or fewer elements complete a valid wide character (which is the value stored); the value returned is the number of elements that complete the wide character.</dd></ins>
+> 
+> <ins><dt><code>(size_t)(-3)</code></dt> <dd>if the next <code>char32_t</code> character resulting from a previous call has been stored (no wide characters from the input have been consumed by this call).</dd></ins>
+> 
+> <ins><dt><code>(size_t)(-2)</code></dt> <dd>if the next <code>n</code> or fewer elements contribute to an incomplete (but potentially valid) <code>char32_t</code> character, and all <code>n</code> elements have been processed (no value is stored).</dd></ins>
+> 
+> <ins><dt><code>(size_t)(-1)</code></dt> <dd>if an encoding error occurs, in which case the next <code>n</code> or fewer elements do not contribute to complete or valid <code>char32_t</code> characters: the function stores the value of the macro <code><b>EILSEQ</b></code> in <code><b>errno</b></code>.</dd></ins>
+> </dl>
+
+> <p><ins><b>7.28.1.� The <code>c32rtowc</code> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <ins><sup>1</sup></ins>
+> ```cpp
+> #include <uchar.h>
+> size_t c32rtowc(wchar_t * restrict pwc, char32_t * restrict s, size_t n, mbstate_t * restrict ps);
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> If <code>s</code> is a null pointer, the <b><code>c32rtowc</code></b> function is equivalent to the call:</ins></p>
+> ```cpp
+> c32rtowc(NULL, u"", 1, ps)
+> ```
+> 
+> <p><ins>In this case, the values of the parameters <code>pwc</code> and <code>n</code> are ignored.</ins></p>
+> 
+> <p><ins><sup>3</sup> If <code>s</code> is not a null pointer, the <b><code>c32rtowc</code></b> function inspects at most <code>n</code> elements pointed to by <code>s</code> to determine the number of elements needed to complete the next <code>char32_t</code> character (including any shift sequences). If the function determines the next <code>char32_t</code> character is complete and valid, it determines the values of the corresponding wide characters and then, if <code>pwc</code> is not a null pointer, stores the value of the first (or only) such character in the object pointer to by <code>pwc</code>. Subsequent calls will store successive wide characters without consuming additional input until all the wide characters have been stored. If the corresponding wide character is the null character, the resulting state described is the initial conversion state.</ins></p>
+> 
+> <p><ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> The <b><code>c32rtowc</code></b> function returns the first of the following (including conversion state):
+> <dl>
+> <ins><dt><code>0</code></dt> <dd>if the next <code>n</code> or fewer elements complete the <code>char32_t</code> character that corresponds to the null wide character (which is the value stored).</dd></ins>
+> 
+> <ins><dt><i>between</i> <code>1</code> <i>and</i> <code>n</code> <i>inclusive</i></dt> <dd>if the next <code>n</code> or fewer elements complete a valid <code>char32_t</code> character (which is the value stored); the value returned is the number of elements that complete the <code>char32_t</code> character.</dd></ins>
+> 
+> <ins><dt><code>(size_t)(-3)</code></dt> <dd>if the next wide character resulting from a previous call has been stored (no <code>char32_t</code> characters from the input have been consumed by this call).</dd></ins>
+> 
+> <ins><dt><code>(size_t)(-2)</code></dt> <dd>if the next <code>n</code> or fewer elements contribute to an incomplete (but potentially valid) wide character, and all <code>n</code> elements have been processed (no value is stored).</dd></ins>
+> 
+> <ins><dt><code>(size_t)(-1)</code></dt> <dd>if an encoding error occurs, in which case the next <code>n</code> or fewer elements do not contribute to complete or valid wide characters: the function stores the value of the macro <code><b>EILSEQ</b></code> in <code><b>errno</b></code>.</dd></ins>
+> </dl>
+
+
+Add a new section §7.28.2 "Non-restartable multibyte/wide string conversion functions":
+
+> <p><ins><h6>7.28.2 Non-restartable multibyte/wide string conversion functions</h6></ins></p>
+> 
+> <p><ins><b>7.28.2.1 The <b><code>mbstoc16s</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t mbstoc16s(char16_t *restrict c16s, const char *restrict s, size_t n)
+> ```
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>mbstoc16s</code></b> function converts a sequence of multibyte characters that begins in the initial shift state from the array pointed to by s into a sequence of corresponding <code>char16_t</code> characters and stores not more than <code>n</code> <code>char16_t</code> characters into the array pointed to by <code>c16s</code>.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each multibyte character is converted as if by a call to the <b><code>mbrtoc16</code></b> function with a non-null <code>ps</code> and <b><code>MB_MAX_LEN</code></b> for <code>n</code>. However, no multibyte characters that follow a null character (which is converted into a null <code>char16_t</code> character) will be examined or converted.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a multibyte character is encountered that does not correspond to a valid sequence of <code>char16_t</code> characters, the <b><b><code>mbstoc16s</code></b></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><b><code>mbstoc16s</code></b></b> function returns the number of array elements modified, not including a terminating null <code>char16_t</code> character, if any.</ins></p>
+
+> <p><ins><b>7.28.2.2 The <b><code>c16stombs</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t c16stombs(char *restrict s, const char16_t *restrict c16s, size_t n)
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>c16stombs</code></b> function converts a sequence of <code>char16_t</code> characters from the array pointed to by c16s into a sequence of corresponding multibyte characters that begins in the initial shift state, and stores these multibyte characters into the array pointed to by <code>s</code>, stopping if a multibyte character would exceed the limit of <code>n</code> total bytes or if a null character is stored.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each sequence of <code>char16_t</code> characters is converted as if by calls to the c16rtomb function with a non-null <code>ps</code>.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a sequence of <code>char16_t</code> characters is encountered that does not correspond to a valid multibyte character, the c16stombs function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>c16stombs</code></b> function returns the number of bytes modified, not including a terminating null character, if any.</ins></p>
+
+> <p><ins><b>7.28.2.3 The <b><code>mbstoc32s</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t mbstoc32s(char32_t *restrict c32s, const char *restrict s, size_t n)
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The mbstoc32s function converts a sequence of multibyte characters that begins in the initial shift state from the array pointed to by <code>s</code> into a sequence of corresponding <code>char32_t</code> characters and stores not more than <code>n</code> <code>char32_t</code> characters into the array pointed to by <code>c32s</code>.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each multibyte character is converted as if by a call to the <code>mbrtoc32</code> function with a non-null <code>ps</code> and <code>MB_MAX_LEN</code> for <code>n</code>. However, no multibyte characters that follow a null character (which is converted into a null <code>char32_t</code> character) will be examined or converted.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If an invalid multibyte character is encountered, the <b><code>mbstoc32s</code></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>mbstoc32s</code></b> function returns the number of array elements modified, not including a terminating null <code>char32_t</code> character, if any.</ins></p>
+
+> <p><ins><b>7.28.2.4 The <b><code>c32stombs</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t c32stombs(char *restrict s, const char32_t *restrict s, size_t n)>
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>c32stombs</code></b> function converts a sequence of <code>char32_t</code> characters from the array pointed to by c32s into a sequence of corresponding multibyte characters that begins in the initial shift state, and stores these multibyte characters into the array pointed to by <code>s</code>, stopping if a multibyte character would exceed the limit of <code>n</code> total bytes or if a null character is stored.</ins></p>
+> 
+> <p><ins><sup>3</sup>Each <code>char32_t</code> character is converted as if by calls to the <code>c32rtomb</code> function with a non-null <code>ps</code>.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a <code>char32_t</code> character is encountered that does not correspond to a valid multibyte character, the <b><code>c32stombs</code></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>c32stombs</code></b> function returns the number of bytes modified, not including a terminating null character, if any.</ins></p>
+
+> <p><ins><b>7.28.2.5 The <b><code>mbsntoc16s</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t mbsntoc16s(size_t c16n, char16_t *restrict c16s, size_t n, const char *restrict s)
+> ```
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>mbsntoc16s</code></b> function converts a sequence of multibyte characters that begins in the initial shift state from the array pointed to by <code>s</code> into a sequence of corresponding <code>char16_t</code> characters and stores not more than <code>c16n</code> <code>char16_t</code> characters into the array pointed to by <code>c16s</code>. It does not convert more than <code>n</code> multibyte characters.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each multibyte character is converted as if by a call to the <b><code>mbrtoc16</code></b> function with a non-null <code>ps</code> and <b><code>MB_MAX_LEN</code></b> for <code>n</code>.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a multibyte character is encountered that does not correspond to a valid sequence of <code>char16_t</code> characters, the <b><b><code>mbsntoc16s</code></b></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><b><code>mbsntoc16s</code></b></b> function returns the number of array elements modified.</ins></p>
+
+> <p><ins><b>7.28.2.6 The <b><code>c16sntombs</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t c16sntombs(size_t n, char *restrict s, size_t c16n, const char16_t *restrict c16s)
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>c16sntombs</code></b> function converts a sequence of <code>char16_t</code> characters from the array pointed to by <code>c16s</code> into a sequence of corresponding multibyte characters that begins in the initial shift state, and stores these multibyte characters into the array pointed to by <code>s</code>, stopping if a multibyte character would exceed the limit of <code>n</code> total bytes or if the limit of <code>c16n</code> elements is converted.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each sequence of <code>char16_t</code> characters is converted as if by calls to the <code>c16rtomb</code> function with a non-null <code>ps</code>.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a sequence of <code>char16_t</code> characters is encountered that does not correspond to a valid multibyte character, the <b><code>c16sntombs</code></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>c16sntombs</code></b> function returns the number of bytes modified.</ins></p>
+
+> <p><ins><b>7.28.2.7 The <b><code>mbsntoc32s</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t mbsntoc32s(size_t c32n, char32_t *restrict c32s, size_t n, const char *restrict s)
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>mbsntoc32s</code></b> function converts a sequence of multibyte characters that begins in the initial shift state from the array pointed to by <code>s</code> into a sequence of corresponding <code>char32_t</code> characters and stores not more than <code>c32n</code> <code>char32_t</code> characters into the array pointed to by <code>c32s</code>. It does not convert more than <code>n</code> multibyte characters.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each multibyte character is converted as if by a call to the <code>mbrtoc32</code> function with a non-null <code>ps</code> and <code>MB_MAX_LEN</code> for <code>n</code>.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If an invalid multibyte character is encountered, the <b><code>mbsntoc32s</code></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>mbsntoc32s</code></b> function returns the number of array elements modified.
+
+> <p><ins><b>7.28.2.8 The <b><code>c32sntombs</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t c32sntombs(size_t n, char *restrict s, size_t c32n, const char32_t *restrict c32s)>
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>c32sntombs</code></b> function converts a sequence of <code>char32_t</code> characters from the array pointed to by c32s into a sequence of corresponding multibyte characters that begins in the initial shift state, and stores these multibyte characters into the array pointed to by <code>s</code>, stopping if a multibyte character would exceed the limit of <code>n</code> total bytes or if the limit of <code>c32n</code> elements is converted.</ins></p>
+> 
+> <p><ins><sup>3</sup>Each <code>char32_t</code> character is converted as if by calls to the <code>c32rtomb</code> function with a non-null <code>ps</code>.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a <code>char32_t</code> character is encountered that does not correspond to a valid multibyte character, the <b><code>c32sntombs</code></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>c32sntombs</code></b> function returns the number of bytes modified.</ins></p>
+
+Add a new section §7.28.3 "Restartable multibyte/wide string conversion functions":
+
+> <p><ins><h6>7.28.3 Restartable multibyte/wide string conversion functions</h6></ins></p>
+> 
+> <p><ins><b>7.28.3.1 The <b><code>mbsrtoc16s</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t mbsrtoc16s(char16_t *restrict c16s, const char *restrict s, size_t n, mbstate *restrict ps)
+> ```
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>mbsrtoc16s</code></b> function converts a sequence of multibyte characters that begins in the initial shift state from the array pointed to by s into a sequence of corresponding <code>char16_t</code> characters and stores not more than <code>n</code> <code>char16_t</code> characters into the array pointed to by <code>c16s</code>.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each multibyte character is converted as if by a call to the <b><code>mbrtoc16</code></b> function with <b><code>MB_MAX_LEN</code></b> for <code>n</code>. However, no multibyte characters that follow a null character (which is converted into a null <code>char16_t</code> character) will be examined or converted.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a multibyte character is encountered that does not correspond to a valid sequence of <code>char16_t</code> characters, the <b><b><code>mbsrtoc16s</code></b></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><b><code>mbsrtoc16s</code></b></b> function returns the number of array elements modified, not including a terminating null <code>char16_t</code> character, if any.</ins></p>
+
+> <p><ins><b>7.28.3.2 The <b><code>c16srtombs</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t c16srtombs(char *restrict s, const char16_t *restrict c16s, size_t n, mbstate *restrict ps)
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>c16srtombs</code></b> function converts a sequence of <code>char16_t</code> characters from the array pointed to by c16s into a sequence of corresponding multibyte characters that begins in the initial shift state, and stores these multibyte characters into the array pointed to by <code>s</code>, stopping if a multibyte character would exceed the limit of <code>n</code> total bytes or if a null character is stored.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each sequence of <code>char16_t</code> characters is converted as if by calls to the c16rtomb function.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a sequence of <code>char16_t</code> characters is encountered that does not correspond to a valid multibyte character, the c16srtombs function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>c16srtombs</code></b> function returns the number of bytes modified, not including a terminating null character, if any.</ins></p>
+
+> <p><ins><b>7.28.3.3 The <b><code>mbsrtoc32s</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t mbsrtoc32s(char32_t *restrict c32s, const char *restrict s, size_t n, mbstate *restrict ps)
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The mbsrtoc32s function converts a sequence of multibyte characters that begins in the initial shift state from the array pointed to by <code>s</code> into a sequence of corresponding <code>char32_t</code> characters and stores not more than <code>n</code> <code>char32_t</code> characters into the array pointed to by <code>c32s</code>.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each multibyte character is converted as if by a call to the <code>mbrtoc32</code> function with <code>MB_MAX_LEN</code> for <code>n</code>. However, no multibyte characters that follow a null character (which is converted into a null <code>char32_t</code> character) will be examined or converted.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If an invalid multibyte character is encountered, the <b><code>mbsrtoc32s</code></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>mbsrtoc32s</code></b> function returns the number of array elements modified, not including a terminating null <code>char32_t</code> character, if any.</ins></p>
+
+> <p><ins><b>7.28.3.4 The <b><code>c32srtombs</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t c32srtombs(char *restrict s, const char32_t *restrict c32s, size_t n, mbstate *restrict ps)>
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>c32srtombs</code></b> function converts a sequence of <code>char32_t</code> characters from the array pointed to by c32s into a sequence of corresponding multibyte characters that begins in the initial shift state, and stores these multibyte characters into the array pointed to by <code>s</code>, stopping if a multibyte character would exceed the limit of <code>n</code> total bytes or if a null character is stored.</ins></p>
+> 
+> <p><ins><sup>3</sup>Each <code>char32_t</code> character is converted as if by calls to the <code>c32rtomb</code> function.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a <code>char32_t</code> character is encountered that does not correspond to a valid multibyte character, the <b><code>c32srtombs</code></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>c32srtombs</code></b> function returns the number of bytes modified, not including a terminating null character, if any.</ins></p>
+
+> <p><ins><b>7.28.3.5 The <b><code>mbsnrtoc16s</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t mbsnrtoc16s(size_t c16n, char16_t *restrict c16s, size_t n, const char *restrict s, mbstate* ps)
+> ```
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>mbsnrtoc16s</code></b> function converts a sequence of multibyte characters that begins in the initial shift state from the array pointed to by <code>s</code> into a sequence of corresponding <code>char16_t</code> characters and stores not more than <code>c16n</code> <code>char16_t</code> characters into the array pointed to by <code>c16s</code>. It does not convert more than <code>n</code> multibyte characters.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each multibyte character is converted as if by a call to the <b><code>mbrtoc16</code></b> function with <b><code>MB_MAX_LEN</code></b> for <code>n</code>.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a multibyte character is encountered that does not correspond to a valid sequence of <code>char16_t</code> characters, the <b><code>mbsnrtoc16s</code></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>mbsnrtoc16s</code></b> function returns the number of array elements modified.</ins></p>
+
+> <p><ins><b>7.28.3.6 The <b><code>c16snrtombs</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t c16snrtombs(size_t n, char *restrict s, size_t c16n, const char16_t *restrict c16s, mbstate *restrict ps)
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>c16snrtombs</code></b> function converts a sequence of <code>char16_t</code> characters from the array pointed to by <code>c16s</code> into a sequence of corresponding multibyte characters that begins in the initial shift state, and stores these multibyte characters into the array pointed to by <code>s</code>, stopping if a multibyte character would exceed the limit of <code>n</code> total bytes or if the limit of <code>c16n</code> elements is converted.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each sequence of <code>char16_t</code> characters is converted as if by calls to the <code>c16rtomb</code> function.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a sequence of <code>char16_t</code> characters is encountered that does not correspond to a valid multibyte character, the <b><code>c16snrtombs</code></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>c16snrtombs</code></b> function returns the number of bytes modified.</ins></p>
+
+> <p><ins><b>7.28.3.7 The <b><code>mbsnrtoc32s</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t mbsnrtoc32s(size_t c32n, char32_t *restrict c32s, size_t n, const char *restrict s, mbstate *restrict ps)
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>mbsnrtoc32s</code></b> function converts a sequence of multibyte characters that begins in the initial shift state from the array pointed to by <code>s</code> into a sequence of corresponding <code>char32_t</code> characters and stores not more than <code>c32n</code> <code>char32_t</code> characters into the array pointed to by <code>c32s</code>. It does not convert more than <code>n</code> multibyte characters.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each multibyte character is converted as if by a call to the <code>mbrtoc32</code> function with <code>MB_MAX_LEN</code> for <code>n</code>.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If an invalid multibyte character is encountered, the <b><code>mbsnrtoc32s</code></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>mbsnrtoc32s</code></b> function returns the number of array elements modified.</ins></p>
+
+> <p><ins><b>7.28.3.8 The <b><code>c32snrtombs</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t c32snrtombs(size_t n, char *restrict s, size_t c32n, const char32_t *restrict c32s, mbstate *restrict ps)
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>c32snrtombs</code></b> function converts a sequence of <code>char32_t</code> characters from the array pointed to by c32s into a sequence of corresponding multibyte characters that begins in the initial shift state, and stores these multibyte characters into the array pointed to by <code>s</code>, stopping if a multibyte character would exceed the limit of <code>n</code> total bytes or if the limit of <code>c32n</code> elements is converted.</ins></p>
+> 
+> <p><ins><sup>3</sup>Each <code>char32_t</code> character is converted as if by calls to the <code>c32rtomb</code> function with a non-null <code>ps</code>.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a <code>char32_t</code> character is encountered that does not correspond to a valid multibyte character, the <b><code>c32snrtombs</code></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>c32snrtombs</code></b> function returns the number of bytes modified.</ins></p>
+
+> <p><ins><b>7.28.3.9 The <b><code>wcsrtoc16s</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t wcsrtoc16s(char16_t *restrict c16s, const wchar_t *restrict s, size_t n, mbstate *restrict ps)
+> ```
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>wcsrtoc16s</code></b> function converts a sequence of wide characters that begins in the initial shift state from the array pointed to by s into a sequence of corresponding <code>char16_t</code> characters and stores not more than <code>n</code> <code>char16_t</code> characters into the array pointed to by <code>c16s</code>.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each wide character is converted as if by a call to the <b><code>wcrtoc16</code></b> function. However, no wide characters that follow a null character (which is converted into a null <code>char16_t</code> character) will be examined or converted.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a wide character is encountered that does not correspond to a valid sequence of <code>char16_t</code> characters, the <b><b><code>wcsrtoc16s</code></b></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><b><code>wcsrtoc16s</code></b></b> function returns the number of array elements modified, not including a terminating null <code>char16_t</code> character, if any.</ins></p>
+
+> <p><ins><b>7.28.3.10 The <b><code>c16srtowcs</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t c16srtowcs(wchar_t *restrict s, const char16_t *restrict c16s, size_t n, mbstate *restrict ps)
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>c16srtowcs</code></b> function converts a sequence of <code>char16_t</code> characters from the array pointed to by c16s into a sequence of corresponding wide characters that begins in the initial shift state, and stores these wide characters into the array pointed to by <code>s</code>, stopping if a wide character would exceed the limit of <code>n</code> total bytes or if a null character is stored.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each sequence of <code>char16_t</code> characters is converted as if by calls to the c16rtomb function.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a sequence of <code>char16_t</code> characters is encountered that does not correspond to a valid wide character, the c16srtowcs function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>c16srtowcs</code></b> function returns the number of bytes modified, not including a terminating null character, if any.</ins></p>
+
+> <p><ins><b>7.28.3.11 The <b><code>wcsrtoc32s</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t wcsrtoc32s(char32_t *restrict c32s, const wchar_t *restrict s, size_t n, mbstate *restrict ps)
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The wcsrtoc32s function converts a sequence of wide characters that begins in the initial shift state from the array pointed to by <code>s</code> into a sequence of corresponding <code>char32_t</code> characters and stores not more than <code>n</code> <code>char32_t</code> characters into the array pointed to by <code>c32s</code>.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each wide character is converted as if by a call to the <code>wcrtoc32</code> function. However, no wide characters that follow a null character (which is converted into a null <code>char32_t</code> character) will be examined or converted.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If an invalid wide character is encountered, the <b><code>wcsrtoc32s</code></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>wcsrtoc32s</code></b> function returns the number of array elements modified, not including a terminating null <code>char32_t</code> character, if any.</ins></p>
+
+> <p><ins><b>7.28.3.12 The <b><code>c32srtowcs</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t c32srtowcs(wchar_t *restrict s, const char32_t *restrict c32s, size_t n, mbstate *restrict ps)>
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>c32srtowcs</code></b> function converts a sequence of <code>char32_t</code> characters from the array pointed to by c32s into a sequence of corresponding wide characters that begins in the initial shift state, and stores these wide characters into the array pointed to by <code>s</code>, stopping if a wide character would exceed the limit of <code>n</code> total bytes or if a null character is stored.</ins></p>
+> 
+> <p><ins><sup>3</sup>Each <code>char32_t</code> character is converted as if by calls to the <code>c32rtomb</code> function.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a <code>char32_t</code> character is encountered that does not correspond to a valid wide character, the <b><code>c32srtowcs</code></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>c32srtowcs</code></b> function returns the number of bytes modified, not including a terminating null character, if any.</ins></p>
+> <p><ins><b>7.28.3.13 The <b><code>wcsnrtoc16s</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t wcsnrtoc16s(size_t c16n, char16_t *restrict c16s, size_t n, const wchar_t *restrict s, mbstate* ps)
+> ```
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>wcsnrtoc16s</code></b> function converts a sequence of wide characters that begins in the initial shift state from the array pointed to by <code>s</code> into a sequence of corresponding <code>char16_t</code> characters and stores not more than <code>c16n</code> <code>char16_t</code> characters into the array pointed to by <code>c16s</code>. It does not convert more than <code>n</code> wide characters.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each wide character is converted as if by a call to the <b><code>wcrtoc16</code></b> function.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a wide character is encountered that does not correspond to a valid sequence of <code>char16_t</code> characters, the <b><b><code>wcsnrtoc16s</code></b></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><b><code>wcsnrtoc16s</code></b></b> function returns the number of array elements modified.</ins></p>
+
+> <p><ins><b>7.28.3.14 The <b><code>c16snrtowcs</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t c16snrtowcs(size_t n, wchar_t *restrict s, size_t c16n, const char16_t *restrict c16s, mbstate *restrict ps)
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>c16snrtowcs</code></b> function converts a sequence of <code>char16_t</code> characters from the array pointed to by <code>c16s</code> into a sequence of corresponding wide characters that begins in the initial shift state, and stores these wide characters into the array pointed to by <code>s</code>, stopping if a wide character would exceed the limit of <code>n</code> total bytes or if the limit of <code>c16n</code> elements is converted.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each sequence of <code>char16_t</code> characters is converted as if by calls to the <code>c16rtomb</code> function.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a sequence of <code>char16_t</code> characters is encountered that does not correspond to a valid wide character, the <b><code>c16snrtowcs</code></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>c16snrtowcs</code></b> function returns the number of bytes modified.</ins></p>
+
+> <p><ins><b>7.28.3.15 The <b><code>wcsnrtoc32s</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t wcsnrtoc32s(size_t c32n, char32_t *restrict c32s, size_t n, const wchar_t *restrict s, mbstate *restrict ps)
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>wcsnrtoc32s</code></b> function converts a sequence of wide characters that begins in the initial shift state from the array pointed to by <code>s</code> into a sequence of corresponding <code>char32_t</code> characters and stores not more than <code>c32n</code> <code>char32_t</code> characters into the array pointed to by <code>c32s</code>. It does not convert more than <code>n</code> wide character.</ins></p>
+> 
+> <p><ins><sup>3</sup> Each wide character is converted as if by a call to the <code>wcrtoc32</code> function.</ins></p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If an invalid wide character is encountered, the <b><code>wcsnrtoc32s</code></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>wcsnrtoc32s</code></b> function returns the number of array elements modified.</ins></p>
+
+> <p><ins><b>7.28.3.16 The <b><code>c32snrtowcs</code></b> function</b></ins></p>
+> 
+> <p>&emsp;<ins><b>Synopsis</b></ins></p>
+> 
+> <p><ins><sup>1</sup></ins></p>
+> ```cpp
+> #include <uchar.h>
+> size_t c32snrtowcs(size_t n, wchar_t *restrict s, size_t c32n, const char32_t *restrict c32s, mbstate *restrict ps)
+> ```
+> 
+> <p>&emsp;<ins><b>Description</b></ins></p>
+> 
+> <p><ins><sup>2</sup> The <b><code>c32snrtowcs</code></b> function converts a sequence of <code>char32_t</code> characters from the array pointed to by c32s into a sequence of corresponding wide characters that begins in the initial shift state, and stores these wide characters into the array pointed to by <code>s</code>, stopping if a wide character would exceed the limit of <code>n</code> total bytes or if the limit of <code>c32n</code> elements is converted.</ins></p>
+> 
+> <p><ins><sup>3</sup>Each <code>char32_t</code> character is converted as if by calls to the <code>c32rtomb</code> function with a non-null <code>ps</code></ins>.</p>
+> 
+> <p>&emsp;<ins><b>Returns</b></ins></p>
+> 
+> <p><ins><sup>4</sup> If a <code>char32_t</code> character is encountered that does not correspond to a valid wide character, the <b><code>c32snrtowcs</code></b> function returns <code>(size_t)(-1)</code>. Otherwise, the <b><code>c32snrtowcs</code></b> function returns the number of bytes modified.</ins></p>
+
+
+
 
 # Conclusion
 
-This is a lot of functionality to ask for. Therefore, this paper was written mostly to obtain the Committee's general feedback about the ideas present here. An independent library implementation, _cuneicode_<sup>\[7\]</sup> is available upon request to the author. A patch to musl-libc will be available by the 2020 Freiburg, Germany meeting.
+The ecosystem deserves ways to get to a statically-known encoding and not rely on implementation and locale-parameterized encodings. This allows developers a way to perform cross-platform text processing without needing to go through fantastic gymnastics to support different languages and platforms. An independent library implementation, _cuneicode_<sup>\[7\]</sup> is available upon request to the author. A patch to musl-libc will be available by the 2020 Freiburg, Germany meeting.
 
 
 
