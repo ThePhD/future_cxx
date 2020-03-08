@@ -79,8 +79,8 @@ div.newnumbered li:before {
 }
 </style>
 
-_**Document**_: WG14 n2470 | WG21 p1967r2  
-_**Previous Revisions**_: n2470  
+_**Document**_: WG14 n2499 | WG21 p1967r2  
+_**Previous Revisions**_: WG14 n2470 | WG21 p1967r1, p1967r1  
 _**Audience**_: WG14, WG21  
 _**Proposal Category**_: New Features  
 _**Target Audience**_: General Developers, Application Developers, Compiler/Tooling Developers  
