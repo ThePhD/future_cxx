@@ -365,21 +365,21 @@ Add a new sub clause as §6.10.� to §6.10 Preprocessing Directives, preferabl
 <dl>
 <dd>— If <code>T</code> is <code>char</code>, <code>CHAR_WIDTH</code>, and <code>CHAR_MIN</code>, and <code>CHAR_MAX</code> are the values, respectively.</dd>
 
-<dd>— Otherwise, <code>T</code> is <code>signed char</code>, then <code>SCHAR_WIDTH</code>, <code>SCHAR_MIN</code> and <code>SCHAR_MAX</code> are the values, respectively.</dd>
+<dd>— Otherwise, if <code>T</code> is <code>signed char</code>, then <code>SCHAR_WIDTH</code>, <code>SCHAR_MIN</code> and <code>SCHAR_MAX</code> are the values, respectively.</dd>
 
-<dd>— Otherwise, <code>T</code> is <code>unsigned char</code>, then <code>UCHAR_WIDTH</code>, <code>0</code> and <code>UCHAR_MAX</code> are the values, respectively.</dd>
+<dd>— Otherwise, if <code>T</code> is <code>unsigned char</code>, then <code>UCHAR_WIDTH</code>, <code>0</code> and <code>UCHAR_MAX</code> are the values, respectively.</dd>
 
-<dd>— Otherwise, <code>T</code> is <code>short</code> or <code>signed short</code>, then <code>SHRT_WIDTH</code>, <code>SHRT_MIN</code> and <code>SHRT_MAX</code> are the values, respectively.</dd>
+<dd>— Otherwise, if <code>T</code> is <code>short</code> or <code>signed short</code>, then <code>SHRT_WIDTH</code>, <code>SHRT_MIN</code> and <code>SHRT_MAX</code> are the values, respectively.</dd>
 
-<dd>— Otherwise, <code>T</code> is <code>unsigned short</code>, then <code>USHRT_WIDTH</code>, <code>0</code> and <code>USHRT_MAX</code>, are the values respectively.</dd>
+<dd>— Otherwise, if <code>T</code> is <code>unsigned short</code>, then <code>USHRT_WIDTH</code>, <code>0</code> and <code>USHRT_MAX</code>, are the values respectively.</dd>
 
-<dd>— Otherwise, <code>T</code> is <code>long</code> or <code>signed long</code>, then <code>LONG_WIDTH</code>, <code>LONG_MIN</code> and <code>LONG_MAX</code> are the values, respectively.</dd>
+<dd>— Otherwise, if <code>T</code> is <code>long</code> or <code>signed long</code>, then <code>LONG_WIDTH</code>, <code>LONG_MIN</code> and <code>LONG_MAX</code> are the values, respectively.</dd>
 
-<dd>— Otherwise, <code>T</code> is <code>unsigned long</code>, then <code>ULONG_WIDTH</code>, <code>0</code> and <code>ULONG_MAX</code>, are the values respectively.</dd>
+<dd>— Otherwise, if <code>T</code> is <code>unsigned long</code>, then <code>ULONG_WIDTH</code>, <code>0</code> and <code>ULONG_MAX</code>, are the values respectively.</dd>
 
-<dd>— Otherwise, <code>T</code> is <code>long long</code> or <code>signed long long</code>, then <code>LLONG_WIDTH</code>, <code>LLONG_MIN</code> and <code>LLONG_MAX</code> are the values, respectively.</dd>
+<dd>— Otherwise, if <code>T</code> is <code>long long</code> or <code>signed long long</code>, then <code>LLONG_WIDTH</code>, <code>LLONG_MIN</code> and <code>LLONG_MAX</code> are the values, respectively.</dd>
 
-<dd>— Otherwise, <code>T</code> is <code>unsigned long long</code>, then <code>ULLONG_WIDTH</code>, <code>0</code> and <code>ULLONG_MAX</code>, are the values respectively.</dd>
+<dd>— Otherwise, if <code>T</code> is <code>unsigned long long</code>, then <code>ULLONG_WIDTH</code>, <code>0</code> and <code>ULLONG_MAX</code>, are the values respectively.</dd>
 </dl>
 
 <p><sup>7</sup> Otherwise, if <code>T</code> is not one of the above sequence of tokens, then it is implementation-defined whether or not the directive is supported. If it is, it behaves as if it is replaced by an implementation-defined mapping of the contents of the resource into an <i>initializer-list</i> suitable for initializing an array of <code>T</code>. Specifically, each element of the <i>initializer-list</i> behaves as if characters from the resource were read into an array of <code>unsigned char</code> with a size <code>sizeof(T)</code> and overlaid into the resulting element<sup>18�</sup>. If the implementation-defined bit size of the resource's contents are not a multiple of <code>sizeof(T) * CHAR_BIT</code>, then the implementation shall issue a diagnostic.</p>
@@ -585,21 +585,21 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 <dl>
 <dd>— If <code>T</code> is <code>char</code>, <code>CHAR_WIDTH</code>, and <code>CHAR_MIN</code>, and <code>CHAR_MAX</code> are the values, respectively.</dd>
 
-<dd>— Otherwise, <code>T</code> is <code>signed char</code>, then <code>SCHAR_WIDTH</code>, <code>SCHAR_MIN</code> and <code>SCHAR_MAX</code> are the values, respectively.</dd>
+<dd>— Otherwise, if <code>T</code> is <code>signed char</code>, then <code>SCHAR_WIDTH</code>, <code>SCHAR_MIN</code> and <code>SCHAR_MAX</code> are the values, respectively.</dd>
 
-<dd>— Otherwise, <code>T</code> is <code>unsigned char</code>, then <code>UCHAR_WIDTH</code>, <code>0</code> and <code>UCHAR_MAX</code> are the values, respectively.</dd>
+<dd>— Otherwise, if <code>T</code> is <code>unsigned char</code>, then <code>UCHAR_WIDTH</code>, <code>0</code> and <code>UCHAR_MAX</code> are the values, respectively.</dd>
 
-<dd>— Otherwise, <code>T</code> is <code>short</code> or <code>signed short</code>, then <code>SHRT_WIDTH</code>, <code>SHRT_MIN</code> and <code>SHRT_MAX</code> are the values, respectively.</dd>
+<dd>— Otherwise, if <code>T</code> is <code>short</code> or <code>signed short</code>, then <code>SHRT_WIDTH</code>, <code>SHRT_MIN</code> and <code>SHRT_MAX</code> are the values, respectively.</dd>
 
-<dd>— Otherwise, <code>T</code> is <code>unsigned short</code>, then <code>USHRT_WIDTH</code>, <code>0</code> and <code>USHRT_MAX</code>, are the values respectively.</dd>
+<dd>— Otherwise, if <code>T</code> is <code>unsigned short</code>, then <code>USHRT_WIDTH</code>, <code>0</code> and <code>USHRT_MAX</code>, are the values respectively.</dd>
 
-<dd>— Otherwise, <code>T</code> is <code>long</code> or <code>signed long</code>, then <code>LONG_WIDTH</code>, <code>LONG_MIN</code> and <code>LONG_MAX</code> are the values, respectively.</dd>
+<dd>— Otherwise, if <code>T</code> is <code>long</code> or <code>signed long</code>, then <code>LONG_WIDTH</code>, <code>LONG_MIN</code> and <code>LONG_MAX</code> are the values, respectively.</dd>
 
-<dd>— Otherwise, <code>T</code> is <code>unsigned long</code>, then <code>ULONG_WIDTH</code>, <code>0</code> and <code>ULONG_MAX</code>, are the values respectively.</dd>
+<dd>— Otherwise, if <code>T</code> is <code>unsigned long</code>, then <code>ULONG_WIDTH</code>, <code>0</code> and <code>ULONG_MAX</code>, are the values respectively.</dd>
 
-<dd>— Otherwise, <code>T</code> is <code>long long</code> or <code>signed long long</code>, then <code>LLONG_WIDTH</code>, <code>LLONG_MIN</code> and <code>LLONG_MAX</code> are the values, respectively.</dd>
+<dd>— Otherwise, if <code>T</code> is <code>long long</code> or <code>signed long long</code>, then <code>LLONG_WIDTH</code>, <code>LLONG_MIN</code> and <code>LLONG_MAX</code> are the values, respectively.</dd>
 
-<dd>— Otherwise, <code>T</code> is <code>unsigned long long</code>, then <code>ULLONG_WIDTH</code>, <code>0</code> and <code>ULLONG_MAX</code>, are the values respectively.</dd>
+<dd>— Otherwise, if <code>T</code> is <code>unsigned long long</code>, then <code>ULLONG_WIDTH</code>, <code>0</code> and <code>ULLONG_MAX</code>, are the values respectively.</dd>
 </dl>
 
 <p><sup>6</sup> Otherwise, if <code>T</code> is not one of the above sequence of tokens, then it is implementation-defined whether or not the directive is supported. If it is, then the <i>initializer-list</i> represents an implementation-defined mapping from the contents of the resource to the elements of the <i>initializer-list</i>. If the implementation-defined bit size of the resource's contents are not a multiple of <code>sizeof(T) * CHAR_BIT</code> or <code>T</code> does not denote a trivial type (6.8 [basic.types]), then the program is ill-formed.</p>
