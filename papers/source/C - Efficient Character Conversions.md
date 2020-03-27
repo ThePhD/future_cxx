@@ -511,12 +511,12 @@ The forms of such functions would be as follows:
 
 ```cpp
 /* Multibyte Character, Single Unit (UTF8): */
-size_t mbrtoc8(char* restrict pc8, const char* restrict src, size_t src_len, mbstate_t* restrict state);
-size_t c8rtomb(char* restrict pc, const char* restrict src, size_t src_len, mbstate_t* restrict state);
+size_t mbrtoc8(char8_t* restrict pc8, const char* restrict src, size_t src_len, mbstate_t* restrict state);
+size_t c8rtomb(char* restrict pc, char8_t c8, mbstate_t* restrict state);
 
 /* Wide Character, Single Unit: */
 size_t wcrtocX(charX_t* restrict pcX, const wchar_t* restrict src, size_t src_len, mbstate_t* restrict state);
-size_t cXrtowc(wchar_t* restrict pwc, const charX_t* restrict src, size_t src_len, mbstate_t* restrict state);
+size_t cXrtowc(wchar_t* restrict pwc, charX_t c8, mbstate_t* restrict state);
 ```
 
 where `X` and `charX_t` is one of { `8`, `char` }, { `16`, `char16_t` }, or { `32`, `char32_t` } for the function's specification.
@@ -695,7 +695,7 @@ The following wording goes in §7 Library of the C Standard, relative to Working
 > <ins><sup>1</sup></ins>
 > ```cpp
 > #include <uchar.h>
-> size_t c16rtowc(wchar_t * restrict pwc, char16_t * restrict s, size_t n, mbstate_t * restrict ps);
+> size_t c16rtowc(wchar_t * restrict pwc, char16_t c16, mbstate_t * restrict ps);
 > ```
 > 
 > <p>&emsp;<ins><b>Description</b></ins></p>

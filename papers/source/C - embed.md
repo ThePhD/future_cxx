@@ -104,7 +104,7 @@ _**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source
 
 For well over 40 years, people have been trying to plant data into executables for varying reasons. Whether it is to provide a base image with which to flash hardware in a hard reset, icons that get packaged with an application, or scripts that are intrinsically tied to the program at compilation time, there has always been a strong need to couple and ship binary data with an application.
 
-C does not make this easy for users to do, resulting in many individuals reaching for utilities such as `xxd`, writing python scripts, or engaging in highly platform-specific linker calls to set up `extern` variables pointing at their data. Each of these approaches come with benefits and drawbacks. For example, while working with the linker directly allows injection of vary large amounts of data (5 MB and upwards), it does not allow accessing that data at any other point except runtime. Conversely,  Doing all of these things portably across systems and additionally maintaining the dependencies of all these resources and files in build systems both like and unlike `make` is a tedious task.
+C does not make this easy for users to do, resulting in many individuals reaching for utilities such as `xxd`, writing python scripts, or engaging in highly platform-specific linker calls to set up `extern` variables pointing at their data. Each of these approaches come with benefits and drawbacks. For example, while working with the linker directly allows injection of vary large amounts of data (5 MB and upwards), it does not allow accessing that data at any other point except runtime. Conversely, doing all of these things portably across systems and additionally maintaining the dependencies of all these resources and files in build systems both like and unlike `make` is a tedious task.
 
 Thusly, we propose a new preprocessor directive whose sole purpose is to be `#include`, but for binary data: `#embed`.
 
@@ -221,6 +221,7 @@ The contents of the resource are mapped in an implementation-defined manner to t
 
 - `char`, `unsigned char`, `signed char`
 - `short`, `unsigned short`, `signed short`
+- `int`, `unsigned int`, `signed int`
 - `long`, `unsigned long`, `signed long`
 - `long long`, `unsigned long long`, `signed long long`
 
@@ -233,7 +234,7 @@ This means that the types above have a specific size that can be properly initia
 
 ### Existing Practice - Search Paths
 
-It follows the same implementation experience guidelines as `#include` by leaving the search paths implementation defined, with the understand that implementations are not monsters and will generally provide `-fembed-path`/`-fembed-path=` and other related flags as their users require for their systems. This gives implementers the space they need to serve the needs of their constituency.
+It follows the same implementation experience guidelines as `#include` by leaving the search paths implementation defined, with the understanding that implementations are not monsters and will generally provide `-fembed-path`/`-fembed-path=` and other related flags as their users require for their systems. This gives implementers the space they need to serve the needs of their constituency.
 
 
 ### Existing Practice - Discoverable and Distributable
