@@ -319,8 +319,17 @@ Add another _control-line_ production and a new _parenthesized-non-header_ to §
 </p>
 <p>
 <ins>
-<i>parenthesized-non-header:</i><br/>
-&emsp; &emsp; &emsp;<b>(</b><sub>opt</sub> <i>pp-tokens</i> <b>)</b><sub>opt</sub>
+<i>parenthesized-non-header-digits:</i><br/>
+&emsp; &emsp; &emsp;any <i>pp-token</i> except any <i>integer-constant</i>, <b>&quot;</b>, <b>'</b>,
+<b>(</b>, or <b>&gt;</b><br/>
+&emsp; &emsp; &emsp;<b>(</b> <i>pp-tokens</i> <b>)</b>
+</ins>
+</p>
+<p>
+<ins>
+<i>parenthesized-constant-expression:</i><br/>
+&emsp; &emsp; &emsp;<i>integer-constant</i><br/>
+&emsp; &emsp; &emsp;<b>(</b> <i>constant-expression</i> <b>)</b>
 </ins>
 </p>
 </blockquote>
@@ -338,7 +347,7 @@ Add a new sub clause as §6.10.� to §6.10 Preprocessing Directives, preferabl
 <p><sup>2</sup> A preprocessing directive of the form</p>
 
 <p>
-&emsp; &emsp; <b>&num;</b> <b>embed</b> <i>parenthesized-non-header<sub>opt</sub></i> <i>digit-sequence<sub>opt</sub></i> <b><code>&lt;</code></b> <i>h-char-sequence</i> <b><code>&gt;</code></b> <i>new-line</i>
+&emsp; &emsp; <b>&num;</b> <b>embed</b> <i>parenthesized-non-header-digits<sub>opt</sub></i> <i>parenthesized-constant-expression<sub>opt</sub></i> <b><code>&lt;</code></b> <i>h-char-sequence</i> <b><code>&gt;</code></b> <i>new-line</i>
 </p>
 
 <p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&lt;</code> and <code>&gt;</code>. The named resource is searched for in an implementation-defined manner.</p>
@@ -346,13 +355,13 @@ Add a new sub clause as §6.10.� to §6.10 Preprocessing Directives, preferabl
 <p><sup>3</sup> A preprocessing directive of the form</p>
 
 <p>
-&emsp; &emsp; <b>&num;</b> <b>embed</b> <i>parenthesized-non-header<sub>opt</sub></i> <i>digit-sequence<sub>opt</sub></i> <code>&quot;</code> <i>q-char-sequence</i> <code>&quot;</code> <i>new-line</i>
+&emsp; &emsp; <b>&num;</b> <b>embed</b> <i>parenthesized-non-header-digits<sub>opt</sub></i> <i>parenthesized-constant-expression<sub>opt</sub></i> <code>&quot;</code> <i>q-char-sequence</i> <code>&quot;</code> <i>new-line</i>
 </p>
 
 <p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&quot;</code>, or <code>&lt;</code> and <code>&gt;</code>, delimiters. The named resource is searched for in an implementation-defined manner. If this search is not supported, or if the search fails, the directive is reprocessed as if it read</p>
 
 <p>
-&emsp; &emsp; <b>&num;</b> <b>embed</b> <i>parenthesized-non-header</i><sub>opt</sub> <i>digit-sequence</i><sub>opt</sub> <code>&lt;</code> <i>h-char-sequence</i> <code>&gt;</code> <i>new-line</i>
+&emsp; &emsp; <b>&num;</b> <b>embed</b> <i>parenthesized-non-header-digits<sub>opt</sub></i> <i>parenthesized-constant-expression<sub>opt</sub></i> <code>&lt;</code> <i>h-char-sequence</i> <code>&gt;</code> <i>new-line</i>
 </p>
 
 <p>with the identical contained <i>q-char-sequence</i> (including &gt; characters, if any) from the original directive.</p>
