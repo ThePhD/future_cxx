@@ -6,7 +6,7 @@ author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
   - Isabella Muerte \<<https://twitter.com/slurpsmadrips/>\>
 redirect_from:
-  - /vendor/future_cxx/papers/source/n2431.html
+  - /vendor/future_cxx/papers/source/n2430.html
   - /vendor/future_cxx/papers/source/n2448.html
 hide: true
 ---

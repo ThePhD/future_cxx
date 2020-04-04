@@ -99,6 +99,43 @@ _**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source
 
 
 
+# Changelog
+
+
+## Revision 2 - April 10th, 2020
+
+- Added post C meeting notes and discussion.
+- Added discussion of potential endianness.
+
+
+## Revision 1 - March 5th, 2020
+
+- Improved wording section at the end to be more detailed in handling preprocessor (which does not understand types).
+
+
+## Revision 0 - January 5th, 2020
+
+- Initial release.
+
+
+
+# Polls & Votes
+
+## April 2020 Virtual C Meeting
+
+"We want to have a proper preprocessor `#embed ...` over a `#pragma _STDC embed ...`-based directive."
+- Poll not taken due to UNANIMOUS CONSENT to pursue a proper preprocessor directive and NOT use the `#pragma` syntax.
+
+The author deems this to be the best decision.
+
+
+"We want to specify embed as using `#embed [bits-per-element] header-name` rather than `#embed [pp-tokens-for-type] header-name`." (2-way poll.)
+- 10 bits-per-element (Yes)
+- 4 Abstain
+- 2 type-based (no)
+
+This poll will be a bit harder to accommodate properly. Using a _`constant-expression`_ that produces a numeric constant means that the max-length specifier is now ambiguous. The syntax of the directive may need to change to accommodate further exploration.
+
 
 # Introduction
 
@@ -269,7 +306,37 @@ const int please_dont_oom_kill_me[] = {
 This prevents locking compilers in an infinite loop of reading from potentially limitless resources. Note the parameter is a hard upper bound, and not an exact requirement. A resource may expand to 16 elements and not the maximum of 32.
 
 
+### Endianness
 
+> what would happen if you did fread into an int?
+> that's my answer 🙂  
+> – The Cursed Bruja of the Great Sages, Isabella Muerte
+
+It's a simple answer. A compiler-magic based implementation like the ones provided below have no endianness issues, but an implementation which writes out integer literals may need to be careful of host vs. target endianness to make sure it serializes correctly to the final binary. As a litmus test, the following code must pass:
+
+```cpp
+#include <limit.h>
+#include <string.h>
+#include <assert.h>
+
+int main() {
+     const unsigned char foo0[] = {
+#embed "foo.bin"
+     };
+     const int foo1[] = {
+#embed_bits INT_WIDTH "foo.bin"
+     };
+     const unsigned int foo2[] = {
+#embed_as unsigned int "foo.bin"
+     };
+
+     assert(memcmp(&foo0[0], &foo1[0], sizeof(foo0)) == 0);
+     assert(memcmp(&foo1[0], &foo2[0], sizeof(foo0)) == 0);
+     assert(memcmp(&foo0[0], &foo2[0], sizeof(foo0)) == 0);
+
+     return 0;
+}
+```
 
 # Implementation Experience
 
