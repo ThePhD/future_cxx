@@ -312,7 +312,7 @@ This prevents locking compilers in an infinite loop of reading from potentially 
 > that's my answer 🙂  
 > – The Cursed Bruja of the Great Sages, Isabella Muerte
 
-It's a simple answer. A compiler-magic based implementation like the ones provided below have no endianness issues, but an implementation which writes out integer literals may need to be careful of host vs. target endianness to make sure it serializes correctly to the final binary. As a litmus test, the following code must pass:
+It's a simple answer. A compiler-magic based implementation like the ones provided below have no endianness issues, but an implementation which writes out integer literals may need to be careful of host vs. target endianness to make sure it serializes correctly to the final binary. As a litmus test, the following code -- given a suitable sized `"foo.bin"` resource -- must pass:
 
 ```cpp
 #include <limit.h>
@@ -320,23 +320,70 @@ It's a simple answer. A compiler-magic based implementation like the ones provid
 #include <assert.h>
 
 int main() {
-     const unsigned char foo0[] = {
+	const unsigned char foo0[] = {
 #embed "foo.bin"
-     };
-     const int foo1[] = {
-#embed_bits INT_WIDTH "foo.bin"
-     };
-     const unsigned int foo2[] = {
+	};
+	const int foo1[] = {
+#embed int "foo.bin"
+	};
+	const unsigned int foo2[] = {
 #embed unsigned int "foo.bin"
-     };
+	};
+	// additionally, if the implementation supports
+	// extended types (see the "Type Flexibility" section)
+	const float foo2[] = {
+#embed float "foo.bin"
+	};
 
-     assert(memcmp(&foo0[0], &foo1[0], sizeof(foo0)) == 0);
-     assert(memcmp(&foo1[0], &foo2[0], sizeof(foo0)) == 0);
-     assert(memcmp(&foo0[0], &foo2[0], sizeof(foo0)) == 0);
+	assert(memcmp(&foo0[0], &foo1[0], sizeof(foo0)) == 0);
+	assert(memcmp(&foo1[0], &foo2[0], sizeof(foo0)) == 0);
+	assert(memcmp(&foo0[0], &foo2[0], sizeof(foo0)) == 0);
+	// additionally, if the implementation supports
+	// extended types (see the "Type Flexibility" section)
+	assert(memcmp(&foo0[0], &foo3[0], sizeof(foo0)) == 0);
 
-     return 0;
+	return 0;
 }
 ```
+
+This implies that the bits are always overlaid into the elements properly. Note that this does not imply the following must pass:
+
+```cpp
+#include <limit.h>
+#include <string.h>
+#include <assert.h>
+
+int main() {
+	const unsigned char foo0[] = {
+#embed int "foo.bin"
+	};
+	const int foo1[] = {
+#embed unsigned char "foo.bin"
+	};
+	const unsigned long long foo2[] = {
+#embed int "foo.bin"
+	};
+	// additionally, if the implementation supports
+	// extended types (see the "Type Flexibility" section)
+	const int foo2[] = {
+#embed float "foo.bin"
+	};
+
+	// NONE of these are guaranteed!
+	assert(memcmp(&foo0[0], &foo1[0], sizeof(foo0)) == 0);
+	assert(memcmp(&foo1[0], &foo2[0], sizeof(foo0)) == 0);
+	assert(memcmp(&foo0[0], &foo2[0], sizeof(foo0)) == 0);
+	// additionally, if the implementation supports
+	// extended types (see the "Type Flexibility" section)
+	assert(memcmp(&foo0[0], &foo3[0], sizeof(foo0)) == 0);
+
+	return 0;
+}
+```
+
+This may truncate elements (the initialization of `foo0`), put the integer value into a larger type (the initialization of `foo1`), underflow the target representation (the initialization of `foo2`), or simply fail to compile (the implementation-defined `foo2` can reject initializing `int`s from `float`s). We see this as okay: the user has deliberately not matched the type being initialized with the type being viewed with the directive.
+
+
 
 # Implementation Experience
 
@@ -348,10 +395,7 @@ An implementation of this functionality is available in branches of both GCC and
 
 # Alternative Syntax
 
-There has been concerns expressed about the form of this feature -- whether or not it could be a preprocessor directive itself, or a magical macro introduced in the language, or a special pragma. Each of these has their own specific syntax tradeoffs. The primary choice and the one advocated for is the syntax as shown above: a plain preprocessor directive analogous to `#include`. It is written as `#embed`, but other names (previously recommended by the Community) are `#include_bin`, `#include_binary`, `#incbin`, or `#load_binary`.
-
-The syntax can also be adjusted. A preprocessor directive is preferred because that allows it to be findable by the end of Preprocessor.
-
+There were previous concerns about the syntax. WG14 voted to keep the syntax as a plain `#embed` preprocessor directive.
 
 
 
@@ -381,15 +425,14 @@ Add another _control-line_ production and a new _parenthesized-non-header-digits
 
 <blockquote>
 <p><i>control-line:</i><br/>
-&emsp; &emsp; &emsp; <i>...</i><br/>
-&emsp; &emsp; &emsp;<ins><b>&num;</b> <b>embed</b> <i>pp-tokens</i> <i>new-line</i></ins>
+&emsp; &emsp; <i>...</i><br/>
+&emsp; &emsp;<ins><b>&num;</b> <b>embed</b> <i>pp-tokens</i> <i>new-line</i></ins>
 </p>
 <p>
 <ins>
 <i>parenthesized-non-header-digits:</i><br/>
-&emsp; &emsp; &emsp;any <i>pp-token</i> except any <i>integer-constant</i>, <b>&quot;</b>, <b>'</b>,
-<b>(</b>, or <b>&gt;</b><br/>
-&emsp; &emsp; &emsp;<b>(</b> <i>pp-tokens</i> <b>)</b>
+&emsp; &emsp;any <i>pp-tokens</i> except any <i>integer-constant</i>, <b>&quot;</b>, <b>'</b>, <b>(</b>, or <b>&gt;</b><br/>
+&emsp; &emsp;<b>(</b> <i>pp-tokens</i> <b>)</b>
 </ins>
 </p>
 </blockquote>
@@ -426,11 +469,11 @@ Add a new sub clause as §6.10.� to §6.10 Preprocessing Directives, preferabl
 
 <p>with the identical contained <i>q-char-sequence</i> (including &gt; characters, if any) from the original directive.</p>
 
-<p><sup>4</sup> If <i>parenthesized-non-header-digits</i> is not specified, then the directive behaves as if the tokens of the <i>parenthesized-non-header-digits</i> are <code>unsigned char</code>. If a <i>parenthesized-non-header-digits</i> is specified, outer parentheses must be present if it contains one or more of <code>"</code>, <code>)</code>, <code>&lt;</code> or <code>&gt;</code>.</p>
+<p><sup>4</sup> If <i>parenthesized-non-header-digits</i> is not specified, then the directive behaves as if the tokens of the <i>parenthesized-non-header-digits</i> are <code>unsigned char</code>.</p>
 
 <p><sup>5</sup> If either form of the <b><code>&num;embed</code></b> directive specified is not preceded by an <b><code>&num;include</code></b> directive for <code>&lt;limits.h&gt;</code>, then an implementation may issue a diagnostic.</p>
 
-<p><sup>6</sup> Let the <i>parenthesized-non-header</i> tokens be <code>T</code>. Either form of the <b><code>&num;embed</code></b> directive specified previously, for the following token sequences of <code>T</code>, behave as if it were expanded to an <i>initializer-list</i>. Specifically, each element of the <i>initializer-list</i> behaves as if characters from the resource were read into an array of <code>unsigned char</code> and the array was overlaid into a <code>T</code> to produce an <i>integer constant expression</i> of exactly <code>ELEMENT_WIDTH</code> bits and must have a value between <code>ELEMENT_MIN</code> and <code>ELEMENT_MAX</code>, inclusive. The values for <code>ELEMENT_WIDTH</code>, <code>ELEMENT_MIN</code>, and <code>ELEMENT_MAX</code> correspond to <code>T</code> as follows:</p>
+<p><sup>6</sup> Let the <i>parenthesized-non-header-digits</i> tokens be <code>T</code>. Either form of the <b><code>&num;embed</code></b> directive specified previously, for the following token sequences of <code>T</code>, behave as if it were expanded to an <i>initializer-list</i>. Specifically, each element of the <i>initializer-list</i> behaves as if the characters from the resource were read and mapped in an implementation-defined manner to a sequence of bits. The sequence of bits is used to produce an <i>integer constant expression</i> of exactly <code>ELEMENT_WIDTH</code> bits and must have a value between <code>ELEMENT_MIN</code> and <code>ELEMENT_MAX</code>, inclusive. The values for <code>ELEMENT_WIDTH</code>, <code>ELEMENT_MIN</code>, and <code>ELEMENT_MAX</code> correspond to <code>T</code> as follows:</p>
 
 <dl>
 <dd>— If <code>T</code> is <code>char</code>, <code>CHAR_WIDTH</code>, and <code>CHAR_MIN</code>, and <code>CHAR_MAX</code> are the values, respectively.</dd>
@@ -639,8 +682,9 @@ Add a new _control-line_ production to §15.1 Preamble [**cpp.pre**] and a new g
 <p>
 <p>...</p>
 <ins>
-<i>parenthesized-non-header</i>:<br/>
-&emsp; &emsp; (<sub>opt</sub> <i>pp-tokens</i> <sub>opt</sub>)
+<i>parenthesized-non-header-digits</i>:<br/>
+&emsp; &emsp; any <i>pp-tokens</i> except any <i>integer-constant</i>, <b>&quot;</b>, <b>'</b>, <b>(</b>, or <b>&gt;</b><br/>
+&emsp; &emsp; <b>(</b> <i>pp-tokens</i> <b>)</b>
 </ins>
 </p>
 </blockquote>
@@ -657,24 +701,24 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 <p><sup>2</sup> A preprocessing directive of the form</p>
 
 <p>
-&emsp; &emsp; <code>&num; embed</code> <i>parenthesized-non-header<sub>opt</sub></i> <code>&lt;</code> <i>h-char-sequence</i> <code>&gt;</code><i>constant-expression<sub>opt</sub></i>  <i>new-line</i>
+&emsp; &emsp; <code>&num; embed</code> <i>parenthesized-non-header-digits<sub>opt</sub></i> <code>&lt;</code> <i>h-char-sequence</i> <code>&gt;</code><i>constant-expression<sub>opt</sub></i>  <i>new-line</i>
 </p>
 
 <p>or</p>
 
 <p>
-&emsp; &emsp; <code>&num; embed</code> <i>parenthesized-non-header<sub>opt</sub></i> <code>&quot;</code> <i>q-char-sequence</i> <code>&quot;</code> <i>constant-expression<sub>opt</sub></i> <i>new-line</i>
+&emsp; &emsp; <code>&num; embed</code> <i>parenthesized-non-header-digits<sub>opt</sub></i> <code>&quot;</code> <i>q-char-sequence</i> <code>&quot;</code> <i>constant-expression<sub>opt</sub></i> <i>new-line</i>
 </p>
 
 <p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&lt;</code> and <code>&gt;</code> or the <code>&quot;</code> and <code>&quot;</code> delimiters. How the places are specified or the resource identified is implementation-defined.</p>
 
-<p><sup>3</sup> If there is no <i>parenthesized-non-header</i>, then the directive behaves as if the tokens of the <i>parenthesized-non-header</i> are <code>unsigned char</code>. If a <i>parenthesized-non-header</i> is specified, outer parenthesis must be present if the <i>pp-token</i>s contain one or more of <code>"</code>, <code>&lt;</code> or <code>&gt;</code>.</p>
+<p><sup>3</sup> If there is no <i>parenthesized-non-header-digits</i>, then the directive behaves as if the tokens of the <i>parenthesized-non-header-digits</i> are <code>unsigned char</code>.</p>
 
 <p><sup>4</sup> If either form of the <b><code>&num;embed</code></b> directive specified is not preceded by an <b><code>&num;include</code></b> directive for <code>&lt;climits&gt;</code>, then an implementation may issue a diagnostic.</p>
 
 <p><sup>5</sup> Let <code>ELEMENT_WIDTH</code>, <code>ELEMENT_MIN</code>, and <code>ELEMENT_MAX</code> be <i>constant-expressions</i> suitable for use in a <code>&num;if</code> preprocessing directive as defined below.</p>
 
-<p><sup>6</sup> Let the <i>parenthesized-non-header</i> tokens be <code>T</code>. Either form of the <b><code>&num;embed</code></b> directive specified previously, for the following token sequences of <code>T</code>, behave as if it were expanded to an <i>initializer-list</i>. Specifically, each element of the <i>initializer-list</i> behaves as if characters from the resource were read into an array of <code>unsigned char</code> and the array was overlaid into a <code>T</code> to produce an <i>integer constant expression</i> of exactly <code>ELEMENT_WIDTH</code> bits and must have a value between <code>ELEMENT_MIN</code> and <code>ELEMENT_MAX</code>, inclusive. The values for <code>ELEMENT_WIDTH</code>, <code>ELEMENT_MIN</code>, and <code>ELEMENT_MAX</code> correspond to <code>T</code> as follows:</p>
+<p><sup>6</sup> Let the <i>parenthesized-non-header-digits</i> tokens be <code>T</code>. Either form of the <b><code>&num;embed</code></b> directive specified previously, for the following token sequences of <code>T</code>, behave as if it were expanded to an <i>initializer-list</i>. Specifically, each element of the <i>initializer-list</i> behaves as if the characters from the resource were read and mapped in an implementation-defined manner to a sequence of bits. The sequence of bits is used to produce an <i>integer constant expression</i> of exactly <code>ELEMENT_WIDTH</code> bits and must have a value between <code>ELEMENT_MIN</code> and <code>ELEMENT_MAX</code>, inclusive. The values for <code>ELEMENT_WIDTH</code>, <code>ELEMENT_MIN</code>, and <code>ELEMENT_MAX</code> correspond to <code>T</code> as follows:</p>
 
 <dl>
 <dd>— If <code>T</code> is <code>char</code>, <code>CHAR_WIDTH</code>, and <code>CHAR_MIN</code>, and <code>CHAR_MAX</code> are the values, respectively.</dd>
@@ -700,9 +744,9 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 <dd>— Otherwise, if <code>T</code> is <code>unsigned long long</code>, then <code>ULLONG_WIDTH</code>, <code>0</code> and <code>ULLONG_MAX</code>, are the values respectively.</dd>
 </dl>
 
-<p><sup>7</sup> Otherwise, if <code>T</code> is not one of the above sequence of tokens, then it is implementation-defined whether or not the directive is supported. If it is, then the <i>initializer-list</i> represents an implementation-defined mapping from the contents of the resource to the elements of the <i>initializer-list</i>. If the resource's contents or <code>T</code> does not denote a trivial type (6.8 [basic.types]), then the program is ill-formed.</p>
+<p><sup>7</sup> Otherwise, if <code>T</code> is not one of the above sequence of tokens, then it is implementation-defined whether or not the directive is supported. If it is, then the <i>initializer-list</i> represents an implementation-defined mapping from the contents of the resource to the elements of the <i>initializer-list</i>. If the <code>T</code> does not denote a trivial type (6.8 [basic.types]), then the program is ill-formed.</p>
 
-<p><sup>8</sup> If a <i>constant-expression</i> is specified, it shall result in an unsigned integral constant and be suitable for use in an <code><b>&num;</b>if</code> preprocessing directive. The mapping from the contents of the resource to the elements of the <i>initializer-list</i> shall contain up to <i>constant-expression</i> elements according to the above. The implementation shall issue a diagnostic if the implementation-defined bit size is not a multiple of the <code>ELEMENT_WIDTH</code>; and, the implementation-defined bit size is less than <i>constant-expression</i> multiplied by <code>ELEMENT_WIDTH</code>. The program is well-formed if the implementation-defined bit size is greater than or equal to <i>constant-expression</i> multiplied by <code>ELEMENT_WIDTH</code>.</p>
+<p><sup>8</sup> If a <i>constant-expression</i> is specified, it shall result in an unsigned integral constant and be suitable for use in an <code><b>&num;</b>if</code> preprocessing directive. The mapping from the contents of the resource to the elements of the <i>initializer-list</i> shall contain up to <i>constant-expression</i> elements according to the above. If the implementation-defined bit size is not a multiple of the <code>ELEMENT_WIDTH</code>; and, the implementation-defined bit size is less than <i>constant-expression</i> multiplied by <code>ELEMENT_WIDTH</code>, then the program is ill-formed. The program is well-formed if the implementation-defined bit size is greater than or equal to <i>constant-expression</i> multiplied by <code>ELEMENT_WIDTH</code>.</p>
 
 <p><sup>9</sup> If a <i>constant-expression</i> is not specified, the implementation shall issue a diagnostic if the implementation-defined bit size is not a multiple of the <code>ELEMENT_WIDTH</code>.</p>
 </ins>
