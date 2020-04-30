@@ -331,7 +331,7 @@ int main() {
 	};
 	// additionally, if the implementation supports
 	// extended types (see the "Type Flexibility" section)
-	const float foo2[] = {
+	const float foo3[] = {
 #embed float "foo.bin"
 	};
 
