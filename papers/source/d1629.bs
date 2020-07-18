@@ -1,16 +1,16 @@
 <pre class='metadata'>
 Title: Transcoding the 🌐 - Standard Text Encoding
-Shortname: P1629
-Revision: 1
+Shortname: D1629
+Revision: 2
 !Audience: ?
-Status: P
+Status: D
 Group: WG21
 URL: 
 !Latest: <a href="https://thephd.github.io/vendor/future_cxx/papers/d1629.html">https://thephd.github.io/vendor/future_cxx/papers/d1629.html</a>
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Shepherd (Shepherd's Oasis), shepherd@soasis.org
-Date: 2020-03-02
+Date: 2020-07-18
 Markup Shorthands: markdown yes, biblio yes, markup yes
 Abstract: The standard lacks facilities for transcoding text from one form into another, leaving a serious barrier to entry for individuals who want to process text in any sensible manner in the Standard Library. This paper explores and proposes a static interface for encoding that can be used and built upon for the creation of higher-level abstractions.
 </pre>
@@ -31,7 +31,7 @@ path: include/wording_style.bs
 ## Revision 1 - March 2<sup>nd</sup>, 2020 ## {#changelog-r1}
 
 	- Thoroughly improve [[#motivation]].
-		- Explicit state goals and non-goals in the [[#motivation-objectives]].
+		- Explicitly state goals and non-goals in the [[#motivation-objectives]].
 	- Rewrite most of paper to more thoroughly explain the API, especially the [[#design-high-level]] section with `validate`, `decode_count`, `encode_count`, and more APIs.
 		- Include drastically improve the explanation for the free functions in [[#design-high-level-free]].
 		- Emphasize the need for ranges in [[#design-high-level-ranges]].
@@ -54,11 +54,13 @@ path: include/wording_style.bs
 
 It's 2020 and Unicode is still barely supported in both the C and C++ standards.
 
-From the POSIX standard requiring a single-byte encoding by default, heavy limitations placed in `codecvt` facets in C and C++, and the utter lack of UTF8/16/32 multi-unit conversion functions by the standard, the programming languages that have shaped the face of development in operating systems, embedded devices and mobile applications has pushed forward a world that is incredibly unfriendly to a world of text beyond ASCII English. Developers frequently roll their own solutions, and almost every major codebase -- from Chrome to Firefox, Qt to Copperspice, and more -- all have their own variations of hand-crafted text processing. With no standard implementation in C++ and libraries split between various third party implementations plus ICU, it is increasingly difficult and error-prone to handle what is the basic means of communication between people on the planet using C++.
+From the POSIX standard requiring a single-byte encoding by default, heavy limitations placed in `codecvt` facets in C and C++, and the utter lack of UTF8/16/32 multi-unit conversion functions by the standard, the programming languages that have shaped the face of development in operating systems, embedded devices and mobile applications has pushed forward a world that is incredibly unfriendly to a world of text beyond ASCII English. Developers frequently roll their own solutions, and almost every major codebase -- from Chrome to Firefox, Qt to Copperspice, and more -- all have their own variations of hand-crafted text processing. With no standard implementation in C++ and libraries split between various third party implementations plus ICU, it is increasingly difficult and error-prone to handle text. This means the basic method of communication between people on the planet and for historical record is difficult when using C++.
 
-This paper aims to explore the design space for both extremely high performing transcoding (encoding and decoding) as well as a flexible one-by-one interface for more careful and meticulous text processing. This proposal arises from industry experience in large codebases and best-practice open source explorations with [[libogonek]], [[icu]], [[boost.text]] and [[text_view]] while also building on the concepts and design choices found in both [[range-v3]] and pre-existing text encoding solutions such as Windows's `WideCharToMultiByte` interfaces, *nix utility iconv, a Fortune 500 company codebase, and more.
+This paper aims to explore the design space for both extremely high performing transcoding (encoding and decoding) as well as a flexible one-by-one interface for more careful and meticulous text processing. This proposal arises from industry experience in large codebases and best-practice open source explorations with [[libogonek]], [[icu]], [[boost.text]] and [[text_view]] while also building on the concepts and design choices found in both [[range-v3]] and pre-existing text encoding solutions such as Windows's `WideCharToMultiByte` interfaces, *nix utility [[iconv]], a Fortune 500 company codebase, and more.
 
-The ultimate goal is to allow an interface that is correct by default but capable of being fast both by Standard Library implementer efforts but also program overridable ADL free functions. It will produce interfaces for encoding, decoding, and transcoding in eager and lazy forms.
+The ultimate goal is to allow an interface that is correct by default but capable of being fast both by Standard Library implementer efforts but also program overridable customization points. It will produce interfaces for encoding, decoding, and transcoding in eager and lazy forms.
+
+
 
 ## The Basic Ideas ## {#motivation-basic}
 
@@ -204,9 +206,25 @@ This paper directly enables such a use case.
 
 Text in the Standard is a desert wasteland.
 
-After pulling `std::wstring_convert` from the language ([[sol2-wstring_convert|for a very good reason, yes]]), users were left with no proper utilities to convert Unicode to Unicode, or convert execution / wide execution text to Unicode and back. People reach out for ICU, but the API -- while extremely fast -- is opaque and not the friendliest to use. `iconv` is not easy to build everywhere, and applications ages ago have shipped all manner of ad-hoc solutions (or not) to the text problem without working together or sharing their libraries with the whole ecosystem. As text -- and particularly, the encoding of text -- stands as one of the greatest barriers to Systems Programming languages being more diverse and friendly, there is a strong obligation to provide a standard solution that is capable of lasting the next 40 years unmodified.
+After pulling `std::wstring_convert` from the language ([[sol2-wstring-convert|for a very good reason, yes]]), users were left with no proper utilities to convert Unicode to Unicode, or convert execution / wide execution text to Unicode and back. People reach out for ICU, but the API -- while extremely fast -- is opaque and not the friendliest to use. [[iconv]] is not easy to build everywhere and does not have extensibility. Applications ages ago have shipped all manner of ad-hoc solutions (or not) to the text problem without working together or sharing their libraries with the whole ecosystem. As text -- and particularly, the encoding of text -- stands as one of the greatest barriers to Systems Programming languages being more diverse and friendly, there is a strong obligation to provide a standard solution that is capable of lasting the next 40 years unmodified.
 
-The use cases for text encoding are vast. From: basic processing of user-entered data; sanitization of scripts; domain name protection in browsers; text conversions when working with legacy systems or differing new/Unicode systems; supplying the components that can be successfully used with industry-standard FreeType/Harfbuzz and DirectWrite; talking properly to legacy GDI applications; communicating string data in JSON; receiving market data from the Chinese Exchange in GB18030; To: converting and preserving government data in digital records; handling data generated by logs in a multitude of languages; handling user names without mangling; and hundreds of dozens of other use cases; the need for text practically writes itself.
+The use cases for text encoding are vast. From:
+
+- basic processing of user-entered data;
+- sanitization of scripts
+- domain name protection in browsers;
+- text conversions when working with legacy systems or differing new/Unicode systems;
+- supplying the components that can be successfully used with industry-standard FreeType/Harfbuzz and DirectWrite
+- talking properly to legacy GDI applications;
+- communicating string data in JSON;
+- receiving market data from the Chinese Exchange in GB18030;
+
+To:
+- converting and preserving government data in digital records;
+- handling data generated by logs in a multitude of languages;
+- handling user names without mangling;
+
+and hundreds of other use cases, the motivating text for text practically writes itself.
 
 
 ## Statement of Objectives ## {#motivation-objectives}
@@ -222,7 +240,7 @@ Part of this proposal is identifying exactly how those needs should be served. T
 - Safety is not optional. Code that performs unsafe operations should require explicit opt-in and easily searchable patterns and names that make it clear the user has made a deliberate choice to open themselves up to vulnerabilities such as Undefined Behavior.
 - Performance is not optional, and [correctness isn't a tender suggestion achievable with insane workarounds](https://fasterthanli.me/blog/2020/i-want-off-mr-golangs-wild-ride/).
 - Simple function calls should be simple, but if the user wants to pry open the details they should be able to do so incrementally with ease.
-- Nobody has time to reimplement all of iconv, especially the library developers. The interface should allow implementers to substitute a backend for certain encodings that takes advantage of pre-existing Operating System functions, widely-available libraries, or similar functionality.
+- Nobody has time to reimplement all of [[iconv]], especially the library developers. The interface should allow implementers to substitute a backend for certain encodings that takes advantage of pre-existing Operating System functions, widely-available libraries, or similar functionality.
 - Users should be able to do everything implementers can without undue clash between user functionality and implementer internal handling and extensions.
 - Octets -- delivered over the network, from IPC, or similar -- are an important input case that must be handled.
 - The design must be viable for low-memory environments, and prioritize zero allocation if a user cares enough to invest the time into the API with that goal.
@@ -293,7 +311,7 @@ The high-level interfaces must be built on *something*: it cannot be magically w
 There is some boilerplate that needs to be taken care of before building our encoding, decoding, transcoding and similar functionality begins. First and foremost is the error codes and result types that will go in and out of our encoding functions. The error code enumeration is `std::text::encoding_errc`. It lists all the reasons an encoding or decoding operation can fail:
 
 ```cpp
-namespace std { namespace text {
+namespace std::text {
 
 	enum class encoding_errc : int {
 		// just fine
@@ -307,21 +325,13 @@ namespace std { namespace text {
 		insufficient_output_space = 0x03,
 		// sequence can be encoded but resulting
 		// code point is invalid (e.g., encodes a lone surrogate)
-		invalid_output = 0x04,
-		// input contains overlong encoding sequence
-		// (e.g. for utf8)
-		overlong_sequence = 0x05,
-		// leading code unit is wrong
-		invalid_leading_sequence = 0x06,
-		// leading code units were correct, trailing
-		// code units were wrong
-		invalid_trailing_sequence = 0x07
+		invalid_output = 0x04
 	};
 
-}}
+}
 ```
 
-The comments give some small amount of examples about what each one means. The reason 0 is used to signal success is very simple: the next part of the API creates an encoding_error_category class and hooks up the machinery for a `std::error_condition`:
+The comments give some small amount of examples about what each one means. The reason 0 is used to signal success is very simple: the next part of the API creates an `encoding_error_category` class and hooks up the machinery for a `std::error_condition`:
 
 ```cpp
 namespace std {
@@ -346,19 +356,19 @@ This allows the creation of a `std::error_condition`, which is used as an all-en
 ### Result Types ### {#design-low-level-results}
 
 
-The result types are the glue that help users who use the low level interface loop through their text properly. It returns updated ranges of both the input and output to indicate how far things have been moved along, on top of an error_code and whether or not the result came from an error being handled:
+The result types are the glue that help users who use the low level interface loop through their text properly. It returns updated ranges of both the input and output to indicate how far things have been moved along, on top of an `error_code` and whether or not the result came from an error being handled (see below about error handling):
 
 ```cpp
-namespace std { namespace text {
+namespace std::text {
 
 	template <typename Input, typename Output, typename State>
 	class encode_result {
-		Input input;
-		Output output;
-		State& state;
 		encoding_errc error_code;
 		bool handled_error;
-
+		State& state;
+		Output output;
+		Input input;
+		
 		template <typename InRange, typename OutRange, typename EncodingState>
 		constexpr encode_result(InRange&& input, OutRange&& output,
 			EncodingState&& state, encoding_errc error_code = encoding_errc::ok);
@@ -372,12 +382,12 @@ namespace std { namespace text {
 
 	template <typename Input, typename Output, typename State>
 	class decode_result {
-		Input input;
-		Output output;
-		State& state;
 		encoding_errc error_code;
 		bool handled_error;
-
+		State& state;
+		Output output;
+		Input input;
+		
 		template <typename InRange, typename OutRange, typename EncodingState>
 		constexpr decode_result(InRange&& input, OutRange&& output,
 			EncodingState&& state, encoding_errc error_code = encoding_errc::ok);
@@ -391,12 +401,12 @@ namespace std { namespace text {
 
 	template <typename Input, typename Output, typename FromState, typename ToState>
 	class transcode_result {
-		Input input;
-		Output output;
-		FromState& state;
-		ToState& state;
 		encoding_errc error_code;
 		bool handled_error;
+		FromState& state;
+		ToState& state;
+		Output output;
+		Input input;
 
 		template <typename InRange, typename OutRange,
 			typename FromEncodingState, typename ToEncodingState>
@@ -415,9 +425,9 @@ namespace std { namespace text {
 
 	template <typename Input, typename State>
 	struct validate_result {
-		Input input;
 		bool valid;
 		State& state;
+		Input input;
 
 		template <typename ArgInput, typename ArgState>
 		constexpr validate_result(ArgInput&& input, bool is_valid, ArgState&& state);
@@ -425,11 +435,11 @@ namespace std { namespace text {
 
 	template <typename Input, typename State>
 	struct count_result {
-		Input input;
 		size_t count;
-		State& state;
 		encoding_error error_code;
 		bool handled_error;
+		State& state;
+		Input input;
 
 		template <typename ArgInput, typename ArgState>
 		constexpr count_result(ArgInput&& input, size_t count, ArgState&& state,
@@ -440,7 +450,7 @@ namespace std { namespace text {
 			encoding_error error_code, bool handled_error);
 	};
 
-}}
+}
 ```
 
 There is a lot to unpack here. There are two essentially identical structures: `std::text::encode_result` and `std::text::decode_result`. These contain the input range, the output range, a reference to the encoding's current state, the error code and whether or not the error handler was invoked. The `bool error_handled` is important because some error handlers may change the `error_code` member to `std::text::encoding_errc::ok`, indicating that things are fine (e.g., a replacement character was successfully inserted into the output stream to replace some bad input).
@@ -457,25 +467,25 @@ The decoding result and encoding result types both return the input and output r
 
 #### Error Handling: Allow All The Options #### {#design-low-level-results-error_handler}
 
-This is a low-level interface. As such, accommodating different error handling strategies is necessary. There are several ways to report errors used in both the C and C++ standard libraries, from throwing errors, to `error_code` out parameters, to integral return values and even complex return structures. Choosing a scheme here is difficult given the large breadth and depth of error handling history in C++, and while the standard library shows a clear bias towards throwing exceptions it would not be prudent to throw all the time. Requiring exceptions may exclude hard and soft real-time programming environments wherein these encoding structures will be needed. Exceptions also have an intrinsic problem in this domain, as described a little bit below in this section.
+This is a low-level interface. As such, accommodating different error handling strategies is necessary. There are several ways to report errors used in both the C and C++ standard libraries, from throwing errors, to `error_code` out parameters, to integral return values and even complex return structures. Choosing a scheme here is difficult given the large breadth and depth of error handling history in C++. While the standard library shows a clear bias towards throwing exceptions, it would not be prudent to throw all the time. Requiring exceptions may exclude hard and soft real-time programming environments wherein these encoding structures will be needed. Exceptions also have an intrinsic problem in this domain, as described a little bit below in this section.
 
 To accommodate the wide breadth of C++ programming environments and ecosystems, error reporting will be done through an error handler, which can be any type of callable that matches the desired interface. The standard will provide 4 of these error handlers:
 
 ```cpp
-namespace std { namespace text {
+namespace std::text {
 
 	class replacement_handler;
 	class throw_handler;
 	class assume_valid_handler;
 	class default_handler;
 
-}}
+}
 ```
 
 The interface for an error handler looks like the below example error handler:
 
 ```cpp
-namespace std { namespace text {
+namespace std::text {
 
 	class example_error_handler {
 		template <typename Encoding, typename InputRange,
@@ -499,7 +509,7 @@ namespace std { namespace text {
 		}
 	};
 
-}}
+}
 ```
 
 The specification here is a value-based one. `encoding` is a reference to the encoding which threw the error. `current_result` is passed to the error handler and it represents an `encode` or `decode` function's current progress. The `result` types provide the current input range, the current output range, a reference to the current state, and the type of error encountered according to the `std::text::encoding_errc`. Finally, the `progress` object is a `std::contiguous_range` passed from the encoder with the code points or code units already read from the input range. (This is important for e.g. reading from one-way iterators like `istream_iterator`, where it is impossible to go back and recover information consumed by the algorithm.) The error handler is then responsible for performing any modifications it wants to the result type, before returning the modified result to be propagated back by the encoding interface.
@@ -530,19 +540,19 @@ If successful, the error code on the result will be corrected to say "everything
 
 For performance reasons and flexibility, the error callable must have a way to ensure that the user and implementation can agree on whether or not Undefined Behavior is invoked by assuming that the text is valid. [[libogonek]] made an object of type `assume_valid_t`. This paper provides the same here: an error handler of `assume_valid_handler` means that the implementation will eliminate all of its checks and subsequent calls to the error handling interface. A user must provide the `assume_valid_handler` to achieve this behavior: it will never be the default behavior because it is error-prone and dangerous and only to be performed with explicit user consent.
 
-This is notably important: Rust attempted to force that every string constructed ever was valid UTF-8 and rigorously checked this pre- and post-condition. Doing this check was so obscenely expensive that they needed to introduce a new function to `escape(...)` some UTF-8 text so it would not be checked if the user knew the text was in the proper encoding.
+Note: **Lesson Learned!** Rust attempted to force that every string constructed ever was valid UTF-8 and rigorously checked this pre- and post-condition. Doing this check was so obscenely expensive that they needed to introduce a new function to `escape(...)` some UTF-8 text so it would not be checked if the user knew the text was in the proper encoding.
 
 
 ### The Encoding Object ### {#design-low-level-encodings}
 
-It is no great surprise that there is not enough library implementers prepared to standardize the entirety of what the WHATWG specifies in its encoding specification, let alone enough to handle every rogue request for a new encoding object type in C++ Standard. A system must be developed that provides flexibility for the end-user that does not require them writing a paper and getting into a 1-2 year long process of herding a proposal through the notoriously slow Committee, just to have support for encoding X or feature Y. There is also less and less (read: almost none) tolerance for adding whacky extensions to libraries like libstdc++ or libc++, and MSVC has only recently open-sourced (with no appetite for shoveling more semi-abandonware legacy library extensions into their codebase at the time of writing).
+It is no great surprise that there is not enough library implementers prepared to standardize the entirety of what the WHATWG specifies in its encoding specification, let alone enough to handle every rogue request for a new encoding object type in C++ Standard. A system must be developed that provides flexibility for the end-user that does not require them writing a paper and getting into a 1-4 year long process of herding a proposal through the notoriously slow Committee, just to have support for encoding X or feature Y. There is also less and less (read: almost none) tolerance for adding whacky extensions to libraries like libstdc++ or libc++, and MSVC has only recently open-sourced (with no appetite for shoveling more semi-abandonware legacy library extensions into their codebase at the time of writing).
 
 Encoding objects provide flexibility that enable us to consume the entire encoding space without needing to tax the Standard Library. It enables other people to plug into the system and provides the flexibility they need, and only standardize when **interoperability** and **redundant implementation** becomes a burden to the greater C++ ecosystem. This frees up Billy O'Neal, Jonathan Wakely, Louis Dionne, their successors, and the dozens of other standard library contributors and implementers to focus on producing high quality code, rather than scrambling to implementing four or five dozen encodings because one company, somewhere, made an at-the-time-it-seemed-okay choice in 2005 about how to store their text.
 
 Given our result types and error handlers, the interface for the encoding object itself can be defined. Here is the example encoding illustrating the interface:
 
 ```cpp
-namespace std { namespace text {
+namespace std::text {
 
 	// NOTE: exemplary encoding for expository purposes containing all the types
 	class example_locale_encoding {
@@ -557,7 +567,7 @@ namespace std { namespace text {
 		using state = example_state;
 
 		static constexpr size_t max_code_unit_sequence = MB_LEN_MAX;
-		static constexpr size_t max_code_point_sequence = 1;
+		static constexpr size_t max_code_point_sequence = 4;
 
 		// OPTIONAL: member types and variables
 		using is_encoding_injective = std::false_type;
@@ -587,21 +597,26 @@ namespace std { namespace text {
 		constexpr const range_of<code_unit> auto&
 		replacement_code_units() const noexcept;
 	};
-}}
+}
 ```
 
 There are many pieces of this encoding object. Some of them fit the purposes explained above. As an overview, given an `Encoding` type such as `example_locale_encoding`, the following type definitions, static member variables, and functions are required:
 
 - `code_unit` and `code_point` type definitions let us know what an Encoding's inputs and outputs will be from its functions. It also helps us tell if 2 encodings can be transcoded from one another by having at least the `code_point` in common.
 - `state` allows a user to instantiate the type and control any parameters for manipulating stateful or shift-state encodings.
-	- If `is_encoding_self_state_v<Encoding>` is false (the encoding does not name itself as its state type), `encoding_state_t<Encoding>` must be default-constructible and default construction results in the "initial sequence" of processing a string of encoded text.
-	- If `is_encoding_self_state_v<Encoding>` is true (the encoding names itself as its state type), then the encoding may not be default-constructible.
-- `max_code_unit_sequence` and `max_code_point_sequence` represent integral values which inform users of the encoding the necessary size of a buffer to handle at least one full, encoded sequence of code units and one full, decoded sequence of code points. In most cases, `max_code_point_sequence` will be `1`, but there are cases where this is not the case (e.g., the Tamil Standard Code for Information Interchange (TASCII)).
+	- If `is_encoding_self_state_v<Encoding>` is false (the encoding does not name itself as its state type), `encoding_state_t<Encoding>` must be default-constructible and default construction results in the "initial (shift) sequence" of processing a string of encoded text. This is essentially the state of a conversion before any text is processed.
+	- If `is_encoding_self_state_v<Encoding>` is true (the encoding names itself as its state type), then:
+		- the `encoding_state_t<Encoding>` may not be default-constructible; and,
+		- the encoding object must have a member function named `reset_state()`.
+	- Encodings that do not need state are `utf8`, `utf16`, `utf32`, `ascii`, `utf_ebcdic`, and similar and fall under the case where `is_encoding_self_state_v<Encoding>` would be false (and the `state` structure itself would be empty).
+	- Many IBM/Windows code pages, ISO 2022 encodings, and Extended Unix Code (EUC) encodings, regardless of the self-state, will need `state` to process its characters properly. This does not require `is_encoding_self_state_v<Encoding>` to be true.
+	- Encodings where the encoding may point to itself to have additional information like this include run-time, type-erased encodings like `any_encoding`, `one_encoding_of<utf8, utf16, shift_jis, tscii, ...>`. For these run-time erased encodings, `is_encoding_self_state_v<Encoding>` would be true because the encoding has special knowledge that is needed to manage the state properly.
+- `max_code_unit_sequence` and `max_code_point_sequence` represent integral values which inform users of the encoding the necessary size of a buffer to handle at least one full, encoded sequence of code units and one full, decoded sequence of code points. In most cases, `max_code_point_sequence` will be `1`, but there are cases where this is not the case (e.g., the Tamil Standard Code for Information Interchange (TSCII)).
 - `decode` and `encode` are fundamental functions which convert one full unit of complete, indivisible information from one representation to the other. Specifically, `decode` converts from `code_unit`s to `code_point`s, and `encode` converts from `code_point`s to `code_unit`s. `In` is an input range, `Out` is an output range, and `handler` is an error handler as defined in [[#design-low-level-results-error_handler]].
 
 Optionally, some additional type definitions and functions help with safety, error handling (for replacement), and more:
 
-- `is_encoding_injective` and `is_decoding_injective` indicate whether or not the encode or decode operations provide a lossless map from the code_point to code_unit or vice-versa, respectively. This is important when using high-level conversion facilities: [[#design-high-level-safety|compile-time diagnostics]] can be issued for conversions that are lossy. This ensures that users who do lossy conversions must specify an `error_handler` from the standard or one of their own making and know what they are getting into with bad encodings.
+- `is_encoding_injective` and `is_decoding_injective` indicate whether or not the encode or decode operations provide a lossless map from the code_point to code_unit or vice-versa, respectively. This is important when using high-level conversion facilities: [[#design-high-level-safety|compile-time diagnostics]] can be issued for conversions that are lossy. This ensures that users who do lossy conversions must specify an `error_handler` from the standard, or one of their own making, and know what they are getting into data loss territory.
 - `replacement_code_points` is a function that returns a range to be entered into the output if an error occurs during a `decode` call and the error handler used is the `std::text::default_handler` or `std::text::replacement_handler`. This provides encodings a simple way to plug in replacement code points that are not the same as the default replacement character used is, which is `\uFFFD` (�). This can be defined to be an empty range (not recommended but possible).
 - `replacement_code_units` is a function that returns a range to be entered into the output if an error occurs during an `encode` call and the error handler used is the `std::text::default_handler` or `std::text::replacement_handler`. Note that not all encodings can handle the entirety of the Unicode Code Point space, let alone `\uFFFD` (�). This can be defined to return an empty range (not recommended, but possible).
 
@@ -612,7 +627,7 @@ The primary reason for the standard to provide an encoding is to ensure that it 
 ```cpp
 // header: <encoding>
 
-namespace std { namespace text {
+namespace std::text {
 
 	using unicode_code_point = char32_t;
 	class unicode_scalar_value;
@@ -638,7 +653,7 @@ namespace std { namespace text {
 	class narrow_execution;
 	class wide_execution;
 
-}}
+}
 ```
 
 All of `ascii`, `utf8`, `utf16`, `utf32`, `narrow_literal`, and `wide_literal` correspond directly and obviously to what they name. These six encodings are also `constexpr`-capable encodings in that they can be called at compile-time and used inside of contexts with other `constexpr` functions, such as within `static_assert`s.
@@ -656,7 +671,7 @@ There are many variants of encodings like UTF8 and UTF16. These include [[wtf8]]
 More pressingly, there is a wide body of code that operates with `char` as the code unit for their UTF8 encodings. This is also subtly wrong, because on a handful of systems `char` is not unsigned, but signed. Math and bit characteristics for these types are wrong for the typical operations performed in UTF8 encoders and decoders (and many people -- including Markus Scherer that spends a lot of time with ICU -- just wish `char` was unsigned since it would have saved a lot of time from bugs). On one hand, providing variants that allow someone to pick something like the code unit for UTF16 or UTF8 would make it easier to have text types which play nice with the Windows APIs or existing code bases. The interface would look something like this...
 
 ```cpp
-namespace std { namespace text {
+namespace std::text {
 
 	template <typename CharT, bool encode_null, bool encode_lone_surrogates>
 	class basic_utf8;
@@ -668,7 +683,7 @@ namespace std { namespace text {
 
 	using utf16 = basic_utf8<char16_t, false>;
 
-}}
+}
 ```
 
 And externally, libraries and applications could add their own using statements and type definitions for the purposes of internal interoperation:
@@ -694,14 +709,14 @@ Unicode specifies what are called Encoding Schemes for the encodings whose code 
 ```cpp
 // header: <encoding>
 
-namespace std { namespace text {
+namespace std::text {
 
 	template <typename Encoding,
 		std::endian endianness = std::endian::native,
 		typename Byte = std::byte>
 	class encoding_scheme;
 
-}}
+}
 ```
 
 This is a transformative encoding type that takes the source endianness and translates it to the native endianness. It has an identical interface to the `Encoding` type passed in, with the caveat that the `code_unit` member type is the same as `Byte`. The `Byte` type being configurable important because there are many interfaces which interoperate using `std::byte`, `unsigned char`, and `char` in the ecosystem. Furthermore, others have realized they can get better performance from their code by avoiding aliasing types altogether and using `enum octet : unsigned char {};` with the necessary definitions to make it usable.
@@ -712,7 +727,7 @@ A few SG16 members have frequently advocated that the base inputs and outputs fo
 
 Advisement: Writing mostly-duplicate encoding object types for `utf16_be`, `utf16_le`, and other such shenanigans is a thorough and fundamental waste of everyone's time.
 
-This direction is far less boilerplate, and has also already seen implementation experience in [[libogonek]]'s [[libogonek-encoding_scheme]] type. Users have not complained. It has also proved to be implementable by simply decomposing the original input/output ranges into their iterators, and wrapping said iterators with a `__detail::byte_iterator<OriginalIterator>`. It has worked well.
+Note: **Lesson Learned!** This direction is far less boilerplate, and has also already seen implementation experience in [[libogonek]]'s [[libogonek-encoding_scheme]] type. Users have not complained. It has also proved to be implementable by simply decomposing the original input/output ranges into their iterators, and wrapping said iterators with a `__detail::byte_iterator<OriginalIterator>`. It has worked well.
 
 #### Default Encodings #### {#design-low-level-encodings-default}
 
@@ -721,13 +736,13 @@ For interactions with encodings, there are times when a default encoding may be 
 ```cpp
 // header: <encoding>
 
-namespace std { namespace text {
+namespace std::text {
 	template <typename T>
 	using default_code_unit_encoding_t = /* ... */;
 
 	template <typename T>
 	using default_code_point_encoding_t = /* ... */;
-}}
+}
 ```
 
 The implementation for the standard will attempt to select one of the following, or fail, for `default_code_unit_encoding_t`:
@@ -751,16 +766,18 @@ For `default_code_point_encoding_t`:
 Stateful objects are good for encapsulation, reuse and transportation. They have been proven in many APIs both C and C++ to provide a good, reentrant API with all relevant details captured on the (sometimes opaque) object itself. After careful evaluation, stateful parameters rather than a wholly stateful object for the function calls in encoding and decoding types are a better choice for this low-level interface. The main and important benefits for having the state be passed to the encoding / decoding function calls as a parameter are that it:
 
 - maintains that encoding objects can be cheap to construct, copy and move;
-- improves the general reusability of encoding objects by allowing state to be massaged into certain configurations by users;
-- and, allows users to set the state in a public way without having to prescribe a specific API for all encoders to do that.
+- improves the general reusability of encoding objects by allowing state to be massaged into certain configurations by users; and,
+- allows users to set the state in a public way without having to prescribe a specific API for all encoders to do that.
 
 The reason for keeping encoding types cheap is that they will be constructed, copied, and moved a lot, especially in the face of the ranges that SG16 is going to be putting a lot of work into (`std::text::text_view<View, Encoding, ...>` in a future paper, `normalization_view<View, NormalizationForm>` in a future paper, `decode_view<...>/encode_view<...>/transcode_view<...>` in [[#design-high-level-ranges|this paper]]). Ranges require that they can be constructed in (amortized) constant time; this change allows shifting the construction for what may be potentially expensive state to other places by un-bundling them from `Encoding` object construction.
 
-Consider the case of execution encoding character sets today, which often defer to the current locale. Locale is inherently expensive to construct and use: if the standard has to have an encoding that grabs or creates a `codecvt` or `locale` member, there will be an immediate loss of a large portion of users over the performance drag during construction of higher-level abstractions that rely on the encoding. It is also notable that this is the same [[sol2-wstring_convert|mistake `std::wstring_convert` shipped with]] and is one of the largest contributing reasons to its lack of use and subsequent deprecation (on top of its poor implementation in almost every standard library, from the VC++ standard library to libc++).
+Consider the case of execution encoding character sets today, which often defer to the current locale. Locale is inherently expensive to construct and use: if the standard has to have an encoding that grabs or creates a `codecvt` or `locale` member, there will be an immediate loss of a large portion of users over the performance drag during construction of higher-level abstractions that rely on the encoding. It is also notable that this is the same [[sol2-wstring-convert|mistake std::wstring_convert shipped with]] and is one of the largest contributing reasons to its lack of use and subsequent deprecation (on top of its poor implementation in almost every standard library, from the VC++ standard library to libc++).
 
-In contrast, consider having an explicit parameter. At the cost of making a low-level interface take one more argument, the state can be paid for once and reused in many separate places, allowing a user to front-load the state's expenses up-front. It also allows the users to set or get the locale ahead of time and reuse it consistently. It also allows for encoding or decoding operations to be reused or restart in the cases of interruptible or incomplete streams, such as network reading or I/O buffering. These are potent use cases wherein such a design decision becomes very helpful.
+In contrast, consider having an explicit parameter. At the cost of making a low-level interface take one more argument, the state can be paid for once and reused in many separate places, allowing a user to front-load the state's expenses up-front. It also allows the users to set or get the locale ahead of time and reuse it consistently. Encoding or decoding operations may be reused or restart in the cases of interruptible or incomplete streams, such as network reading or I/O buffering. These are potent use cases wherein such a design decision becomes very helpful.
 
-Finally, this paradigm makes it far more obvious to the end user when the state is inseparable from the encoding object itself. This is the case with a theoretical `any_encoding` and `variant_encoding<Encoding0, Encoding1, ..., EncodingN>`. The necessary state cannot be separated from the encoding object itself: that information is secret in the encoding. A full video exploration of the space can be [found here](https://youtu.be/FQHofyOgQtM?t=1599). In short: there must be a way to ensure that a user can create an encoding that has state that is erased within the current compile-time framework. This is how we afford those encodings the ability to work without imposing undue burden on the entire system. It is easy to check if the `encoding_state_t<Encoding>` type is the same as the `Encoding` type, and if that is the case make slight adjustments.
+By having an explicitly presented and controllable state parameter, there is room for a quality of implementation that does not rely on global variables or other shenanigans that may get in the way of multithreaded code. It is all done in the `state` type's constructor, and reusable therein; this makes it easy to prevent (default) construction, copy, or move of the encoding object in low-level contexts to trigger unsafe and dangerous operations. Maintaining that trust with end users who have been repeatedly let down by locale's behavior is very important for a current generation encoding standard library.
+
+Finally, this paradigm makes it far more obvious to the end user when the state is inseparable from the encoding object itself. This is the case with the theoretical `any_encoding` and `variant_encoding<Encoding0, Encoding1, ..., EncodingN>` types. The necessary state cannot be separated from the encoding object itself: that information is secret in the encoding (because it is erased behind a run-time barrier). A full video exploration of the space can be [found here](https://youtu.be/FQHofyOgQtM?t=1599). In short: there must be a way to ensure that a user can create an encoding that has state that is erased within the current compile-time framework. This is how we afford those encodings the ability to work without imposing undue burden on the entire system. It is easy to check if the `encoding_state_t<Encoding>` type is the same as the `Encoding` type, and if that is the case make slight adjustments.
 
 
 
@@ -834,7 +851,7 @@ The surface of the `decode` API is as follows:
 ```cpp
 // header: <encoding>
 
-namespace std { namespace text {
+namespace std::text {
 
 	template <typename Input, typename Output, typename Encoding,
 		typename State, typename ErrorHandler>
@@ -869,7 +886,7 @@ namespace std { namespace text {
 	template <typename Input>
 	constexpr auto decode(Input&& input);
 
-}}
+}
 ```
 
 The order of arguments is chosen based on what users are likely to specify first. In many cases, all that is needed is the input: the encoding can be chosen automatically for the user based on such. For `decode`, the `std::text::default_code_unit_encoding_t<std::ranges::range_value_t<Input>>` encoding type is picked (see [[#design-low-level-encodings-default]]). Otherwise, the user must specify the `encoding` object to use themselves. The third parameter is the error handler, which is defaulted to a parameter of type `std::text::default_handler`. The fourth parameter is the state that is used to do the conversion. Given a type `Encoding`, the following is passed to subsequent overloads by default:
@@ -896,7 +913,7 @@ The surface of the `encode` API is as follows:
 ```cpp
 // header: <encoding>
 
-namespace std { namespace text {
+namespace std::text {
 
 	template <typename Input, typename Output, typename Encoding,
 		typename State, typename ErrorHandler>
@@ -931,7 +948,7 @@ namespace std { namespace text {
 	template <typename Input>
 	constexpr auto encode(Input&& input);
 
-}}
+}
 ```
 
 For `encode`, a default encoding of `default_code_point_encoding_t<std::ranges::range_value_t<Input>>` ([[#design-low-level-encodings-default]]) is picked when no `Encoding` object is provided is provided. For `encode_into` -- which takes an output range to write code units into -- the following is done:
@@ -965,7 +982,7 @@ The surface of the `transcode` API is as follows:
 ```cpp
 // header: <encoding>
 
-namespace std { namespace text {
+namespace std::text {
 
 	template <typename Input, typename FromEncoding,
 		typename Output, typename ToEncoding, typename FromErrorHandler,
@@ -1037,7 +1054,7 @@ namespace std { namespace text {
 	template <typename Input, typename ToEncoding>
 	constexpr auto transcode(Input&& input, ToEncoding&& encoding);
 
-}}
+}
 ```
 
 For `transcode`, a default encoding of `default_code_point_encoding_t<std::ranges::range_value_t<Input>>` ([[#design-low-level-encodings-default]]) is picked when no `FromEncoding` object is provided is provided. For `transcode_into` -- which takes an output range to write code units into -- the following is done:
@@ -1072,7 +1089,7 @@ The function signature for `validate` is a little different than the above funct
 ```cpp
 // header: <encoding>
 
-namespace std { namespace text {
+namespace std::text {
 
 	template <typename Input, typename Encoding,
 		typename DecodeState, typename EncodeState>
@@ -1089,7 +1106,7 @@ namespace std { namespace text {
 	template <typename_Input>
 	constexpr bool validate(Input&& input);
 
-}}
+}
 ```
 
 The order of arguments is chosen based on what users are likely to specify first. In many cases, all that is needed is the input: the encoding can be chosen automatically for the user based on such. For `validate`, the `std::text::default_code_unit_encoding_t<std::ranges::range_value_t<Input>>` encoding type is picked (see [[#design-low-level-encodings-default]]). Otherwise, the user must specify the `encoding` object to use themselves. The third parameter is the state, which is passed as follows given a type `Encoding`:
@@ -1146,7 +1163,7 @@ Most importantly, wrappers around other ranges are employed here. This is import
 ```cpp
 // header: <encoding>
 
-namespace std { namespace text {
+namespace std::text {
 
 	template <typename _Encoding,
 		typename Range = basic_string_view<encoding_code_unit_t<_Encoding>>,
@@ -1188,7 +1205,7 @@ namespace std { namespace text {
 		friend constexpr decode_view reconstruct(::std::in_place_type_t<decode_view>,
 			iterator it, sentinel) noexcept;
 	};
-}}
+}
 ```
 
 The `decode_iterator` produces a `value_type` of `encoding_code_point_t<Encoding>`. It keeps track of how many code points are generated by a call to `encoding.decode_one`, and iterates through however many are present, before calling `encoding.decode_one` again to obtain the next values.
@@ -1233,7 +1250,7 @@ Additionally, another important change here is an optimization opportunity. The 
 
 This is fine, as long as the `code_point` types agree when going from the code units of the `FromEncoding` to the code units of the `ToEncoding`. The problem here is that for many conversions, going from `encoding_code_unit_t<code_unit>` ➝ shared `encoding_code_point_t<FromEncoding>` ➝ `encoding_code_unit_t<ToEncoding>` is an unnecessarily long step. The same way [[#design-speed-customization-free_transcoding|ADL customization points]] are provided for the [[#design-high-level-free|free functions]], there must be provisions for turning that through-code-points roundtrip into something a little bit faster.
 
-For example, `ascii` and `utf8` are bitwise compatible. It is extremely foolish to roundtrip that -- for each and every code point/code unit -- through an intermediary `code_point` as is done in the generic core implementation. Therefore, extensibility for this case is provided as described in [[#design-speed-customization-transcode_one]].
+For example, `ascii` is a bitwise subset of `utf8`. It is extremely foolish to roundtrip that -- for each and every code point/code unit -- through an intermediary `code_point` as is done in the generic core implementation. Similarly, GB18030 prioritizes encoding compatibility with GBK encodings. Extensibility for this case is provided as described in [[#design-speed-customization-transcode_one]].
 
 
 ## The Need for Speed ## {#design-speed}
@@ -1249,7 +1266,7 @@ Research and implementation experience with [[boost.text]], [[text_view]] and ot
 
 An important part of that is the ability to provide performance for both lazy, range-based iteration as described in [[#design-high-level-ranges]] and fast free functions as described in [[#design-high-level-free]]. To this end, an ADL free function scheme similar to the Range Access Customization Points (e.g. `std::ranges::begin` and friends) has been developed to facilitate the customization for speed that users will require for their code.
 
-Considering this is going to be one of the most fundamental text layers that sits between typical text and a lot of the new I/O routines, it is imperative that these conversions are not only as fast as possible, but customizable. The user can already customize the encoding by creating their own conforming encoding object, but encodings still do their transformations on a code point-by-code point basis. Therefore, a means of extensibility needs to be chosen for the `std::text::encode`, `std::text::decode` and `std::text::transcode` ([[#design-high-level-free]]) functions. As this paper is targeting C++23, there exists hope that Matt Calabrese's [[p1292]] receives favor in the Evolution Design Groups so that the extension mechanisms are simple functions that call simple extension points as laid out below. Failing that, a design similar to `std::ranges`'s customization points -- as laid out in [[n4381]] -- would be preferred.
+Considering this is going to be one of the most fundamental text layers that sits between typical text and a lot of the new I/O routines, it is imperative that these conversions are not only as fast as possible, but customizable. The user can already customize the encoding by creating their own conforming encoding object, but encodings still do their transformations on a code point-by-code point basis. Therefore, a means of extensibility needs to be chosen for the `std::text::encode`, `std::text::decode` and `std::text::transcode` ([[#design-high-level-free]]) functions. As this paper is targeting C++23, there exists hope that Matt Calabrese's [[p1292]] receives favor in the Evolution Design Groups so that the extension mechanisms are simple functions that call simple extension points as laid out below. There is also a chance that `tag_invoke` ([[p1895]]) may emerge as the dominant customization point handling mechanism. Failing that, a design similar to `std::ranges`'s customization points -- as laid out in [[n4381]] -- would be preferred.
 
 What is not negotiable is that it must be extensible. Users should be able to write fast transcoding functions that the standard picks up for their own encoding types. From GB18030 to other ISO and WHATWG encodings, there will always be a need to extend the fast bulk processing of the standard. Current standard library implementers do not have the time to support every single legacy encoding on the planet, and companies do not have the time to petition each and every standard library to add support for their internal encoding. Similarly, government records kept in legacy encodings for political or organizational reasons cannot be locked out of this world either.
 
@@ -1441,7 +1458,7 @@ validate_result<Input, DecodeState> text_validate(Input input, const Encoding& e
 	DecodeState& state);
 ```
 
-Notably, there are two `text_validate` functions that can be opted into that take 3 or 4 arguments, respectively. This is for the rare case of an encoding that both cannot create a default state, like ones where `is_self_state_encoding_v<Encoding>` is true (e.g. the `any_encoding`/`variant_encoding<Enc0, Enc1, ...>` described in this proposal).
+Notably, there are two `text_validate` functions that can be opted into that take 3 or 4 arguments, respectively. This is for the rare case of an encoding that both cannot create a default state, like ones where `is_encoding_self_state_v<Encoding>` is true (e.g. the `any_encoding`/`variant_encoding<Enc0, Enc1, ...>` described in this proposal).
 
 In this case, we need a customization point wherein such an encoding, using internal/secret knowledge, can do its validation without needing to rely on the 4-argument `std::text::validate` overload and the core default loop's specification. This satisfies the ability of self-state encodings to escape the need to pass itself twice to the `validate` function.
 
@@ -1450,13 +1467,15 @@ In this case, we need a customization point wherein such an encoding, using inte
 
 # Implementation Experience # {#implementation}
 
-There are implementations of this work, taking some of it in part or in full.
+There are implementations of this work and its predecessors. This paper is a culmination of reading and understanding all of those and building/improving on them. Links to the publicly available implementations are in the [[#implementation-previous|below section]].
 
 
 
 ## Previous Work ## {#implementation-previous}
 
 While the ideas presented in this paper have been explored in various different forms, the ideas have never been succinctly composed into a single distributable library. Therefore, the author of this paper is working on an implementation that synthesizes all of the learning from [[icu]], [[boost.text]], [[text_view]] and [[libogonek]]. Reportedly, an implementation using a similar system exists in a few Fortune 500 company codebases. [[copperspice]] also has a somewhat similar implementation, but differs in a few places.
+
+The thought of connecting encodings together through shared code points is a prominent feature of [[iconv]] and [[libogonek]], and is how both libraries enjoy strong support for having full support for transcoding between so many different encodings. In the context of [[iconv]], it is integral to how they have achieved full support for transcoding between every single one of their 48+ encodings, which normally would take a quadratic (over 2300❗❗) handwritten bidirectionally capable functions.
 
 
 
@@ -1475,7 +1494,7 @@ Some commonly asked questions.
 
 ## Question: Why is there a `max_code_points` value? Won't you only ever output a single unicode code point? ## {#faq-max_code_points}
 
-This is incorrect. There are cases for encodings such as TSCII that output multiple unicode code points at once. The minimum required space must be dictated by the encoding: C++ made the mistake for `basic_filebuf` with the [infamous "N:1" rule](https://youtu.be/BdUipluIf1E?t=371), and that rule is one of the primary reasons file-based streams (which can be any `(o|i)stream` in an inheritance-based design, as well as nearly anything with the wide use of what file descriptors represent in many operating systems) cannot handle Unicode properly in many implementations (chief among them, Microsft Windows).
+This is incorrect. There are cases for encodings such as TSCII that output multiple unicode code points at once. The minimum required space must be dictated by the encoding: C++ made the mistake for `basic_filebuf` with the [infamous "N:1" rule](https://youtu.be/BdUipluIf1E?t=371), and that rule is one of the primary reasons file-based streams (which can be any `(i|o)stream` in an inheritance-based design, as well as nearly anything with the wide use of what file descriptors represent in many operating systems) cannot handle Unicode properly in many implementations (chief among them, Microsft Windows).
 
 
 
@@ -1503,7 +1522,7 @@ Normalization is separable from the low-level transcoding, and even though APIs 
 
 ## Question: Where is the specification for `std::text::basic_text` and `std::text::basic_text_view`? ## {#faq-text_types}
 
-Those types as currently imagined requires additional functionality, like normalization and potentially segmentation algorithms (e.g., for making Grapheme Cluster Iterators the default iterators). It will be split off into a separate paper, even if we allude to its existence and use in this proposal. This is primarily because the ultimate goal is to make `basic_text` a reality.
+Those types as currently imagined require additional functionality, like normalization and potentially segmentation algorithms (e.g., for making Grapheme Cluster Iterators the default iterators). It will be split off into a separate paper, even if we allude to its existence and use in this proposal. This is primarily because the ultimate goal is to make `basic_text` a reality.
 
 
 
@@ -1584,7 +1603,18 @@ And thank you to those of you who grew tired of an ASCII-only world and supporte
 		"publisher": "Unicode Consortium",
 		"date": "April 17th, 2019"
 	},
-	"sol2-wstring_convert": {
+	"iconv": {
+		"authors": [
+			"Bruno Haible",
+			"Daiki Ueno",
+			"Free Software Foundation (FSF)"
+		],
+		"href": "https://www.gnu.org/software/libiconv",
+		"title": "iconv",
+		"publisher": "Free Software Foundation (FSF)",
+		"date": "July 18th, 2020"
+	},
+	"sol2-wstring-convert": {
 		"authors": [
 			"ThePhD"
 		],
@@ -1626,6 +1656,17 @@ And thank you to those of you who grew tired of an ASCII-only world and supporte
 		],
 		"href": "https://wg21.link/p1292",
 		"title": "Customization Point Functions",
+		"publisher": "WG21",
+		"date": "October 10th, 2018"
+	},
+	"p1895": {
+		"authors": [
+			"Eric Niebler",
+			"Lewis Baker",
+			"Kirk Shoop"
+		],
+		"href": "https://wg21.link/p1895",
+		"title": "tag_invoke: A general pattern for supporting customisable functions",
 		"publisher": "WG21",
 		"date": "October 10th, 2018"
 	},
