@@ -476,6 +476,8 @@ Add a new sub clause as §6.10.� to §6.10 Preprocessing Directives, preferabl
 <p><sup>6</sup> Let the <i>parenthesized-non-header-digits</i> tokens be <code>T</code>. Either form of the <b><code>&num;embed</code></b> directive specified previously, for the following token sequences of <code>T</code>, behave as if it were expanded to an <i>initializer-list</i>. Specifically, each element of the <i>initializer-list</i> behaves as if the characters from the resource were read and mapped in an implementation-defined manner to a sequence of bits. The sequence of bits is used to produce an <i>integer constant expression</i> of exactly <code>ELEMENT_WIDTH</code> bits and must have a value between <code>ELEMENT_MIN</code> and <code>ELEMENT_MAX</code>, inclusive. The values for <code>ELEMENT_WIDTH</code>, <code>ELEMENT_MIN</code>, and <code>ELEMENT_MAX</code> correspond to <code>T</code> as follows:</p>
 
 <dl>
+<dd>— If <code>T</code> is <code>bool</code>, <code>BOOL_WIDTH</code>, and <code>0</code> (<code>false</code>), and <code>1</code> (<code>true</code>) are the values, respectively.</dd>
+
 <dd>— If <code>T</code> is <code>char</code>, <code>CHAR_WIDTH</code>, and <code>CHAR_MIN</code>, and <code>CHAR_MAX</code> are the values, respectively.</dd>
 
 <dd>— Otherwise, if <code>T</code> is <code>signed char</code>, then <code>SCHAR_WIDTH</code>, <code>SCHAR_MIN</code> and <code>SCHAR_MAX</code> are the values, respectively.</dd>
@@ -649,13 +651,13 @@ The intent of the wording is to provide a preprocessing directive that:
 
 ## Proposed Feature Test Macro
 
-The proposed feature test macro is `__cpp_pp_embed` for the preprocessor functionality.
+The proposed feature test macro is `__cpp_pp_embed` for the preprocessor functionality, and `__cpp_pp_embed_classes` for the extended functionality.
 
 
 
 ## Proposed Language Wording
 
-Append to §14.8.1 Predefined macro names [**cpp.predefined**]'s **Table 16** with one additional entry:
+Append to §14.8.1 Predefined macro names [**cpp.predefined**]'s **Table 16** with two additional entries:
 
 <blockquote>
 <table>
@@ -665,7 +667,11 @@ Append to §14.8.1 Predefined macro names [**cpp.predefined**]'s **Table 16** wi
 </tr>
 <tr>
 	<td><ins>__cpp_pp_embed</ins></td>
-	<td><ins>202006L</ins></td>
+	<td><ins>????</ins></td>
+</tr>
+<tr>
+	<td><ins>__cpp_pp_embed_classes</ins></td>
+	<td><ins>????</ins></td>
 </tr>
 </table>
 </blockquote>
@@ -721,6 +727,8 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 <p><sup>6</sup> Let the <i>parenthesized-non-header-digits</i> tokens be <code>T</code>. Either form of the <b><code>&num;embed</code></b> directive specified previously, for the following token sequences of <code>T</code>, behave as if it were expanded to an <i>initializer-list</i>. Specifically, each element of the <i>initializer-list</i> behaves as if the characters from the resource were read and mapped in an implementation-defined manner to a sequence of bits. The sequence of bits is used to produce an <i>integer constant expression</i> of exactly <code>ELEMENT_WIDTH</code> bits and must have a value between <code>ELEMENT_MIN</code> and <code>ELEMENT_MAX</code>, inclusive. The values for <code>ELEMENT_WIDTH</code>, <code>ELEMENT_MIN</code>, and <code>ELEMENT_MAX</code> correspond to <code>T</code> as follows:</p>
 
 <dl>
+<dd>— If <code>T</code> is <code>bool</code>, <code>BOOL_WIDTH</code>, and <code>0</code> (<code>false</code>), and <code>1</code> (<code>true</code>) are the values, respectively.</dd>
+
 <dd>— If <code>T</code> is <code>char</code>, <code>CHAR_WIDTH</code>, and <code>CHAR_MIN</code>, and <code>CHAR_MAX</code> are the values, respectively.</dd>
 
 <dd>— Otherwise, if <code>T</code> is <code>signed char</code>, then <code>SCHAR_WIDTH</code>, <code>SCHAR_MIN</code> and <code>SCHAR_MAX</code> are the values, respectively.</dd>
@@ -744,7 +752,7 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 <dd>— Otherwise, if <code>T</code> is <code>unsigned long long</code>, then <code>ULLONG_WIDTH</code>, <code>0</code> and <code>ULLONG_MAX</code>, are the values respectively.</dd>
 </dl>
 
-<p><sup>7</sup> Otherwise, if <code>T</code> is not one of the above sequence of tokens, then it is implementation-defined whether or not the directive is supported. If it is, then the <i>initializer-list</i> represents an implementation-defined mapping from the contents of the resource to the elements of the <i>initializer-list</i>. If the <code>T</code> does not denote a trivial type (6.8 [basic.types]), then the program is ill-formed.</p>
+<p><sup>7</sup> Otherwise, if <code>T</code> is not one of the above sequence of tokens, then it is implementation-defined whether or not the directive is supported. If it is, then the <i>initializer-list</i> represents an implementation-defined mapping from the contents of the resource to the elements of the <i>initializer-list</i>. If the <code>T</code> does not denote a <i>trivially-copiable</i> type (11.2 [class.prop]), then the program is ill-formed.</p>
 
 <p><sup>8</sup> If a <i>constant-expression</i> is specified, it shall result in an unsigned integral constant and be suitable for use in an <code><b>&num;</b>if</code> preprocessing directive. The mapping from the contents of the resource to the elements of the <i>initializer-list</i> shall contain up to <i>constant-expression</i> elements according to the above. If the implementation-defined bit size is not a multiple of the <code>ELEMENT_WIDTH</code>; and, the implementation-defined bit size is less than <i>constant-expression</i> multiplied by <code>ELEMENT_WIDTH</code>, then the program is ill-formed. The program is well-formed if the implementation-defined bit size is greater than or equal to <i>constant-expression</i> multiplied by <code>ELEMENT_WIDTH</code>.</p>
 
