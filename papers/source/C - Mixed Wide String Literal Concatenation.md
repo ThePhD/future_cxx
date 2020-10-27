@@ -78,11 +78,11 @@ _**Previous Revisions**_: None
 _**Audience**_: WG14  
 _**Proposal Category**_: New Features  
 _**Target Audience**_: General Developers, Compiler/Tooling Developers  
-_**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/n2593.html](https://thephd.github.io/vendor/future_cxx/papers/source/n2593.html)
+_**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/n2594.html](https://thephd.github.io/vendor/future_cxx/papers/source/n2594.html)
 
 <p style="text-align: center">
 <span style="font-style: italic; font-weight: bold">Abstract:</span>
-<p>Many functions return a value, however, not all function return values are of equal importance to the caller. The recent `[[nodiscard]]` attribute allows compilers to issue a diagnostics, but only hands the user a generic error message. This proposal enhances the `[[nodiscard]]` attribute in the same manner as the `[[deprecated]]` attribute, giving developers the same power to guide their users to better APIs with the aid of the compiler by providing a `string literal` attribute argument clause.</p>
+<p>This paper removes the ability to concatenate wide string literals (<code>u</code>, <code>U</code>, and <code>L</code> prefixed) together if they have a different prefix.</p>
 </p>
 
 <div class="pagebreak"></div>
@@ -131,7 +131,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 ### Add the following sentence to §6.4.5 String Literals, Constraints
 
 <blockquote>
-<p><sup>2</sup> A sequence of adjacent string literal tokens shall not include both a wide string literal and aUTF–8string literal. <ins>Differently-prefixed wide string literal tokens are a constraint violation.</ins></p>
+<p><sup>2</sup> A sequence of adjacent string literal tokens shall not include both a wide string literal and a UTF–8 string literal. <ins>Adjacent wide string literal tokens shall have the same prefix.</ins></p>
 </blockquote>
 
 ### Remove the following words §6.4.5 String literals, Semantics

@@ -7,10 +7,119 @@
   <meta name="author" content="JeanHeyd Meneide &lt;phdofthehouse@gmail.com&gt;" />
   <title>Not-So-Magic - typeof(…) in C</title>
   <style>
-      code{white-space: pre-wrap;}
-      span.smallcaps{font-variant: small-caps;}
-      span.underline{text-decoration: underline;}
-      div.column{display: inline-block; vertical-align: top; width: 50%;}
+    html {
+      line-height: 1.7;
+      font-family: Georgia, serif;
+      font-size: 20px;
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 40em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      word-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 1em;
+      }
+    }
+    @media print {
+      body {
+        background-color: transparent;
+        color: black;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin-top: 1.7em;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.7em;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1.7em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1.7em 0 1.7em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      font-style: italic;
+    }
+    code {
+      font-family: Menlo, Monaco, 'Lucida Console', Consolas, monospace;
+      background-color: #f0f0f0;
+      font-size: 85%;
+      margin: 0;
+      padding: .2em .4em;
+    }
+    pre {
+      line-height: 1.5em;
+      padding: 1em;
+      background-color: #f0f0f0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin-top: 1.7em;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+    }
+    th, td {
+      border-bottom: 1px solid lightgray;
+      padding: 1em 3em 1em 0;
+    }
+    header {
+      margin-bottom: 6em;
+      text-align: center;
+    }
+    nav a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    span.underline{text-decoration: underline;}
+    div.column{display: inline-block; vertical-align: top; width: 50%;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
   </style>
   <!--[if lt IE 9]>
     <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
@@ -100,24 +209,24 @@ Getting the type of an expression in Standard C code.
 <div class="pagebreak">
 
 </div>
-<h1 id="introduction-motivation"><span class="header-section-number">1</span> Introduction &amp; Motivation</h1>
+<h1 data-number="1" id="introduction-motivation"><span class="header-section-number">1</span> Introduction &amp; Motivation</h1>
 <p><code>typeof</code> is a extension featured in many implementations of the C standard to get the type of an expression. It works similarly to <code>sizeof</code>, which runs the expression in an “unevaluated context” to understand the final type, and thusly produce a size. <code>typeof</code> stops before producing a byte size and instead just yields a type name, usable in all the places a type currently is in the C grammar.</p>
 <p>There are many uses for <code>typeof</code> that have come up over the intervening decades since its first introduction in a few compilers, most notably GCC. It can, for example, help produce a type-safe generic printing function that even has room for user extension (see: https://slbkbs.org/tmp/fmt/fmt.h). It can also help write code that can use the expansion of a macro expression as the return type for a function, or used within a macro itself to correctly cast to the desired result of a specific computation’s type (for width and precision purposes). The use cases are vast and endless, and many people have been locking themselves into implementation-specific vendorship that have locked them out of other compilers (for example, Microsoft’s Visual C Compiler).</p>
-<h1 id="implementation-existing-practice"><span class="header-section-number">2</span> Implementation &amp; Existing Practice</h1>
+<h1 data-number="2" id="implementation-existing-practice"><span class="header-section-number">2</span> Implementation &amp; Existing Practice</h1>
 <p>Every implementation in existence since C89 has an implementation of <code>typeof</code>. Some compilers (GCC, Clang, EDG, tcc, and many, many more) expose this with the implementation extension <code>typeof</code>. But, the Standard already requires <code>typeof</code> to exist. Notably, with underlined emphasis added,</p>
 <blockquote>
 <p>The <code>sizeof</code> operator yields the size (in bytes) of its operand, which may be an expression or the parenthesized name of a type. <strong>The size is determined from the type of the operand.</strong> — <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf">N2573, §6.5.3.4 The <code>sizeof</code> and <code>_Alignof</code> operators, Semantics</a></p>
 </blockquote>
 <p>Any implementation that can process <code>sizeof("foo")</code> is already doing <code>sizeof(typeof("foo"))</code> internally. This feature is the most “existing practice”-iest feature to be proposed to the C Standard, possibly in the entire history of the C standard.</p>
-<h1 id="wording"><span class="header-section-number">3</span> Wording</h1>
+<h1 data-number="3" id="wording"><span class="header-section-number">3</span> Wording</h1>
 <p>The following wording is relative to <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf">N2573</a>.</p>
-<h3 id="adjust-the-syntax-grammar-of-6.7.2-type-specifiers"><span class="header-section-number">3.0.1</span> Adjust the Syntax grammar of §6.7.2 Type specifiers</h3>
+<h3 data-number="3.0.1" id="adjust-the-syntax-grammar-of-6.7.2-type-specifiers"><span class="header-section-number">3.0.1</span> Adjust the Syntax grammar of §6.7.2 Type specifiers</h3>
 <blockquote>
 <p>
 <i>typeof-specifier</i>:<br/>     <b><code>void</code></b><br/>     …<br/>     <i>typedef-name</i><br/> <ins>    <i>typeof-specifier</i></ins>
 </p>
 </blockquote>
-<h3 id="add-a-new-6.7.2.5-the-typeof-specifier"><span class="header-section-number">3.0.2</span> Add a new §6.7.2.5 The Typeof specifier</h3>
+<h3 data-number="3.0.2" id="add-a-new-6.7.2.5-the-typeof-specifier"><span class="header-section-number">3.0.2</span> Add a new §6.7.2.5 The Typeof specifier</h3>
 <blockquote>
 <ins>
 <p>
@@ -165,7 +274,7 @@ Type qualifiers (6.7.3) of the type from the result of a <code><b>_Typeof</b></c
 </p>
 </ins>
 </blockquote>
-<h3 id="add-a-new-7.-typeof-stdtypeof.h"><span class="header-section-number">3.0.3</span> Add a new §7.� Typeof &lt;stdtypeof.h&gt;</h3>
+<h3 data-number="3.0.3" id="add-a-new-7.-typeof-stdtypeof.h"><span class="header-section-number">3.0.3</span> Add a new §7.� Typeof &lt;stdtypeof.h&gt;</h3>
 <blockquote>
 <ins>
 <div class="numbered">
