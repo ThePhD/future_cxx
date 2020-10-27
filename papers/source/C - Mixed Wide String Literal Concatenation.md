@@ -5,7 +5,7 @@ date: October 26th, 2020
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
 redirect_from:
-  - /vendor/future_cxx/papers/source/n2593.html
+  - /vendor/future_cxx/papers/source/n2594.html
 hide: true
 ---
 
@@ -73,7 +73,7 @@ div.newnumbered li:before {
 }
 </style>
 
-_**Document**_: n2593  
+_**Document**_: n2594  
 _**Previous Revisions**_: None  
 _**Audience**_: WG14  
 _**Proposal Category**_: New Features  

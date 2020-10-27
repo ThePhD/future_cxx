@@ -90,7 +90,7 @@ _**Previous Revisions**_: n2440, n2431, n2500
 _**Audience**_: WG14  
 _**Proposal Category**_: New Library Features  
 _**Target Audience**_: General Developers, Text Processing Developers  
-_**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/n2440.html](https://thephd.github.io/vendor/future_cxx/papers/source/n2440.html)
+_**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/n2595.html](https://thephd.github.io/vendor/future_cxx/papers/source/n2595.html)
 
 <p style="text-align: center">
 <span style="font-style: italic; font-weight: bold">Abstract:</span>
