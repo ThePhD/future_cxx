@@ -1,7 +1,7 @@
 ---
-title: Restartable and Non-Restartable Functions for Efficient Character Conversions | r2
+title: Restartable and Non-Restartable Functions for Efficient Character Conversions | r3
 layout: page
-date: March 2nd, 2020
+date: October 27th, 2020
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
   - Shepherd (Shepherd's Oasis) \<<shepherd@soasis.org>\>
@@ -10,6 +10,7 @@ redirect_from:
   - /vendor/future_cxx/papers/source/n2431.html
   - /vendor/future_cxx/papers/source/n2440.html
   - /vendor/future_cxx/papers/source/n2500.html
+  - /vendor/future_cxx/papers/source/n2595.html
   - /vendor/future_cxx/papers/source/C - Efficient CharacterConversions.html
 hide: true
 ---
@@ -84,8 +85,8 @@ div.newnumbered li:before {
 </style>
 
 
-_**Document**_: n2500  
-_**Previous Revisions**_: n2440, n2431  
+_**Document**_: n2595  
+_**Previous Revisions**_: n2440, n2431, n2500  
 _**Audience**_: WG14  
 _**Proposal Category**_: New Library Features  
 _**Target Audience**_: General Developers, Text Processing Developers  

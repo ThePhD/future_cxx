@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="JeanHeyd Meneide &lt;phdofthehouse@gmail.com&gt;" />
+  <title>Not-So-Magic - typeof(…) in C</title>
+  <style>
+      code{white-space: pre-wrap;}
+      span.smallcaps{font-variant: small-caps;}
+      span.underline{text-decoration: underline;}
+      div.column{display: inline-block; vertical-align: top; width: 50%;}
+  </style>
+  <!--[if lt IE 9]>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
+  <![endif]-->
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Not-So-Magic - typeof(…) in C</h1>
+<p class="author">JeanHeyd Meneide &lt;<a href="mailto:phdofthehouse@gmail.com" class="email">phdofthehouse@gmail.com</a>&gt;</p>
+<p class="date">October 26th, 2020</p>
+</header>
+<style>
+pre {
+  margin-top: 0px;
+  margin-bottom: 0px;
+}
+.ins, ins, ins *, span.ins, span.ins * {
+  background-color: rgb(200, 250, 200);
+  color: rgb(0, 136, 0);
+  text-decoration: underline;
+}
+.del, del, del *, span.del, span.del * {
+  background-color: rgb(250, 200, 200);
+  color: rgb(255, 0, 0);
+  text-decoration: line-through;
+  text-decoration-color: rgb(255, 0, 0);
+}
+math, span.math {
+  font-family: serif;
+  font-style: italic;
+}
+ul {
+  list-style-type: "— ";
+}
+blockquote {
+  counter-reset: paragraph;
+}
+div.numbered, div.newnumbered {
+  margin-left: 2em;
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+div.numbered:before, div.newnumbered:before {
+  position: absolute;
+  margin-left: -2em;
+  display-style: block;
+}
+div.numbered:before {
+  content: counter(paragraph);
+  counter-increment: paragraph;
+}
+div.newnumbered:before {
+  content: "�";
+}
+div.numbered ul, div.newnumbered ul {
+  counter-reset: list_item;
+}
+div.numbered li, div.newnumbered li {
+  margin-left: 3em;
+}
+div.numbered li:before, div.newnumbered li:before {
+  position: absolute;
+  margin-left: -4.8em;
+  display-style: block;
+}
+div.numbered li:before {
+  content: "(" counter(paragraph) "." counter(list_item) ")";
+  counter-increment: list_item;
+}
+div.newnumbered li:before {
+  content: "(�." counter(list_item) ")";
+  counter-increment: list_item;
+}
+</style>
+<p><em><strong>Document</strong></em>: n2593<br />
+<em><strong>Previous Revisions</strong></em>: None<br />
+<em><strong>Audience</strong></em>: WG14<br />
+<em><strong>Proposal Category</strong></em>: New Features<br />
+<em><strong>Target Audience</strong></em>: General Developers, Compiler/Tooling Developers<br />
+<em><strong>Latest Revision</strong></em>: <a href="https://thephd.github.io/vendor/future_cxx/papers/source/n2593.html">https://thephd.github.io/vendor/future_cxx/papers/source/n2593.html</a></p>
+<p style="text-align: center">
+<span style="font-style: italic; font-weight: bold">Abstract:</span>
+<p>
+Getting the type of an expression in Standard C code.
+</p>
+</p>
+<div class="pagebreak">
+
+</div>
+<h1 id="introduction-motivation"><span class="header-section-number">1</span> Introduction &amp; Motivation</h1>
+<p><code>typeof</code> is a extension featured in many implementations of the C standard to get the type of an expression. It works similarly to <code>sizeof</code>, which runs the expression in an “unevaluated context” to understand the final type, and thusly produce a size. <code>typeof</code> stops before producing a byte size and instead just yields a type name, usable in all the places a type currently is in the C grammar.</p>
+<p>There are many uses for <code>typeof</code> that have come up over the intervening decades since its first introduction in a few compilers, most notably GCC. It can, for example, help produce a type-safe generic printing function that even has room for user extension (see: https://slbkbs.org/tmp/fmt/fmt.h). It can also help write code that can use the expansion of a macro expression as the return type for a function, or used within a macro itself to correctly cast to the desired result of a specific computation’s type (for width and precision purposes). The use cases are vast and endless, and many people have been locking themselves into implementation-specific vendorship that have locked them out of other compilers (for example, Microsoft’s Visual C Compiler).</p>
+<h1 id="implementation-existing-practice"><span class="header-section-number">2</span> Implementation &amp; Existing Practice</h1>
+<p>Every implementation in existence since C89 has an implementation of <code>typeof</code>. Some compilers (GCC, Clang, EDG, tcc, and many, many more) expose this with the implementation extension <code>typeof</code>. But, the Standard already requires <code>typeof</code> to exist. Notably, with underlined emphasis added,</p>
+<blockquote>
+<p>The <code>sizeof</code> operator yields the size (in bytes) of its operand, which may be an expression or the parenthesized name of a type. <strong>The size is determined from the type of the operand.</strong> — <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf">N2573, §6.5.3.4 The <code>sizeof</code> and <code>_Alignof</code> operators, Semantics</a></p>
+</blockquote>
+<p>Any implementation that can process <code>sizeof("foo")</code> is already doing <code>sizeof(typeof("foo"))</code> internally. This feature is the most “existing practice”-iest feature to be proposed to the C Standard, possibly in the entire history of the C standard.</p>
+<h1 id="wording"><span class="header-section-number">3</span> Wording</h1>
+<p>The following wording is relative to <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf">N2573</a>.</p>
+<h3 id="adjust-the-syntax-grammar-of-6.7.2-type-specifiers"><span class="header-section-number">3.0.1</span> Adjust the Syntax grammar of §6.7.2 Type specifiers</h3>
+<blockquote>
+<p>
+<i>typeof-specifier</i>:<br/>     <b><code>void</code></b><br/>     …<br/>     <i>typedef-name</i><br/> <ins>    <i>typeof-specifier</i></ins>
+</p>
+</blockquote>
+<h3 id="add-a-new-6.7.2.5-the-typeof-specifier"><span class="header-section-number">3.0.2</span> Add a new §6.7.2.5 The Typeof specifier</h3>
+<blockquote>
+<ins>
+<p>
+<h3>
+<b>§6.7.2.5     The <code><b>_Typeof</b></code> specifier</b>
+</h3>
+</p>
+<p>
+<h4>
+<b>Syntax</b>
+</h4>
+</p>
+<div class="numbered">
+<p>
+<i>type-specifier</i>:<br/>     <code><b>_Typeof</b></code> <i>unary-expression</i>
+</p>
+</div>
+<p>
+<h4>
+<b>Constraints</b>
+</h4>
+</p>
+<div class="numbered">
+<p>
+The <i>typeof-specifier</i> shall not be applied to an expression that has function type or an incomplete type, to the parenthesized name of such a type, or to an expression that designates a bit-field member.
+</p>
+</div>
+<p>
+<h4>
+<b>Semantics</b>
+</h4>
+</p>
+<div class="numbered">
+<p>
+The <i>typeof-specifier</i> applies the <code><b>_Typeof</b></code> operator to a <i>unary-expression</i> (6.5.3). It yields the <i>type-name</i> representing the type of its operand<sup>11�)</sup>. If the type of the operand is a variable length array type, the operand is evaluated; otherwise, the operand is not evaluated.
+</p>
+</div>
+<div class="numbered">
+<p>
+Type qualifiers (6.7.3) of the type from the result of a <code><b>_Typeof</b></code> operation are preserved.
+</p>
+</div>
+<p>
+<sup>11�)</sup><sub> When applied to a parameter declared to have array or function type, the <code><b>_Typeof</b></code> operator yields the adjusted (pointer) type (see 6.9.1).</sub>
+</p>
+</ins>
+</blockquote>
+<h3 id="add-a-new-7.-typeof-stdtypeof.h"><span class="header-section-number">3.0.3</span> Add a new §7.� Typeof &lt;stdtypeof.h&gt;</h3>
+<blockquote>
+<ins>
+<div class="numbered">
+<p>
+The header <code>&lt;stdtypeof.h&gt;</code> defines two macros.
+</p>
+</div>
+<div class="numbered">
+<p>
+The macro
+</p>
+<p>
+<blockquote>
+<code>typeof</code>
+</blockquote>
+</p>
+<p>
+expands to <code><b>_Typeof</b></code>.
+</p>
+</div>
+<div class="numbered">
+<p>
+The macro
+</p>
+<p>
+<blockquote>
+<code>__typeof_is_defined</code>
+</blockquote>
+</p>
+<p>
+is suitable for use in <code><b>#if</b></code> preprocessing directives. It expands to the integer constant <code>1</code>.
+</p>
+</div>
+</ins>
+</blockquote>
+</body>
+</html>
