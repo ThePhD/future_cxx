@@ -111,7 +111,7 @@ Any implementation that can process `sizeof("foo")` is already doing `sizeof(typ
 
 The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf).
 
-### Adjust the Syntax grammar of §6.7.2 Type specifiers
+**Adjust the Syntax grammar of §6.7.2 Type specifiers**
 
 <blockquote>
 <p>
@@ -124,7 +124,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 </blockquote>
 
 
-### Add a new §6.7.2.5 The Typeof specifier
+**Add a new §6.7.2.5 The Typeof specifier**
 
 <blockquote>
 <ins>
@@ -160,7 +160,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 </blockquote>
 
 
-### Add a new §7.� Typeof <stdtypeof.h>
+**Add a new §7.� Typeof `<stdtypeof.h>`**
 
 <blockquote>
 <ins>

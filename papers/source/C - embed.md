@@ -359,7 +359,7 @@ The intent of the wording is to provide a preprocessing directive that:
 
 Note: The � is a stand-in character to be replaced by the editor.
 
-### Add another _control-line_ production and a new _parenthesized-non-header-digits_ to §6.10 Preprocessing Directives, Syntax, paragraph 1:
+**Add another _control-line_ production and a new _parenthesized-non-header-digits_ to §6.10 Preprocessing Directives, Syntax, paragraph 1:**
 
 <blockquote>
 <p><i>control-line:</i><br/>
@@ -368,7 +368,7 @@ Note: The � is a stand-in character to be replaced by the editor.
 </p>
 </blockquote>
 
-### Add a new sub clause as §6.10.� to §6.10 Preprocessing Directives, preferably after §6.10.2 Source file inclusion:
+**Add a new sub clause as §6.10.� to §6.10 Preprocessing Directives, preferably after §6.10.2 Source file inclusion:**
 
 <blockquote>
 <ins>
@@ -420,7 +420,7 @@ Note: The � is a stand-in character to be replaced by the editor.
 </blockquote>
 
 
-Add 4 new Example paragraphs below the above text in §6.10.� Resource embedding:
+**Add 4 new Example paragraphs below the above text in §6.10.� Resource embedding:**
 
 
 > <ins><sup>10</sup> **EXAMPLE 1** Placing a small image resource.</ins>

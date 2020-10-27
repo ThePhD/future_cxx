@@ -128,13 +128,13 @@ Therefore, this paper makes such mixed concatenations ill-formed.
 
 The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf).
 
-### Add the following sentence to §6.4.5 String Literals, Constraints
+**Add the following sentence to §6.4.5 String Literals, Constraints**
 
 <blockquote>
 <p><sup>2</sup> A sequence of adjacent string literal tokens shall not include both a wide string literal and a UTF–8 string literal. <ins>Adjacent wide string literal tokens shall have the same prefix.</ins></p>
 </blockquote>
 
-### Remove the following words §6.4.5 String literals, Semantics
+**Remove the following words §6.4.5 String literals, Semantics**
 
 <blockquote>
 <p><sup>5</sup> In translation phase 6, the multibyte character sequences specified by any sequence of adjacent character and identically-prefixed string literal tokens are concatenated into a single multibyte character sequence. If any of the tokens has an encoding prefix, the resulting multibyte character sequence is treated as having the same prefix; otherwise, it is treated as a character string literal. <del>Whether differently-prefixed wide string literal tokens can be concatenated and, if so, the treatment of the resulting multibyte character sequence are implementation-defined.</del></p>
