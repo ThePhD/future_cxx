@@ -88,6 +88,8 @@ _**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source
 <div class="pagebreak"></div>
 
 
+
+
 # Introduction & Motivation
 
 `typeof` is a extension featured in many implementations of the C standard to get the type of an expression. It works similarly to `sizeof`, which runs the expression in an "unevaluated context" to understand the final type, and thusly produce a size. `typeof` stops before producing a byte size and instead just yields a type name, usable in all the places a type currently is in the C grammar.
@@ -106,6 +108,10 @@ Every implementation in existence since C89 has an implementation of `typeof`. S
 
 Any implementation that can process `sizeof("foo")` is already doing `sizeof(typeof("foo"))` internally. This feature is the most "existing practice"-iest feature to be proposed to the C Standard, possibly in the entire history of the C standard.
 
+Furthermore, [putting a type or a VLA-type computation results in an idempotent](https://godbolt.org/z/3hqr6x) type computation that simply yields that type in most implementations that support the feature.
+
+
+
 
 # Wording
 
@@ -115,7 +121,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 
 <blockquote>
 <p>
-<i>typeof-specifier</i>:<br/>
+<i>type-specifier</i>:<br/>
 &emsp; &emsp; <b><code>void</code></b><br/>
 &emsp; &emsp; ...<br/>
 &emsp; &emsp; <i>typedef-name</i><br/>
@@ -128,14 +134,15 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 
 <blockquote>
 <ins>
-<p><h3><b>§6.7.2.5 &emsp; &emsp; The <code><b>_Typeof</b></code> specifier</b></h3></p>
+<p><h3><b>§6.7.2.5 &emsp; &emsp; The Typeof specifier</b></h3></p>
 
 <p><h4><b>Syntax</b></h4></p>
 
 <div class="numbered">
 <p>
-<i>type-specifier</i>:<br/>
-&emsp; &emsp; <code><b>_Typeof</b></code> <i>unary-expression</i>
+<i>typeof-specifier</i>:<br/>
+&emsp; &emsp; <code><b>_Typeof</b></code> <i>unary-expression</i><br/>
+&emsp; &emsp; <code><b>_Typeof</b></code> <b>(</b> <i>type-name</i> <b>)</b>
 </p>
 </div>
 
@@ -148,14 +155,15 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 <p><h4><b>Semantics</b></h4></p>
 
 <div class="numbered">
-<p>The <i>typeof-specifier</i> applies the <code><b>_Typeof</b></code> operator to a <i>unary-expression</i> (6.5.3). It yields the <i>type-name</i> representing the type of its operand<sup>11�)</sup>. If the type of the operand is a variable length array type, the operand is evaluated; otherwise, the operand is not evaluated.</p>
+<p>The <i>typeof-specifier</i> applies the <code><b>_Typeof</b></code> operator to a <i>unary-expression</i> (6.5.3) or a <i>type-specifier</i>. If the <code><b>_Typeof</b></code> operator is applied to a <i>unary-expression</i>, it yields the <i>type-name</i> representing the type of its operand<sup>11�0)</sup>. Otherwise, it produces the <i>type-name</i> with any nested <i>typeof-specifier</i> evaluated <sup>11�1)</sup>. If the type of the operand is a variable length array type, the operand are evaluated; otherwise, the operand is not evaluated.</p>
 </div>
 
 <div class="numbered">
 <p>Type qualifiers (6.7.3) of the type from the result of a <code><b>_Typeof</b></code> operation are preserved.</p>
 </div>
 
-<p><sup>11�)</sup><sub> When applied to a parameter declared to have array or function type, the <code><b>_Typeof</b></code> operator yields the adjusted (pointer) type (see 6.9.1).</sub></p>
+<p><sup>11�0)</sup><sub> When applied to a parameter declared to have array or function type, the <code><b>_Typeof</b></code> operator yields the adjusted (pointer) type (see 6.9.1).</sub></p>
+<p><sup>11�1)</sup><sub> If the operand is a <code><b>_Typeof</b></code> operator, the operand will be evaluated before evaluating the current <code>_Typeof</code> operation. This happens recursively until a <i>typeof-specifier</i> is no longer the operand.</sub></p>
 </ins>
 </blockquote>
 
