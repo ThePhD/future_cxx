@@ -1,9 +1,9 @@
 ---
 title: Preprocessor embed - Binary Resource Inclusion
-layout: page
-date: March 2nd, 2020
+date: October 31st, 2020
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
+layout: paper
 redirect_from:
   - /vendor/future_cxx/papers/source/nXXX2.html
   - /vendor/future_cxx/papers/source/d1967.html
@@ -13,75 +13,6 @@ redirect_from:
 hide: true
 ---
 
-<style>
-pre {
-  margin-top: 0px;
-  margin-bottom: 0px;
-}
-.ins, ins, ins *, span.ins, span.ins * {
-  background-color: rgb(200, 250, 200);
-  color: rgb(0, 136, 0);
-  text-decoration: underline;
-}
-.del, del, del *, span.del, span.del * {
-  background-color: rgb(250, 200, 200);
-  color: rgb(255, 0, 0);
-  text-decoration: line-through;
-  text-decoration-color: rgb(255, 0, 0);
-}
-math, span.math {
-  font-family: serif;
-  font-style: italic;
-}
-ul {
-  list-style-type: "— ";
-}
-blockquote {
-  counter-reset: paragraph;
-}
-div.numbered, div.newnumbered {
-  margin-left: 2em;
-  margin-top: 1em;
-  margin-bottom: 1em;
-}
-div.numbered:before, div.newnumbered:before {
-  position: absolute;
-  margin-left: -2em;
-  display-style: block;
-}
-div.numbered:before {
-  content: counter(paragraph);
-  counter-increment: paragraph;
-}
-div.newnumbered:before {
-  content: "�";
-}
-div.numbered ul, div.newnumbered ul {
-  counter-reset: list_item;
-}
-div.numbered li, div.newnumbered li {
-  margin-left: 3em;
-}
-div.numbered li:before, div.newnumbered li:before {
-  position: absolute;
-  margin-left: -4.8em;
-  display-style: block;
-}
-div.numbered li:before {
-  content: "(" counter(paragraph) "." counter(list_item) ")";
-  counter-increment: list_item;
-}
-div.newnumbered li:before {
-  content: "(�." counter(list_item) ")";
-  counter-increment: list_item;
-}
-
-@media print
-{
-  .pagebreak { break-after: always }
-}
-</style>
-
 _**Document**_: WG14 n2592 | WG21 p1967r3  
 _**Previous Revisions**_: WG14 n2470 | WG21 p1967r0, p1967r1, p1967r2  
 _**Audience**_: WG14, WG21  
@@ -89,14 +20,20 @@ _**Proposal Category**_: New Features
 _**Target Audience**_: General Developers, Application Developers, Compiler/Tooling Developers  
 _**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/C - embed.html](https://thephd.github.io/vendor/future_cxx/papers/source/C%20-%20embed.html)
 
-<p style="text-align: center">
-<span style="font-style: italic; font-weight: bold">Abstract:</span>
-<p>Pulling binary data into a program often involves external tools and build system coordination. Many programs need binary data such as images, encoded text, icons and other data in a specific format. Current state of the art for working with such static data in C includes creating files which contain solely string literals, directly invoking the linker to create data blobs to access through carefully named extern variables, or generating large brace-delimited lists of integers to place into arrays. As binary data has grown larger, these approaches have begun to have drawbacks and issues scaling. From parsing 5 megabytes worth of integer literal expressions into AST nodes to arbitrary string literal length limits in compilers, portably putting binary data in a C program has become an arduous task that taxes build infrastructure and compilation memory and time.
+<div class="pagebreak"></div>
+
+<div class="text-center">
+<h6>Abstract:</h6>
+<p>
+Pulling binary data into a program often involves external tools and build system coordination. Many programs need binary data such as images, encoded text, icons and other data in a specific format. Current state of the art for working with such static data in C includes creating files which contain solely string literals, directly invoking the linker to create data blobs to access through carefully named extern variables, or generating large brace-delimited lists of integers to place into arrays. As binary data has grown larger, these approaches have begun to have drawbacks and issues scaling. From parsing 5 megabytes worth of integer literal expressions into AST nodes to arbitrary string literal length limits in compilers, portably putting binary data in a C program has become an arduous task that taxes build infrastructure and compilation memory and time.
 </p>
-<p>This proposal provides a flexible preprocessor directive for making this data available to the user in a straightforward manner.</p>
+<p>
+This proposal provides a flexible preprocessor directive for making this data available to the user in a straightforward manner.
 </p>
+</div>
 
 <div class="pagebreak"></div>
+
 
 
 
@@ -662,7 +599,7 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 > 
 > 	const unsigned char byte_factors[] = {
 > // may produce diagnostic: 12 bits % UCHAR_WIDTH may not be 0
-> // on a system with a resource with an implementation-defined
+> // on a system where the resource with an implementation-defined
 > // bit size of 12 bits
 > #embed "12_bits.bin"
 > 	};
@@ -691,11 +628,11 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 > 
 > extern char* null_term_shader_data;
 > 
-> void get_data () {
+> void init_data () {
 > 	constexpr const char internal_data[] = {
 > #embed SHADER_TARGET
 > 	, 0 }; // additional element to null terminate content
-> 
+> 	
 > 	std::copy_n(internal_data, std::size(internal_data),
 > 		null_term_shader_data);
 > }

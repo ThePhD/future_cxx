@@ -1,79 +1,15 @@
 ---
 title: nodiscard("should have a reason")
-layout: page
 date: October 24th, 2019
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
   - Isabella Muerte \<<https://twitter.com/slurpsmadrips/>\>
+layout: paper
 redirect_from:
   - /vendor/future_cxx/papers/source/n2430.html
   - /vendor/future_cxx/papers/source/n2448.html
 hide: true
 ---
-
-<style>
-pre {
-  margin-top: 0px;
-  margin-bottom: 0px;
-}
-.ins, ins, ins *, span.ins, span.ins * {
-  background-color: rgb(200, 250, 200);
-  color: rgb(0, 136, 0);
-  text-decoration: underline;
-}
-.del, del, del *, span.del, span.del * {
-  background-color: rgb(250, 200, 200);
-  color: rgb(255, 0, 0);
-  text-decoration: line-through;
-  text-decoration-color: rgb(255, 0, 0);
-}
-math, span.math {
-  font-family: serif;
-  font-style: italic;
-}
-ul {
-  list-style-type: "— ";
-}
-blockquote {
-  counter-reset: paragraph;
-}
-div.numbered, div.newnumbered {
-  margin-left: 2em;
-  margin-top: 1em;
-  margin-bottom: 1em;
-}
-div.numbered:before, div.newnumbered:before {
-  position: absolute;
-  margin-left: -2em;
-  display-style: block;
-}
-div.numbered:before {
-  content: counter(paragraph);
-  counter-increment: paragraph;
-}
-div.newnumbered:before {
-  content: "�";
-}
-div.numbered ul, div.newnumbered ul {
-  counter-reset: list_item;
-}
-div.numbered li, div.newnumbered li {
-  margin-left: 3em;
-}
-div.numbered li:before, div.newnumbered li:before {
-  position: absolute;
-  margin-left: -4.8em;
-  display-style: block;
-}
-div.numbered li:before {
-  content: "(" counter(paragraph) "." counter(list_item) ")";
-  counter-increment: list_item;
-}
-div.newnumbered li:before {
-  content: "(�." counter(list_item) ")";
-  counter-increment: list_item;
-}
-</style>
 
 _**Document**_: n2448  
 _**Previous Revisions**_: n2430  
@@ -82,10 +18,15 @@ _**Proposal Category**_: New Features
 _**Target Audience**_: General Developers, Compiler/Tooling Developers  
 _**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/n2448.html](https://thephd.github.io/vendor/future_cxx/papers/source/n2448.html)
 
-<p style="text-align: center">
-<span style="font-style: italic; font-weight: bold">Abstract:</span>
-<p>Many functions return a value, however, not all function return values are of equal importance to the caller. The recent `[[nodiscard]]` attribute allows compilers to issue a diagnostics, but only hands the user a generic error message. This proposal enhances the `[[nodiscard]]` attribute in the same manner as the `[[deprecated]]` attribute, giving developers the same power to guide their users to better APIs with the aid of the compiler by providing a `string literal` attribute argument clause.</p>
+<div class="text-center">
+<h6>Abstract:</h6>
+<p>
+Many functions return a value, however, not all function return values are of equal importance to the caller. The recent `[[nodiscard]]` attribute allows compilers to issue a diagnostics, but only hands the user a generic error message. This proposal enhances the `[[nodiscard]]` attribute in the same manner as the `[[deprecated]]` attribute, giving developers the same power to guide their users to better APIs with the aid of the compiler by providing a `string literal` attribute argument clause.
 </p>
+</div>
+
+<div class="pagebreak"></div>
+
 
 
 

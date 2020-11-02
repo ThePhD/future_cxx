@@ -1,77 +1,13 @@
 ---
 title: Mixed Wide String Literal Concatenation
-layout: page
 date: October 26th, 2020
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
+layout: paper
 redirect_from:
   - /vendor/future_cxx/papers/source/n2594.html
 hide: true
 ---
-
-<style>
-pre {
-  margin-top: 0px;
-  margin-bottom: 0px;
-}
-.ins, ins, ins *, span.ins, span.ins * {
-  background-color: rgb(200, 250, 200);
-  color: rgb(0, 136, 0);
-  text-decoration: underline;
-}
-.del, del, del *, span.del, span.del * {
-  background-color: rgb(250, 200, 200);
-  color: rgb(255, 0, 0);
-  text-decoration: line-through;
-  text-decoration-color: rgb(255, 0, 0);
-}
-math, span.math {
-  font-family: serif;
-  font-style: italic;
-}
-ul {
-  list-style-type: "— ";
-}
-blockquote {
-  counter-reset: paragraph;
-}
-div.numbered, div.newnumbered {
-  margin-left: 2em;
-  margin-top: 1em;
-  margin-bottom: 1em;
-}
-div.numbered:before, div.newnumbered:before {
-  position: absolute;
-  margin-left: -2em;
-  display-style: block;
-}
-div.numbered:before {
-  content: counter(paragraph);
-  counter-increment: paragraph;
-}
-div.newnumbered:before {
-  content: "�";
-}
-div.numbered ul, div.newnumbered ul {
-  counter-reset: list_item;
-}
-div.numbered li, div.newnumbered li {
-  margin-left: 3em;
-}
-div.numbered li:before, div.newnumbered li:before {
-  position: absolute;
-  margin-left: -4.8em;
-  display-style: block;
-}
-div.numbered li:before {
-  content: "(" counter(paragraph) "." counter(list_item) ")";
-  counter-increment: list_item;
-}
-div.newnumbered li:before {
-  content: "(�." counter(list_item) ")";
-  counter-increment: list_item;
-}
-</style>
 
 _**Document**_: n2594  
 _**Previous Revisions**_: None  
@@ -80,12 +16,16 @@ _**Proposal Category**_: New Features
 _**Target Audience**_: General Developers, Compiler/Tooling Developers  
 _**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/n2594.html](https://thephd.github.io/vendor/future_cxx/papers/source/n2594.html)
 
-<p style="text-align: center">
-<span style="font-style: italic; font-weight: bold">Abstract:</span>
-<p>This paper removes the ability to concatenate wide string literals (<code>u</code>, <code>U</code>, and <code>L</code> prefixed) together if they have a different prefix.</p>
+<div class="text-center">
+<h6>Abstract:</h6>
+<p>
+This paper removes the ability to concatenate wide string literals (<code>u</code>, <code>U</code>, and <code>L</code> prefixed) together if they have a different prefix.
 </p>
+</div>
 
 <div class="pagebreak"></div>
+
+
 
 
 # Introduction & Motivation
