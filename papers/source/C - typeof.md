@@ -105,7 +105,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 <p><h4><b>Semantics</b></h4></p>
 
 <div class="numbered">
-<p>The <i>typeof-specifier</i> applies the <code><b>_Typeof</b></code> operator to a <i>unary-expression</i> (6.5.3) or a <i>type-specifier</i>. If the <code><b>_Typeof</b></code> operator is applied to a <i>unary-expression</i>, it yields the <i>type-name</i> representing the type of its operand<sup>11�0)</sup>. Otherwise, it produces the <i>type-name</i> with any nested <i>typeof-specifier</i> evaluated <sup>11�1)</sup>. If the type of the operand is a variable length array type, the operand are evaluated; otherwise, the operand is not evaluated.</p>
+<p>The <i>typeof-specifier</i> applies the <code><b>_Typeof</b></code> operator to a <i>unary-expression</i> (6.5.3) or a <i>type-specifier</i>. If the <code><b>_Typeof</b></code> operator is applied to a <i>unary-expression</i>, it yields the <i>type-name</i> representing the type of its operand<sup>11�0)</sup>. Otherwise, it produces the <i>type-name</i> with any nested <i>typeof-specifier</i> evaluated <sup>11�1)</sup>. If the type of the operand is a variable length array type, the operand is evaluated; otherwise, the operand is not evaluated.</p>
 </div>
 
 <div class="numbered">
