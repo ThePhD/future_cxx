@@ -114,6 +114,23 @@ Because other library functions can be used to change or alter the locale in som
 
 
 
+## Problem 5: the C Standard cannot handle today's encodings {#intro-problem-5}
+
+The C standard does not allow a wide variety of encodings that implementations have already crammed into their locale registers to work, resulting in the abandonment of locale-related text facilities by those with double-byte character sets, primarily from East Asia. For example, there is a serious bug that cannot be fixed without non-conforming, broken behavior[^glibc-25744]:
+
+> ...
+> 
+> This call writes the second Unicode code point, but does not consume
+> any input. 0 is returned since no input is consumed. According to
+> the C standard, a return of 0 is reserved for when a null character is
+> written, but since the C standard doesn't acknowledge the existence of
+> characters that can't be represented in a single `wchar_t`, we're already
+> operating outside the scope of the standard.
+
+The standard cannot handle encodings that must return two or more code units for however many -- up to `MB_MAX_LEN` -- it consumes. This is exacerbated by the standard's insistence that a single `wchar_t` must be capable of representing all characters as a single element, a philosophy which has been bled into the relevant interfaces such as `mbrtowc` and other `*wc*` related types. As the values cannot be properly represented in the standard, this leaves people to either make stuff up or abandon it altogether.
+
+
+
 ## Motivation
 
 In short, the problems C developers face today with respect to encoding and dealing with vendor and platform-specific black boxes is a staggering trifecta: non-portability between processes running on the same physical hardware, performance degradation from using standard facilities, and potentially having a locale changed out from under your program to prevent roundtripping.
@@ -129,15 +146,20 @@ There are many sources of prior art for these features. Some functions (with fix
 
 
 
-## iconv
+## iconv/ICU
 
-The C functions presented below is motivated primarily by concepts found in a popular POSIX library, [iconv](https://www.gnu.org/software/libiconv/)[^iconv]. We do not provide the full power of iconv here but we do mimic its interface to allow for a better definition of
+The C functions presented below is motivated primarily by concepts found in a popular POSIX library, [iconv](https://www.gnu.org/software/libiconv/)[^iconv]. We do not provide the full power of iconv here but we do mimic its interface to allow for a better definition of functions, as explained in [Problem 5](#intro-problem-5). The core of the functionality can be embodied in this parameterized function signature:
 
+```cpp
+size_t XstoYs(const charX** input, size_t* input_bytes, const charY** output, size_t* output_bytes);
+```
+
+In `iconv`'s case, an additional first parameter describing the conversion (of type `iconv_t`).
 
 
 ## Win32
 
-`WideCharToMultiByte` and `MultiByteToWideChar` are the APIs of choice for those in Win32 environments to get to and from the run-time execution encoding and -- if it matches -- the translation-time execution encoding.
+`WideCharToMultiByte` and `MultiByteToWideChar` are the APIs of choice for those in Win32 environments to get to and from the run-time execution encoding and -- if it matches -- the translation-time execution encoding. Unfortunately, these APIs are locked within the Windows ecosystem entirely.
 
 
 
@@ -597,7 +619,7 @@ Thankfully, that does not seem to be the case at this time. If such changes or s
 
 # Conclusion
 
-The ecosystem deserves ways to get to a statically-known encoding and not rely on implementation and locale-parameterized encodings. This allows developers a way to perform cross-platform text processing without needing to go through fantastic gymnastics to support different languages and platforms. An independent library implementation, _cuneicode_[^unicode_greater_detail], [^unicode_deep_c_diving] is available upon request to the author. A patch to major libraries will be worked on again.
+The ecosystem deserves ways to get to a statically-known encoding and not rely on implementation and locale-parameterized encodings. This allows developers a way to perform cross-platform text processing without needing to go through fantastic gymnastics to support different languages and platforms. An independent library implementation, _cuneicode_[^unicode_greater_detail] [^unicode_deep_c_diving], is available upon request to the author. A patch to major libraries will be worked on again.
 
 
 
@@ -619,6 +641,7 @@ Thank you to Philipp K. Krause for responding to the e-mails of a newcomer to ma
 [^fast_utf8]: Bob Steagall. Fast Conversion From UTF-8 with C++, DFAs, an SSE Intrinsics. September 2018. Published: [https://www.youtube.com/watch?v=5FQ87-Ecb-A](https://www.youtube.com/watch?v=5FQ87-Ecb-A)  
 [^P1041]: Robot Martinho Fernandes. p1041. February 2019. Published: [https://wg21.link/p1041](https://wg21.link/p1041).  
 [^unicode_greater_detail]: JeanHeyd Meneide. Catching ⬆️: Unicode for C++ in Greater Detail". November 2019. Published Meeting C++: [https://www.youtube.com/watch?v=FQHofyOgQtM](https://www.youtube.com/watch?v=FQHofyOgQtM).
-[^unicode_deep_c_diving]: JeanHeyd Meneide. Deep C Diving - Fast and Scalable Text Interfaces at the Bottom. July 2020. Published C++ On Sea: [https://youtu.be/X-FLGsa8LVc?t=601](https://www.youtube.com/watch?v=FQHofyOgQtM).
+[^unicode_deep_c_diving]: JeanHeyd Meneide. Deep C Diving - Fast and Scalable Text Interfaces at the Bottom. July 2020. Published C++ On Sea: [https://youtu.be/X-FLGsa8LVc](https://www.youtube.com/watch?v=FQHofyOgQtM).
+[^glibc-25744]: Tom Honermann and Carlos O'Donnell. `mbrtowc` with Big5-HKSCS returns 2 instead of 1 when consuming the second byte of certain double byte characters. [https://sourceware.org/bugzilla/show_bug.cgi?id=25744](https://sourceware.org/bugzilla/show_bug.cgi?id=25744)
 
 <sub><sub><sub>May the Tower of Babel's curse be defeated.</sub></sub></sub>

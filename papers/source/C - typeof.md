@@ -34,7 +34,7 @@ Getting the type of an expression in Standard C code.
 
 `typeof` is a extension featured in many implementations of the C standard to get the type of an expression. It works similarly to `sizeof`, which runs the expression in an "unevaluated context" to understand the final type, and thusly produce a size. `typeof` stops before producing a byte size and instead just yields a type name, usable in all the places a type currently is in the C grammar.
 
-There are many uses for `typeof` that have come up over the intervening decades since its first introduction in a few compilers, most notably GCC. It can, for example, help produce a type-safe generic printing function that even has room for user extension (see: https://slbkbs.org/tmp/fmt/fmt.h). It can also help write code that can use the expansion of a macro expression as the return type for a function, or used within a macro itself to correctly cast to the desired result of a specific computation's type (for width and precision purposes). The use cases are vast and endless, and many people have been locking themselves into implementation-specific vendorship that have locked them out of other compilers (for example, Microsoft's Visual C Compiler).
+There are many uses for `typeof` that have come up over the intervening decades since its first introduction in a few compilers, most notably GCC. It can, for example, help produce a type-safe generic printing function that even has room for user extension (see [example implementation](https://slbkbs.org/tmp/fmt/fmt.h)). It can also help write code that can use the expansion of a macro expression as the return type for a function, or used within a macro itself to correctly cast to the desired result of a specific computation's type (for width and precision purposes). The use cases are vast and endless, and many people have been locking themselves into implementation-specific vendorship. This keeps their code out of other compilers (for example, Microsoft's Visual C Compiler) and weakens the ISO C ecosystem overall.
 
 
 
@@ -48,7 +48,46 @@ Every implementation in existence since C89 has an implementation of `typeof`. S
 
 Any implementation that can process `sizeof("foo")` is already doing `sizeof(typeof("foo"))` internally. This feature is the most "existing practice"-iest feature to be proposed to the C Standard, possibly in the entire history of the C standard.
 
-Furthermore, [putting a type or a VLA-type computation results in an idempotent](https://godbolt.org/z/3hqr6x) type computation that simply yields that type in most implementations that support the feature.
+
+
+## Corner cases: Types and VLAs
+
+[Putting a normal or VLA-type computation results in an idempotent](https://godbolt.org/z/3hqr6x) type computation that simply yields that type in most implementations that support the feature. If the compiler supports Variable Length Arrays, then `__typeof` -- if it is similar to GCC, Clang, tcc, and others -- then it is already supported with these semantics. These semantics also match how `sizeof` would behave (computing the expression or having an internal placeholder "VLA" type), so we propagate that same ability in an identical manner.
+
+Notably, this is how current implementations evaluate the semantics as well.
+
+
+
+## Why not "decltype"?
+
+C++ has a feature it calls `decltype(...)`, which serves most of the same purpose. "Most" is because it has a subtle difference which would wreak havoc on C code if it was employed in shared header code:
+
+
+```cpp
+int value = 20;
+
+#define GET_TARGET_VALUE (value)
+
+inline decltype(GET_TARGET_VALUE) g () {
+  return value;
+}
+
+int main () {
+    int& r = g();
+    return r;
+}
+```
+
+The return type of `g` would be `int&` in C++, and `int` in C. Other expressions, such as array indexing and pointer dereferencing, also have this same issue. This is due to the parentheses in the expression. Macros in both languages frequently see extra parentheses employed around expressions to prevent mixing of precedence or other shenanigans from token-based macro expansion and subsequent language parsing; this would be a footgun of large proportions for C and C++ users, and create a divergence in standard use that would rise to the level of a liaison issue that may become unfixable. This is also part of the reason why `decltype` was given that keyword in C++, and not `typeof`: they did not want this kind of subtle and brutal change to afflict C and C++ code. `typeof` does not have this problem because -- if a Sister Paper ever proposes it for C++ -- it will have identical behavior to `std::remove_reference_t<decltype(T)>`.
+
+This was also addressed when C++ was itself trying to introduce `dectlype` and competing with `typeof` in WG21 for C++ [^N1607].
+
+
+
+## C++ Compatibility
+
+A similar feature should be proposed in C++, albeit it will likely take the keyword name `typeof` rather than `_Typeof`. This paper intends to have a similar paper brought before the C++ Committee -- WG21 -- through its Liaison Study Group, if this paper is successful.
+
 
 
 
@@ -143,8 +182,10 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > ```c
 > > int main (int argc, char* argv[]) {
 > > 	// this program has no constraint violations
-> > 	_Static_assert(sizeof(_Typeof('p')) == sizeof(char));
+> > 	_Static_assert(sizeof(_Typeof('p')) == sizeof(int));
 > > 	_Static_assert(sizeof(_Typeof('p')) == sizeof('p'));
+> > 	_Static_assert(sizeof(_Typeof((char)'p')) == sizeof(char));
+> > 	_Static_assert(sizeof(_Typeof((char)'p')) == sizeof((char)'p'));
 > > 	_Static_assert(sizeof(_Typeof("meow")) == sizeof(char[5]));
 > > 	_Static_assert(sizeof(_Typeof("meow")) == sizeof("meow"));
 > > 	_Static_assert(sizeof(_Typeof(argc)) == sizeof(int));
@@ -181,6 +222,20 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > 
 > > int main () {
 > > 	return (int)vla_size(10); // vla_size returns 13
+> > }
+> > ```
+> 
+> <ins><sup>9</sup> **EXAMPLE 5** Nested `_Typeof`, arrays, and pointers.</ins>
+> 
+> > ```c
+> > int main () {
+> > 	_Typeof(_Typeof(const char*)[4]) y = {
+> > 		"a",
+> > 		"b",
+> > 		"c",
+> > 		"d"
+> > 	}; // 4-element array of "const pointer to char"
+> > 	return 0;
 > > }
 > > ```
 
@@ -267,3 +322,5 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 </div>
 </ins>
 </blockquote>
+
+[^N1607]: Jaakko Järvi and Bjarne Stroustrup. decltype. ISO/IEC JTC1 SC22 WG21 - Programming Languages C++. [http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2004/n1607.pdf](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2004/n1607.pdf).

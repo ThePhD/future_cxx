@@ -101,7 +101,12 @@ src: url(data:font/woff2;base64,d09GMgABAAAABOEoABIAAAAL5xQABOCvAAEAAAAAAAAAAAAA
 <nav id="TOC" role="doc-toc">
 <ul>
 <li><a href="#introduction-motivation"><span class="toc-section-number">1</span> Introduction &amp; Motivation</a></li>
-<li><a href="#implementation-existing-practice"><span class="toc-section-number">2</span> Implementation &amp; Existing Practice</a></li>
+<li><a href="#implementation-existing-practice"><span class="toc-section-number">2</span> Implementation &amp; Existing Practice</a>
+<ul>
+<li><a href="#corner-cases-types-and-vlas"><span class="toc-section-number">2.1</span> Corner cases: Types and VLAs</a></li>
+<li><a href="#why-not-decltype"><span class="toc-section-number">2.2</span> Why not “decltype”?</a></li>
+<li><a href="#c-compatibility"><span class="toc-section-number">2.3</span> C++ Compatibility</a></li>
+</ul></li>
 <li><a href="#wording"><span class="toc-section-number">3</span> Wording</a></li>
 </ul>
 </nav>
@@ -124,14 +129,34 @@ Getting the type of an expression in Standard C code.
 </div>
 <h1 data-number="1" id="introduction-motivation"><span class="header-section-number">1</span> Introduction &amp; Motivation</h1>
 <p><code>typeof</code> is a extension featured in many implementations of the C standard to get the type of an expression. It works similarly to <code>sizeof</code>, which runs the expression in an “unevaluated context” to understand the final type, and thusly produce a size. <code>typeof</code> stops before producing a byte size and instead just yields a type name, usable in all the places a type currently is in the C grammar.</p>
-<p>There are many uses for <code>typeof</code> that have come up over the intervening decades since its first introduction in a few compilers, most notably GCC. It can, for example, help produce a type-safe generic printing function that even has room for user extension (see: https://slbkbs.org/tmp/fmt/fmt.h). It can also help write code that can use the expansion of a macro expression as the return type for a function, or used within a macro itself to correctly cast to the desired result of a specific computation’s type (for width and precision purposes). The use cases are vast and endless, and many people have been locking themselves into implementation-specific vendorship that have locked them out of other compilers (for example, Microsoft’s Visual C Compiler).</p>
+<p>There are many uses for <code>typeof</code> that have come up over the intervening decades since its first introduction in a few compilers, most notably GCC. It can, for example, help produce a type-safe generic printing function that even has room for user extension (see <a href="https://slbkbs.org/tmp/fmt/fmt.h">example implementation</a>). It can also help write code that can use the expansion of a macro expression as the return type for a function, or used within a macro itself to correctly cast to the desired result of a specific computation’s type (for width and precision purposes). The use cases are vast and endless, and many people have been locking themselves into implementation-specific vendorship. This keeps their code out of other compilers (for example, Microsoft’s Visual C Compiler) and weakens the ISO C ecosystem overall.</p>
 <h1 data-number="2" id="implementation-existing-practice"><span class="header-section-number">2</span> Implementation &amp; Existing Practice</h1>
 <p>Every implementation in existence since C89 has an implementation of <code>typeof</code>. Some compilers (GCC, Clang, EDG, tcc, and many, many more) expose this with the implementation extension <code>typeof</code>. But, the Standard already requires <code>typeof</code> to exist. Notably, with emphasis (not found in the standard) added:</p>
 <blockquote>
 <p>The <code>sizeof</code> operator yields the size (in bytes) of its operand, which may be an expression or the parenthesized name of a type. <strong>The size is determined from the type of the operand.</strong> — <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf">N2573, Programming Languages C - Working Draft, §6.5.3.4 The <code>sizeof</code> and <code>_Alignof</code> operators, Semantics</a></p>
 </blockquote>
 <p>Any implementation that can process <code>sizeof(&quot;foo&quot;)</code> is already doing <code>sizeof(typeof(&quot;foo&quot;))</code> internally. This feature is the most “existing practice”-iest feature to be proposed to the C Standard, possibly in the entire history of the C standard.</p>
-<p>Furthermore, <a href="https://godbolt.org/z/3hqr6x">putting a type or a VLA-type computation results in an idempotent</a> type computation that simply yields that type in most implementations that support the feature.</p>
+<h2 data-number="2.1" id="corner-cases-types-and-vlas"><span class="header-section-number">2.1</span> Corner cases: Types and VLAs</h2>
+<p><a href="https://godbolt.org/z/3hqr6x">Putting a normal or VLA-type computation results in an idempotent</a> type computation that simply yields that type in most implementations that support the feature. If the compiler supports Variable Length Arrays, then <code>__typeof</code> – if it is similar to GCC, Clang, tcc, and others – then it is already supported with these semantics. These semantics also match how <code>sizeof</code> would behave (computing the expression or having an internal placeholder “VLA” type), so we propagate that same ability in an identical manner.</p>
+<p>Notably, this is how current implementations evaluate the semantics as well.</p>
+<h2 data-number="2.2" id="why-not-decltype"><span class="header-section-number">2.2</span> Why not “decltype”?</h2>
+<p>C++ has a feature it calls <code>decltype(...)</code>, which serves most of the same purpose. “Most” is because it has a subtle difference which would wreak havoc on C code if it was employed in shared header code:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> value = <span class="dv">20</span>;</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="pp">#define GET_TARGET_VALUE </span>(value)</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">inline</span> <span class="kw">decltype</span>(GET_TARGET_VALUE) g () {</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> value;</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main () {</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span>&amp; r = g();</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> r;</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<p>The return type of <code>g</code> would be <code>int&amp;</code> in C++, and <code>int</code> in C. Other expressions, such as array indexing and pointer dereferencing, also have this same issue. This is due to the parentheses in the expression. Macros in both languages frequently see extra parentheses employed around expressions to prevent mixing of precedence or other shenanigans from token-based macro expansion and subsequent language parsing; this would be a footgun of large proportions for C and C++ users, and create a divergence in standard use that would rise to the level of a liaison issue that may become unfixable. This is also part of the reason why <code>decltype</code> was given that keyword in C++, and not <code>typeof</code>: they did not want this kind of subtle and brutal change to afflict C and C++ code. <code>typeof</code> does not have this problem because – if a Sister Paper ever proposes it for C++ – it will have identical behavior to <code>std::remove_reference_t&lt;decltype(T)&gt;</code>.</p>
+<p>This was also addressed when C++ was itself trying to introduce <code>dectlype</code> and competing with <code>typeof</code> in WG21 for C++ <a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>.</p>
+<h2 data-number="2.3" id="c-compatibility"><span class="header-section-number">2.3</span> C++ Compatibility</h2>
+<p>A similar feature should be proposed in C++, albeit it will likely take the keyword name <code>typeof</code> rather than <code>_Typeof</code>. This paper intends to have a similar paper brought before the C++ Committee – WG21 – through its Liaison Study Group, if this paper is successful.</p>
 <h1 data-number="3" id="wording"><span class="header-section-number">3</span> Wording</h1>
 <p>The following wording is relative to <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf">N2573</a>.</p>
 <p><strong>Add a keyword to the §6.4.1 Keywords</strong></p>
@@ -206,63 +231,79 @@ Type qualifiers (6.7.3) of the type from the result of a <code><b>_Typeof</b></c
 The following program:
 </ins>
 <blockquote>
-<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">_Typeof</span>(<span class="dv">1</span>) main () {</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">_Typeof</span>(<span class="dv">1</span>) main () {</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
 </blockquote>
 <ins>
 is equivalent to this program:
 </ins>
 <blockquote>
-<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main() {</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main() {</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
 </blockquote>
 <ins>
 <sup>6</sup> <strong>EXAMPLE 2</strong> Equivalence of <code>sizeof</code> and <code>typeof</code>.
 </ins>
 <blockquote>
-<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main (<span class="dt">int</span> argc, <span class="dt">char</span>* argv[]) {</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">// this program has no constraint violations</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="dt">char</span>));</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="ch">&#39;p&#39;</span>));</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(<span class="st">&quot;meow&quot;</span>)) == <span class="kw">sizeof</span>(<span class="dt">char</span>[<span class="dv">5</span>]));</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(<span class="st">&quot;meow&quot;</span>)) == <span class="kw">sizeof</span>(<span class="st">&quot;meow&quot;</span>));</span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(argc)) == <span class="kw">sizeof</span>(<span class="dt">int</span>));</span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(argc)) == <span class="kw">sizeof</span>(argc));</span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(argv)) == <span class="kw">sizeof</span>(<span class="dt">char</span>**));</span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(argv)) == <span class="kw">sizeof</span>(argv));</span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main (<span class="dt">int</span> argc, <span class="dt">char</span>* argv[]) {</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">// this program has no constraint violations</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="dt">int</span>));</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="ch">&#39;p&#39;</span>));</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>((<span class="dt">char</span>)<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="dt">char</span>));</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>((<span class="dt">char</span>)<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>((<span class="dt">char</span>)<span class="ch">&#39;p&#39;</span>));</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(<span class="st">&quot;meow&quot;</span>)) == <span class="kw">sizeof</span>(<span class="dt">char</span>[<span class="dv">5</span>]));</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(<span class="st">&quot;meow&quot;</span>)) == <span class="kw">sizeof</span>(<span class="st">&quot;meow&quot;</span>));</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(argc)) == <span class="kw">sizeof</span>(<span class="dt">int</span>));</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(argc)) == <span class="kw">sizeof</span>(argc));</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(argv)) == <span class="kw">sizeof</span>(<span class="dt">char</span>**));</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(argv)) == <span class="kw">sizeof</span>(argv));</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
 </blockquote>
 <ins>
 <sup>7</sup> <strong>EXAMPLE 3</strong> Nested <code>_Typeof(...)</code>.
 </ins>
 <blockquote>
-<div class="sourceCode" id="cb4"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main (<span class="dt">int</span> argc, <span class="dt">char</span>*[]) {</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> val = <span class="fl">6.0</span><span class="bu">f</span>;</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="co">// equivalent to a cast and return</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> (<span class="kw">_Typeof</span>(<span class="kw">_Typeof</span>(<span class="kw">_Typeof</span>(argc))))val;</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="co">// return (int)val;</span></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main (<span class="dt">int</span> argc, <span class="dt">char</span>*[]) {</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> val = <span class="fl">6.0</span><span class="bu">f</span>;</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    <span class="co">// equivalent to a cast and return</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> (<span class="kw">_Typeof</span>(<span class="kw">_Typeof</span>(<span class="kw">_Typeof</span>(argc))))val;</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    <span class="co">// return (int)val;</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
 </blockquote>
 <ins>
 <sup>8</sup> <strong>EXAMPLE 4</strong> Variable Length Arrays and <code>_Typeof</code>.
 </ins>
 <blockquote>
-<div class="sourceCode" id="cb5"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;stddef.h&gt;</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="dt">size_t</span> vla_size (<span class="dt">int</span> n) {</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">typedef</span> <span class="dt">char</span> vla_type[n + <span class="dv">3</span>];</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    vla_type b; <span class="co">// variable length array</span></span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="kw">sizeof</span>(</span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>        <span class="kw">_Typeof</span>(b)</span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    ); <span class="co">// execution-time sizeof, translation-time _Typeof</span></span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main () {</span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> (<span class="dt">int</span>)vla_size(<span class="dv">10</span>); <span class="co">// vla_size returns 13</span></span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;stddef.h&gt;</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="dt">size_t</span> vla_size (<span class="dt">int</span> n) {</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">typedef</span> <span class="dt">char</span> vla_type[n + <span class="dv">3</span>];</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    vla_type b; <span class="co">// variable length array</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="kw">sizeof</span>(</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>        <span class="kw">_Typeof</span>(b)</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    ); <span class="co">// execution-time sizeof, translation-time _Typeof</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main () {</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> (<span class="dt">int</span>)vla_size(<span class="dv">10</span>); <span class="co">// vla_size returns 13</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+</blockquote>
+<ins>
+<sup>9</sup> <strong>EXAMPLE 5</strong> Nested <code>_Typeof</code>, arrays, and pointers.
+</ins>
+<blockquote>
+<div class="sourceCode" id="cb7"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main () {</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Typeof</span>(<span class="kw">_Typeof</span>(<span class="dt">const</span> <span class="dt">char</span>*)[<span class="dv">4</span>]) y = {</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;a&quot;</span>,</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;b&quot;</span>,</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;c&quot;</span>,</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;d&quot;</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    }; <span class="co">// 4-element array of &quot;const pointer to char&quot;</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
 </blockquote>
 </blockquote>
 <p><strong>Modify §6.3.2.1 Lvalues, arrays, and function designators, paragraphs 3 and 4 with footnote 68</strong></p>
@@ -356,5 +397,11 @@ is suitable for use in <code><b>#if</b></code> preprocessing directives. It expa
 </div>
 </ins>
 </blockquote>
+<section class="footnotes" role="doc-endnotes">
+<hr />
+<ol>
+<li id="fn1" role="doc-endnote"><p>Jaakko Järvi and Bjarne Stroustrup. decltype. ISO/IEC JTC1 SC22 WG21 - Programming Languages C++. <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2004/n1607.pdf">http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2004/n1607.pdf</a>.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>
 </body>
 </html>
