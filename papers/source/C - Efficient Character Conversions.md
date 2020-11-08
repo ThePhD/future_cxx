@@ -131,9 +131,9 @@ The standard cannot handle encodings that must return two or more code units for
 
 
 
-## Motivation
+## In Summary
 
-In short, the problems C developers face today with respect to encoding and dealing with vendor and platform-specific black boxes is a staggering trifecta: non-portability between processes running on the same physical hardware, performance degradation from using standard facilities, and potentially having a locale changed out from under your program to prevent roundtripping.
+The problems C developers face today with respect to encoding and dealing with vendor and platform-specific black boxes is a staggering trifecta: non-portability between processes running on the same physical hardware, performance degradation from using standard facilities, and potentially having a locale changed out from under your program to prevent roundtripping.
 
 This serves as the core motivation for this proposal.
 
@@ -154,12 +154,18 @@ The C functions presented below is motivated primarily by concepts found in a po
 size_t XstoYs(const charX** input, size_t* input_bytes, const charY** output, size_t* output_bytes);
 ```
 
-In `iconv`'s case, an additional first parameter describing the conversion (of type `iconv_t`).
+In `iconv`'s case, an additional first parameter describing the conversion (of type `iconv_t`). That is not needed for this proposal, because we are not making a generic conversion API. This proposal is focused on doing 2 things and doing them extremely well:
+
+- Getting data from the current execution encoding (`char`) to a Unicode encoding (`unsigned char`/UTF-8, `char16_t`/UTF-16, `char32_t`/UTF-32), and the reverse.
+- Getting data from the current wide execution encoding (`wchar_t`) to a Unicode encoding (`unsigned char`/UTF-8, `char16_t`/UTF-16, `char32_t`/UTF-32), and the reverse.
+
+iconv can do the above conversions, but also supports a complete list of pairwise conversions between somewhere around 49 different encodings. It can also be extended at translation time by programming more functionality into its library. This proposal is focusing just in doing the above, which results in the design found [below](#proposed-functions).
+
 
 
 ## Win32
 
-`WideCharToMultiByte` and `MultiByteToWideChar` are the APIs of choice for those in Win32 environments to get to and from the run-time execution encoding and -- if it matches -- the translation-time execution encoding. Unfortunately, these APIs are locked within the Windows ecosystem entirely.
+`WideCharToMultiByte` and `MultiByteToWideChar` are the APIs of choice for those in Win32 environments to get to and from the run-time execution encoding and -- if it matches -- the translation-time execution encoding. Unfortunately, these APIs are locked within the Windows ecosystem entirely as they are not available as a standalone library, but a 
 
 
 
