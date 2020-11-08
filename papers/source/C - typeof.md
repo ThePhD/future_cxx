@@ -240,7 +240,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > <ins>The following program:</ins>
 > 
 > > ```c
-> > _Typeof(1) main () {
+> > _Typeof(1+1) main () {
 > > 	return 0;
 > > }
 > > ```
@@ -253,8 +253,48 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > }
 > > ```
 > 
+> <ins><sup>6</sup> **EXAMPLE 2** Types and qualifiers.<br/></ins>
 > 
-> <ins><sup>6</sup> **EXAMPLE 2** Equivalence of `sizeof` and `typeof`.</ins>
+> <ins>The following program:</ins>
+> 
+> > ```c
+> > const _Atomic int purr = 0;
+> > const int meow = 1;
+> > const char* const mew[] = {
+> > 	"aardvark",
+> > 	"bluejay",
+> > 	"catte",
+> > };
+> > 
+> > _Typeof(purr) main (int argc, char* argv[]) {
+> > 	_Typeof(purr) plain_purr;
+> > 	_Typeof(_Atomic _Typeof(meow)) atomic_meow;
+> > 	_Typeof(mew) mew_array;
+> > 	return 0;
+> > }
+> > ```
+> 
+> <ins>is equivalent to this program:</ins>
+> 
+> > ```c
+> > const _Atomic int purr = 0;
+> > const int meow = 1;
+> > const char* const mew[] = {
+> > 	"aardvark",
+> > 	"bluejay",
+> > 	"catte",
+> > };
+> > 
+> > int main (int argc, char* argv[]) {
+> > 	int plain_purr;
+> > 	_Atomic int atomic_meow;
+> > 	const char* mew_array[3]; // top-level const removed
+> > 	return 0;
+> > }
+> > ```
+> 
+> 
+> <ins><sup>7</sup> **EXAMPLE 3** Equivalence of `sizeof` and `typeof`.</ins>
 > 
 > > ```c
 > > int main (int argc, char* argv[]) {
@@ -273,7 +313,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > }
 > > ```
 > 
-> <ins><sup>7</sup> **EXAMPLE 3** Nested `_Typeof(...)`.</ins>
+> <ins><sup>8</sup> **EXAMPLE 4** Nested `_Typeof(...)`.</ins>
 > 
 > > ```c
 > > int main (int argc, char*[]) {
@@ -284,7 +324,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > }
 > > ```
 > 
-> <ins><sup>8</sup> **EXAMPLE 4** Variable Length Arrays and `_Typeof`.</ins>
+> <ins><sup>9</sup> **EXAMPLE 5** Variable Length Arrays and `_Typeof`.</ins>
 > 
 > > ```c
 > > #include <stddef.h>
@@ -302,7 +342,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > }
 > > ```
 > 
-> <ins><sup>9</sup> **EXAMPLE 5** Nested `_Typeof`, arrays, and pointers.</ins>
+> <ins><sup>10</sup> **EXAMPLE 6** Nested `_Typeof`, arrays, and pointers.</ins>
 > 
 > > ```c
 > > int main () {
