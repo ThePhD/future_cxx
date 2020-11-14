@@ -57,7 +57,7 @@ This paper proposes and explores additional library functionality to allow users
 
 
 
-# Introduction and Motivation
+# Introduction and Motivation {#intro}
 
 C adopted conversion routines for the current active locale-derived/`LC_TYPE`-controlled/implementation-defined encoding for Multibyte (`mb`) Strings and Wide (`wc`) Strings. While the rationale for having such conversion routines to and from Multibyte and Wide strings in the C library are not explicitly stated in the documents, it is easy to derive the many benefits of a full ecosystem of both restarting (`r`) and non-restarting conversion routines for both single units and string-based bulk conversions for `mb` and `wc` strings. From ease of use with string literals to performance optimizations from bulk processing with vectorization and SIMD operations, the `mbs(r)towcs` — and vice-versa — granted a rich and fertile ground upon which C library developers took advantage of platform amenities, encoding specifics, and hardware support to provide useful and fast abstractions upon which encoding-aware applications could build.
 
@@ -67,7 +67,7 @@ This paper looks at the problems, and then proposes a solution (without C Standa
 
 
 
-## Problem 1: Lack of Portability
+## Problem 1: Lack of Portability {#intro-problem-portability}
 
 Already, Windows, z/OS, and POSIX platforms greatly differ in what they offer for `char`-typed, Multibyte string encodings. EBCDIC is still in play after many decades. Windows's Active Code Page functionality on its machine prevents portability even within its own ecosystem. Platforms where LANG environment variables control functionality make communication between even processes on the same hardware a silent and often unforeseen gamble for library developers. Using functions which convert to/from `mbs` make it impossible to have stability guarantees not only between platforms, but for individual machines. Sometimes even cross-process communication becomes exceedingly problematic without opting into a serious amount of platform-specific or vendor-specific code and functionality to lock encodings in, harming the portability of C code greatly.
 
@@ -79,7 +79,7 @@ These solutions provide ways to achieve a local maxima for a specific vendor or 
 
 
 
-## Problem 2: What is the Encoding?
+## Problem 2: What is the Encoding? {#intro-problem-what}
 
 With `setlocale` and `getlocale` only responding to and returning implementation-defined `(const )char*`, there is no way to portably determine what the locale (and any associated encoding) should or should not be. The typical solution for this has been to code and program only for what is guaranteed by the Standard as what is in the Basic Character Set. While this works fine for source code itself, this produces an extremely hostile environment:
 
@@ -92,7 +92,7 @@ Abandoning the C __Standard__ Library -- to get __standard__ behavior across pla
 
 
 
-## Problem 3: Performance
+## Problem 3: Performance {#intro-problem-performance}
 
 The current version of the C Standard includes functions which attempt to alleviate Problems 1 and 2 by providing conversions from the per-process (and sometimes per-thread), locale-sensitive black box encoding of multibyte `char*` strings. They do this by providing conversions to `char16_t` units or `char32_t` units with `mbrtoc(16|32)` and `c(16|32)rtomb` functions. We will for a brief moment ignore the presence of the `__STD_C_UTF16__` and `__STD_C_UTF32__` macros and assume the two types mean that string literals and library functions convert to and from UTF16 and UTF32 respectively. We will also ignore that `wchar_t`'s encoding -- which is just as locale-sensitive and unknown at compile and runtime as `char`'s encoding is -- has no such conversion functions. These givens make it possible to say that we, as C programmers, have 2 known encodings which we can use to shepherd data into a stable state for manipulation and processing as library developers.
 
@@ -102,21 +102,23 @@ On many platforms, these one-at-a-time function calls come from the operating sy
 
 
 
-## Problem 4: wchar_t cannot roundtrip
+## Problem 4: `wchar_t` Cannot Roundtrip {#intro-problem-roundtrip}
 
-With no `wctoc32` or `wctoc16` functions, the only way to convert a wide character or wide character string to a program-controlled, statically known encoding is to first invoke the wide character to multibyte function, and then invoke the multibyte function to either `char16_t` or `char32_t`.
+With no `wctoc32` or `wctoc16` functions, the only way to convert a wide character or wide character string to a program-controlled, statically known encoding UTF encoding is to first invoke the wide character to multibyte function, and then invoke the multibyte function to either `char16_t` or `char32_t`.
 
-This means that even if we have a well-behaved `wchar_t` that is not sensitive to the locale (e.g., on Windows machines), we lose data if the locale-controlled `char` encoding is not set to something that can handle all incoming code unit sequences. The locale-based encoding in a program can thus tank what is simply meant to be a pass-through encoding from `wchar_t` to `char16_t`/`char32_t`, all because the only Standards-compliant conversion channels data through the locale-based multibyte encoding `mb(s)(r)toX` functions.
+This means that even if we have a well-behaved `wchar_t` that is not sensitive to the locale (e.g., on Windows machines), we lose data if the locale-controlled `char` encoding is not set to something that can handle all incoming code unit sequences. The locale-based encoding in a program can thus tank what is simply meant to be a pass-through encoding from `wchar_t` to `char16_t`/`char32_t`, all because the only Standards-compliant conversion channels data through the locale-based multibyte encoding `mb(s)(r)toX(s)` functions.
 
 For example, it was fundamentally impossible to engage in a successful conversion from `wchar_t` strings to `char` multibyte strings on Windows using the C Standard Library. Until a very recent Windows 10 update, UTF8 could **not** be set as the active system codepage either programmatically or through an experimental, deeply-buried setting. This has changed with Windows Version 1903 (May 2019 Update), but the problems do not stop there.
 
-Because other library functions can be used to change or alter the locale in some manner, it once again becomes impossible to have a portable, compliant program with deterministic behavior if even one library changes the locale of the program, let alone if the encoding or locale is unexpected by the developer because they do not know of that culture or its locale setting. This hidden state is nearly impossible to account for, and ends up with software systems that cannot properly handle text in a meaningful way without abandoning C's encoding facilities, relying on vendor-specific extensions/encodings/tools, or confining one's program to only the 7-bit plane of existence.
+No dedicated UTF-8 support (the standard mandates no specific encodings or charsets) leaves developers to write the routines themselves. Sometimes worse,  roundtrip it through the locale after forcing a change to a UTF-8 locale, which may not be supported. While the non-restartable functions can save quite a bit of code size, unfortunately there are many encodings which are not as nice and require state to be processed correctly (e.g., Shift JIS and other ISO-2022 encodings). Not being able to retain that state between potential calls in a `mbstate_t` is detrimental to the ability to move forward with any encoding endeavor that wishes to bridge the gap between these disparate platform encodings and the current locale.
+
+Because other library functions can be used to change or alter the locale in some manner, it once again becomes impossible to have a portable, compliant program with deterministic behavior if just one library changes the locale of the program, let alone if the encoding or locale is unexpected by the developer because they do not know of that culture or its locale setting. This hidden state is nearly impossible to account for: the result is software systems that cannot properly handle text in a meaningful way without abandoning C's encoding facilities, relying on vendor-specific extensions/encodings/tools, or confining one's program to only the 7-bit plane of existence.
 
 
 
-## Problem 5: the C Standard cannot handle today's encodings {#intro-problem-5}
+## Problem 5: The C Standard Cannot Handle Existing Practice {#intro-problem-standard}
 
-The C standard does not allow a wide variety of encodings that implementations have already crammed into their locale registers to work, resulting in the abandonment of locale-related text facilities by those with double-byte character sets, primarily from East Asia. For example, there is a serious bug that cannot be fixed without non-conforming, broken behavior[^glibc-25744]:
+The C standard does not allow a wide variety of encodings that implementations have already crammed into their backing locale blocks to work, resulting in the abandonment of locale-related text facilities by those with double-byte character sets, primarily from East Asia. For example, there is a serious bug that cannot be fixed without non-conforming, broken behavior[^glibc-25744]:
 
 > ...
 > 
@@ -127,11 +129,11 @@ The C standard does not allow a wide variety of encodings that implementations h
 > characters that can't be represented in a single `wchar_t`, we're already
 > operating outside the scope of the standard.
 
-The standard cannot handle encodings that must return two or more code units for however many -- up to `MB_MAX_LEN` -- it consumes. This is exacerbated by the standard's insistence that a single `wchar_t` must be capable of representing all characters as a single element, a philosophy which has been bled into the relevant interfaces such as `mbrtowc` and other `*wc*` related types. As the values cannot be properly represented in the standard, this leaves people to either make stuff up or abandon it altogether.
+The standard cannot handle encodings that must return two or more `wchar_t` for however many -- up to `MB_MAX_LEN` -- it consumes. This is even for when the target `wchar_t` "wide execution" encoding is UTF-32; this is a **fundamental limitation of the C Standard Library that is absolutely insurmountable by the current specification**. This is exacerbated by the standard's insistence that a single `wchar_t` must be capable of representing all characters as a single element, a philosophy which has been bled into the relevant interfaces such as `mbrtowc` and other `*wc*` related types. As the values cannot be properly represented in the standard, this leaves people to either make stuff up or abandon it altogether:
 
 
 
-## In Summary
+## In Summary {#intro-summary}
 
 The problems C developers face today with respect to encoding and dealing with vendor and platform-specific black boxes is a staggering trifecta: non-portability between processes running on the same physical hardware, performance degradation from using standard facilities, and potentially having a locale changed out from under your program to prevent roundtripping.
 
@@ -140,15 +142,202 @@ This serves as the core motivation for this proposal.
 
 
 
-# Prior Art
+# Prior Art {#prior}
 
-There are many sources of prior art for these features. Some functions (with fixes) were implemented directly in implementations, embedded and otherwise. Others rely exclusively platform-specific code in both Windows and POSIX implementations. Others have cross-platform libraries that work across a myriad of platforms, such as ICU or iconv. We discuss the most diverse and exemplary implementations.
+There are many sources of prior art for the desired feature set. Some functions (with fixes) were implemented directly in implementations, embedded and otherwise. Others rely exclusively platform-specific code in both Windows and POSIX implementations. Others have cross-platform libraries that work across a myriad of platforms, such as ICU or iconv. We discuss the most diverse and exemplary implementations.
+
+
+## Standard C {#prior-standard}
+
+To understand what this paper proposes, an explanation of the current landscape is necessary. The below table is meant to be read as being `{row}to{column}`. The symbols provide the following information:
+
+- ✔️: Function exists in both its restartable (function name has the indicative `r` in it) and its canonical non-restartable form (`{row}to{column}` and `{row}rto{column}`).
+- 🇷: Function exists only in its "restartable" form (`{row}rto{column}`).
+- ❌: Function does not exist at all.
+
+Here is what exists in the C Standard Library so far:
+
+<table class="feature-emoji">
+  <tr>
+    <th class="feature-emoji-cell"></th>
+    <th class="feature-emoji-cell">mb</th>
+    <th class="feature-emoji-cell">wc</th>
+    <th class="feature-emoji-cell">mbs</th>
+    <th class="feature-emoji-cell">wcs</th>
+    <th class="feature-emoji-cell">c8</th>
+    <th class="feature-emoji-cell">c16</th>
+    <th class="feature-emoji-cell">c32</th>
+    <th class="feature-emoji-cell">c8s</th>
+    <th class="feature-emoji-cell">c16s</th>
+    <th class="feature-emoji-cell">c32s</th>
+  </tr>
+  <tr>
+    <td class="feature-emoji-cell">mb</td>
+    <td class="feature-emoji-cell"> ➖ </td>
+    <td class="feature-emoji-cell"> ✔️ </td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"> ❌ </td>
+    <td class="feature-emoji-cell"> 🇷 </td>
+    <td class="feature-emoji-cell">🇷</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+  </tr>
+  <tr>
+    <td class="feature-emoji-cell">wc</td>
+    <td class="feature-emoji-cell">✔️</td>
+    <td class="feature-emoji-cell">➖</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell"> ❌ </td>
+    <td class="feature-emoji-cell"> ❌ </td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+  </tr>
+  <tr>
+    <td class="feature-emoji-cell">mbs</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">➖</td>
+    <td class="feature-emoji-cell">✔️</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"> ❌ </td>
+    <td class="feature-emoji-cell"> ❌ </td>
+    <td class="feature-emoji-cell"> ❌ </td>
+  </tr>
+  <tr>
+    <td class="feature-emoji-cell">wcs</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">✔️</td>
+    <td class="feature-emoji-cell">➖</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">❌</td>
+  </tr>
+  <tr>
+    <td class="feature-emoji-cell">c8</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">➖</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+  </tr>
+  <tr>
+    <td class="feature-emoji-cell">c16</td>
+    <td class="feature-emoji-cell">🇷</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">➖</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+  </tr>
+  <tr>
+    <td class="feature-emoji-cell">c32</td>
+    <td class="feature-emoji-cell">🇷</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">➖</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+  </tr>
+  <tr>
+    <td class="feature-emoji-cell">c8s</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"> ❌ <br></td>
+    <td class="feature-emoji-cell"> ❌ </td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">➖</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">❌</td>
+  </tr>
+  <tr>
+    <td class="feature-emoji-cell">c16s</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">➖</td>
+    <td class="feature-emoji-cell">❌</td>
+  </tr>
+  <tr>
+    <td class="feature-emoji-cell">c32s</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">➖</td>
+  </tr>
+</table>
+
+There is a lot of missing functionality here in this table, and it is important to note that a large amount of this comes from both not being willing to standardize more than the bare minimum and not having a cohesive vision for improving encoding conversions in the C Standard. Notably, string-based `{prefix}s` functions are missing, leaving performance-oriented multi-unit conversions out of the standard. There are also severe API flaws in the C standard, [as discussed above](#intro-problem-standard).
 
 
 
-## iconv/ICU
+## Win32 {#prior-win32}
 
-The C functions presented below is motivated primarily by concepts found in a popular POSIX library, [iconv](https://www.gnu.org/software/libiconv/)[^iconv]. We do not provide the full power of iconv here but we do mimic its interface to allow for a better definition of functions, as explained in [Problem 5](#intro-problem-5). The core of the functionality can be embodied in this parameterized function signature:
+`WideCharToMultiByte` and `MultiByteToWideChar` are the APIs of choice for those in Win32 environments to get to and from the run-time execution encoding and -- if it matches -- the translation-time execution encoding. Unfortunately, these APIs are locked within the Windows ecosystem entirely as they are not available as a standalone library. Furthermore, as an operating system Windows exclusively controls what it can and cannot convert from and to; some of these functions power the underlying portions of the character conversion functions in their Standard Library, but they notably truncate multi-code-unit characters for their UTF-16 `wchar_t`. This produces a broken, deprecated UCS-2 encoding when e.g. `mbrtowc` is used instead of directly relying on the operating system functionality, making the C standard's functions of dubious use.
+
+
+
+## `nl_langinfo` {#prior-nl_langinfo}
+
+`nl_langinfo` is a POSIX function that returns various pieces of information based on an enumerated input and some extra parameters. It has been suggested that this be standardized over anything else, to make it easier to determine what to do with a given locale.
+
+The first problem with this is it returns a string-based identifier that can be whatever an implementation decides it should be. This makes `nl_langinfo` is no better than `setlocale(LC_CHARSET, NULL)` in its design:
+
+> Specifies the name of the coded character set for which the **charmap** file is defined. This value determines the value returned by the `nl_langinfo` subroutine. The `<code_set_name>` must be specified using any character from the portable character set, except for control and space characters.
+
+Any name can be chosen that fits this description, and POSIX nails nothing down for portability or identification reasons. There is no canonical list, just whatever implementations happen to supply as their "charmap" definitions.
+
+
+
+## SDCC {#prior-sdcc}
+
+The Small Device C Compiler (SDCC) has already begun some of this work. One of its principle contributors, Dr. Philip K. Krause, wrote papers addressing exactly this problem[^N2282]. Krause's work focuses entirely on non-restartable conversions from Multibyte Strings to `char16_t` and `char32_t`. There is no need for a conversion to a UTF8 `char` style string for SDCC, since the Multibyte String in SDCC is always UTF8. This means that `mbstoc16s` and `mbstoc32s` and the "reverse direction" functions encompass an entire ecosystem of UTF8, UTF16, and UTF32.
+
+While this is good for SDCC, this is not quite enough for other developers who attempt to write code in a cross-platform manner.
+
+Nevertheless, SDCC's work is still important: it demonstrates that these functions are implementable, even for small devices. With additional work being done to implement them for other platforms, there is strong evidence that this can be implemented in a cross-platform manner and thusly is suitable for the Standard Library.
+
+
+
+## iconv/ICU {#prior-iconv}
+
+The C functions presented below is motivated primarily by concepts found in a popular POSIX library, [iconv](https://www.gnu.org/software/libiconv/)[^iconv]. We do not provide the full power of iconv here but we do mimic its interface to allow for a better definition of functions, as explained in [Problem 5](#intro-problem-standard). The core of the functionality can be embodied in this parameterized function signature:
 
 ```cpp
 size_t XstoYs(const charX** input, size_t* input_bytes, const charY** output, size_t* output_bytes);
@@ -159,458 +348,263 @@ In `iconv`'s case, an additional first parameter describing the conversion (of t
 - Getting data from the current execution encoding (`char`) to a Unicode encoding (`unsigned char`/UTF-8, `char16_t`/UTF-16, `char32_t`/UTF-32), and the reverse.
 - Getting data from the current wide execution encoding (`wchar_t`) to a Unicode encoding (`unsigned char`/UTF-8, `char16_t`/UTF-16, `char32_t`/UTF-32), and the reverse.
 
-iconv can do the above conversions, but also supports a complete list of pairwise conversions between somewhere around 49 different encodings. It can also be extended at translation time by programming more functionality into its library. This proposal is focusing just in doing the above, which results in the design found [below](#proposed-functions).
-
-
-
-## Win32
-
-`WideCharToMultiByte` and `MultiByteToWideChar` are the APIs of choice for those in Win32 environments to get to and from the run-time execution encoding and -- if it matches -- the translation-time execution encoding. Unfortunately, these APIs are locked within the Windows ecosystem entirely as they are not available as a standalone library, but a 
-
-
-
-## SDCC
-
-The Small Device C Compiler (SDCC) has already begun some of this work. One of its principle contributors, Dr. Philip K. Krause, wrote papers addressing exactly this problem[^N2282]. Krause's work focuses entirely on non-restartable conversions from Multibyte Strings to `char16_t`. and `char32_t`. There is no need for a conversion to a UTF8 `char` style string for SDCC, since the Multibyte String in SDCC is always UTF8. This means that `mbstoc16s` and `mbstoc32s` and the "reverse direction" functions encompass an entire ecosystem of UTF8, UTF16, and UTF32.
-
-While this is good for SDCC, this is not quite enough for other developers who attempt to write code in a cross-platform manner. While the non-restartable functions can save quite a bit of code size, unfortunately there are many encodings which are not as nice and require state to be processed correctly (e.g., Shift JIS and other ISO-2022 encodings). Not being able to retain that state between potential calls in a `mbstate_t` is detrimental to the ability to move forward with any encoding endeavor that wishes to bridge the gap between these disparate platform encodings and the current locale.
-
-Still, SDCC's work is still important: it demonstrates that these functions are implementable, even for small devices. With additional work being done to implement them for other platforms, there is strong evidence that this can be implemented in a cross-platform manner and thusly is suitable for the Standard Library.
+iconv can do the above conversions, but also supports a complete list of pairwise conversions between about 49 different encodings. It can also be extended at translation time by programming more functionality into its library. This proposal is focusing just in doing conversions to and from encodings that the implementation owns to/from Unicode. This results in the design found [below](#proposed-functions).
 
 <div class="pagebreak"></div>
 
 
 
-# Proposed Changes
 
-To understand what this paper proposes, an explanation of the current landscape is in order. The below table is meant to be read as being `{row}(r)to{column}`. The symbols provide the following information:
+# Solution {#solution}
 
-- : Function exists in both its restartable (function name has the indicative `r` in it) and non-restartable form.
-- 🇷: Function exists only in its restartable form.
-- 🅿️: Modifying marker indicates intention to standardize either the restartable function (🇷) or both restartable and non-restartable functions (✔️).
-- ❌: Function does not exist at all.
+Given the problems before, the prior art, the implementation experience, and the vendor experience, it is clear that we need something outside of `nl_langinfo`, lighter weight than all of `iconv`, and more resilient and encompassing than what the C Standard offers. Therefore, the solution to our problem of having a wide variety of implementation encodings is to expand the contract of `wchar_t` for an **entirely new set of functions** which avoid the problems and pitfalls of the old mechanism.
 
-Here is what exists in the C Standard Library so far:
+Notably, both of the multibyte string's function design and the wide character string's definition of a single character is broken in terms of existing practice today. The primary problem relies in the inability for both APIs in either direction to handle `N:M` encodings, rather than `N:1` or `1:M`. Therefore, these new functions focus on providing an interface to allow multi-code-unit conversions, in both directions.
 
-<table class="tg">
+To facilitate this, new headers -- `<stdmchar.h>` -- will be introduced. Each header will contain the "multi character" (`mc`) and "multi wide character" (`mwc`) conversion routines, respectively. To support getting data losslessly out of `wchar_t` and `char` strings controlled firmly by the implementation -- and back into those types if the code units in the characters are supported -- the following functionality is proposed using the new multi (wide) character (`m[w]c`) prefixes and suffixes:
+
+<table class="feature-emoji">
   <tr>
-    <th class="tg-c3ow"></th>
-    <th class="tg-c3ow">mb</th>
-    <th class="tg-c3ow">wc</th>
-    <th class="tg-c3ow">mbs</th>
-    <th class="tg-c3ow">wcs</th>
-    <th class="tg-c3ow">c8</th>
-    <th class="tg-c3ow">c16</th>
-    <th class="tg-c3ow">c32</th>
-    <th class="tg-c3ow">c8s</th>
-    <th class="tg-c3ow">c16s</th>
-    <th class="tg-c3ow">c32s</th>
+    <th class="feature-emoji-cell"></th>
+    <th class="feature-emoji-cell">mc</th>
+    <th class="feature-emoji-cell">mwc</th>
+    <th class="feature-emoji-cell">mcs</th>
+    <th class="feature-emoji-cell">mwcs</th>
+    <th class="feature-emoji-cell">c8</th>
+    <th class="feature-emoji-cell">c16</th>
+    <th class="feature-emoji-cell">c32</th>
+    <th class="feature-emoji-cell">c8s</th>
+    <th class="feature-emoji-cell">c16s</th>
+    <th class="feature-emoji-cell">c32s</th>
   </tr>
   <tr>
-    <td class="tg-c3ow">mb</td>
-    <td class="tg-c3ow"> ➖ </td>
-    <td class="tg-c3ow"> ✔️ </td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"> ❌ </td>
-    <td class="tg-c3ow"> 🇷 </td>
-    <td class="tg-c3ow">🇷</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
+    <td class="feature-emoji-cell">mc</td>
+    <td class="feature-emoji-cell"> ➖ </td>
+    <td class="feature-emoji-cell"> ✔️ </td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
   </tr>
   <tr>
-    <td class="tg-c3ow">wc</td>
-    <td class="tg-c3ow">✔️</td>
-    <td class="tg-c3ow">➖</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow"> ❌ </td>
-    <td class="tg-c3ow"> ❌ </td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
+    <td class="feature-emoji-cell">mwc</td>
+    <td class="feature-emoji-cell">✔️</td>
+    <td class="feature-emoji-cell">➖</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
   </tr>
   <tr>
-    <td class="tg-c3ow">mbs</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">➖</td>
-    <td class="tg-c3ow">✔️</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"> ❌ </td>
-    <td class="tg-c3ow"> ❌ </td>
-    <td class="tg-c3ow"> ❌ </td>
+    <td class="feature-emoji-cell">mcs</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">➖</td>
+    <td class="feature-emoji-cell">✔️</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
   </tr>
   <tr>
-    <td class="tg-c3ow">wcs</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">✔️</td>
-    <td class="tg-c3ow">➖</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">❌</td>
+    <td class="feature-emoji-cell">mwcs</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">✔️</td>
+    <td class="feature-emoji-cell">➖</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
   </tr>
   <tr>
-    <td class="tg-c3ow">c8</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">➖</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
+    <td class="feature-emoji-cell">c8</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">➖</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
   </tr>
   <tr>
-    <td class="tg-c3ow">c16</td>
-    <td class="tg-c3ow">🇷</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">➖</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
+    <td class="feature-emoji-cell">c16</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">➖</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
   </tr>
   <tr>
-    <td class="tg-c3ow">c32</td>
-    <td class="tg-c3ow">🇷</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">➖</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
+    <td class="feature-emoji-cell">c32</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">➖</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
   </tr>
   <tr>
-    <td class="tg-c3ow">c8s</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"> ❌ <br></td>
-    <td class="tg-c3ow"> ❌ </td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">➖</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">❌</td>
+    <td class="feature-emoji-cell">c8s</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">➖</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">❌</td>
   </tr>
   <tr>
-    <td class="tg-c3ow">c16s</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">➖</td>
-    <td class="tg-c3ow">❌</td>
+    <td class="feature-emoji-cell">c16s</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">➖</td>
+    <td class="feature-emoji-cell">❌</td>
   </tr>
   <tr>
-    <td class="tg-c3ow">c32s</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">➖</td>
+    <td class="feature-emoji-cell">c32s</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell">🅿️✔️</td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell"></td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">➖</td>
   </tr>
 </table>
 
-<div class="pagebreak"></div>
-
-To support getting data losslessly out of `wchar_t` and `char` strings controlled firmly by the implementation -- and back into those types if the code units in the characters are supported --, the following functionality is proposed:
-
-<style type="text/css">
-.tg  {border-collapse:collapse;border-spacing:0;}
-.tg td{padding:10px 10px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:black;}
-.tg th{padding:10px 10px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:black;}
-.tg .tg-c3ow{border-color:inherit;text-align:center;vertical-align:top}
-.tg .tg-3ib7{border-color:inherit;text-align:center;vertical-align:top}
-</style>
-<table class="tg">
-  <tr>
-    <th class="tg-3ib7"></th>
-    <th class="tg-c3ow">mb</th>
-    <th class="tg-c3ow">wc</th>
-    <th class="tg-c3ow">mbs</th>
-    <th class="tg-c3ow">wcs</th>
-    <th class="tg-c3ow">c8</th>
-    <th class="tg-c3ow">c16</th>
-    <th class="tg-c3ow">c32</th>
-    <th class="tg-c3ow">c8s</th>
-    <th class="tg-c3ow">c16s</th>
-    <th class="tg-c3ow">c32s</th>
-  </tr>
-  <tr>
-    <td class="tg-c3ow">mb</td>
-    <td class="tg-c3ow"> ➖ </td>
-    <td class="tg-c3ow"> ✔️ </td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">🅿️🇷</td>
-    <td class="tg-c3ow"> 🇷 </td>
-    <td class="tg-c3ow">🇷</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-  </tr>
-  <tr>
-    <td class="tg-c3ow">wc</td>
-    <td class="tg-c3ow">✔️</td>
-    <td class="tg-c3ow">➖</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">🅿️🇷</td>
-    <td class="tg-c3ow">🅿️🇷</td>
-    <td class="tg-c3ow">🅿️🇷</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-  </tr>
-  <tr>
-    <td class="tg-c3ow">mbs</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">➖</td>
-    <td class="tg-c3ow">✔️</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">🅿️✔</td>
-    <td class="tg-c3ow">🅿️✔</td>
-    <td class="tg-c3ow">🅿️✔</td>
-  </tr>
-  <tr>
-    <td class="tg-c3ow">wcs</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">✔️</td>
-    <td class="tg-c3ow">➖</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">🅿️✔</td>
-    <td class="tg-c3ow">🅿️✔</td>
-    <td class="tg-c3ow">🅿️✔</td>
-  </tr>
-  <tr>
-    <td class="tg-c3ow">c8</td>
-    <td class="tg-c3ow">🅿️🇷</td>
-    <td class="tg-c3ow">🅿️🇷</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">➖</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-  </tr>
-  <tr>
-    <td class="tg-c3ow">c16</td>
-    <td class="tg-c3ow">🇷</td>
-    <td class="tg-c3ow">🅿️🇷</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">➖</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-  </tr>
-  <tr>
-    <td class="tg-c3ow">c32</td>
-    <td class="tg-c3ow">🇷</td>
-    <td class="tg-c3ow">🅿️🇷</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">➖</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-  </tr>
-  <tr>
-    <td class="tg-c3ow">c8s</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">🅿️✔</td>
-    <td class="tg-c3ow">🅿️✔</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">➖</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">❌</td>
-  </tr>
-  <tr>
-    <td class="tg-c3ow">c16s</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">🅿️✔</td>
-    <td class="tg-c3ow">🅿️✔</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">➖</td>
-    <td class="tg-c3ow">❌</td>
-  </tr>
-  <tr>
-    <td class="tg-c3ow">c32s</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">🅿️✔</td>
-    <td class="tg-c3ow">🅿️✔</td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow"></td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">❌</td>
-    <td class="tg-c3ow">➖</td>
-  </tr>
-</table>
-
-In particular, it is imperative to recognize that the implementation is the "sole proprietor" of the wide character (`wc`) and Multibyte (`mb`) encodings for its string literals (compiler) and library functions (standard library).
-
-
-## Single-Unit Functions
-
-Focus should be applied on adding the one-at-a-time functions for `char` and `wchar_t`, which begets the start of this proposal:
-
-- Multibyte Character:
-  - `mbrtoc8` and `c8rtomb`
-- Wide Character:
-  - `wcrtoc8` and `c8rtowc`
-  - `wcrtoc16` and `c16rtowc`
-  - `wcrtoc32` and `c32rtowc`
-
-Only the "`r`" (restarting) versions of these functions are proposed here because otherwise single code unit conversions would not be able to respect multiple code units of either `char16_t` or `char32_t`. For more information about multi-unit encodings and the trouble that comes with not using a restartable version and not returning sufficient information, see the discussion related to [N1991 and DR488](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2244.htm#dr_488)[^N2244].
-
-The forms of such functions would be as follows:
+In particular, it is imperative to recognize that the implementation is the "sole proprietor" of the wide locale encodings and multibyte locale encodings for its string literals (compiler) and library functions (standard library). Therefore, the `mc` and `mwc` functions simply focus on providing a good interface for these encodings. The form of both the individual and string conversion functions are:
 
 ```cpp
-/* Multibyte Character, Single Unit (UTF8): */
-size_t mbrtoc8(char8_t* restrict pc8, const char* restrict src, size_t src_len, mbstate_t* restrict state);
-size_t c8rtomb(char* restrict pc, char8_t c8, mbstate_t* restrict state);
-
-/* Wide Character, Single Unit: */
-size_t wcrtocX(charX_t* restrict pcX, const wchar_t* restrict src, size_t src_len, mbstate_t* restrict state);
-size_t cXrtowc(wchar_t* restrict pwc, charX_t c8, mbstate_t* restrict state);
+size_t XntoYn(const charX** input, size_t* input_size, const charY** output, size_t* output_size);
+size_t XnrtoYn(const charX** input, size_t* input_size, const charY** output, size_t* output_size, mcstate_t* state);
+size_t XsntoYsn(const charX** input, size_t* input_size, const charY** output, size_t* output_size);
+size_t XsnrtoYsn(const charX** input, size_t* input_size, const charY** output, size_t* output_size, mcstate_t* state);
 ```
 
-where `X` and `charX_t` is one of { `8`, `char` }, { `16`, `char16_t` }, or { `32`, `char32_t` } for the function's specification.
+The input and output sizes are expressed in terms of the # of `charX`s. They take the input/output sizes as pointers, and decrement the value by the amount of input/output consumed. Similarly, the input/output data pointers themselves are incremented by the amount of spaces consumed / written to. This only happens when an irreversible and successful conversion of input data can successfully and without error be written to the output. The `s` functions work on whole strings rather than just a single complete irreversible conversion, the `n` stands for taking a size value.
 
+The error codes are as follows:
 
-## Multi-Unit Functions
+- `(size_t)-3` the input is correct but there is not enough output space
+- `(size_t)-2` an incomplete input was found after exhausting the input
+- `(size_t)-1` an encoding error occurred
+- `(size_t) 0` the operation was successful
 
-Additionally, the following is also proposed:
+The behaviors are as follows:
 
-- Multibyte Character Strings:
-  - `mbstoc8s` and `c8stombs`
-  - `mbsrtoc8s` and `c8srtombs`
-  - `mbstoc16s` and `c16stombs`
-  - `mbsrtoc16s` and `c16srtombs`
-  - `mbstoc32s` and `c32stombs`
-  - `mbsrtoc32s` and `c32srtombs`
+- if `output` is `NULL`, then no output will be written. `*output_size` will be decremented the amount of characters that would have been written.
+- if `output` is non-`NULL` and `output_size` is `NULL`, then enough space is assumed in the output buffer.
+- for the restartable (`r`) functions, if `input` is `NULL`, then `state` is set to the initial conversion sequence and no other actions are performed; otherwise, `input` must not be `NULL`.
 
-- Wide Character Strings:
-  - `wcstoc8s` and `c8stowcs`
-  - `wcsrtoc8s` and `c8srtowcs`
-  - `wcstoc16s` and `c16stowcs`
-  - `wcsrtoc16s` and `c16srtowcs`
-  - `wcstoc32s` and `c32stowcs`
-  - `wcsrtoc32s` and `c32srtowcs`
+Finally, it would be prudent to prevent the class of `(size_t)-3` errors from showing up in your code if you know you have enough space. For the non-string (the functions lacking `s`) that perform a single conversion, a user can pre-allocate a suitably sized static buffer in automatic duration storage space. This will be facilitated by a group of integral constant expressions contained in macros, which would be;
 
-The functions follow the same conventions as their counterparts, `mbstowcs` and `wcstombs` (or `mbsrtowcs` and `wcsrtombs`, for the restartable versions). These allow for the implementation to bulk-convert to and from a statically-known encoding. Bulk conversions has significant performance benefits [in both C/Rust](https://hsivonen.fi/encoding_rs/#results)[^encoding_rs] and [C++ code](https://www.youtube.com/watch?v=5FQ87-Ecb-A)[^fast_utf8] (both authors have shown that their code can be ported to use a C interface or just be written directly in C itself).
+- `STDC_MC_MAX`, which is the maximum output for a call to one of the X to multi character functions
+- `STDC_MWC_MAX`, which is the maximum output for a call to one of the X to multi wide character functions
+- `STDC_MC8_MAX`, which is the maximum output for a call to one of the X to UTF-8 character functions
+- `STDC_MC16_MAX`, which is the maximum output for a call to one of the X to UTF-16 character functions
+- `STDC_MC32_MAX`, which is the maximum output for a call to one of the X to UTF-32 character functions
 
-The forms of such functions would be as follows:
+these values are suitable for use as the size of an array, allowing a properly sized buffer to hold all of the output from the non-string functions. These limits apply **only** to the non-string functions, which perform a single unit of irreversible input consumption and output (or fail with one of the error codes and outputs nothing).
+
+Here is the full list of proposed functions:
 
 ```cpp
-/* Multibyte Character Strings: */
-size_t mbstocXs(charX_t* restrict dest, const char* restrict src, size_t dest_len);
-size_t cXstombs(char* restrict dest, const charX_t* restrict src, size_t dest_len);
-size_t mbsrtocXs(charX_t* restrict dest, const char** restrict src, size_t dest_len, mbstate_t* restrict state);
-size_t cXsrtombs(char* dest, const charX_t** restrict src, size_t dest_len, mbstate_t* restrict state);
+#include <stdmchar.h>
 
-/* Wide Character Strings: */
-size_t wcstocXs(charX_t* restrict dest, const wchar_t* restrict src, size_t dest_len);
-size_t cXstowcs(wchar_t* restrict dest, const charX_t* restrict src, size_t dest_len);
-size_t wcsrtocXs(charX_t* restrict dest, const wchar_t** restrict src, size_t dest_len, mbstate_t* state);
-size_t cXsrtowcs(wchar_t* restrict dest, const charX_t** restrict src, size_t dest_len, mbstate_t* restrict state);
+#define STDC_C8_MAX  16
+#define STDC_C16_MAX 8
+#define STDC_C32_MAX 4
+#define STDC_MC_MAX  16
+#define STDC_MWC_MAX 4
+
+enum : size_t { // N2575 - otherwise, will just use const size_t declarations here
+  MCHAR_OK                  = (size_t)0,
+  MCHAR_ENCODING_ERROR      = (size_t)-1,
+  MCHAR_INCOMPLETE_INPUT    = (size_t)-2,
+  MCHAR_INSUFFICIENT_OUTPUT = (size_t)-3,
+};
+
+size_t mcntomwcn(const char** input, size_t* input_size, const wchar_t** output, size_t* output_size);
+size_t mcnrtomwcn(const char** input, size_t* input_size, const wchar_t** output, size_t* output_size, mcstate_t* state);
+size_t mcsntomwcsn(const char** input, size_t* input_size, const wchar_t** output, size_t* output_size);
+size_t mcsnrtomwcsn(const char** input, size_t* input_size, const wchar_t** output, size_t* output_size, mcstate_t* state);
+
+size_t mcntoc8n(const char** input, size_t* input_size, const unsigned char** output, size_t* output_size);
+size_t mcnrtoc8n(const char** input, size_t* input_size, const unsigned char** output, size_t* output_size, mcstate_t* state);
+size_t mcsntoc8sn(const char** input, size_t* input_size, const unsigned char** output, size_t* output_size);
+size_t mcsnrtoc8sn(const char** input, size_t* input_size, const unsigned char** output, size_t* output_size, mcstate_t* state);
+
+size_t mcntoc16n(const char** input, size_t* input_size, const char16_t** output, size_t* output_size);
+size_t mcnrtoc16n(const char** input, size_t* input_size, const char16_t** output, size_t* output_size, mcstate_t* state);
+size_t mcsntoc16sn(const char** input, size_t* input_size, const char16_t** output, size_t* output_size);
+size_t mcsnrtoc16sn(const char** input, size_t* input_size, const char16_t** output, size_t* output_size, mcstate_t* state);
+
+size_t mcntoc32n(const char** input, size_t* input_size, const char32_t** output, size_t* output_size);
+size_t mcnrtoc32n(const char** input, size_t* input_size, const char32_t** output, size_t* output_size, mcstate_t* state);
+size_t mcsntoc32sn(const char** input, size_t* input_size, const char32_t** output, size_t* output_size);
+size_t mcsnrtoc32sn(const char** input, size_t* input_size, const char32_t** output, size_t* output_size, mcstate_t* state);
+
+size_t mwcntomcn(const wchar_t** input, size_t* input_size, const char** output, size_t* output_size);
+size_t mwcnrtomcn(const wchar_t** input, size_t* input_size, const char** output, size_t* output_size, mcstate_t* state);
+size_t mwcsntomcsn(const wchar_t** input, size_t* input_size, const char** output, size_t* output_size);
+size_t mwcsnrtomcsn(const wchar_t** input, size_t* input_size, const char** output, size_t* output_size, mcstate_t* state);
+
+size_t mwcntoc8n(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size);
+size_t mwcnrtoc8n(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size, mwcstate_t* state);
+size_t mwcsntoc8sn(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size);
+size_t mwcsnrtoc8sn(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size, mwcstate_t* state);
+
+size_t mwcntoc16n(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size);
+size_t mwcnrtoc16n(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size, mwcstate_t* state);
+size_t mwcsntoc16sn(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size);
+size_t mwcsnrtoc16sn(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size, mwcstate_t* state);
+
+size_t mwcntoc32n(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size);
+size_t mwcnrtoc32n(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size, mwcstate_t* state);
+size_t mwcsntoc32sn(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size);
+size_t mwcsnrtoc32sn(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size, mwcstate_t* state);
 ```
 
-where `X` and `charX_t` is one of { `8`, `char` }, { `16`, `char16_t` }, or { `32`, `char32_t` } for the function's specification.
 
 
-## Sized Conversion Functions
-
-Following the conventions of the string-based conversion functions already present, the above functions will use null termination as a marker for stopping. Many streams of text data today have embedded nulls in them, and have thusly required many creative solutions for avoiding embedded nulls (including encodings like Modified UTF-8 (MUTF8)). Thusly, as an extension for this proposal targeting the Standard Library, sized versions of the above functions which take a `size_t` are also proposed. This parameter would specify the number of code units in the source string.
-
-Previously, sized functions for certain string operations were attempted by trying to duplicate current library functionality but with an `RSIZE_MAX`-respecting parameter introduced the C 11 Standard, Annex K (for functions like `strncpy_s`). While the intention and rationale ([N1570, §K.3.2](http://www.open-std.org/jtc1/sc22/WG14/www/docs/n1570.pdf))[^N1570] made it explicitly clear the goal was to prevent potential size errors when going from a signed number to `size_t` and promote safety, the effect of such changes was different. `RSIZE_MAX` values on certain platforms were restrictively tiny, taking payloads of reasonable sizes but still rejecting them. C programmers used to developing on certain platforms would use these functions in one area, port that code to another platform, and then would experience what amounted to a Denial of Service as their payloads exceeded the restrictively small `RSIZE_MAX` values.
-
-Given Annex K's history and issues, this paper does not propose to implement anything like the `rsize` functions. Instead, this paper would like to promote `size_t`-sized function for all of the above currently existing (✔️) and desired (🅿️) functions in the above table. Particularly:
-
-- Multibyte Character Strings:
-  - `mbsntoc8s` and `c8sntombs`
-  - `mbsnrtoc8s` and `c8snrtombs`
-  - `mbsntoc16s` and `c16sntombs`
-  - `mbsnrtoc16s` and `c16snrtombs`
-  - `mbsntoc32s` and `c32sntombs`
-  - `mbsnrtoc32s` and `c32snrtombs`
-
-- Wide Character Strings:
-  - `wcsntoc8s` and `c8sntowcs`
-  - `wcsnrtoc8s` and `c8snrtowcs`
-  - `wcsntoc16s` and `c16sntowcs`
-  - `wcsnrtoc16s` and `c16snrtowcs`
-  - `wcsntoc32s` and `c32sntowcs`
-  - `wcsnrtoc32s` and `c32snrtowcs`
-
-The forms of such functions would be as follows:
-
-```cpp
-/* Multibyte Character Strings: */
-size_t mbsntocXs(size_t dest_len, charX_t* restrict dest, size_t src_len, const char* restrict src);
-size_t cXsntombs(size_t dest_len, char* restrict dest, size_t src_len, const charX_t* restrict src);
-size_t mbsnrtocXs(size_t dest_len, charX_t* restrict dest, size_t src_len, const char** restrict src, mbstate_t* restrict state);
-size_t cXsnrtombs(size_t dest_len, char* restrict dest, size_t src_len, const charX_t** restrict src, mbstate_t* restrict state);
-
-/* Wide Character Strings: */
-size_t wcsntocXs(size_t dest_len, charX_t* restrict dest, const wchar_t* restrict src);
-size_t cXsntowcs(size_t dest_len, wchar_t* restrict dest, const charX_t* restrict src);
-size_t wcsnrtocXs(size_t dest_len, charX_t* restrict dest, size_t src_len, const wchar_t** restrict src, mbstate_t* restrict state);
-size_t cXsnrtowcs(size_t dest_len, wchar_t* restrict dest, size_t src_len, const charX_t** restrict src, mbstate_t* restrict state);
-```
-
-where `X` and `charX_t` is one of { `8`, `char` }, { `16`, `char16_t` }, or { `32`, `char32_t` } for the function’s specification. Similar additions can be made for the currently existing `mbs(r)towcs` and `wcs(r)tombs` functions as well.
-
-
-## What about UTF{X} 🔄 UTF{Y} functions?
+## What about UTF{X} ↔ UTF{Y} functions? {#proposed-utf}
 
 Function interconverting between different Unicode Transformation Formats are not proposed here because -- while useful -- both sides of the encoding are statically known by the developer. The C Standard only wants to consider functionality strictly in the case where the implementation has more information / private information that the developer cannot access in a well-defined and standard manner. A developer can write their own Unicode Transformation Format conversion routines and get them completely right, whereas a developer cannot write the Wide Character and Multibyte Character functions without incredible heroics and/or error-prone assumptions.
 
@@ -619,13 +613,20 @@ This brings up an interesting point, however: if `__STD_C_UTF16__` and `__STD_C_
 Thankfully, that does not seem to be the case at this time. If such changes or such an implementation is demonstrated, these functions can be added to aid in portability.
 
 
-# Wording
 
 
 
 # Conclusion
 
 The ecosystem deserves ways to get to a statically-known encoding and not rely on implementation and locale-parameterized encodings. This allows developers a way to perform cross-platform text processing without needing to go through fantastic gymnastics to support different languages and platforms. An independent library implementation, _cuneicode_[^unicode_greater_detail] [^unicode_deep_c_diving], is available upon request to the author. A patch to major libraries will be worked on again.
+
+
+
+
+# Wording {#wording}
+
+There is no wording at the moment, because there is more implementation to do and more approval to gain!
+
 
 
 
