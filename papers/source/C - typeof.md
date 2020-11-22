@@ -100,7 +100,19 @@ There is some discussion about what happens with qualifiers, both standard and i
 
 There is also some disagreement between implementations about what qualifiers are worth keeping with respect to `_Atomic` between implementations. Therefore, this feature *strips all qualifiers from the computed type result*. The reason for this is that a user can add specifiers and qualifications to a type, but can not take them away once they are part of the expression. For example, consider the specification of `<complex.h>` that contains macro-provided constants like `_Imaginary_I`. These constants have the type `const float _Imaginary`: should all `typeof(_Imaginary_I)` expressions therefore result in a `const float _Imaginary`, or a `float _Imaginary`? What about `volatile`? And so on, and so forth.
 
-The reason we choose to strip all type qualifiers (`_Atomic`, `const`, `restrict`, and `volatile`) from the final type expression is because they can be added back by the programmer easily. However, the opposite is not true: you cannot add back qualifiers or create macros where those qualifiers can be taken in as parameters and re-applied to the function. This does leave some room to be desired: some folk may want to deliberately propagate the `const`-ness, `volatile`-ness, or `_Atomic`-ness of an expression to its end users. A separate paper for `_Qualifiersof ( expression )` or similar may be introduced to solve this need in the future, after speaking to stakeholders. For now, stripping all type qualifiers is the best decision forward for both vendor and standard code that satisfies the vast majority of existing practice use cases. Note this only applies to expressions, and not to types passed into `_Typeof` directly.
+There is an argument to strip all type qualifiers (`_Atomic`, `const`, `restrict`, and `volatile`) from the final type expression is because they can be added back by the programmer easily. However, the opposite is not true: you cannot add back qualifiers or create macros where those qualifiers can be taken in as parameters and re-applied to the function. This does leave some room to be desired: some folk may want to deliberately propagate the `const`-ness, `volatile`-ness, or `_Atomic`-ness of an expression to its end users.
+
+
+### Qualifiers - The Solution
+
+Given how Qualifiers are, we propose that `_Typeof` be enhanced with a second version: `_Unqual_typeof`. That means there will be two new keywords introduced in this paper: `_Typeof` and `_Unqual_typeof`, where the first one keeps all the qualifiers of the original, and the second strips all qualifiers from the type. This importantly solves a (currently ongoing) debate for the above-linked GCC patch and conversation about how to strip qualifiers in the Linux Kernel properly. We note that this is better than the forced _lvalue conversion_ route, which decays arrays and function types and thusly may not directly represent the original type.
+
+
+### In General
+
+Separately, we should consider a Macro Programming facility for C that can address larger questions. This paper strives to focus on the material gains from existing practice and the pitfalls of said existing practice. Therefore, this paper proposes only `_Typeof` and `_Unqual_typeof`.
+
+After this paper is handled, further research should be given to handling qualifiers, function types, and arrays in Macros for generic programming. Further research should be done in the area of conversions, which may aid in ABI issues from, e.g., certain function names creating ABI problems (c.f. the entire `intmax_t` discussion[^N2498] currently in deadlock right now). `_ExtInt`[^N2590] also brings up interesting consequences for `_Generic`, with respect to how to match various types of `_ExtInt` without having to write out a truly enormous list of explicit bit size associations, from 1 to some large `N`. Answering those questions may prove useful, but this paper does not explore any further than the existing practice.
 
 
 
@@ -115,13 +127,13 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 
 <blockquote>
 <div class="numbered numbered-3">
-<p>Except when it is the operand of the <del><code class="c-kw">sizeof</code> operator</del><ins><code class="c-kw">sizeof</code> or <code class="c-kw">_Typeof</code> operators</ins>, or the unary <code>&</code> operator, or is a string literal used to initialize an array, an expression that has type "array of <i>type</i>" is converted to an expression with type "pointer to <i>type</i>" that points to the initial element of the array object and is not an lvalue. If the array object has register storage class, the behavior is undefined.</p>
+<p>Except when it is the operand of the <del><code class="c-kw">sizeof</code> operator</del><ins><code class="c-kw">sizeof</code>, or typeof operators</ins>, or the unary <code>&</code> operator, or is a string literal used to initialize an array, an expression that has type "array of <i>type</i>" is converted to an expression with type "pointer to <i>type</i>" that points to the initial element of the array object and is not an lvalue. If the array object has register storage class, the behavior is undefined.</p>
 </div>
 <div class="numbered numbered-4">
-<p>A <i>function designator</i> is an expression that has function type. Except when it is the operand of the <del><b><code>sizeof</b></code> operator</del><ins><code class="c-kw">sizeof</code> operator, the <code class="c-kw">_Typeof</code> operator</ins><sup>68)</sup>or the unary <code>&</code> operator, a function designator with type "function returning <i>type</i>" is converted to an expression that has type "pointer to function returning <i>type</i>".</p>
+<p>A <i>function designator</i> is an expression that has function type. Except when it is the operand of the <del><b><code>sizeof</b></code> operator</del><ins><code class="c-kw">sizeof</code> operator, the typeof operator</ins><sup>68)</sup>or the unary <code>&</code> operator, a function designator with type "function returning <i>type</i>" is converted to an expression that has type "pointer to function returning <i>type</i>".</p>
 </div>
 
-<div><sub><sup>68)</sup>Because this conversion does not occur, the operand of the <del><b><code>sizeof</b></code> operator</del><ins><code class="c-kw">sizeof</code> and <code class="c-kw">_Typeof</code> operators</ins> remains a function designator and violates the constraints in 6.5.3.4.</sub>
+<div><sub><sup>68)</sup>Because this conversion does not occur, the operand of the <del><b><code>sizeof</b></code> operator</del><ins><code class="c-kw">sizeof</code> and typeof operators</ins> remains a function designator and violates the constraints in 6.5.3.4.</sub>
 </blockquote>
 
 
@@ -132,6 +144,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 <p>
 &emsp; &emsp; <code class="c-kw">_Thread_local</code><br/>
 <ins>&emsp; &emsp; <code class="c-kw">_Typeof</code></ins><br/>
+<ins>&emsp; &emsp; <code class="c-kw">_Unqual_typeof</code></ins><br/>
 </p>
 </blockquote>
 
@@ -141,13 +154,13 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 
 <blockquote>
 <div class="numbered numbered-6">
-<p>An integer constant expression<sup>125)</sup> shall have integer type and shall only have operands that are integer constants, enumeration constants, character constants, <code class="c-kw">sizeof</code> expressions whose results are integer constants, <code class="c-kw">_Alignof</code> expressions, and floating constants that are the immediate operands of casts. Cast operators in an integer constant expression shall only convert arithmetic types to integer types, except as part of an operand to the <del><code class="c-kw">sizeof</code></del><ins><code class="c-kw">_Typeof</code>, <code class="c-kw">sizeof</code>,</ins> or <code class="c-kw">_Alignof</code> operator.</p>
+<p>An integer constant expression<sup>125)</sup> shall have integer type and shall only have operands that are integer constants, enumeration constants, character constants, <code class="c-kw">sizeof</code> expressions whose results are integer constants, <code class="c-kw">_Alignof</code> expressions, and floating constants that are the immediate operands of casts. Cast operators in an integer constant expression shall only convert arithmetic types to integer types, except as part of an operand to the <del><code class="c-kw">sizeof</code></del><ins>typeof operators, <code class="c-kw">sizeof</code> operator,</ins> or <code class="c-kw">_Alignof</code> operator.</p>
 </div>
 
 <p>...</p>
 
 <div class="numbered numbered-8">
-<p>An arithmetic constant expression shall have arithmetic type and shall only have operands that are integer constants, floating constants, enumeration constants, character constants,<code class="c-kw">sizeof</code> expressions whose results are integer constants, and <code class="c-kw">_Alignof</code> expressions. Cast operators in an arithmetic constant expression shall only convert arithmetic types to arithmetic types, except as part of an operand to a <del><code class="c-kw">sizeof</code></del><ins><code class="c-kw">_Typeof</code>, <code class="c-kw">sizeof</code>,</ins> or <code class="c-kw">_Alignof</code> operator.</p>
+<p>An arithmetic constant expression shall have arithmetic type and shall only have operands that are integer constants, floating constants, enumeration constants, character constants,<code class="c-kw">sizeof</code> expressions whose results are integer constants, and <code class="c-kw">_Alignof</code> expressions. Cast operators in an arithmetic constant expression shall only convert arithmetic types to arithmetic types, except as part of an operand to the <del><code class="c-kw">sizeof</code></del><ins>typeof operators, <code class="c-kw">sizeof</code> operator,</ins> or <code class="c-kw">_Alignof</code> operator.</p>
 </div>
 </blockquote>
 
@@ -195,11 +208,11 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 
 
 
-**Add a new §6.7.2.5 The Typeof specifier:**
+**Add a new §6.7.2.5 The Typeof specifiers:**
 
 <blockquote>
 <ins>
-<p><h3><b>§6.7.2.5 &emsp; &emsp; The Typeof specifier</b></h3></p>
+<p><h3><b>§6.7.2.5 &emsp; &emsp; The Typeof specifiers</b></h3></p>
 
 <p><h4><b>Syntax</b></h4></p>
 
@@ -207,7 +220,9 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 <p>
 <i>typeof-specifier</i>:<br/>
 &emsp; &emsp; <code class="c-kw">_Typeof</code> <b>(</b> <i>expression</i> <b>)</b><br/>
-&emsp; &emsp; <code class="c-kw">_Typeof</code> <b>(</b> <i>type-name</i> <b>)</b>
+&emsp; &emsp; <code class="c-kw">_Typeof</code> <b>(</b> <i>type-name</i> <b>)</b><br/>
+&emsp; &emsp; <code class="c-kw">_Unqual_typeof</code> <b>(</b> <i>expression</i> <b>)</b><br/>
+&emsp; &emsp; <code class="c-kw">_Unqual_typeof</code> <b>(</b> <i>type-name</i> <b>)</b>
 </p>
 </div>
 
@@ -220,15 +235,15 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 <p><h4><b>Semantics</b></h4></p>
 
 <div class="numbered">
-<p>The <i>typeof-specifier</i> applies the <code class="c-kw">_Typeof</code> operator to a <i>unary-expression</i> (6.5.3) or a <i>type-specifier</i>. If the <code class="c-kw">_Typeof</code> operator is applied to a <i>unary-expression</i>, it yields the <i>type-name</i> representing the type of its operand<sup>11�0)</sup>. Otherwise, it produces the <i>type-name</i> with any nested <i>typeof-specifier</i> evaluated <sup>11�1)</sup>. If the type of the operand is a variably modified type, the operand is evaluated; otherwise, the operand is not evaluated.</p>
+<p>The <i>typeof-specifier</i> applies the <code class="c-kw">_Typeof</code> or <code class="c-kw">_Unqual_typeof</code> operator (collectively, the <i>typeof operators</i>) to a <i>unary-expression</i> (6.5) or a <i>type-specifier</i>. If the typeof operators are applied to an <i>expression</i>, they yield the <i>type-name</i> representing the type of their operand<sup>11�0)</sup>. Otherwise, they produce the <i>type-name</i> with any nested <i>typeof-specifier</i> evaluated <sup>11�1)</sup>. If the type of the operand is a variably modified type, the operand is evaluated; otherwise, the operand is not evaluated.</p>
 </div>
 
 <div class="numbered">
-<p>Top-level type qualifiers (6.7.3) on the type from the result of a <code class="c-kw">_Typeof</code> operation involving an expression are removed. Otherwise, they are preserved.</p>
+<p>All qualifiers (6.7.3) on the type from the result of a <code class="c-kw">_Unqual_typeof</code> operation are removed. Otherwise, for <code class="c-kw">_Typeof</code> operations, all qualifiers are preserved.</p>
 </div>
 
 <p><sup>11�0)</sup><sub> When applied to a parameter declared to have array or function type, the <code class="c-kw">_Typeof</code> operator yields the adjusted (pointer) type (see 6.9.1).</sub></p>
-<p><sup>11�1)</sup><sub> If the operand is a <code class="c-kw">_Typeof</code> operator, the operand will be evaluated before evaluating the current <code>_Typeof</code> operation. This happens recursively until a <i>typeof-specifier</i> is no longer the operand.</sub></p>
+<p><sup>11�1)</sup><sub> If the operand is a typeof operator, the operand will be evaluated before evaluating the current typeof operation. This happens recursively until a <i>typeof-specifier</i> is no longer the operand.</sub></p>
 </ins>
 </blockquote>
 
@@ -267,9 +282,10 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > };
 > > 
 > > _Typeof(purr) main (int argc, char* argv[]) {
-> > 	_Typeof(purr) plain_purr;
+> > 	_Unqual_typeof(purr)           plain_purr;
 > > 	_Typeof(_Atomic _Typeof(meow)) atomic_meow;
-> > 	_Typeof(mew) mew_array;
+> > 	_Typeof(mew)                   mew_array;
+> > 	_Unqual_typeof(mew)            mew2_array;
 > > 	return 0;
 > > }
 > > ```
@@ -286,9 +302,10 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > };
 > > 
 > > int main (int argc, char* argv[]) {
-> > 	int plain_purr;
-> > 	_Atomic int atomic_meow;
-> > 	const char* mew_array[3]; // top-level const removed
+> > 	int               plain_purr;
+> > 	const _Atomic int atomic_meow;
+> > 	const char* const mew_array[3];
+> > 	const char*       mew2_array[3];
 > > 	return 0;
 > > }
 > > ```
@@ -299,6 +316,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > ```c
 > > int main (int argc, char* argv[]) {
 > > 	// this program has no constraint violations
+> > 
 > > 	_Static_assert(sizeof(_Typeof('p')) == sizeof(int));
 > > 	_Static_assert(sizeof(_Typeof('p')) == sizeof('p'));
 > > 	_Static_assert(sizeof(_Typeof((char)'p')) == sizeof(char));
@@ -307,24 +325,45 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > 	_Static_assert(sizeof(_Typeof("meow")) == sizeof("meow"));
 > > 	_Static_assert(sizeof(_Typeof(argc)) == sizeof(int));
 > > 	_Static_assert(sizeof(_Typeof(argc)) == sizeof(argc));
-> > 	_Static_assert(sizeof(_Typeof(argv)) == sizeof(char**));
+> > 	_Static_assert(sizeof(_Typeof(argv)) == sizeof(const char**));
 > > 	_Static_assert(sizeof(_Typeof(argv)) == sizeof(argv));
+> > 
+> > 	_Static_assert(sizeof(_Unqual_typeof('p')) == sizeof(int));
+> > 	_Static_assert(sizeof(_Unqual_typeof('p')) == sizeof('p'));
+> > 	_Static_assert(sizeof(_Unqual_typeof((char)'p')) == sizeof(char));
+> > 	_Static_assert(sizeof(_Unqual_typeof((char)'p')) == sizeof((char)'p'));
+> > 	_Static_assert(sizeof(_Unqual_typeof("meow")) == sizeof(char[5]));
+> > 	_Static_assert(sizeof(_Unqual_typeof("meow")) == sizeof("meow"));
+> > 	_Static_assert(sizeof(_Unqual_typeof(argc)) == sizeof(int));
+> > 	_Static_assert(sizeof(_Unqual_typeof(argc)) == sizeof(argc));
+> > 	_Static_assert(sizeof(_Unqual_typeof(argv)) == sizeof(const char**));
+> > 	_Static_assert(sizeof(_Unqual_typeof(argv)) == sizeof(argv));
 > > 	return 0;
 > > }
 > > ```
 > 
-> <ins><sup>8</sup> **EXAMPLE 4** Nested `_Typeof(...)`.</ins>
+> <ins><sup>8</sup> **EXAMPLE 4** Nested `_Typeof(...)`.<br/></ins>
+> 
+> <ins>The following program:</ins>
 > 
 > > ```c
 > > int main (int argc, char*[]) {
 > > 	float val = 6.0f;
-> > 	// equivalent to a cast and return
-> > 	return (_Typeof(_Typeof(_Typeof(argc))))val;
-> > 	// return (int)val;
+> > 	return (_Typeof(_Unqual_Typeof(_Typeof(argc))))val;
 > > }
 > > ```
 > 
-> <ins><sup>9</sup> **EXAMPLE 5** Variable Length Arrays and `_Typeof`.</ins>
+> <ins>is equivalent to this program:</ins>
+> 
+> 
+> > ```c
+> > int main (int argc, char*[]) {
+> > 	float val = 6.0f;
+> > 	return (int)val;
+> > }
+> > ```
+> 
+> <ins><sup>9</sup> **EXAMPLE 5** Variable Length Arrays and typeof operators.</ins>
 > 
 > > ```c
 > > #include <stddef.h>
@@ -333,7 +372,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > 	typedef char vla_type[n + 3];
 > > 	vla_type b; // variable length array
 > > 	return sizeof(
-> > 		_Typeof(b)
+> > 		_Unqual_typeof(b)
 > > 	); // execution-time sizeof, translation-time _Typeof
 > > }
 > > 
@@ -342,7 +381,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > }
 > > ```
 > 
-> <ins><sup>10</sup> **EXAMPLE 6** Nested `_Typeof`, arrays, and pointers.</ins>
+> <ins><sup>10</sup> **EXAMPLE 6** Nested typeof operators, arrays, and pointers.</ins>
 > 
 > > ```c
 > > int main () {
@@ -361,7 +400,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 
 <blockquote>
 <div class="numbered numbered-6">
-If the same qualifier appears more than once in the same specifier-qualifier list or as declaration specifiers, either directly<ins>, via one or more <code class="c-kw">_Typeof</code> specifiers, </ins> or via one or more <code class="c-kw">typedef</code>s, the behavior is the same as if it appeared only once. If other qualifiers appear along with the <code class="c-kw">_Atomic</code> qualifier the resulting type is the so-qualified atomic type.
+If the same qualifier appears more than once in the same specifier-qualifier list or as declaration specifiers, either directly<ins>, via one or more typeof specifiers,</ins> or via one or more <code class="c-kw">typedef</code>s, the behavior is the same as if it appeared only once. If other qualifiers appear along with the <code class="c-kw">_Atomic</code> qualifier the resulting type is the so-qualified atomic type.
 </div>
 </blockquote>
 
@@ -370,7 +409,7 @@ If the same qualifier appears more than once in the same specifier-qualifier lis
 
 <blockquote>
 <div class="numbered numbered-5">
-<p>If the size is an expression that is not an integer constant expression: if it occurs in a declaration at function prototype scope, it is treated as if it were replaced by <code>*</code>; otherwise, each time it is evaluated it shall have a value greater than zero. The size of each instance of a variable length array type does not change during its lifetime. Where a size expression is part of the operand of a <ins><code class="c-kw">_Typeof</code> or</ins><code class="c-kw">sizeof</code> operator and changing the value of the size expression would not affect the result of the operator, it is unspecified whether or not the size expression is evaluated. Where a size expression is part of the operand of an <code class="c-kw">_Alignof</code> operator, that expression is not evaluated.</p>
+<p>If the size is an expression that is not an integer constant expression: if it occurs in a declaration at function prototype scope, it is treated as if it were replaced by <code>*</code>; otherwise, each time it is evaluated it shall have a value greater than zero. The size of each instance of a variable length array type does not change during its lifetime. Where a size expression is part of the operand of a <ins>typeof or</ins><code class="c-kw">sizeof</code> operator and changing the value of the size expression would not affect the result of the operator, it is unspecified whether or not the size expression is evaluated. Where a size expression is part of the operand of an <code class="c-kw">_Alignof</code> operator, that expression is not evaluated.</p>
 </div>
 </blockquote>
 
@@ -384,7 +423,7 @@ If the same qualifier appears more than once in the same specifier-qualifier lis
 <ul>
 	<li class="c-list">part of the operand of a <code class="c-kw">sizeof</code> operator whose result is an integer constant,</li>
 	<li class="c-list">part of the operand of a <code class="c-kw">_Alignof</code> operator whose result is an integer constant,</li>
-	<li class="c-list">or, part of the operand of a <code class="c-kw">_Typeof</code> operator whose result is not a variably modified type.</li>
+	<li class="c-list">or, part of the operand of any typeof operator whose result is not a variably modified type.</li>
 </ul>
 </ins>
 </div>
@@ -392,7 +431,7 @@ If the same qualifier appears more than once in the same specifier-qualifier lis
 <p>...</p>
 
 <div class="numbered numbered-5">
-<p>An <i>external definition</i> is an external declaration that is also a definition of a function (other than an inline definition) or an object. If an identifier declared with external linkage is used in an expression (other than as a part of the operand of a <del><code class="c-kw">sizeof</code></del><ins><code class="c-kw">_Typeof</code>, <code class="c-kw">sizeof</code>,</ins> or <code class="c-kw">_Alignof</code> operator whose result is an integer constant), somewhere in the entire program there shall be exactly one external definition for the identifier; otherwise, there shall be no more than one.<sup>173)</sup></p>
+<p>An <i>external definition</i> is an external declaration that is also a definition of a function (other than an inline definition) or an object. If an identifier declared with external linkage is used in an expression (other than as a part of the operand of a <del><code class="c-kw">sizeof</code>,</del><ins>typeof operator whose result is a variably modified type, or a <code class="c-kw">sizeof</code></ins> or <code class="c-kw">_Alignof</code> operator whose result is an integer constant), somewhere in the entire program there shall be exactly one external definition for the identifier; otherwise, there shall be no more than one.<sup>173)</sup></p>
 </div>
 </blockquote>
 
@@ -402,30 +441,36 @@ If the same qualifier appears more than once in the same specifier-qualifier lis
 <blockquote>
 <ins>
 <div class="numbered">
-<p>The header <code>&lt;stdtypeof.h&gt;</code> defines two macros.</p>
+<p>The header <code>&lt;stdtypeof.h&gt;</code> defines four macros.</p>
 </div>
 
 <div class="numbered">
-<p>The macro</p>
+<p>The macros</p>
 <p>
 <blockquote>
-<code>typeof</code>
+<code>typeof</code><br/>
+<code>unqual_typeof</code>
 </blockquote>
 </p>
-<p>expands to <code class="c-kw">_Typeof</code>.</p>
+<p>expands to <code class="c-kw">_Typeof</code> and <code class="c-kw">_Unqual_typeof</code>, respectively.</p>
 </div>
 
 <div class="numbered">
-<p>The macro</p>
+<p>The macros</p>
 <p>
 <blockquote>
-<code>__typeof_is_defined</code>
+<code>__typeof_is_defined</code><br/>
+<code>__unqual_typeof_is_defined</code>
 </blockquote>
 </p>
-<p>is suitable for use in <code class="c-kw">#if</code> preprocessing directives. It expands to the integer constant <code>1</code>.</p>
+<p>are suitable for use in <code class="c-kw">#if</code> preprocessing directives. They expand to the integer constant <code>1</code>.</p>
 </div>
 </ins>
 </blockquote>
+
+[^N2590]: Aaron Ballman, Melanie Blower, Tommy Hoffner, and Erich Keane. Adding a Fundamental Type for N-bit integers. ISO/IEC JTC1 SC22 WG14 - Programming Languages C. [http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2590.pdf](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2590.pdf)
+
+[^N2498]: Martin Uecker. intmax_t, again. ISO/IEC JTC1 SC22 WG14 - Programming Languages C. [http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2498.pdf](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2498.pdf)
 
 [^N1607]: Jaakko Järvi and Bjarne Stroustrup. Decltype and auto (revision 3). ISO/IEC JTC1 SC22 WG21 - Programming Languages C++. [http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2004/n1607.pdf](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2004/n1607.pdf).
 

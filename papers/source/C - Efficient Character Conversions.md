@@ -129,7 +129,9 @@ The C standard does not allow a wide variety of encodings that implementations h
 > characters that can't be represented in a single `wchar_t`, we're already
 > operating outside the scope of the standard.
 
-The standard cannot handle encodings that must return two or more `wchar_t` for however many -- up to `MB_MAX_LEN` -- it consumes. This is even for when the target `wchar_t` "wide execution" encoding is UTF-32; this is a **fundamental limitation of the C Standard Library that is absolutely insurmountable by the current specification**. This is exacerbated by the standard's insistence that a single `wchar_t` must be capable of representing all characters as a single element, a philosophy which has been bled into the relevant interfaces such as `mbrtowc` and other `*wc*` related types. As the values cannot be properly represented in the standard, this leaves people to either make stuff up or abandon it altogether:
+The standard cannot handle encodings that must return two or more `wchar_t` for however many -- up to `MB_MAX_LEN` -- it consumes. This is even for when the target `wchar_t` "wide execution" encoding is UTF-32; this is a **fundamental limitation of the C Standard Library that is absolutely insurmountable by the current specification**. This is exacerbated by the standard's insistence that a single `wchar_t` must be capable of representing all characters as a single element, a philosophy which has been bled into the relevant interfaces such as `mbrtowc` and other `*wc*` related types. As the values cannot be properly represented in the standard, this leaves people to either make stuff up or abandon it altogether. This means that the design introduced from C11[^N1570] and beyond is fundamentally broken when it comes to handling existing practice.
+
+Furthermore, clarification requests have had to be filed for other functions, just to improve their behavior with respect to multiple input and multiple output[^N2244]. Many have been noted as issues for `mbrtoc16` and similar functionality, as was originally part of Dr. Philip K. Krause's fixes to the functions[^N2282]. This paper attempts to solve the same problem in a more fundamental manner.
 
 
 
@@ -177,7 +179,7 @@ Here is what exists in the C Standard Library so far:
     <td class="feature-emoji-cell"> ✔️ </td>
     <td class="feature-emoji-cell"></td>
     <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"> ❌ </td>
+    <td class="feature-emoji-cell">❌</td>
     <td class="feature-emoji-cell"> 🇷 </td>
     <td class="feature-emoji-cell">🇷</td>
     <td class="feature-emoji-cell"></td>
@@ -191,8 +193,8 @@ Here is what exists in the C Standard Library so far:
     <td class="feature-emoji-cell"></td>
     <td class="feature-emoji-cell"></td>
     <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell"> ❌ </td>
-    <td class="feature-emoji-cell"> ❌ </td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">❌</td>
     <td class="feature-emoji-cell"></td>
     <td class="feature-emoji-cell"></td>
     <td class="feature-emoji-cell"></td>
@@ -206,9 +208,9 @@ Here is what exists in the C Standard Library so far:
     <td class="feature-emoji-cell"></td>
     <td class="feature-emoji-cell"></td>
     <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"> ❌ </td>
-    <td class="feature-emoji-cell"> ❌ </td>
-    <td class="feature-emoji-cell"> ❌ </td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">❌</td>
+    <td class="feature-emoji-cell">❌</td>
   </tr>
   <tr>
     <td class="feature-emoji-cell">wcs</td>
@@ -266,8 +268,8 @@ Here is what exists in the C Standard Library so far:
     <td class="feature-emoji-cell">c8s</td>
     <td class="feature-emoji-cell"></td>
     <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"> ❌ <br></td>
-    <td class="feature-emoji-cell"> ❌ </td>
+    <td class="feature-emoji-cell">❌<br></td>
+    <td class="feature-emoji-cell">❌</td>
     <td class="feature-emoji-cell"></td>
     <td class="feature-emoji-cell"></td>
     <td class="feature-emoji-cell"></td>
@@ -522,18 +524,21 @@ The input and output sizes are expressed in terms of the # of `charX`s. They tak
 
 The error codes are as follows:
 
-- `(size_t)-3` the input is correct but there is not enough output space
-- `(size_t)-2` an incomplete input was found after exhausting the input
-- `(size_t)-1` an encoding error occurred
-- `(size_t) 0` the operation was successful
+- `MCHAR_INSUFFICIENT_OUTPUT = (size_t)-3` | the input is correct but there is not enough output space
+- `MCHAR_INCOMPLETE_INPUT    = (size_t)-2` | an incomplete input was found after exhausting the input
+- `MCHAR_ENCODING_ERROR      = (size_t)-1` | an encoding error occurred
+- `MCHAR_OK                  = (size_t) 0` | the operation was successful
 
 The behaviors are as follows:
 
-- if `output` is `NULL`, then no output will be written. `*output_size` will be decremented the amount of characters that would have been written.
-- if `output` is non-`NULL` and `output_size` is `NULL`, then enough space is assumed in the output buffer.
-- for the restartable (`r`) functions, if `input` is `NULL`, then `state` is set to the initial conversion sequence and no other actions are performed; otherwise, `input` must not be `NULL`.
+- if `output` is `NULL`, then no output will be written. If `*output_size` is not-`NULL`, the value will be decremented the amount of characters that would have been written.
+- if `output` is non-`NULL` and `output_size` is `NULL`, then enough space is assumed in the output buffer and the `output_size`! is small.
+- for the restartable (`r`) functions, if `input` is `NULL` and `state` is not-`NULL`, then `state` is set to the initial conversion sequence and no other actions are performed; otherwise, `input` must not be `NULL`.
+- for the non-restartable functions (without `r`), it behaves as if:
+  - a non-`static` `mcstate_t` object is initialized to the initial conversion sequence;
+  - and, a pointer to this state object plus the original four parameters are passed to the restartable version of the function.
 
-Finally, it would be prudent to prevent the class of `(size_t)-3` errors from showing up in your code if you know you have enough space. For the non-string (the functions lacking `s`) that perform a single conversion, a user can pre-allocate a suitably sized static buffer in automatic duration storage space. This will be facilitated by a group of integral constant expressions contained in macros, which would be;
+Finally, it is useful to prevent the class of `(size_t)-3` errors from showing up in your code if you know you have enough space. For the non-string (the functions lacking `s`) that perform a single conversion, a user can pre-allocate a suitably sized static buffer in automatic storage duration space. This will be facilitated by a group of integral constant expressions contained in macros, which would be;
 
 - `STDC_MC_MAX`, which is the maximum output for a call to one of the X to multi character functions
 - `STDC_MWC_MAX`, which is the maximum output for a call to one of the X to multi wide character functions
@@ -581,25 +586,55 @@ size_t mcnrtoc32n(const char** input, size_t* input_size, const char32_t** outpu
 size_t mcsntoc32sn(const char** input, size_t* input_size, const char32_t** output, size_t* output_size);
 size_t mcsnrtoc32sn(const char** input, size_t* input_size, const char32_t** output, size_t* output_size, mcstate_t* state);
 
+size_t c8ntomcn(const unsigned char** input, size_t* input_size, const char** output, size_t* output_size);
+size_t c8nrtomcn(const unsigned char** input, size_t* input_size, const char** output, size_t* output_size, mcstate_t* state);
+size_t c8sntomcsn(const unsigned char** input, size_t* input_size, const char** output, size_t* output_size);
+size_t c8snrtomcsn(const unsigned char** input, size_t* input_size, const char** output, size_t* output_size, mcstate_t* state);
+
+size_t c16ntomcn(const char16_t** input, size_t* input_size, const char** output, size_t* output_size);
+size_t c16nrtomcn(const char16_t** input, size_t* input_size, const char** output, size_t* output_size, mcstate_t* state);
+size_t c16sntomcsn(const char16_t** input, size_t* input_size, const char** output, size_t* output_size);
+size_t c16snrtomcsn(const char16_t** input, size_t* input_size, const char** output, size_t* output_size, mcstate_t* state);
+
+size_t c32ntomcn(const char32_t** input, size_t* input_size, const char** output, size_t* output_size);
+size_t c32nrtomcn(const char32_t** input, size_t* input_size, const char** output, size_t* output_size, mcstate_t* state);
+size_t c32sntomcsn(const char32_t** input, size_t* input_size, const char** output, size_t* output_size);
+size_t c32snrtomcsn(const char32_t** input, size_t* input_size, const char** output, size_t* output_size, mcstate_t* state);
+
 size_t mwcntomcn(const wchar_t** input, size_t* input_size, const char** output, size_t* output_size);
 size_t mwcnrtomcn(const wchar_t** input, size_t* input_size, const char** output, size_t* output_size, mcstate_t* state);
 size_t mwcsntomcsn(const wchar_t** input, size_t* input_size, const char** output, size_t* output_size);
 size_t mwcsnrtomcsn(const wchar_t** input, size_t* input_size, const char** output, size_t* output_size, mcstate_t* state);
 
 size_t mwcntoc8n(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size);
-size_t mwcnrtoc8n(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size, mwcstate_t* state);
+size_t mwcnrtoc8n(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size, mcstate_t* state);
 size_t mwcsntoc8sn(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size);
-size_t mwcsnrtoc8sn(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size, mwcstate_t* state);
+size_t mwcsnrtoc8sn(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size, mcstate_t* state);
 
 size_t mwcntoc16n(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size);
-size_t mwcnrtoc16n(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size, mwcstate_t* state);
+size_t mwcnrtoc16n(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size, mcstate_t* state);
 size_t mwcsntoc16sn(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size);
-size_t mwcsnrtoc16sn(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size, mwcstate_t* state);
+size_t mwcsnrtoc16sn(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size, mcstate_t* state);
 
 size_t mwcntoc32n(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size);
-size_t mwcnrtoc32n(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size, mwcstate_t* state);
+size_t mwcnrtoc32n(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size, mcstate_t* state);
 size_t mwcsntoc32sn(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size);
-size_t mwcsnrtoc32sn(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size, mwcstate_t* state);
+size_t mwcsnrtoc32sn(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size, mcstate_t* state);
+
+size_t c8ntomwcn(const unsigned char** input, size_t* input_size, const wchar_t** output, size_t* output_size);
+size_t c8nrtomwcn(const unsigned char** input, size_t* input_size, const wchar_t** output, size_t* output_size, mcstate_t* state);
+size_t c8sntomwcsn(const unsigned char** input, size_t* input_size, const wchar_t** output, size_t* output_size);
+size_t c8snrtomwcsn(const unsigned char** input, size_t* input_size, const wchar_t** output, size_t* output_size, mcstate_t* state);
+
+size_t c16ntomwcn(const char16_t** input, size_t* input_size, const wchar_t** output, size_t* output_size);
+size_t c16nrtomwcn(const char16_t** input, size_t* input_size, const wchar_t** output, size_t* output_size, mcstate_t* state);
+size_t c16sntomwcsn(const char16_t** input, size_t* input_size, const wchar_t** output, size_t* output_size);
+size_t c16snrtomwcsn(const char16_t** input, size_t* input_size, const wchar_t** output, size_t* output_size, mcstate_t* state);
+
+size_t c32ntomwcn(const char32_t** input, size_t* input_size, const wchar_t** output, size_t* output_size);
+size_t c32nrtomwcn(const char32_t** input, size_t* input_size, const wchar_t** output, size_t* output_size, mcstate_t* state);
+size_t c32sntomwcsn(const char32_t** input, size_t* input_size, const wchar_t** output, size_t* output_size);
+size_t c32snrtomwcsn(const char32_t** input, size_t* input_size, const wchar_t** output, size_t* output_size, mcstate_t* state);
 ```
 
 
@@ -618,7 +653,7 @@ Thankfully, that does not seem to be the case at this time. If such changes or s
 
 # Conclusion
 
-The ecosystem deserves ways to get to a statically-known encoding and not rely on implementation and locale-parameterized encodings. This allows developers a way to perform cross-platform text processing without needing to go through fantastic gymnastics to support different languages and platforms. An independent library implementation, _cuneicode_[^unicode_greater_detail] [^unicode_deep_c_diving], is available upon request to the author. A patch to major libraries will be worked on again.
+The ecosystem deserves ways to get to a statically-known encoding and not rely on implementation and locale-parameterized encodings. This allows developers a way to perform cross-platform text processing without needing to go through fantastic gymnastics to support different languages and platforms. An independent library implementation, _cuneicode_[^unicode_greater_detail] [^unicode_deep_c_diving], is available upon request to the author. A patch to major libraries will be worked on once more after some affirmation of the direction.
 
 
 
@@ -644,8 +679,6 @@ Thank you to Philipp K. Krause for responding to the e-mails of a newcomer to ma
 [^iconv]: Bruno Haible and Daiki Ueno. libiconv. August 2020. Published: [https://savannah.gnu.org/git/?group=libiconv](https://savannah.gnu.org/git/?group=libiconv).  
 [^N2244]: WG14. Clarification Request Summary for C11, Version 1.13. October 2017. Published: [http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2244.htm](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2244.htm).  
 [^N1570]: ISO/IEC, WG14. Programming Languages - C (Committee Draft). April 12, 2011. Published: [http://www.open-std.org/jtc1/sc22/WG14/www/docs/n1570.pdf](http://www.open-std.org/jtc1/sc22/WG14/www/docs/n1570.pdf).  
-[^encoding_rs]: Henri Sivonen. `encoding_rs`: a Web-Compatible Character Encoding Library in Rust. December 2018. Published: [https://hsivonen.fi/encoding_rs/#results](https://hsivonen.fi/encoding_rs/#results).  
-[^fast_utf8]: Bob Steagall. Fast Conversion From UTF-8 with C++, DFAs, an SSE Intrinsics. September 2018. Published: [https://www.youtube.com/watch?v=5FQ87-Ecb-A](https://www.youtube.com/watch?v=5FQ87-Ecb-A)  
 [^P1041]: Robot Martinho Fernandes. p1041. February 2019. Published: [https://wg21.link/p1041](https://wg21.link/p1041).  
 [^unicode_greater_detail]: JeanHeyd Meneide. Catching ⬆️: Unicode for C++ in Greater Detail". November 2019. Published Meeting C++: [https://www.youtube.com/watch?v=FQHofyOgQtM](https://www.youtube.com/watch?v=FQHofyOgQtM).
 [^unicode_deep_c_diving]: JeanHeyd Meneide. Deep C Diving - Fast and Scalable Text Interfaces at the Bottom. July 2020. Published C++ On Sea: [https://youtu.be/X-FLGsa8LVc](https://www.youtube.com/watch?v=FQHofyOgQtM).
