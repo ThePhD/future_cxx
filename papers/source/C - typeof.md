@@ -130,7 +130,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 <p>Except when it is the operand of the <del><code class="c-kw">sizeof</code> operator</del><ins><code class="c-kw">sizeof</code>, or typeof operators</ins>, or the unary <code>&</code> operator, or is a string literal used to initialize an array, an expression that has type "array of <i>type</i>" is converted to an expression with type "pointer to <i>type</i>" that points to the initial element of the array object and is not an lvalue. If the array object has register storage class, the behavior is undefined.</p>
 </div>
 <div class="numbered numbered-4">
-<p>A <i>function designator</i> is an expression that has function type. Except when it is the operand of the <del><b><code>sizeof</b></code> operator</del><ins><code class="c-kw">sizeof</code> operator, the typeof operator</ins><sup>68)</sup>or the unary <code>&</code> operator, a function designator with type "function returning <i>type</i>" is converted to an expression that has type "pointer to function returning <i>type</i>".</p>
+<p>A <i>function designator</i> is an expression that has function type. Except when it is the operand of the <del><b><code>sizeof</b></code> operator</del><ins><code class="c-kw">sizeof</code> operator, a typeof operator</ins><sup>68)</sup>or the unary <code>&</code> operator, a function designator with type "function returning <i>type</i>" is converted to an expression that has type "pointer to function returning <i>type</i>".</p>
 </div>
 
 <div><sub><sup>68)</sup>Because this conversion does not occur, the operand of the <del><b><code>sizeof</b></code> operator</del><ins><code class="c-kw">sizeof</code> and typeof operators</ins> remains a function designator and violates the constraints in 6.5.3.4.</sub>
@@ -239,7 +239,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 </div>
 
 <div class="numbered">
-<p>All qualifiers (6.7.3) on the type from the result of a <code class="c-kw">_Unqual_typeof</code> operation are removed. Otherwise, for <code class="c-kw">_Typeof</code> operations, all qualifiers are preserved.</p>
+<p>All qualifiers (6.7.3) on the type from the result of a <code class="c-kw">_Unqual_typeof</code> operation are removed, including <code class="c-kw">_Atomic</code>. Otherwise, for <code class="c-kw">_Typeof</code> operations, all qualifiers are preserved.</p>
 </div>
 
 <p><sup>11�0)</sup><sub> When applied to a parameter declared to have array or function type, the <code class="c-kw">_Typeof</code> operator yields the adjusted (pointer) type (see 6.9.1).</sub></p>
@@ -409,7 +409,7 @@ If the same qualifier appears more than once in the same specifier-qualifier lis
 
 <blockquote>
 <div class="numbered numbered-5">
-<p>If the size is an expression that is not an integer constant expression: if it occurs in a declaration at function prototype scope, it is treated as if it were replaced by <code>*</code>; otherwise, each time it is evaluated it shall have a value greater than zero. The size of each instance of a variable length array type does not change during its lifetime. Where a size expression is part of the operand of a <ins>typeof or</ins><code class="c-kw">sizeof</code> operator and changing the value of the size expression would not affect the result of the operator, it is unspecified whether or not the size expression is evaluated. Where a size expression is part of the operand of an <code class="c-kw">_Alignof</code> operator, that expression is not evaluated.</p>
+<p>If the size is an expression that is not an integer constant expression: if it occurs in a declaration at function prototype scope, it is treated as if it were replaced by <code>*</code>; otherwise, each time it is evaluated it shall have a value greater than zero. The size of each instance of a variable length array type does not change during its lifetime. Where a size expression is part of the operand of a <ins>typeof or</ins> <code class="c-kw">sizeof</code> operator and changing the value of the size expression would not affect the result of the operator, it is unspecified whether or not the size expression is evaluated. Where a size expression is part of the operand of an <code class="c-kw">_Alignof</code> operator, that expression is not evaluated.</p>
 </div>
 </blockquote>
 
@@ -431,7 +431,7 @@ If the same qualifier appears more than once in the same specifier-qualifier lis
 <p>...</p>
 
 <div class="numbered numbered-5">
-<p>An <i>external definition</i> is an external declaration that is also a definition of a function (other than an inline definition) or an object. If an identifier declared with external linkage is used in an expression (other than as a part of the operand of a <del><code class="c-kw">sizeof</code>,</del><ins>typeof operator whose result is a variably modified type, or a <code class="c-kw">sizeof</code></ins> or <code class="c-kw">_Alignof</code> operator whose result is an integer constant), somewhere in the entire program there shall be exactly one external definition for the identifier; otherwise, there shall be no more than one.<sup>173)</sup></p>
+<p>An <i>external definition</i> is an external declaration that is also a definition of a function (other than an inline definition) or an object. If an identifier declared with external linkage is used in an expression (other than as a part of the operand of a <del><code class="c-kw">sizeof</code>,</del><ins>typeof operator whose result is not a variably modified type, or a <code class="c-kw">sizeof</code></ins> or <code class="c-kw">_Alignof</code> operator whose result is an integer constant), somewhere in the entire program there shall be exactly one external definition for the identifier; otherwise, there shall be no more than one.<sup>173)</sup></p>
 </div>
 </blockquote>
 

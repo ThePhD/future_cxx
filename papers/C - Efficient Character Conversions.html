@@ -96,14 +96,15 @@ src: url(data:font/woff2;base64,d09GMgABAAAABOEoABIAAAAL5xQABOCvAAEAAAAAAAAAAAAA
 <h1 class="title">Restartable and Non-Restartable Functions for Efficient Character Conversions | r4</h1>
 <p class="author">JeanHeyd Meneide &lt;<a href="mailto:phdofthehouse@gmail.com" class="email">phdofthehouse@gmail.com</a>&gt;</p>
 <p class="author">Shepherd (Shepherd’s Oasis) &lt;<a href="mailto:shepherd@soasis.org" class="email">shepherd@soasis.org</a>&gt;</p>
-<p class="date">October 27th, 2020</p>
+<p class="date">November 23rd, 2020</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
 <li><a href="#changelog"><span class="toc-section-number">1</span> Changelog</a>
 <ul>
-<li><a href="#revision-3---october-27th-2020"><span class="toc-section-number">1.1</span> Revision 3 - October 27th, 2020</a></li>
-<li><a href="#revision-0-2---march-2nd-2020"><span class="toc-section-number">1.2</span> Revision 0-2 - March 2nd, 2020</a></li>
+<li><a href="#revision-4---november-23rd-2020"><span class="toc-section-number">1.1</span> Revision 4 - November 23rd, 2020</a></li>
+<li><a href="#revision-3---october-27th-2020"><span class="toc-section-number">1.2</span> Revision 3 - October 27th, 2020</a></li>
+<li><a href="#revision-0-2---march-2nd-2020"><span class="toc-section-number">1.3</span> Revision 0-2 - March 2nd, 2020</a></li>
 </ul></li>
 <li><a href="#intro"><span class="toc-section-number">2</span> Introduction and Motivation</a>
 <ul>
@@ -132,8 +133,8 @@ src: url(data:font/woff2;base64,d09GMgABAAAABOEoABIAAAAL5xQABOCvAAEAAAAAAAAAAAAA
 <li><a href="#references"><span class="toc-section-number">8</span> References</a></li>
 </ul>
 </nav>
-<p><em><strong>Document</strong></em>: n2595<br />
-<em><strong>Previous Revisions</strong></em>: n2440, n2431, n2500<br />
+<p><em><strong>Document</strong></em>: n6xx<br />
+<em><strong>Previous Revisions</strong></em>: n2440, n2431, n2500, n2595<br />
 <em><strong>Audience</strong></em>: WG14<br />
 <em><strong>Proposal Category</strong></em>: New Library Features<br />
 <em><strong>Target Audience</strong></em>: General Developers, Text Processing Developers<br />
@@ -153,12 +154,18 @@ This paper proposes and explores additional library functionality to allow users
 
 </div>
 <h1 data-number="1" id="changelog"><span class="header-section-number">1</span> Changelog</h1>
-<h2 data-number="1.1" id="revision-3---october-27th-2020"><span class="header-section-number">1.1</span> Revision 3 - October 27th, 2020</h2>
+<h2 data-number="1.1" id="revision-4---november-23rd-2020"><span class="header-section-number">1.1</span> Revision 4 - November 23rd, 2020</h2>
+<ul>
+<li>Add missing functions for c8/16/32 to the platform-specific variants.</li>
+<li>Ensure that <code>mcstate_t</code> is used throughout.</li>
+<li>Explain behavior of <code>NULL</code> for <code>mcstate_t</code> to avoid use of globals.</li>
+</ul>
+<h2 data-number="1.2" id="revision-3---october-27th-2020"><span class="header-section-number">1.2</span> Revision 3 - October 27th, 2020</h2>
 <ul>
 <li>Completely Reformulate Paper based on community, musl-libc, and glibc feedback.</li>
 <li>Completely rewrite every section past <a href="#proposed-changes">Proposed Changes</a>, and change many more.</li>
 </ul>
-<h2 data-number="1.2" id="revision-0-2---march-2nd-2020"><span class="header-section-number">1.2</span> Revision 0-2 - March 2nd, 2020</h2>
+<h2 data-number="1.3" id="revision-0-2---march-2nd-2020"><span class="header-section-number">1.3</span> Revision 0-2 - March 2nd, 2020</h2>
 <ul>
 <li>Introduce new functions and gather consensus to move forward.</li>
 <li>Attempt to implement in other standard libraries and gather feedback.</li>
@@ -920,7 +927,8 @@ c32s
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="dt">size_t</span> XsntoYsn(<span class="at">const</span> charX** input, <span class="dt">size_t</span>* input_size, <span class="at">const</span> charY** output, <span class="dt">size_t</span>* output_size);</span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="dt">size_t</span> XsnrtoYsn(<span class="at">const</span> charX** input, <span class="dt">size_t</span>* input_size, <span class="at">const</span> charY** output, <span class="dt">size_t</span>* output_size, <span class="dt">mcstate_t</span>* state);</span></code></pre></div>
 <p>The input and output sizes are expressed in terms of the # of <code>charX</code>s. They take the input/output sizes as pointers, and decrement the value by the amount of input/output consumed. Similarly, the input/output data pointers themselves are incremented by the amount of spaces consumed / written to. This only happens when an irreversible and successful conversion of input data can successfully and without error be written to the output. The <code>s</code> functions work on whole strings rather than just a single complete irreversible conversion, the <code>n</code> stands for taking a size value.</p>
-<p>The error codes are as follows:</p>
+<p>Input is consumed and output is written (with sizes updated) in accordance with a single, successful computation of an <em>indivisible unit of work</em>. An <em>indivisible unit of work</em> is the smallest set of input that can be consumed that produces no error and guarantees forward progress through the input buffer. No output is guaranteed to occur (e.g., during the consumption of a shift state mechanism for e.g. SHIFT-JIS), but if output does happen then it only occurs upon the successful completion of an <em>indivisible unit of work</em>.</p>
+<p>If an error happens, the conversion is stopped and an error code is returned. The function does not decrement the input or output sizes for the failed operation, nor does it shift the input and output pointers forward for the failed operation. “Failed operation” refers to a single, indivisible unit of work. in The error codes are as follows:</p>
 <ul>
 <li><code>MCHAR_INSUFFICIENT_OUTPUT = (size_t)-3</code> | the input is correct but there is not enough output space</li>
 <li><code>MCHAR_INCOMPLETE_INPUT    = (size_t)-2</code> | an incomplete input was found after exhausting the input</li>
@@ -930,7 +938,7 @@ c32s
 <p>The behaviors are as follows:</p>
 <ul>
 <li>if <code>output</code> is <code>NULL</code>, then no output will be written. If <code>*output_size</code> is not-<code>NULL</code>, the value will be decremented the amount of characters that would have been written.</li>
-<li>if <code>output</code> is non-<code>NULL</code> and <code>output_size</code> is <code>NULL</code>, then enough space is assumed in the output buffer and the <code>output_size</code>! is small.</li>
+<li>if <code>output</code> is non-<code>NULL</code> and <code>output_size</code> is <code>NULL</code>, then enough space is assumed in the output buffer for the entire operation</li>
 <li>for the restartable (<code>r</code>) functions, if <code>input</code> is <code>NULL</code> and <code>state</code> is not-<code>NULL</code>, then <code>state</code> is set to the initial conversion sequence and no other actions are performed; otherwise, <code>input</code> must not be <code>NULL</code>.</li>
 <li>for the non-restartable functions (without <code>r</code>), it behaves as if:
 <ul>
@@ -1034,7 +1042,7 @@ c32s
 <span id="cb3-84"><a href="#cb3-84" aria-hidden="true" tabindex="-1"></a><span class="dt">size_t</span> c32snrtomwcsn(<span class="at">const</span> <span class="dt">char32_t</span>** input, <span class="dt">size_t</span>* input_size, <span class="at">const</span> <span class="dt">wchar_t</span>** output, <span class="dt">size_t</span>* output_size, <span class="dt">mcstate_t</span>* state);</span></code></pre></div>
 <h2 data-number="4.1" id="proposed-utf"><span class="header-section-number">4.1</span> What about UTF{X} ↔︎ UTF{Y} functions?</h2>
 <p>Function interconverting between different Unicode Transformation Formats are not proposed here because – while useful – both sides of the encoding are statically known by the developer. The C Standard only wants to consider functionality strictly in the case where the implementation has more information / private information that the developer cannot access in a well-defined and standard manner. A developer can write their own Unicode Transformation Format conversion routines and get them completely right, whereas a developer cannot write the Wide Character and Multibyte Character functions without incredible heroics and/or error-prone assumptions.</p>
-<p>This brings up an interesting point, however: if <code>__STD_C_UTF16__</code> and <code>__STD_C_UTF32__</code> both exist, does that not mean the implementation controls what <code>c16</code> and <code>c32</code> mean? This is true, <strong>however</strong>: within a (admittedly limited) survey of implementations, there has been no suggestion or report of an implementation which does not use UTF16 and UTF32 for their <code>char16_t</code> and <code>char32_t</code> literals, respectively. This motivation was, in fact, why a paper percolating through the WG21 Committee – <a href="https://wg21.link/p1041">p1041 “Make <code>char16_t</code>/<code>char32_t</code> literals be UTF16/UTF32”</a><a href="#fn7" class="footnote-ref" id="fnref7" role="doc-noteref"><sup>7</sup></a> – was accepted. If this changes, then the conversion functions <code>c{X}toc{Y}</code> marked with an❌will become important.</p>
+<p>This brings up an interesting point, however: if <code>__STD_C_UTF16__</code> and <code>__STD_C_UTF32__</code> both exist, does that not mean the implementation controls what <code>c16</code> and <code>c32</code> mean? This is true, <strong>however</strong>: within a (admittedly limited) survey of implementations, there has been no suggestion or report of an implementation which does not use UTF16 and UTF32 for their <code>char16_t</code> and <code>char32_t</code> literals, respectively. This motivation was, in fact, why a paper percolating through the WG21 Committee – <a href="https://wg21.link/p1041">p1041 “Make <code>char16_t</code>/<code>char32_t</code> literals be UTF16/UTF32”</a><a href="#fn7" class="footnote-ref" id="fnref7" role="doc-noteref"><sup>7</sup></a> – was accepted. If this changes, then the conversion functions <code>c{X}toc{Y}</code> marked with an ❌ will become important.</p>
 <p>Thankfully, that does not seem to be the case at this time. If such changes or such an implementation is demonstrated, these functions can be added to aid in portability.</p>
 <h1 data-number="5" id="conclusion"><span class="header-section-number">5</span> Conclusion</h1>
 <p>The ecosystem deserves ways to get to a statically-known encoding and not rely on implementation and locale-parameterized encodings. This allows developers a way to perform cross-platform text processing without needing to go through fantastic gymnastics to support different languages and platforms. An independent library implementation, <em>cuneicode</em><a href="#fn8" class="footnote-ref" id="fnref8" role="doc-noteref"><sup>8</sup></a> <a href="#fn9" class="footnote-ref" id="fnref9" role="doc-noteref"><sup>9</sup></a>, is available upon request to the author. A patch to major libraries will be worked on once more after some affirmation of the direction.</p>

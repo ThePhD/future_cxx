@@ -1,6 +1,6 @@
 ---
 title: Restartable and Non-Restartable Functions for Efficient Character Conversions | r4
-date: October 27th, 2020
+date: November 23rd, 2020
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
   - Shepherd (Shepherd's Oasis) \<<shepherd@soasis.org>\>
@@ -15,8 +15,8 @@ redirect_from:
 hide: true
 ---
 
-_**Document**_: n2595  
-_**Previous Revisions**_: n2440, n2431, n2500  
+_**Document**_: n6xx  
+_**Previous Revisions**_: n2440, n2431, n2500, n2595  
 _**Audience**_: WG14  
 _**Proposal Category**_: New Library Features  
 _**Target Audience**_: General Developers, Text Processing Developers  
@@ -39,6 +39,14 @@ This paper proposes and explores additional library functionality to allow users
 
 
 # Changelog
+
+
+
+## Revision 4 - November 23rd, 2020
+
+- Add missing functions for c8/16/32 to the platform-specific variants.
+- Ensure that `mcstate_t` is used throughout.
+- Explain behavior of `NULL` for `mcstate_t` to avoid use of globals.
 
 
 
@@ -147,6 +155,7 @@ This serves as the core motivation for this proposal.
 # Prior Art {#prior}
 
 There are many sources of prior art for the desired feature set. Some functions (with fixes) were implemented directly in implementations, embedded and otherwise. Others rely exclusively platform-specific code in both Windows and POSIX implementations. Others have cross-platform libraries that work across a myriad of platforms, such as ICU or iconv. We discuss the most diverse and exemplary implementations.
+
 
 
 ## Standard C {#prior-standard}
@@ -522,7 +531,9 @@ size_t XsnrtoYsn(const charX** input, size_t* input_size, const charY** output, 
 
 The input and output sizes are expressed in terms of the # of `charX`s. They take the input/output sizes as pointers, and decrement the value by the amount of input/output consumed. Similarly, the input/output data pointers themselves are incremented by the amount of spaces consumed / written to. This only happens when an irreversible and successful conversion of input data can successfully and without error be written to the output. The `s` functions work on whole strings rather than just a single complete irreversible conversion, the `n` stands for taking a size value.
 
-The error codes are as follows:
+Input is consumed and output is written (with sizes updated) in accordance with a single, successful computation of an _indivisible unit of work_. An _indivisible unit of work_ is the smallest set of input that can be consumed that produces no error and guarantees forward progress through the input buffer. No output is guaranteed to occur (e.g., during the consumption of a shift state mechanism for e.g. SHIFT-JIS), but if output does happen then it only occurs upon the successful completion of an _indivisible unit of work_.
+
+If an error happens, the conversion is stopped and an error code is returned. The function does not decrement the input or output sizes for the failed operation, nor does it shift the input and output pointers forward for the failed operation. "Failed operation" refers to a single, indivisible unit of work. in The error codes are as follows:
 
 - `MCHAR_INSUFFICIENT_OUTPUT = (size_t)-3` | the input is correct but there is not enough output space
 - `MCHAR_INCOMPLETE_INPUT    = (size_t)-2` | an incomplete input was found after exhausting the input
@@ -532,7 +543,7 @@ The error codes are as follows:
 The behaviors are as follows:
 
 - if `output` is `NULL`, then no output will be written. If `*output_size` is not-`NULL`, the value will be decremented the amount of characters that would have been written.
-- if `output` is non-`NULL` and `output_size` is `NULL`, then enough space is assumed in the output buffer and the `output_size`! is small.
+- if `output` is non-`NULL` and `output_size` is `NULL`, then enough space is assumed in the output buffer for the entire operation
 - for the restartable (`r`) functions, if `input` is `NULL` and `state` is not-`NULL`, then `state` is set to the initial conversion sequence and no other actions are performed; otherwise, `input` must not be `NULL`.
 - for the non-restartable functions (without `r`), it behaves as if:
   - a non-`static` `mcstate_t` object is initialized to the initial conversion sequence;
