@@ -7,16 +7,16 @@ author:
 layout: paper
 redirect_from:
   - /vendor/future_cxx/papers/source/n2593.html
-  - /vendor/future_cxx/papers/source/n26X1.html
+  - /vendor/future_cxx/papers/source/n2620.html
 hide: true
 ---
 
-_**Document**_: n26XX  
+_**Document**_: n2619  
 _**Previous Revisions**_: None  
 _**Audience**_: WG14  
 _**Proposal Category**_: New Features  
 _**Target Audience**_: General Developers, Compiler/Tooling Developers  
-_**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/n2593.html](https://thephd.github.io/vendor/future_cxx/papers/source/n2593.html)
+_**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/C%20-%20typeof.html](https://thephd.github.io/vendor/future_cxx/papers/source/C%20-%20typeof.html)
 
 <div class="text-center">
 <h6>Abstract:</h6>

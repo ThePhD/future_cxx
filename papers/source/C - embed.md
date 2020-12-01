@@ -1,6 +1,6 @@
 ---
 title: Preprocessor embed - Binary Resource Inclusion
-date: October 31st, 2020
+date: December 1st, 2020
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
 layout: paper
@@ -10,11 +10,12 @@ redirect_from:
   - /vendor/future_cxx/papers/source/n2470.html
   - /vendor/future_cxx/papers/source/n2499.html
   - /vendor/future_cxx/papers/source/n2592.html
+  - /vendor/future_cxx/papers/source/n26X0.html
 hide: true
 ---
 
-_**Document**_: WG14 n2592 | WG21 p1967r3  
-_**Previous Revisions**_: WG14 n2470 | WG21 p1967r0, p1967r1, p1967r2  
+_**Document**_: WG14 n26XX | WG21 p1967r4  
+_**Previous Revisions**_: WG14 n2470, n2499, n2592 | WG21 p1967r0, p1967r1, p1967r2, p1967r3  
 _**Audience**_: WG14, WG21  
 _**Proposal Category**_: New Features  
 _**Target Audience**_: General Developers, Application Developers, Compiler/Tooling Developers  
@@ -40,11 +41,20 @@ This proposal provides a flexible preprocessor directive for making this data av
 # Changelog
 
 
+
+## Revision 4 - December 1st, 2020
+
+- Added post C meeting fixes to prepare for hopeful success next meeting.
+- Added 2 more examples to C and C++ wording.
+- Vastly improved wording and reduced ambiguities in syntax and semantics.
+
+
 ## Revision 3 - October 25th, 2020
 
 - Added post C++ meeting notes and discussion.
 - Removed type or bit specifications from the `#embed` directive.
 - Moved "Type Flexibility" section and related notes to the Appendix as they are now unpursued.
+
 
 
 ## Revision 2 - April 10th, 2020
@@ -53,14 +63,17 @@ This proposal provides a flexible preprocessor directive for making this data av
 - Added discussion of potential endianness.
 
 
+
 ## Revision 1 - March 5th, 2020
 
 - Improved wording section at the end to be more detailed in handling preprocessor (which does not understand types).
 
 
+
 ## Revision 0 - January 5th, 2020
 
 - Initial release.
+
 
 
 
@@ -80,6 +93,8 @@ The votes for the C Committee are as follows:
 - N: Nay
 - A: Abstain
 
+
+
 ## September 2020 Virtual C++ EWG Meeting
 
 "We want `#embed [optional limit] header-name` (no type name, no other specification) as a feature."
@@ -88,7 +103,7 @@ The votes for the C Committee are as follows:
 |----|----|---|---|----|
 | 2  | 16 | 3 | 0 |  1 |
 
-This vote gained the most consensus in the Committee. While there were some individuals who wanted to be able to specify a type, there was stronger interest in not specifying a type at all and always producing a list of integer literals suitable to be used anywhere an `initializer-list` was valid.
+This vote gained the most consensus in the Committee. While there were some individuals who wanted to be able to specify a type, there was stronger interest in not specifying a type at all and always producing a list of integer literals suitable to be used anywhere an `comma separated list` was valid.
 
 "We want to explore allowing an optional sequence of tokens to specify a type to `#embed`."
 
@@ -97,6 +112,7 @@ This vote gained the most consensus in the Committee. While there were some indi
 | 1  | 9 | 4 | 4 |  3 |
 
 Further need was also expressed for `constexpr` of different types of variables, so we would rather focus that ability into a sister feature, [`std::embed`](/vendor/future_cxx). There was also an expression to augment `std::bitcast<...>(...)` to handle arrays of data, which would be a follow-on proposal. There was a great amount of interest in the `std::bitcast` direction, which means a paper should be written to follow up on it.
+
 
 
 ## April 2020 Virtual C Meeting
@@ -117,6 +133,8 @@ This had UNANIMOUS CONSENT to pursue a proper preprocessor directive and NOT use
 - A: 4 Abstain (Abstain)
 
 This poll will be a bit harder to accommodate properly. Using a _`constant-expression`_ that produces a numeric constant means that the max-length specifier is now ambiguous. The syntax of the directive may need to change to accommodate further exploration.
+
+
 
 
 # Introduction
@@ -196,8 +214,6 @@ There are two design goals at play here, sculpted to specifically cover industry
 Providing a directive that mirrors `#include` makes it natural and easy to understand and use this new directive. It accepts both chevron-delimited (`<>`) and quote-delimited (`""`) strings like `#include` does. This matches the way people have been generating files to `#include` in their programs, libraries and applications: matching the semantics here preserves the same mental model. This makes it easy to teach and use, since it follows the same principles:
 
 ```cpp
-#include <limits.h>
-
 /* default is unsigned char */
 const unsigned char icon_display_data[] = {
     #embed "art.png"
@@ -212,8 +228,6 @@ const char reset_blob[] = {
 Because of its design, it also lends itself to being usable in a wide variety of contexts and with a wide variety of vendor extensions. For example:
 
 ```cpp
-#include <limits.h>
-
 /* attributes work just as well */
 const signed char aligned_data_str[] __attribute__ ((aligned (8))) = {
     #embed "attributes.xml"
@@ -242,7 +256,7 @@ The second principle guiding the design of this feature is facing the increasing
 
 String literals do not suffer the same compilation times or memory scaling issues, but the C Standard has limits on the maximum size of string literals (§5.2.4.1, "— 4095 characters in a string literal (after concatenation)"). One implementation takes the C Standard quite almost exactly at face value: it allows 4095 bytes in a single string _piece_, so multiple quoted pieces each no larger than 4095 bytes must be used to create large enough string literals to handle the work.
 
-`#embed`'s specification is such that it behaves "as if" it expands to an <i>initializer-list</i>, comma-separated sequence of integral literals. This means an implementation does not have to run the full gamut of producing an abstract syntax tree of an expression. Nor does it need to generate a token sequence that must be manipulated by the preprocessor either. Most compilers do not need a fully generic expression list that spans several AST nodes for what is logically just a sequence of numeric literals. A more direct representation can be used internally in the compiler, drastically speeding up processing and embedding of the binary data into the translation unit for use by the program. One of the test implementations uses such a direct representation and achieves drastically reduced memory and compile time footprint, making large binary data accessible in C programs in an affordable manner.
+`#embed`'s specification is such that it behaves "as if" it expands to an comma separated list, comma-separated sequence of integral literals. This means an implementation does not have to run the full gamut of producing an abstract syntax tree of an expression. Nor does it need to generate a token sequence that must be manipulated by the preprocessor either. Most compilers do not need a fully generic expression list that spans several AST nodes for what is logically just a sequence of numeric literals. A more direct representation can be used internally in the compiler, drastically speeding up processing and embedding of the binary data into the translation unit for use by the program. One of the test implementations uses such a direct representation and achieves drastically reduced memory and compile time footprint, making large binary data accessible in C programs in an affordable manner.
 
 
 ### Infinity Files
@@ -285,7 +299,7 @@ This wording is relative to C's latest working draft.
 The intent of the wording is to provide a preprocessing directive that:
 
 - takes a string literal identifier -- potentially from the expansion of a macro or expression that produces a macro -- and uses it to find a unique resource in some implementation-specific manner;
-- it produces a list of integral constant values suitable for an _initializer-list_, where each element of that list is bound by the width and size of `unsigned char` as found in `<limits.h>`;
+- it produces a list of integer constant values suitable for a _comma separated list_, where each element of that list is bound by the width and size of `unsigned char` as determined by the implementation;
 - errors if the size of the resource does not have enough bits to fully and properly initialize all the values generated by the directive;
 - allows a limit parameter limiting the number of elements to be specified;
 - and, present such contents as if by a list of values, such that it can be used to initialize arrays of known and unknown bound even if additional elements of the whole initialization list come before or after the directive.
@@ -295,6 +309,12 @@ The intent of the wording is to provide a preprocessing directive that:
 ## Proposed Language Wording
 
 Note: The � is a stand-in character to be replaced by the editor.
+
+**Modify 6.4.7, paragraph 4:**
+
+<blockquote>
+<p>... There is one exception to this rule: header name preprocessing tokens are recognized only within <code class="c-kw">#include</code><ins> and <code class="c-kw">#embed</code></ins> preprocessing directives and in implementation-defined locations within <code class="c-kw">#pragma</code> directives. ...</p>
+</blockquote>
 
 **Add another _control-line_ production and a new _parenthesized-non-header-digits_ to §6.10 Preprocessing Directives, Syntax, paragraph 1:**
 
@@ -312,16 +332,16 @@ Note: The � is a stand-in character to be replaced by the editor.
 <p><h3><b>§6.10.� &emsp; &emsp; Resource embedding</b></h3></p>
 
 <p><b>Constraints</b></p>
-<p><sup>1</sup>A <b><code>&num;embed</code></b> directive shall identify a resource that can be processed by the implementation as a binary data sequence, of an optionally specified type, that results in a part of or a whole of an <i>initializer-list</i>.</p>
+<p><sup>1</sup>A <b><code>&num;embed</code></b> directive shall identify a resource that can be processed by the implementation as a binary data sequence. It behaves as-if it generates a token sequence of a comma separated list of values, as specified below. If there is only a single element, there is no trailing or preceding comma in the list of values. If there are no elements then the directive this is replaced by nothing. If there are two or more elements in the list of values then each element is separated by a comma, with no leading or trailing comma in the list.</p>
 
 <p><b>Semantics</b></p>
 <p><sup>2</sup> A preprocessing directive of the form</p>
 
 <p>
-&emsp; &emsp; <b>&num;</b> <b>embed</b> <i>constant-expression<sub>opt</sub></i> <b><code>&lt;</code></b> <i>h-char-sequence</i> <b><code>&gt;</code></b><i>new-line</i>
+&emsp; &emsp; <b>&num;</b> <b>embed</b> <i>constant-expression<sub>opt</sub></i> <b><code>&lt;</code></b> <i>h-char-sequence</i> <b><code>&gt;</code></b> <i>new-line</i>
 </p>
 
-<p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&lt;</code> and <code>&gt;</code>. The named resource is searched for in an implementation-defined manner.</p>
+<p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&lt;</code> and <code>&gt;</code>. The search for the named resource is done in an implementation-defined manner.</p>
 
 <p><sup>3</sup> A preprocessing directive of the form</p>
 
@@ -329,7 +349,7 @@ Note: The � is a stand-in character to be replaced by the editor.
 &emsp; &emsp; <b>&num;</b> <b>embed</b> <i>constant-expression<sub>opt</sub></i> <code>&quot;</code> <i>q-char-sequence</i> <code>&quot;</code> <i>new-line</i>
 </p>
 
-<p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&quot;</code>, or <code>&lt;</code> and <code>&gt;</code>, delimiters. The named resource is searched for in an implementation-defined manner. If this search is not supported, or if the search fails, the directive is reprocessed as if it read</p>
+<p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&quot;</code>, or <code>&lt;</code> and <code>&gt;</code>, delimiters. The search for the named resource is done in an implementation-defined manner. If this search is not supported, or if the search fails, the directive is reprocessed as if it read</p>
 
 <p>
 &emsp; &emsp; <b>&num;</b> <b>embed</b> <i>constant-expression<sub>opt</sub></i> <code>&lt;</code> <i>h-char-sequence</i> <code>&gt;</code> <i>new-line</i>
@@ -337,34 +357,37 @@ Note: The � is a stand-in character to be replaced by the editor.
 
 <p>with the identical contained <i>q-char-sequence</i> (including &gt; characters, if any) from the original directive.</p>
 
-<p><sup>4</sup> If either form of the <b><code>&num;embed</code></b> directive specified is not preceded by an <b><code>&num;include</code></b> directive for <code>&lt;limits.h&gt;</code>, then an implementation may issue a diagnostic.</p>
+<p><sup>4</sup> Either form of the <b><code>&num;embed</code></b> directive specified previously behave as if it were expanded to an comma separated list. Specifically, each element of the comma separated list behaves as if the characters from the resource were read and mapped in an implementation-defined manner to a sequence of bits. The sequence of bits is used to produce integer constant expressions and must have a value between <code>0</code> and <code>EMBED-MAX</code>, inclusive.<sup>18���)</sup></p>
 
-<p><sup>5</sup> Either form of the <b><code>&num;embed</code></b> directive specified previously, for the following token sequence of <code>unsigned char</code>, behave as if it were expanded to an <i>initializer-list</i>. Specifically, each element of the <i>initializer-list</i> behaves as if the characters from the resource were read and mapped in an implementation-defined manner to a sequence of bits. The sequence of bits is used to produce an <i>integer constant expression</i> of exactly <code>UCHAR_WIDTH</code> bits and must have a value between <code>0</code> and <code>UCHAR_MAX</code>, inclusive.</p>
+<p><sup>5</sup> If a <i>constant-expression</i> is specified, it shall be suitable for use in an <code><b>&num;</b>if</code> preprocessing directive and interpreted as specified in (6.10.1). It shall result in an integer constant expression. The mapping from the contents of the resource to the elements of the comma separated list shall contain up to <i>constant-expression</i> elements according to the above. The implementation shall issue a diagnostic if the implementation-defined bit size is not a multiple of the <code>EMBED-WIDTH</code>; and, the implementation-defined bit size is less than the <i>constant-expression</i> multiplied by the <code>EMBED-WIDTH</code>. The program is well-formed if the implementation-defined bit size is greater than or equal to the <i> constant-expression</i> multiplied by the <code>EMBED-WIDTH</code>.</p>
 
-<p><sup>6</sup> If a <i>constant-expression</i> is specified, it shall result in an integral constant and be suitable for use in an <code><b>&num;</b>if</code> preprocessing directive. The mapping from the contents of the resource to the elements of the <i>initializer-list</i> shall contain up to <i>constant-expression</i> elements according to the above. The implementation shall issue a diagnostic if the implementation-defined bit size is not a multiple of the <code>UCHAR_WIDTH</code>; and, the implementation-defined bit size is less than <i>constant-expression</i> * <code>UCHAR_WIDTH</code>. The program is well-formed if the implementation-defined bit size is greater than or equal to <i>constant-expression</i> * <code>UCHAR_WIDTH</code>.</p>
+<p><sup>6</sup> If a <i>constant-expression</i> is not specified, the implementation-defined bit size shall be a multiple of the <code>EMBED-WIDTH</code>.</p>
 
-<p><sup>7</sup> If a <i>constant-expression</i> is not specified, the implementation shall issue a diagnostic if the implementation-defined bit size is not a multiple of the <code>UCHAR_WIDTH</code>.</p>
-
-<p><sup>8</sup> If the resulting <i>initializer-list</i> is used in a place where a constant expression (6.6) is valid, then the <i>initializer-list</i> must be a constant expression. If the resulting <i>initializer-list</i> is used as part of the initialization of an array of incomplete type, then the <i>initializer-list</i> will contribute to the size of the completed array type at the end of the initializer (6.7.9).</p>
-
-<p><sup>9</sup> A preprocessing directive of the form</p>
+<p><sup>7</sup> A preprocessing directive of the form</p>
 
 <dl><dd><b>&num;</b> <b>embed</b> <i>pp-tokens</i> <i>new-line</i></dd></dl>
 
 <p>(that does not match one of the two previous forms) is permitted. The preprocessing tokens after <b>embed</b> in the directive are processed just as in normal text. (Each identifier currently defined as a macro name is replaced by its replacement list of preprocessing tokens.) The directive resulting after all replacements shall match one of the two previous forms<sup>18��</sup>. The method by which a sequence of preprocessing tokens between a <code>&lt;</code> and a <code>&gt;</code> preprocessing token pair or a pair of <code>&quot;</code> characters is combined into a single resource name preprocessing token is implementation-defined.</p>
 
+<hr>
+
+<p><sup>18��)</sup><sub> Note that adjacent string literals are not concatenated into a single string literal (see the translation phases in 5.1.1.2); thus, an expansion that results in two string literals is an invalid directive.</sub></p>
+
+<p><sup>18���)</sup><sub> It is implementation-defined how <i>EMBED-WIDTH</i> and <i>EMBED-MAX</i> are obtained. For example, an implementation may read &lt;limits.h&gt; to check <code>UCHAR_WIDTH</code> and <code>UCHAR_MAX</code>, or use implementation configuration, to determine their value. The behavior is unspecified if the values are not equivalent to the width and max values for <code>unsigned char</code> (5.2.4.2.1).</sub></p>
+
 </ins>
 </blockquote>
 
 
-**Add 4 new Example paragraphs below the above text in §6.10.� Resource embedding:**
+**Add 6 new Example paragraphs for Recommended Practice below the above text in §6.10.� Resource embedding:**
 
 
-> <ins><sup>10</sup> **EXAMPLE 1** Placing a small image resource.</ins>
+> <p><b>Recommended Practice</b></p>
+> 
+> <ins><sup>8</sup> **EXAMPLE 1** Placing a small image resource.</ins>
 > 
 > > ```cpp 
 > > #include <stddef.h>
-> > #include <limits.h>
 > > 
 > > void have_you_any_wool(const unsigned char*, size_t);
 > > 
@@ -373,19 +396,16 @@ Note: The � is a stand-in character to be replaced by the editor.
 > > #embed "black_sheep.ico"
 > > 	};
 > > 
-> > 	have_you_any_wool(baa_baa, 
-> > 		sizeof(baa_baa) / sizeof(*baa_baa));
+> > 	have_you_any_wool(baa_baa, sizeof(baa_baa));
 > > 
 > > 	return 0;
 > > }
 > > ```
 > 
-> 
-> <ins><sup>11</sup> **EXAMPLE 2** Checking the first 4 elements of a sound resource.</ins>
+> <ins><sup>9</sup> **EXAMPLE 2** Checking the first 4 elements of a sound resource.</ins>
 > 
 > > ```cpp
 > > #include <assert.h>
-> > #include <limits.h>
 > > 
 > > int main (int, char*[]) {
 > > 	const char sound_signature[] = {
@@ -397,34 +417,31 @@ Note: The � is a stand-in character to be replaced by the editor.
 > > 	assert(sound_signature[1] == 'I');
 > > 	assert(sound_signature[2] == 'F');
 > > 	assert(sound_signature[3] == 'F');
-> > 	assert((sizeof(sound_signature) / sizeof(*sound_signature)) == 4);
+> > 	assert(sizeof(sound_signature) == 4);
 > > 
 > > 	return 0;
 > > }
 > > ```
 > 
-> <ins><sup>12</sup> **EXAMPLE 3** Diagnostic for resource which is too small.</ins>
+> <ins><sup>10</sup> **EXAMPLE 3** Diagnostic for resource which is too small.</ins>
 > 
 > > ```cpp
-> > #include <limits.h>
 > > 
 > > int main (int, char*[]) {
 > > 	const unsigned char coefficients[] = {
-> > #embed unsigned char "only_3_bits.bin"
+> > #embed "only_3_bits.bin"
 > > 	};
 > > 
 > > 	return 0;
 > > }
 > > ```
 > 
-> <ins>An implementation must produce a diagnostic where 3 bits (i.e., the implementation-defined bit size) is less than `UCHAR_WIDTH`, or the implementation-defined bit size modulo `UCHAR_WIDTH` is not 0.</ins>
+> <p><ins>An implementation must produce a diagnostic where 3 bits (i.e., the implementation-defined bit size) is less than `EMBED-WIDTH`, or the implementation-defined bit size modulo `EMBED-WIDTH` is not 0.</ins></p>
 > 
 > 
-> <ins><sup>13</sup> **EXAMPLE 4** Extra elements added to array initializer.</ins>
+> <ins><sup>11</sup> **EXAMPLE 4** Extra elements added to array initializer.</ins>
 > 
 > > ```cpp
-> > #include <limits.h>
-> > 
 > > #include <string.h>
 > > 
 > > #ifndef SHADER_TARGET
@@ -441,8 +458,65 @@ Note: The � is a stand-in character to be replaced by the editor.
 > > 	strcpy(null_term_shader_data, internal_data);
 > > }
 > > ```
-> <hr>
-> <ins><sup>18��)</sup><sub> Note that adjacent string literals are not concatenated into a single string literal (see the translation phases in 5.1.1.2); thus, an expansion that results in two string literals is an invalid directive.</sub></ins>
+> 
+> <ins><sup>12</sup> **EXAMPLE 5** Initialization of non-arrays.</ins>
+> 
+> > ```cpp
+> > int main () {
+> > 	int i = {
+> > #embed "i.dat"
+> > 	}; // i value is [0, EMBED-MAX] from first entry
+> > 	int i2 =
+> > #embed "i.dat"
+> > 	; // valid if i.dat produces 1 value, i value is [0, EMBED-MAX]
+> > 	struct s {
+> > 		double a, b, c;
+> > 		struct { double e, f, g; };
+> > 		double h, i, j;
+> > 	};
+> > 	struct s x = {
+> > 	// initializes each element in
+> > 	// order according to initialization rules with
+> > 	// brace-delimited, comma separated list
+> > #embed "s.dat"
+> > 	};
+> > 	return 0;
+> > }
+> > ```
+> 
+> <ins><p>Non-array types can still be initialized since the directive produces a comma-delimited lists of tokens, a single value, or nothing.</p></ins>
+> 
+> 
+> <ins><sup>13</sup> **EXAMPLE 6** Equivalency of bit sequence and bit order.</ins>
+> 
+> > ```cpp
+> > #include <string.h>
+> > #include <stddef.h>
+> > #include <stdio.h>
+> > 
+> > int main() {
+> > 	const unsigned char embed_data[] = {
+> > #embed <data.dat>
+> > 	};
+> > 
+> > 	const size_t f_size = sizeof(embed_data);
+> > 	unsigned char f_data[f_size];
+> > 	FILE* f_source = fopen("data.dat", "rb");
+> > 	if (f_source == NULL);
+> > 		return 1;
+> > 	char* f_ptr = (char*)&f_data[0];
+> > 	if (fread(f_ptr, 1, f_size, f_source) != f_size) {
+> > 		fclose(f_source);
+> > 		return 1;
+> > 	}
+> > 	fclose(f_source);
+> > 
+> > 	int is_same = memcmp(&embed_data[0], f_ptr, f_size);
+> > 	// if both operations refers to the same resource/file at
+> > 	// execution time and translation time, "is_same" should be 0
+> > 	return is_same == 0 ? 0 : 1;
+> > }
+> > ```
 > 
 > <ins><b>Forward references:</b> macro replacement (6.10.�).</ins>
 
@@ -472,7 +546,7 @@ The intent of the wording is to provide a preprocessing directive that:
 
 ## Proposed Feature Test Macro
 
-The proposed feature test macro is `__cpp_pp_embed` for the preprocessor functionality, and `__cpp_pp_embed_classes` for the extended functionality.
+The proposed feature test macro is `__cpp_pp_embed` for the preprocessor functionality.
 
 
 
@@ -488,10 +562,6 @@ Append to §14.8.1 Predefined macro names [**cpp.predefined**]'s **Table 16** wi
 </tr>
 <tr>
 	<td><ins>__cpp_pp_embed</ins></td>
-	<td><ins>????</ins></td>
-</tr>
-<tr>
-	<td><ins>__cpp_pp_embed_classes</ins></td>
 	<td><ins>????</ins></td>
 </tr>
 </table>
@@ -531,13 +601,11 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 
 <p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&lt;</code> and <code>&gt;</code> or the <code>&quot;</code> and <code>&quot;</code> delimiters. How the places are specified or the resource identified is implementation-defined.</p>
 
-<p><sup>3</sup> If either form of the <b><code>&num;embed</code></b> directive specified is not preceded by an <b><code>&num;include</code></b> directive for <code>&lt;climits&gt;</code>, then an implementation may issue a diagnostic.</p>
+<p><sup>3</sup> Let <i>EMBED-MAX</i> and <i>EMBED-WIDTH</i> be the implementation-defined maximum integer value and the implementation-defined width of a given integer value. Either form of the <b><code>&num;embed</code></b> directive specified previously behave as if it were expanded to an comma separated list. Specifically, each element of the comma separated list behaves as if the characters from the resource were read and mapped in an implementation-defined manner to a sequence of bits. The sequence of bits is used to produce <i>integral constant expressions</i> and must have a value between <code>0</code> and <i1>EMBED-MAX</i>, inclusive. [ <i>Note</i>: It is implementation-defined how <i>EMBED-WIDTH</i> and <i>EMBED-MAX</i> are obtained. For example, an implementation may read &lt;climits&gt; to check <code>UCHAR_WIDTH</code> and <code>UCHAR_MAX</code>, or use implementation configuration, to determine their value. The behavior is unspecified if the values are not equivalent to the width and max values for <code>unsigned char</code> ([<a href="http://eel.is/c++draft/basic.fundamental">basic.fundamental</a>]). — <i>end note</i> ]</p>
 
-<p><sup>4</sup> Either form of the <b><code>&num;embed</code></b> directive specified previously behave as if it were expanded to an <i>initializer-list</i>. Specifically, each element of the <i>initializer-list</i> behaves as if the characters from the resource were read and mapped in an implementation-defined manner to a sequence of bits. The sequence of bits is used to produce an <i>integer constant expression</i> of exactly <code>UCHAR_WIDTH</code> bits and must have a value between <code>0</code> and <code>UCHAR_MAX</code>, inclusive.</p>
+<p><sup>4</sup> If a <i>constant-expression</i> is specified, it will be evaluated as specified by conditional inclusion ([<a href="http://eel.is/c++draft/cpp.cond">cpp.cond</a>]). It shall result in a positive integer constant. The mapping from the contents of the resource to the elements of the comma separated list shall contain up to <i>constant-expression</i> elements. If the implementation-defined bit size is not a multiple of the <i>EMBED-WIDTH</i>; and, the implementation-defined bit size is less than the <i>constant-expression</i> multiplied by the <i>EMBED-WIDTH</i>, then the program is ill-formed. The program is well-formed if the implementation-defined bit size is greater than or equal to the <i>constant-expression</i> multiplied by the <i>EMBED-WIDTH</i>.</p>
 
-<p><sup>5</sup> If a <i>constant-expression</i> is specified, it shall result in an integral constant and be suitable for use in an <code><b>&num;</b>if</code> preprocessing directive. The mapping from the contents of the resource to the elements of the <i>initializer-list</i> shall contain up to <i>constant-expression</i> elements according to the above. If the implementation-defined bit size is not a multiple of the <code>UCHAR_WIDTH</code>; and, the implementation-defined bit size is less than <i>constant-expression</i> multiplied by <code>UCHAR_MAX</code>, then the program is ill-formed. The program is well-formed if the implementation-defined bit size is greater than or equal to <i>constant-expression</i> multiplied by <code>UCHAR_WIDTH</code>.</p>
-
-<p><sup>6</sup> If a <i>constant-expression</i> is not specified, the implementation shall issue a diagnostic if the implementation-defined bit size is not a multiple of the <code>UCHAR_WIDTH</code>.</p>
+<p><sup>5</sup> If a <i>constant-expression</i> is not specified, the implementation shall issue a diagnostic if the implementation-defined bit size is not a multiple of the <code>EMBED-WIDTH</code>.</p>
 </ins>
 </blockquote>
 
@@ -545,7 +613,6 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 > 
 > ```cpp 
 > #include <cstddef>
-> #include <climits>
 > 
 > void have_you_any_wool(const unsigned char*, std::size_t);
 > 
@@ -554,8 +621,7 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 > #embed "black_sheep.ico"
 > 	};
 > 
-> 	have_you_any_wool(baa_baa, 
-> 		sizeof(baa_baa) / sizeof(*baa_baa));
+> 	have_you_any_wool(baa_baa, sizeof(baa_baa));
 > 
 > 	return 0;
 > }
@@ -578,7 +644,7 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 > 	assert(sound_signature[1] == 'I');
 > 	assert(sound_signature[2] == 'F');
 > 	assert(sound_signature[3] == 'F');
-> 	assert((sizeof(sound_signature) / sizeof(*sound_signature)) == 4);
+> 	assert(sizeof(sound_signature) == 4);
 > 
 > 	return 0;
 > }
@@ -588,8 +654,6 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 > <p><ins>[ Example:</ins></p>
 > 
 > ```cpp
-> #include <climits>
-> 
 > int main (int, char*[]) {
 > 	const unsigned char coefficients[] = {
 > // may produce diagnostic: 16 bits (i.e., implementation-defined bit size)
@@ -598,7 +662,7 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 > 	};
 > 
 > 	const unsigned char byte_factors[] = {
-> // may produce diagnostic: 12 bits % UCHAR_WIDTH may not be 0
+> // may produce diagnostic: 12 bits % EMBED-WIDTH may not be 0
 > // on a system where the resource with an implementation-defined
 > // bit size of 12 bits
 > #embed "12_bits.bin"
@@ -608,7 +672,7 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 > // if the bit size of unsigned char is less than
 > // an implementation-defined bit size of 24,
 > // then this does not produce a diagnostic.
-> #embed unsigned char 1 "24_bits.bin"
+> #embed 1 "24_bits.bin"
 > 	};
 > 
 > 	return 0;
@@ -638,15 +702,87 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 > }
 > ```
 > <p><ins>– end Example ]</ins></p>
-
+> 
+> <p><ins>[ Example:</ins></p>
+> 
+> ```cpp
+> #include <algorithm>
+> #include <iterator>
+> 
+> #ifndef SHADER_TARGET
+> #define SHADER_TARGET "phong.glsl"
+> #endif
+> 
+> extern char* null_term_shader_data;
+> 
+> void init_data () {
+> 	constexpr const char internal_data[] = {
+> #embed SHADER_TARGET
+> 	, 0 }; // additional element to null terminate content
+> 	
+> 	std::copy_n(internal_data, std::size(internal_data),
+> 		null_term_shader_data);
+> }
+> ```
+> <p><ins>– end Example ]</ins></p>
+> 
+> <p><ins>[ Example:</ins></p>
+> 
+> ```cpp
+> int main () {
+> 	int i = {
+> #embed "i.dat"
+> 	}; // well-formed if i.dat produces 1 value, i value is [0, EMBED-MAX]
+> 	struct s {
+> 		double a, b, c;
+> 		struct { double e, f, g; };
+> 		double h, i, j;
+> 	};
+> 	s x = {
+> 	// well-formed, initializes each element in
+> 	// order according to initialization rules with
+> 	// brace-delimited, comma separated list
+> #embed "s.dat"
+> 	};
+> 	return 0;
+> }
+> ```
+> <p><ins>– end Example ]</ins></p>
+> 
+> <p><ins>[ Example:</ins></p>
+> 
+> ```cpp
+> #include <cstring>
+> #include <cstddef>
+> #include <fstream>
+> 
+> int main() {
+> 	const unsigned char embed_data[] = {
+> #embed <data.dat>
+> 	};
+> 
+> 	constexpr std::size_t ifstream_size = sizeof(embed_data);
+> 	unsigned char ifstream_data[ifstream_size];
+> 	std::ifstream f_source("data.dat");
+> 	char* ifstream_ptr = reinterpret_cast<char*>(ifstream_data);
+> 	if (!f_source.read(ifstream_ptr, ifstream_size));
+> 		return 1;
+> 
+> 	int is_same = std::memcmp(&embed_data[0], ifstream_ptr, ifstream_size);
+> 	// if both operations refer to the same resource/file at
+> 	// execution time and translation time, "is_same" should be 0
+> 	return is_same == 0 ? 0 : 1;
+> }
+> ```
+> <p><ins>– end Example ]</ins></p>
 
 
 
 # Acknowledgements
 
-Thank you to Alex Gilding for bolstering this proposal with additional ideas and motivation. Thank you to Aaron Ballman, David Keaton, and Rhajan Bhakta for early feedback on this proposal. Thank you to the [#include<C++>](https://www.includecpp.org/) for bouncing lots of ideas off the idea in their Discord.
+Thank you to Alex Gilding for bolstering this proposal with additional ideas and motivation. Thank you to Aaron Ballman, David Keaton, and Rajan Bhakta for early feedback on this proposal. Thank you to the [#include<C++>](https://www.includecpp.org/) for bouncing lots of ideas off the idea in their Discord.
 
-Thank you to the Lounge<C++> for their continued support, and to Robot M. F. for the valuable early implementation feedback.
+Thank you to the Lounge<C++> for their continued support, and to rmf for the valuable early implementation feedback.
 
 <div class="pagebreak"></div>
 
@@ -684,8 +820,6 @@ unsigned int xxd_data_bin_len = 13;
 // even if it generates some warnings in g++/clang++
 const
 #include "xxd_data.h"
-
-#define SIZE_OF_ARRAY (arr) (sizeof(arr) / sizeof(*arr))
 
 int main() {
     const char* data = reinterpret_cast<const char*>(xxd_data_bin);
@@ -832,6 +966,7 @@ N.B.: Because these declarations are `extern`, the values in the array cannot be
 There is a tool called [`incbin`](https://github.com/graphitemaster/incbin) which is a 3rd party attempt at pulling files in at "assembly time". Its approach is incredibly similar to `ld`, with the caveat that files must be shipped with their binary. It unfortunately falls prey to the same problems of cross-platform woes when dealing with Visual C, requiring additional pre-processing to work out in full.
 
 
+
 ## Type Flexibility
 
 **Note:** As per the vote in the September C++ Evolution Working Group Meeting, Type Flexibility is not being pursued in the preprocessor for various implementation and support splitting concerns.
@@ -841,8 +976,6 @@ A type can be specified after the `#embed` to view the data in a very specific m
 Type flexibility was not pursued for various implementation concerns. Chief among them was single-purpose preprocessors that did not have access to frontend information. This meant it was very hard to make a system that was both preprocessor conformant but did not require e.g. `sizeof(...)` information at the point of preprocessor invocation. Therefore, the type flexibility feature was pulled from `#embed` and will be conglomerated in other additions such as `std::bitcast` or `std::embed`.
 
 ```cpp
-#include <limits.h>
-
 /* specify a type-name to change array type */
 const int shorten_flac[] = {
     #embed int "stripped_music.flac"
@@ -861,7 +994,8 @@ More types can be supported by the implementation if the implementation so choos
 
 > The values given below shall be replaced by constant expressions suitable for use in `#if` preprocessing directives.
 
-This means that the types above have a specific size that can be properly initialized by a preprocessor entirely independent of a proper C frontend, without needing to know more than how to be a preprocessor. This does require that every use of `#embed` is accompanied by a `#include <limits.h>` (or, in the case of C++, `#include <climits>`).
+This means that the types above have a specific size that can be properly initialized by a preprocessor entirely independent of a proper C frontend, without needing to know more than how to be a preprocessor. Originally, the proposal required that every use of `#embed` is accompanied by a `#include <limits.h>` (or, in the case of C++, `#include <climits>`). Instead, the proposal now let's the implementation "figure it out" on an implementation-by-implementation basis.
+
 
 ### Endianness
 
