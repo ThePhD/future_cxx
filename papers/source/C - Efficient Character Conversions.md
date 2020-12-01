@@ -47,7 +47,7 @@ This paper proposes and explores additional library functionality to allow users
 
 - Add missing functions for c8/16/32 to the platform-specific variants.
 - Ensure that `mbstate_t` is used throughout rather than `mcstate_t`.
-- Explain behavior of `NULL` for `mbstate_t` to avoid use of globals.
+- Explain behavior of `NULL` for `mbstate_t` to avoid use of global values.
 
 
 
@@ -578,75 +578,75 @@ enum : size_t { // N2575 - otherwise, will just use const size_t declarations he
   MCHAR_INSUFFICIENT_OUTPUT = (size_t)-3,
 };
 
-size_t mcntomwcn(const char** input, size_t* input_size, const wchar_t** output, size_t* output_size);
-size_t mcnrtomwcn(const char** input, size_t* input_size, const wchar_t** output, size_t* output_size, mbstate_t* state);
-size_t mcsntomwcsn(const char** input, size_t* input_size, const wchar_t** output, size_t* output_size);
-size_t mcsnrtomwcsn(const char** input, size_t* input_size, const wchar_t** output, size_t* output_size, mbstate_t* state);
+size_t mcntomwcn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size);
+size_t mcnrtomwcn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+size_t mcsntomwcsn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size);
+size_t mcsnrtomwcsn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
 
-size_t mcntoc8n(const char** input, size_t* input_size, const unsigned char** output, size_t* output_size);
-size_t mcnrtoc8n(const char** input, size_t* input_size, const unsigned char** output, size_t* output_size, mbstate_t* state);
-size_t mcsntoc8sn(const char** input, size_t* input_size, const unsigned char** output, size_t* output_size);
-size_t mcsnrtoc8sn(const char** input, size_t* input_size, const unsigned char** output, size_t* output_size, mbstate_t* state);
+size_t mcntoc8n(const char** input, size_t* input_size, unsigned char** output, size_t* output_size);
+size_t mcnrtoc8n(const char** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+size_t mcsntoc8sn(const char** input, size_t* input_size, unsigned char** output, size_t* output_size);
+size_t mcsnrtoc8sn(const char** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
 
-size_t mcntoc16n(const char** input, size_t* input_size, const char16_t** output, size_t* output_size);
-size_t mcnrtoc16n(const char** input, size_t* input_size, const char16_t** output, size_t* output_size, mbstate_t* state);
-size_t mcsntoc16sn(const char** input, size_t* input_size, const char16_t** output, size_t* output_size);
-size_t mcsnrtoc16sn(const char** input, size_t* input_size, const char16_t** output, size_t* output_size, mbstate_t* state);
+size_t mcntoc16n(const char** input, size_t* input_size, char16_t** output, size_t* output_size);
+size_t mcnrtoc16n(const char** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+size_t mcsntoc16sn(const char** input, size_t* input_size, char16_t** output, size_t* output_size);
+size_t mcsnrtoc16sn(const char** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
 
-size_t mcntoc32n(const char** input, size_t* input_size, const char32_t** output, size_t* output_size);
-size_t mcnrtoc32n(const char** input, size_t* input_size, const char32_t** output, size_t* output_size, mbstate_t* state);
-size_t mcsntoc32sn(const char** input, size_t* input_size, const char32_t** output, size_t* output_size);
-size_t mcsnrtoc32sn(const char** input, size_t* input_size, const char32_t** output, size_t* output_size, mbstate_t* state);
+size_t mcntoc32n(const char** input, size_t* input_size, char32_t** output, size_t* output_size);
+size_t mcnrtoc32n(const char** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
+size_t mcsntoc32sn(const char** input, size_t* input_size, char32_t** output, size_t* output_size);
+size_t mcsnrtoc32sn(const char** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c8ntomcn(const unsigned char** input, size_t* input_size, const char** output, size_t* output_size);
-size_t c8nrtomcn(const unsigned char** input, size_t* input_size, const char** output, size_t* output_size, mbstate_t* state);
-size_t c8sntomcsn(const unsigned char** input, size_t* input_size, const char** output, size_t* output_size);
-size_t c8snrtomcsn(const unsigned char** input, size_t* input_size, const char** output, size_t* output_size, mbstate_t* state);
+size_t c8ntomcn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size);
+size_t c8nrtomcn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+size_t c8sntomcsn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size);
+size_t c8snrtomcsn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
 
-size_t c16ntomcn(const char16_t** input, size_t* input_size, const char** output, size_t* output_size);
-size_t c16nrtomcn(const char16_t** input, size_t* input_size, const char** output, size_t* output_size, mbstate_t* state);
-size_t c16sntomcsn(const char16_t** input, size_t* input_size, const char** output, size_t* output_size);
-size_t c16snrtomcsn(const char16_t** input, size_t* input_size, const char** output, size_t* output_size, mbstate_t* state);
+size_t c16ntomcn(const char16_t** input, size_t* input_size, char** output, size_t* output_size);
+size_t c16nrtomcn(const char16_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+size_t c16sntomcsn(const char16_t** input, size_t* input_size, char** output, size_t* output_size);
+size_t c16snrtomcsn(const char16_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
 
-size_t c32ntomcn(const char32_t** input, size_t* input_size, const char** output, size_t* output_size);
-size_t c32nrtomcn(const char32_t** input, size_t* input_size, const char** output, size_t* output_size, mbstate_t* state);
-size_t c32sntomcsn(const char32_t** input, size_t* input_size, const char** output, size_t* output_size);
-size_t c32snrtomcsn(const char32_t** input, size_t* input_size, const char** output, size_t* output_size, mbstate_t* state);
+size_t c32ntomcn(const char32_t** input, size_t* input_size, char** output, size_t* output_size);
+size_t c32nrtomcn(const char32_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+size_t c32sntomcsn(const char32_t** input, size_t* input_size, char** output, size_t* output_size);
+size_t c32snrtomcsn(const char32_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
 
-size_t mwcntomcn(const wchar_t** input, size_t* input_size, const char** output, size_t* output_size);
-size_t mwcnrtomcn(const wchar_t** input, size_t* input_size, const char** output, size_t* output_size, mbstate_t* state);
-size_t mwcsntomcsn(const wchar_t** input, size_t* input_size, const char** output, size_t* output_size);
-size_t mwcsnrtomcsn(const wchar_t** input, size_t* input_size, const char** output, size_t* output_size, mbstate_t* state);
+size_t mwcntomcn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size);
+size_t mwcnrtomcn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+size_t mwcsntomcsn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size);
+size_t mwcsnrtomcsn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
 
-size_t mwcntoc8n(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size);
-size_t mwcnrtoc8n(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size, mbstate_t* state);
-size_t mwcsntoc8sn(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size);
-size_t mwcsnrtoc8sn(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size, mbstate_t* state);
+size_t mwcntoc8n(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
+size_t mwcnrtoc8n(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+size_t mwcsntoc8sn(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
+size_t mwcsnrtoc8sn(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
 
-size_t mwcntoc16n(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size);
-size_t mwcnrtoc16n(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size, mbstate_t* state);
-size_t mwcsntoc16sn(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size);
-size_t mwcsnrtoc16sn(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size, mbstate_t* state);
+size_t mwcntoc16n(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size);
+size_t mwcnrtoc16n(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+size_t mwcsntoc16sn(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size);
+size_t mwcsnrtoc16sn(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
 
-size_t mwcntoc32n(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size);
-size_t mwcnrtoc32n(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size, mbstate_t* state);
-size_t mwcsntoc32sn(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size);
-size_t mwcsnrtoc32sn(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size, mbstate_t* state);
+size_t mwcntoc32n(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size);
+size_t mwcnrtoc32n(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
+size_t mwcsntoc32sn(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size);
+size_t mwcsnrtoc32sn(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c8ntomwcn(const unsigned char** input, size_t* input_size, const wchar_t** output, size_t* output_size);
-size_t c8nrtomwcn(const unsigned char** input, size_t* input_size, const wchar_t** output, size_t* output_size, mbstate_t* state);
-size_t c8sntomwcsn(const unsigned char** input, size_t* input_size, const wchar_t** output, size_t* output_size);
-size_t c8snrtomwcsn(const unsigned char** input, size_t* input_size, const wchar_t** output, size_t* output_size, mbstate_t* state);
+size_t c8ntomwcn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size);
+size_t c8nrtomwcn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+size_t c8sntomwcsn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size);
+size_t c8snrtomwcsn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c16ntomwcn(const char16_t** input, size_t* input_size, const wchar_t** output, size_t* output_size);
-size_t c16nrtomwcn(const char16_t** input, size_t* input_size, const wchar_t** output, size_t* output_size, mbstate_t* state);
-size_t c16sntomwcsn(const char16_t** input, size_t* input_size, const wchar_t** output, size_t* output_size);
-size_t c16snrtomwcsn(const char16_t** input, size_t* input_size, const wchar_t** output, size_t* output_size, mbstate_t* state);
+size_t c16ntomwcn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+size_t c16nrtomwcn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+size_t c16sntomwcsn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+size_t c16snrtomwcsn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c32ntomwcn(const char32_t** input, size_t* input_size, const wchar_t** output, size_t* output_size);
-size_t c32nrtomwcn(const char32_t** input, size_t* input_size, const wchar_t** output, size_t* output_size, mbstate_t* state);
-size_t c32sntomwcsn(const char32_t** input, size_t* input_size, const wchar_t** output, size_t* output_size);
-size_t c32snrtomwcsn(const char32_t** input, size_t* input_size, const wchar_t** output, size_t* output_size, mbstate_t* state);
+size_t c32ntomwcn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+size_t c32nrtomwcn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+size_t c32sntomwcsn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+size_t c32snrtomwcsn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
 ```
 
 
@@ -823,38 +823,38 @@ No other value shall be returned from the functions described in this clause.
 ```c
 #include <stdmchar.h>
 
-size_t mcntomwcn(const char** input, size_t* input_size, const wchar_t** output, size_t* output_size);
-size_t mcnrtomwcn(const char** input, size_t* input_size, const wchar_t** output, size_t* output_size, mbstate_t* state);
-size_t mcntoc8n(const char** input, size_t* input_size, const unsigned char** output, size_t* output_size);
-size_t mcnrtoc8n(const char** input, size_t* input_size, const unsigned char** output, size_t* output_size, mbstate_t* state);
-size_t mcntoc16n(const char** input, size_t* input_size, const char16_t** output, size_t* output_size);
-size_t mcnrtoc16n(const char** input, size_t* input_size, const char16_t** output, size_t* output_size, mbstate_t* state);
-size_t mcntoc32n(const char** input, size_t* input_size, const char32_t** output, size_t* output_size);
-size_t mcnrtoc32n(const char** input, size_t* input_size, const char32_t** output, size_t* output_size, mbstate_t* state);
+size_t mcntomwcn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size);
+size_t mcnrtomwcn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+size_t mcntoc8n(const char** input, size_t* input_size, unsigned char** output, size_t* output_size);
+size_t mcnrtoc8n(const char** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+size_t mcntoc16n(const char** input, size_t* input_size, char16_t** output, size_t* output_size);
+size_t mcnrtoc16n(const char** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+size_t mcntoc32n(const char** input, size_t* input_size, char32_t** output, size_t* output_size);
+size_t mcnrtoc32n(const char** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
 
-size_t mwcntomcn(const wchar_t** input, size_t* input_size, const char** output, size_t* output_size);
-size_t mwcnrtomcn(const wchar_t** input, size_t* input_size, const char** output, size_t* output_size, mbstate_t* state);
-size_t mwcntoc8n(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size);
-size_t mwcnrtoc8n(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size, mbstate_t* state);
-size_t mwcntoc16n(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size);
-size_t mwcnrtoc16n(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size, mbstate_t* state);
-size_t mwcntoc32n(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size);
-size_t mwcnrtoc32n(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size, mbstate_t* state);
+size_t mwcntomcn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size);
+size_t mwcnrtomcn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+size_t mwcntoc8n(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
+size_t mwcnrtoc8n(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+size_t mwcntoc16n(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size);
+size_t mwcnrtoc16n(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+size_t mwcntoc32n(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size);
+size_t mwcnrtoc32n(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c8ntomcn(const unsigned char** input, size_t* input_size, const char** output, size_t* output_size);
-size_t c8nrtomcn(const unsigned char** input, size_t* input_size, const char** output, size_t* output_size, mbstate_t* state);
-size_t c8ntomwcn(const unsigned char** input, size_t* input_size, const wchar_t** output, size_t* output_size);
-size_t c8nrtomwcn(const unsigned char** input, size_t* input_size, const wchar_t** output, size_t* output_size, mbstate_t* state);
+size_t c8ntomcn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size);
+size_t c8nrtomcn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+size_t c8ntomwcn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size);
+size_t c8nrtomwcn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c16ntomcn(const char16_t** input, size_t* input_size, const char** output, size_t* output_size);
-size_t c16nrtomcn(const char16_t** input, size_t* input_size, const char** output, size_t* output_size, mbstate_t* state);
-size_t c16ntomwcn(const char16_t** input, size_t* input_size, const wchar_t** output, size_t* output_size);
-size_t c16nrtomwcn(const char16_t** input, size_t* input_size, const wchar_t** output, size_t* output_size, mbstate_t* state);
+size_t c16ntomcn(const char16_t** input, size_t* input_size, char** output, size_t* output_size);
+size_t c16nrtomcn(const char16_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+size_t c16ntomwcn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+size_t c16nrtomwcn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c32ntomcn(const char32_t** input, size_t* input_size, const char** output, size_t* output_size);
-size_t c32nrtomcn(const char32_t** input, size_t* input_size, const char** output, size_t* output_size, mbstate_t* state);
-size_t c32ntomwcn(const char32_t** input, size_t* input_size, const wchar_t** output, size_t* output_size);
-size_t c32nrtomwcn(const char32_t** input, size_t* input_size, const wchar_t** output, size_t* output_size, mbstate_t* state);
+size_t c32ntomcn(const char32_t** input, size_t* input_size, char** output, size_t* output_size);
+size_t c32nrtomcn(const char32_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+size_t c32ntomwcn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+size_t c32nrtomwcn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
 ```
 
 These functions take an input buffer and an output buffer as well as an input and output size. The function consumes any number of code units to perform a single indivisible unit of work, which may result in zero or more output code units. The single unit conversion functions are of two forms, a restartable form (contains an `r` in the function name) and a non-restartable form (does not contain an `r` in the function name).
@@ -919,38 +919,38 @@ The values of the parameters contain identical meaning to the restartable form.
 ```c
 #include <stdmchar.h>
 
-size_t mcsntomwcsn(const char** input, size_t* input_size, const wchar_t** output, size_t* output_size);
-size_t mcsnrtomwcsn(const char** input, size_t* input_size, const wchar_t** output, size_t* output_size, mbstate_t* state);
-size_t mcsntoc8sn(const char** input, size_t* input_size, const unsigned char** output, size_t* output_size);
-size_t mcsnrtoc8sn(const char** input, size_t* input_size, const unsigned char** output, size_t* output_size, mbstate_t* state);
-size_t mcsntoc16sn(const char** input, size_t* input_size, const char16_t** output, size_t* output_size);
-size_t mcsnrtoc16sn(const char** input, size_t* input_size, const char16_t** output, size_t* output_size, mbstate_t* state);
-size_t mcsntoc32sn(const char** input, size_t* input_size, const char32_t** output, size_t* output_size);
-size_t mcsnrtoc32sn(const char** input, size_t* input_size, const char32_t** output, size_t* output_size, mbstate_t* state);
+size_t mcsntomwcsn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size);
+size_t mcsnrtomwcsn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+size_t mcsntoc8sn(const char** input, size_t* input_size, unsigned char** output, size_t* output_size);
+size_t mcsnrtoc8sn(const char** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+size_t mcsntoc16sn(const char** input, size_t* input_size, char16_t** output, size_t* output_size);
+size_t mcsnrtoc16sn(const char** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+size_t mcsntoc32sn(const char** input, size_t* input_size, char32_t** output, size_t* output_size);
+size_t mcsnrtoc32sn(const char** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
 
-size_t mwcsntomcsn(const wchar_t** input, size_t* input_size, const char** output, size_t* output_size);
-size_t mwcsnrtomcsn(const wchar_t** input, size_t* input_size, const char** output, size_t* output_size, mbstate_t* state);
-size_t mwcsntoc8sn(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size);
-size_t mwcsnrtoc8sn(const wchar_t** input, size_t* input_size, const unsigned char** output, size_t* output_size, mbstate_t* state);
-size_t mwcsntoc16sn(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size);
-size_t mwcsnrtoc16sn(const wchar_t** input, size_t* input_size, const char16_t** output, size_t* output_size, mbstate_t* state);
-size_t mwcsntoc32sn(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size);
-size_t mwcsnrtoc32sn(const wchar_t** input, size_t* input_size, const char32_t** output, size_t* output_size, mbstate_t* state);
+size_t mwcsntomcsn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size);
+size_t mwcsnrtomcsn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+size_t mwcsntoc8sn(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
+size_t mwcsnrtoc8sn(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+size_t mwcsntoc16sn(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size);
+size_t mwcsnrtoc16sn(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+size_t mwcsntoc32sn(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size);
+size_t mwcsnrtoc32sn(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c8sntomwcsn(const unsigned char** input, size_t* input_size, const wchar_t** output, size_t* output_size);
-size_t c8snrtomwcsn(const unsigned char** input, size_t* input_size, const wchar_t** output, size_t* output_size, mbstate_t* state);
-size_t c8sntomcsn(const unsigned char** input, size_t* input_size, const char** output, size_t* output_size);
-size_t c8snrtomcsn(const unsigned char** input, size_t* input_size, const char** output, size_t* output_size, mbstate_t* state);
+size_t c8sntomwcsn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size);
+size_t c8snrtomwcsn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+size_t c8sntomcsn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size);
+size_t c8snrtomcsn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
 
-size_t c16sntomwcsn(const char16_t** input, size_t* input_size, const wchar_t** output, size_t* output_size);
-size_t c16snrtomwcsn(const char16_t** input, size_t* input_size, const wchar_t** output, size_t* output_size, mbstate_t* state);
-size_t c16sntomcsn(const char16_t** input, size_t* input_size, const char** output, size_t* output_size);
-size_t c16snrtomcsn(const char16_t** input, size_t* input_size, const char** output, size_t* output_size, mbstate_t* state);
+size_t c16sntomwcsn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+size_t c16snrtomwcsn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+size_t c16sntomcsn(const char16_t** input, size_t* input_size, char** output, size_t* output_size);
+size_t c16snrtomcsn(const char16_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
 
-size_t c32sntomcsn(const char32_t** input, size_t* input_size, const char** output, size_t* output_size);
-size_t c32snrtomcsn(const char32_t** input, size_t* input_size, const char** output, size_t* output_size, mbstate_t* state);
-size_t c32sntomwcsn(const char32_t** input, size_t* input_size, const wchar_t** output, size_t* output_size);
-size_t c32snrtomwcsn(const char32_t** input, size_t* input_size, const wchar_t** output, size_t* output_size, mbstate_t* state);
+size_t c32sntomcsn(const char32_t** input, size_t* input_size, char** output, size_t* output_size);
+size_t c32snrtomcsn(const char32_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+size_t c32sntomwcsn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+size_t c32snrtomwcsn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
 ```
 
 These functions take an input buffer and an output buffer as well as an input and output size. The function consumes any number of code units to perform a single indivisible unit of work, which may result in zero or more output code units. It performs this work repeatedly on the whole input string until the input is exhausted or an error occurs. The multi unit conversion functions are of two forms, a restartable form (contains an `r` in the function name) and a non-restartable form (does not contain an `r` in the function name).
