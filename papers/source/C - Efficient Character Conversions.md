@@ -1,6 +1,6 @@
 ---
 title: Restartable and Non-Restartable Functions for Efficient Character Conversions | r4
-date: November 23rd, 2020
+date: December 1st, 2020
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
   - Shepherd (Shepherd's Oasis) \<<shepherd@soasis.org>\>
@@ -43,7 +43,7 @@ This paper proposes and explores additional library functionality to allow users
 
 
 
-## Revision 4 - November 23rd, 2020
+## Revision 4 - December 1st, 2020
 
 - Add missing functions for c8/16/32 to the platform-specific variants.
 - Ensure that `mbstate_t` is used throughout rather than `mcstate_t`.

@@ -1,6 +1,6 @@
 ---
-title: Not-So-Magic - typeof(...) in C
-date: October 26th, 2020
+title: Not-So-Magic - typeof(...) in C | r1
+date: December 1st, 2020
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
   - Shepherd (Shepherd's Oasis) \<<shepherd@soasis.org>\>
@@ -26,6 +26,26 @@ Getting the type of an expression in Standard C code.
 </div>
 
 <div class="pagebreak"></div>
+
+
+
+
+# Changelog
+
+
+
+## Revision 1 - December 1st, 2020
+
+- Completely Reformulate Paper based on community, GCC, and LLVM implementation feedback.
+- Address major implementation contention of qualifiers with both `_Typeof` and `_Unqual_typeof`.
+- Add section about not using C++'s `decltype` identifier for this and other compatibility issues.
+- Completely rewrite the wording section.
+
+
+
+## Revision 0 - October 25th, 2020
+
+- Initial release.
 
 
 
