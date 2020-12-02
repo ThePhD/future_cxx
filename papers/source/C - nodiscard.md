@@ -6,8 +6,8 @@ author:
   - Isabella Muerte \<<https://twitter.com/slurpsmadrips/>\>
 layout: paper
 redirect_from:
-  - /vendor/future_cxx/papers/source/n2430.html
-  - /vendor/future_cxx/papers/source/n2448.html
+  - /_vendor/future_cxx/papers/source/n2430.html
+  - /_vendor/future_cxx/papers/source/n2448.html
 hide: true
 ---
 
@@ -16,7 +16,7 @@ _**Previous Revisions**_: n2430
 _**Audience**_: WG14  
 _**Proposal Category**_: New Features  
 _**Target Audience**_: General Developers, Compiler/Tooling Developers  
-_**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/n2448.html](https://thephd.github.io/vendor/future_cxx/papers/source/n2448.html)
+_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/source/n2448.html](https://thephd.github.io/_vendor/future_cxx/papers/source/n2448.html)
 
 <div class="text-center">
 <h6>Abstract:</h6>

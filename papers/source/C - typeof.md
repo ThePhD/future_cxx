@@ -6,8 +6,8 @@ author:
   - Shepherd (Shepherd's Oasis) \<<shepherd@soasis.org>\>
 layout: paper
 redirect_from:
-  - /vendor/future_cxx/papers/source/n2593.html
-  - /vendor/future_cxx/papers/source/n2620.html
+  - /_vendor/future_cxx/papers/source/n2593.html
+  - /_vendor/future_cxx/papers/source/n2620.html
 hide: true
 ---
 
@@ -16,7 +16,7 @@ _**Previous Revisions**_: None
 _**Audience**_: WG14  
 _**Proposal Category**_: New Features  
 _**Target Audience**_: General Developers, Compiler/Tooling Developers  
-_**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/C%20-%20typeof.html](https://thephd.github.io/vendor/future_cxx/papers/source/C%20-%20typeof.html)
+_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/source/C%20-%20typeof.html](https://thephd.github.io/_vendor/future_cxx/papers/source/C%20-%20typeof.html)
 
 <div class="text-center">
 <h6>Abstract:</h6>

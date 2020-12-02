@@ -6,13 +6,13 @@ author:
   - Shepherd (Shepherd's Oasis) \<<shepherd@soasis.org>\>
 layout: paper
 redirect_from:
-  - /vendor/future_cxx/papers/source/nXXX1.html
-  - /vendor/future_cxx/papers/source/n2431.html
-  - /vendor/future_cxx/papers/source/n2440.html
-  - /vendor/future_cxx/papers/source/n2500.html
-  - /vendor/future_cxx/papers/source/n2595.html
-  - /vendor/future_cxx/papers/source/n2620.html
-  - /vendor/future_cxx/papers/source/C - Efficient CharacterConversions.html
+  - /_vendor/future_cxx/papers/source/nXXX1.html
+  - /_vendor/future_cxx/papers/source/n2431.html
+  - /_vendor/future_cxx/papers/source/n2440.html
+  - /_vendor/future_cxx/papers/source/n2500.html
+  - /_vendor/future_cxx/papers/source/n2595.html
+  - /_vendor/future_cxx/papers/source/n2620.html
+  - /_vendor/future_cxx/papers/source/C - Efficient CharacterConversions.html
 hide: true
 ---
 
@@ -21,7 +21,7 @@ _**Previous Revisions**_: n2440, n2431, n2500, n2595
 _**Audience**_: WG14  
 _**Proposal Category**_: New Library Features  
 _**Target Audience**_: General Developers, Text Processing Developers  
-_**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/n2595.html](https://thephd.github.io/vendor/future_cxx/papers/source/n2595.html)
+_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/source/n2595.html](https://thephd.github.io/_vendor/future_cxx/papers/source/n2595.html)
 
 
 <div class="text-center">

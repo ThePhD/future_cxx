@@ -5,12 +5,12 @@ author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
 layout: paper
 redirect_from:
-  - /vendor/future_cxx/papers/source/nXXX2.html
-  - /vendor/future_cxx/papers/source/d1967.html
-  - /vendor/future_cxx/papers/source/n2470.html
-  - /vendor/future_cxx/papers/source/n2499.html
-  - /vendor/future_cxx/papers/source/n2592.html
-  - /vendor/future_cxx/papers/source/n26X0.html
+  - /_vendor/future_cxx/papers/source/nXXX2.html
+  - /_vendor/future_cxx/papers/source/d1967.html
+  - /_vendor/future_cxx/papers/source/n2470.html
+  - /_vendor/future_cxx/papers/source/n2499.html
+  - /_vendor/future_cxx/papers/source/n2592.html
+  - /_vendor/future_cxx/papers/source/n26X0.html
 hide: true
 ---
 
@@ -19,7 +19,7 @@ _**Previous Revisions**_: WG14 n2470, n2499, n2592 | WG21 p1967r0, p1967r1, p196
 _**Audience**_: WG14, WG21  
 _**Proposal Category**_: New Features  
 _**Target Audience**_: General Developers, Application Developers, Compiler/Tooling Developers  
-_**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/C - embed.html](https://thephd.github.io/vendor/future_cxx/papers/source/C%20-%20embed.html)
+_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/source/C - embed.html](https://thephd.github.io/_vendor/future_cxx/papers/source/C%20-%20embed.html)
 
 <div class="pagebreak"></div>
 
@@ -111,7 +111,7 @@ This vote gained the most consensus in the Committee. While there were some indi
 |----|---|---|---|----|
 | 1  | 9 | 4 | 4 |  3 |
 
-Further need was also expressed for `constexpr` of different types of variables, so we would rather focus that ability into a sister feature, [`std::embed`](/vendor/future_cxx). There was also an expression to augment `std::bitcast<...>(...)` to handle arrays of data, which would be a follow-on proposal. There was a great amount of interest in the `std::bitcast` direction, which means a paper should be written to follow up on it.
+Further need was also expressed for `constexpr` of different types of variables, so we would rather focus that ability into a sister feature, [`std::embed`](/_vendor/future_cxx). There was also an expression to augment `std::bitcast<...>(...)` to handle arrays of data, which would be a follow-on proposal. There was a great amount of interest in the `std::bitcast` direction, which means a paper should be written to follow up on it.
 
 
 

@@ -5,7 +5,7 @@ author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
 layout: paper
 redirect_from:
-  - /vendor/future_cxx/papers/source/n2594.html
+  - /_vendor/future_cxx/papers/source/n2594.html
 hide: true
 ---
 
@@ -14,7 +14,7 @@ _**Previous Revisions**_: None
 _**Audience**_: WG14  
 _**Proposal Category**_: New Features  
 _**Target Audience**_: General Developers, Compiler/Tooling Developers  
-_**Latest Revision**_: [https://thephd.github.io/vendor/future_cxx/papers/source/n2594.html](https://thephd.github.io/vendor/future_cxx/papers/source/n2594.html)
+_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/source/n2594.html](https://thephd.github.io/_vendor/future_cxx/papers/source/n2594.html)
 
 <div class="text-center">
 <h6>Abstract:</h6>
