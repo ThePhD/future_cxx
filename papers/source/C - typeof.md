@@ -66,7 +66,7 @@ Every implementation in existence since C89 has an implementation of `typeof`. S
 > The `sizeof` operator yields the size (in bytes) of its operand, which may be an expression or the parenthesized name of a type. **The size is determined from the type of the operand.**
 > — [N2573, Programming Languages C - Working Draft, §6.5.3.4 The `sizeof` and `_Alignof` operators, Semantics](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf)
 
-Any implementation that can process `sizeof("foo")` is already doing `sizeof(typeof("foo"))` internally. This feature is the most "existing practice"-iest feature to be proposed to the C Standard, possibly in the entire history of the C standard. The feature was also mentioned in an "extension round up" paper that went over the state of C Extensions in 2007[^N1229].
+Any implementation that can process `sizeof("foo")` is already doing `sizeof(typeof("foo"))` internally. This feature is the most "existing practice"-iest feature to be proposed to the C Standard, possibly in the entire history of the C standard. The feature was also mentioned in an "extension round up" paper that went over the state of C Extensions in 2007[^N1229]. Typeof was also considered an important extension[^N1267].
 
 
 
@@ -118,7 +118,7 @@ There is some discussion about what happens with qualifiers, both standard and i
 > probably our implementation detail of having those in TYPE_QUALS
 > that exposes the issue... — [Richard Biener, GCC Maintainer, November 5th, 2020](https://gcc.gnu.org/pipermail/gcc/2020-November/234125.html)
 
-There is also some disagreement between implementations about what qualifiers are worth keeping with respect to `_Atomic` between implementations. Therefore, this feature *strips all qualifiers from the computed type result*. The reason for this is that a user can add specifiers and qualifications to a type, but can not take them away once they are part of the expression. For example, consider the specification of `<complex.h>` that contains macro-provided constants like `_Imaginary_I`. These constants have the type `const float _Imaginary`: should all `typeof(_Imaginary_I)` expressions therefore result in a `const float _Imaginary`, or a `float _Imaginary`? What about `volatile`? And so on, and so forth.
+There is also some disagreement between implementations about what qualifiers are worth keeping with respect to `_Atomic` between implementations. Therefore, `typeof` as proposed does not *strips all qualifiers from the computed type result*. The reason for this is that a user can add specifiers and qualifications to a type, but can not take them away once they are part of the expression. For example, consider the specification of `<complex.h>` that contains macro-provided constants like `_Imaginary_I`. These constants have the type `const float _Imaginary`: should all `typeof(_Imaginary_I)` expressions therefore result in a `const float _Imaginary`, or a `float _Imaginary`? What about `volatile`? And so on, and so forth.
 
 There is an argument to strip all type qualifiers (`_Atomic`, `const`, `restrict`, and `volatile`) from the final type expression is because they can be added back by the programmer easily. However, the opposite is not true: you cannot add back qualifiers or create macros where those qualifiers can be taken in as parameters and re-applied to the function. This does leave some room to be desired: some folk may want to deliberately propagate the `const`-ness, `volatile`-ness, or `_Atomic`-ness of an expression to its end users.
 
@@ -142,7 +142,6 @@ After this paper is handled, further research should be given to handling qualif
 The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf).
 
 
-
 **Modify §6.3.2.1 Lvalues, arrays, and function designators, paragraphs 3 and 4 with footnote 68:**
 
 <blockquote>
@@ -150,10 +149,11 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 <p>Except when it is the operand of the <del><code class="c-kw">sizeof</code> operator</del><ins><code class="c-kw">sizeof</code>, or typeof operators</ins>, or the unary <code>&</code> operator, or is a string literal used to initialize an array, an expression that has type "array of <i>type</i>" is converted to an expression with type "pointer to <i>type</i>" that points to the initial element of the array object and is not an lvalue. If the array object has register storage class, the behavior is undefined.</p>
 </div>
 <div class="numbered numbered-4">
-<p>A <i>function designator</i> is an expression that has function type. Except when it is the operand of the <del><b><code>sizeof</b></code> operator</del><ins><code class="c-kw">sizeof</code> operator, a typeof operator</ins><sup>68)</sup>or the unary <code>&</code> operator, a function designator with type "function returning <i>type</i>" is converted to an expression that has type "pointer to function returning <i>type</i>".</p>
+<p>A <i>function designator</i> is an expression that has function type. Except when it is the operand of the <del><code class="c-kw">sizeof</code> operator</del><ins><code class="c-kw">sizeof</code> operator, a typeof operator</ins><sup>68)</sup>or the unary <code>&</code> operator, a function designator with type "function returning <i>type</i>" is converted to an expression that has type "pointer to function returning <i>type</i>".</p>
 </div>
 
-<div><sub><sup>68)</sup>Because this conversion does not occur, the operand of the <del><b><code>sizeof</b></code> operator</del><ins><code class="c-kw">sizeof</code> and typeof operators</ins> remains a function designator and violates the constraints in 6.5.3.4.</sub>
+<div><sub><sup>68)</sup>Because this conversion does not occur, the operand of the <del><code class="c-kw">sizeof</code> operator</del><ins><code class="c-kw">sizeof</code> and typeof operators</ins> remains a function designator and violates the constraints in 6.5.3.4.</sub>
+</div>
 </blockquote>
 
 
@@ -180,8 +180,8 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 <p>...</p>
 
 <div class="numbered numbered-8">
-<p>An arithmetic constant expression shall have arithmetic type and shall only have operands that are integer constants, floating constants, enumeration constants, character constants,<code class="c-kw">sizeof</code> expressions whose results are integer constants, and <code class="c-kw">_Alignof</code> expressions. Cast operators in an arithmetic constant expression shall only convert arithmetic types to arithmetic types, except as part of an operand to the <del><code class="c-kw">sizeof</code></del><ins>typeof operators, <code class="c-kw">sizeof</code> operator,</ins> or <code class="c-kw">_Alignof</code> operator.</p>
-</div>
+<p>An arithmetic constant expression shall have arithmetic type and shall only have operands that are integer constants, floating constants, enumeration constants, character constants,<code class="c-kw">sizeof</code> expressions whose results are integer constants, and <code class="c-kw">_Alignof</code> expressions. Cast operators in an arithmetic constant expression shall only convert arithmetic types to arithmetic types, except as part of an operand to the <del><code class="c-kw">sizeof</code></del><ins>typeof operators, <code class="c-kw">sizeof</code> operator,</ins> or <code class="c-kw">_Alignof</code> operator.
+</p></div>
 </blockquote>
 
 
@@ -492,8 +492,10 @@ If the same qualifier appears more than once in the same specifier-qualifier lis
 
 [^N2498]: Martin Uecker. intmax_t, again. ISO/IEC JTC1 SC22 WG14 - Programming Languages C. [http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2498.pdf](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2498.pdf)
 
-[^N1607]: Jaakko Järvi and Bjarne Stroustrup. Decltype and auto (revision 3). ISO/IEC JTC1 SC22 WG21 - Programming Languages C++. [http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2004/n1607.pdf](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2004/n1607.pdf).
+[^N1607]: Jaakko Järvi and Bjarne Stroustrup. Decltype and auto (revision 3). ISO/IEC JTC1 SC22 WG21 - Programming Languages C++. [http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2004/n1607.pdf](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2004/n1607.pdf)
 
-[^N1229]: Nick Stoughton. Potential Extensions For Inclusion In a Revision of ISO/IEC 9899. ISO/IEC SC22 WG14 - Programming Languages C. [http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1229.pdf](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1229.pdf).
+[^N1229]: Nick Stoughton. Potential Extensions For Inclusion In a Revision of ISO/IEC 9899. ISO/IEC SC22 WG14 - Programming Languages C. [http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1229.pdf](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1229.pdf)
 
-[^named-address-space-bug]: Uros Bizjak. typeof and operands in named address spaces. GNU Compiler Collection. [https://gcc.gnu.org/pipermail/gcc/2020-November/234119.html](https://gcc.gnu.org/pipermail/gcc/2020-November/234119.html).
+[^N1229]: ISO/IEC JTC1 SC22 WG14. Meeting Minutes April 2007. ISO/IEC SC22 WG14 - Programming Languages C. [http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1267.pdf](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1267.pdf)
+
+[^named-address-space-bug]: Uros Bizjak. typeof and operands in named address spaces. GNU Compiler Collection. [https://gcc.gnu.org/pipermail/gcc/2020-November/234119.html](https://gcc.gnu.org/pipermail/gcc/2020-November/234119.html)
