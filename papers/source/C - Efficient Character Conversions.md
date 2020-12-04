@@ -5,27 +5,19 @@ author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
   - Shepherd (Shepherd's Oasis) \<<shepherd@soasis.org>\>
 layout: paper
-redirect_from:
-  - /_vendor/future_cxx/papers/source/nXXX1.html
-  - /_vendor/future_cxx/papers/source/n2431.html
-  - /_vendor/future_cxx/papers/source/n2440.html
-  - /_vendor/future_cxx/papers/source/n2500.html
-  - /_vendor/future_cxx/papers/source/n2595.html
-  - /_vendor/future_cxx/papers/source/n2620.html
-  - /_vendor/future_cxx/papers/source/C - Efficient CharacterConversions.html
 hide: true
 ---
 
 _**Document**_: n2620  
-_**Previous Revisions**_: n2440, n2431, n2500, n2595  
+_**Previous Revisions**_: n2431, n2440, n2500, n2595  
 _**Audience**_: WG14  
 _**Proposal Category**_: New Library Features  
 _**Target Audience**_: General Developers, Text Processing Developers  
-_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/source/n2595.html](https://thephd.github.io/_vendor/future_cxx/papers/source/n2595.html)
+_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20Efficient%20Character%20Conversions.html](https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20Efficient%20Character%20Conversions.html)
 
 
 <div class="text-center">
-<h6>Abstract:</h6>
+<h5>Abstract:</h5>
 <p>
 Implementations firmly control what both the Wide Character and Multibyte Character literals are interpreted as for the encoding, as well as how they are treated at runtime by the Standard Library. While this control is fine, users of the Standard Library have no portability guarantees about how these library functions may behave, especially in the face of encodings that do not support each other's full codepage. And, despite additions to C11 for maybe-UTF16 and maybe-UTF32 encoded types, these functions only offer conversions of a single unit of information at a time, leaving orders of magnitude of performance on the table.
 </p>
@@ -352,7 +344,7 @@ Nevertheless, SDCC's work is still important: it demonstrates that these functio
 The C functions presented below is motivated primarily by concepts found in a popular POSIX library, [iconv](https://www.gnu.org/software/libiconv/)[^iconv]. We do not provide the full power of iconv here but we do mimic its interface to allow for a better definition of functions, as explained in [Problem 5](#intro-problem-standard). The core of the functionality can be embodied in this parameterized function signature:
 
 ```cpp
-size_t XstoYs(const charX** input, size_t* input_bytes, const charY** output, size_t* output_bytes);
+mcerr_t XstoYs(const charX** input, size_t* input_bytes, const charY** output, size_t* output_bytes);
 ```
 
 In `iconv`'s case, an additional first parameter describing the conversion (of type `iconv_t`). That is not needed for this proposal, because we are not making a generic conversion API. This proposal is focused on doing 2 things and doing them extremely well:
@@ -524,22 +516,26 @@ To facilitate this, new headers -- `<stdmchar.h>` -- will be introduced. Each he
 In particular, it is imperative to recognize that the implementation is the "sole proprietor" of the wide locale encodings and multibyte locale encodings for its string literals (compiler) and library functions (standard library). Therefore, the `mc` and `mwc` functions simply focus on providing a good interface for these encodings. The form of both the individual and string conversion functions are:
 
 ```cpp
-size_t XntoYn(const charX** input, size_t* input_size, const charY** output, size_t* output_size);
-size_t XnrtoYn(const charX** input, size_t* input_size, const charY** output, size_t* output_size, mbstate_t* state);
-size_t XsntoYsn(const charX** input, size_t* input_size, const charY** output, size_t* output_size);
-size_t XsnrtoYsn(const charX** input, size_t* input_size, const charY** output, size_t* output_size, mbstate_t* state);
+mcerr_t XntoYn(const charX** input, size_t* input_size,
+              const charY** output, size_t* output_size);
+mcerr_t XnrtoYn(const charX** input, size_t* input_size,
+               const charY** output, size_t* output_size, mbstate_t* state);
+mcerr_t XsntoYsn(const charX** input, size_t* input_size,
+                const charY** output, size_t* output_size);
+mcerr_t XsnrtoYsn(const charX** input, size_t* input_size,
+                 const charY** output, size_t* output_size, mbstate_t* state);
 ```
 
-The input and output sizes are expressed in terms of the # of `charX`s. They take the input/output sizes as pointers, and decrement the value by the amount of input/output consumed. Similarly, the input/output data pointers themselves are incremented by the amount of spaces consumed / written to. This only happens when an irreversible and successful conversion of input data can successfully and without error be written to the output. The `s` functions work on whole strings rather than just a single complete irreversible conversion, the `n` stands for taking a size value.
+The input and output sizes are expressed in terms of the # of `charX`/`charY`s. They take the input/output sizes as pointers, and decrement the value by the amount of input/output consumed. Similarly, the input/output data pointers themselves are incremented by the amount of spaces consumed / written to. This only happens when an irreversible and successful conversion of input data can successfully and without error be written to the output. The `s` functions work on whole strings rather than just a single complete irreversible conversion, the `n` stands for taking a size value.
 
 Input is consumed and output is written (with sizes updated) in accordance with a single, successful computation of an _indivisible unit of work_. An _indivisible unit of work_ is the smallest set of input that can be consumed that produces no error and guarantees forward progress through the input buffer. No output is guaranteed to occur (e.g., during the consumption of a shift state mechanism for e.g. SHIFT-JIS), but if output does happen then it only occurs upon the successful completion of an _indivisible unit of work_.
 
-If an error happens, the conversion is stopped and an error code is returned. The function does not decrement the input or output sizes for the failed operation, nor does it shift the input and output pointers forward for the failed operation. "Failed operation" refers to a single, indivisible unit of work. in The error codes are as follows:
+If an error happens, the conversion is stopped and an error code is returned. The function does not decrement the input or output sizes for the failed operation, nor does it shift the input and output pointers forward for the failed operation. "Failed operation" refers to a single, indivisible unit of work. The error codes are as follows:
 
-- `MCHAR_INSUFFICIENT_OUTPUT = (size_t)-3` | the input is correct but there is not enough output space
-- `MCHAR_INCOMPLETE_INPUT    = (size_t)-2` | an incomplete input was found after exhausting the input
-- `MCHAR_ENCODING_ERROR      = (size_t)-1` | an encoding error occurred
-- `MCHAR_OK                  = (size_t) 0` | the operation was successful
+- `MCHAR_INSUFFICIENT_OUTPUT = (size_t)-3` \| the input is correct but there is not enough output space
+- `MCHAR_INCOMPLETE_INPUT    = (size_t)-2` \| an incomplete input was found after exhausting the input
+- `MCHAR_ENCODING_ERROR      = (size_t)-1` \| an encoding error occurred
+- `MCHAR_OK                  = (size_t) 0` \| the operation was successful
 
 The behaviors are as follows:
 
@@ -571,82 +567,138 @@ Here is the full list of proposed functions:
 #define STDC_MC_MAX  16
 #define STDC_MWC_MAX 4
 
-enum : size_t { // N2575 - otherwise, will just use const size_t declarations here
-  MCHAR_OK                  = (size_t)0,
-  MCHAR_ENCODING_ERROR      = (size_t)-1,
-  MCHAR_INCOMPLETE_INPUT    = (size_t)-2,
-  MCHAR_INSUFFICIENT_OUTPUT = (size_t)-3,
-};
+typedef /* implementation-defined */ mcerr_t;
 
-size_t mcntomwcn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size);
-size_t mcnrtomwcn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-size_t mcsntomwcsn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size);
-size_t mcsnrtomwcsn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+const mcerr_t MCHAR_OK                  =  0,
+const mcerr_t MCHAR_ENCODING_ERROR      = -1,
+const mcerr_t MCHAR_INCOMPLETE_INPUT    = -2,
+const mcerr_t MCHAR_INSUFFICIENT_OUTPUT = -3,
 
-size_t mcntoc8n(const char** input, size_t* input_size, unsigned char** output, size_t* output_size);
-size_t mcnrtoc8n(const char** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
-size_t mcsntoc8sn(const char** input, size_t* input_size, unsigned char** output, size_t* output_size);
-size_t mcsnrtoc8sn(const char** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcntomwcn(const char** input, size_t* input_size,
+                 wchar_t** output, size_t* output_size);
+mcerr_t mcnrtomwcn(const char** input, size_t* input_size,
+                  wchar_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcsntomwcsn(const char** input, size_t* input_size,
+                   wchar_t** output, size_t* output_size);
+mcerr_t mcsnrtomwcsn(const char** input, size_t* input_size,
+                    wchar_t** output, size_t* output_size, mbstate_t* state);
 
-size_t mcntoc16n(const char** input, size_t* input_size, char16_t** output, size_t* output_size);
-size_t mcnrtoc16n(const char** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
-size_t mcsntoc16sn(const char** input, size_t* input_size, char16_t** output, size_t* output_size);
-size_t mcsnrtoc16sn(const char** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcntoc8n(const char** input, size_t* input_size,
+                unsigned char** output, size_t* output_size);
+mcerr_t mcnrtoc8n(const char** input, size_t* input_size,
+                 unsigned char** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcsntoc8sn(const char** input, size_t* input_size,
+                  unsigned char** output, size_t* output_size);
+mcerr_t mcsnrtoc8sn(const char** input, size_t* input_size,
+                   unsigned char** output, size_t* output_size, mbstate_t* state);
 
-size_t mcntoc32n(const char** input, size_t* input_size, char32_t** output, size_t* output_size);
-size_t mcnrtoc32n(const char** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
-size_t mcsntoc32sn(const char** input, size_t* input_size, char32_t** output, size_t* output_size);
-size_t mcsnrtoc32sn(const char** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcntoc16n(const char** input, size_t* input_size,
+                 char16_t** output, size_t* output_size);
+mcerr_t mcnrtoc16n(const char** input, size_t* input_size,
+                  char16_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcsntoc16sn(const char** input, size_t* input_size,
+                   char16_t** output, size_t* output_size);
+mcerr_t mcsnrtoc16sn(const char** input, size_t* input_size,
+                    char16_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c8ntomcn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size);
-size_t c8nrtomcn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-size_t c8sntomcsn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size);
-size_t c8snrtomcsn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcntoc32n(const char** input, size_t* input_size,
+                 char32_t** output, size_t* output_size);
+mcerr_t mcnrtoc32n(const char** input, size_t* input_size,
+                  char32_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcsntoc32sn(const char** input, size_t* input_size,
+                   char32_t** output, size_t* output_size);
+mcerr_t mcsnrtoc32sn(const char** input, size_t* input_size,
+                    char32_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c16ntomcn(const char16_t** input, size_t* input_size, char** output, size_t* output_size);
-size_t c16nrtomcn(const char16_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-size_t c16sntomcsn(const char16_t** input, size_t* input_size, char** output, size_t* output_size);
-size_t c16snrtomcsn(const char16_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+mcerr_t c8ntomcn(const unsigned char** input, size_t* input_size,
+                char** output, size_t* output_size);
+mcerr_t c8nrtomcn(const unsigned char** input, size_t* input_size,
+                 char** output, size_t* output_size, mbstate_t* state);
+mcerr_t c8sntomcsn(const unsigned char** input, size_t* input_size,
+                  char** output, size_t* output_size);
+mcerr_t c8snrtomcsn(const unsigned char** input, size_t* input_size,
+                   char** output, size_t* output_size, mbstate_t* state);
 
-size_t c32ntomcn(const char32_t** input, size_t* input_size, char** output, size_t* output_size);
-size_t c32nrtomcn(const char32_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-size_t c32sntomcsn(const char32_t** input, size_t* input_size, char** output, size_t* output_size);
-size_t c32snrtomcsn(const char32_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+mcerr_t c16ntomcn(const char16_t** input, size_t* input_size,
+                 char** output, size_t* output_size);
+mcerr_t c16nrtomcn(const char16_t** input, size_t* input_size,
+                  char** output, size_t* output_size, mbstate_t* state);
+mcerr_t c16sntomcsn(const char16_t** input, size_t* input_size,
+                   char** output, size_t* output_size);
+mcerr_t c16snrtomcsn(const char16_t** input, size_t* input_size,
+                    char** output, size_t* output_size, mbstate_t* state);
 
-size_t mwcntomcn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size);
-size_t mwcnrtomcn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-size_t mwcsntomcsn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size);
-size_t mwcsnrtomcsn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+mcerr_t c32ntomcn(const char32_t** input, size_t* input_size,
+                 char** output, size_t* output_size);
+mcerr_t c32nrtomcn(const char32_t** input, size_t* input_size,
+                 char** output, size_t* output_size, mbstate_t* state);
+mcerr_t c32sntomcsn(const char32_t** input, size_t* input_size,
+                 char** output, size_t* output_size);
+mcerr_t c32snrtomcsn(const char32_t** input, size_t* input_size,
+                 char** output, size_t* output_size, mbstate_t* state);
 
-size_t mwcntoc8n(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
-size_t mwcnrtoc8n(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
-size_t mwcsntoc8sn(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
-size_t mwcsnrtoc8sn(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+mcerr_t mwcntomcn(const wchar_t** input, size_t* input_size,
+                 char** output, size_t* output_size);
+mcerr_t mwcnrtomcn(const wchar_t** input, size_t* input_size,
+                 char** output, size_t* output_size, mbstate_t* state);
+mcerr_t mwcsntomcsn(const wchar_t** input, size_t* input_size,
+                 char** output, size_t* output_size);
+mcerr_t mwcsnrtomcsn(const wchar_t** input, size_t* input_size,
+                 char** output, size_t* output_size, mbstate_t* state);
 
-size_t mwcntoc16n(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size);
-size_t mwcnrtoc16n(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
-size_t mwcsntoc16sn(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size);
-size_t mwcsnrtoc16sn(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mwcntoc8n(const wchar_t** input, size_t* input_size,
+                 unsigned char** output, size_t* output_size);
+mcerr_t mwcnrtoc8n(const wchar_t** input, size_t* input_size,
+                 unsigned char** output, size_t* output_size, mbstate_t* state);
+mcerr_t mwcsntoc8sn(const wchar_t** input, size_t* input_size,
+                 unsigned char** output, size_t* output_size);
+mcerr_t mwcsnrtoc8sn(const wchar_t** input, size_t* input_size,
+                 unsigned char** output, size_t* output_size, mbstate_t* state);
 
-size_t mwcntoc32n(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size);
-size_t mwcnrtoc32n(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
-size_t mwcsntoc32sn(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size);
-size_t mwcsnrtoc32sn(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mwcntoc16n(const wchar_t** input, size_t* input_size,
+                 char16_t** output, size_t* output_size);
+mcerr_t mwcnrtoc16n(const wchar_t** input, size_t* input_size,
+                 char16_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mwcsntoc16sn(const wchar_t** input, size_t* input_size,
+                 char16_t** output, size_t* output_size);
+mcerr_t mwcsnrtoc16sn(const wchar_t** input, size_t* input_size,
+                 char16_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c8ntomwcn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size);
-size_t c8nrtomwcn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-size_t c8sntomwcsn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size);
-size_t c8snrtomwcsn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mwcntoc32n(const wchar_t** input, size_t* input_size,
+                  char32_t** output, size_t* output_size);
+mcerr_t mwcnrtoc32n(const wchar_t** input, size_t* input_size,
+                   char32_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mwcsntoc32sn(const wchar_t** input, size_t* input_size,
+                    char32_t** output, size_t* output_size);
+mcerr_t mwcsnrtoc32sn(const wchar_t** input, size_t* input_size,
+                     char32_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c16ntomwcn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
-size_t c16nrtomwcn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-size_t c16sntomwcsn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
-size_t c16snrtomwcsn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t c8ntomwcn(const unsigned char** input, size_t* input_size,
+                 wchar_t** output, size_t* output_size);
+mcerr_t c8nrtomwcn(const unsigned char** input, size_t* input_size,
+                  wchar_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t c8sntomwcsn(const unsigned char** input, size_t* input_size,
+                   wchar_t** output, size_t* output_size);
+mcerr_t c8snrtomwcsn(const unsigned char** input, size_t* input_size,
+                    wchar_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c32ntomwcn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
-size_t c32nrtomwcn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-size_t c32sntomwcsn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
-size_t c32snrtomwcsn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t c16ntomwcn(const char16_t** input, size_t* input_size,
+                  wchar_t** output, size_t* output_size);
+mcerr_t c16nrtomwcn(const char16_t** input, size_t* input_size,
+                   wchar_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t c16sntomwcsn(const char16_t** input, size_t* input_size,
+                    wchar_t** output, size_t* output_size);
+mcerr_t c16snrtomwcsn(const char16_t** input, size_t* input_size,
+                     wchar_t** output, size_t* output_size, mbstate_t* state);
+
+mcerr_t c32ntomwcn(const char32_t** input, size_t* input_size,
+                  wchar_t** output, size_t* output_size);
+mcerr_t c32nrtomwcn(const char32_t** input, size_t* input_size,
+                   wchar_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t c32sntomwcsn(const char32_t** input, size_t* input_size,
+                    wchar_t** output, size_t* output_size);
+mcerr_t c32snrtomwcsn(const char32_t** input, size_t* input_size,
+                     wchar_t** output, size_t* output_size, mbstate_t* state);
 ```
 
 
@@ -695,29 +747,19 @@ The intent of the wording is to provide transcoding functions that:
 
 <blockquote>
 <ins>
-<p><h4><b>7.S� &emsp; Text transcoding utilities `<stdmchar.h>`</b></h4></p>
+<p><h4><b>7.S� &emsp; Text transcoding utilities &lt;stdmchar.h&gt;</b></h4></p>
 
 <div class="numbered"><p>
-The header `<stdmchar.h>` declares four status codes, five macros, types and functions for transcoding encoded text safely and effectively. It is meant to supersede and obsolete text conversion utilities from Unicode utilities (7.28) and Extended multibyte and wide character utilities (7.29). These functions can be used to count the number of input that form a complete sequence, count the number of output characters required for a conversion with no additional allocation, validate an input sequence, or just convert some input text. Particularly, it provides single unit and multi unit output functions for transcoding by working on <i>code units</i> until it consumes enough input to perform an <i>indivisible unit of work</i>. An indivisible unit is the smallest possible input, as defined by the encoding, that can produce either one or more <i>code points</i> or perform a transformation of some internal state. This production is called an <i>indivisible unit of work</i>, and it is used to produce an output to complete the transcoding operation. A code unit is a single compositional unit of encoded information, where one or more when interpreted in a specific way can produce an indivisible unit of work.
+The header &lt;stdmchar.h&gt; declares four status codes, five macros, types and functions for transcoding encoded text safely and effectively. It is meant to supersede and obsolete text conversion utilities from Unicode utilities (7.28) and Extended multibyte and wide character utilities (7.29). These functions can be used to count the number of input that form a complete sequence, count the number of output characters required for a conversion with no additional allocation, validate an input sequence, or just convert some input text. Particularly, it provides single unit and multi unit output functions for transcoding by working on <i>code units</i> until it consumes enough input to perform an <i>indivisible unit of work</i>. An indivisible unit is the smallest possible input, as defined by the encoding, that can produce either one or more <i>code points</i> or perform a transformation of some internal state. This production is called an <i>indivisible unit of work</i>, and it is used to produce an output to complete the transcoding operation. A code unit is a single compositional unit of encoded information, where one or more when interpreted in a specific way can produce an indivisible unit of work.
 </p></div>
 
 <div class="numbered"><p>
-The <i>narrow execution encoding</i> is the implementation-defined <code class="c-kw">LC_CTYPE</code> (7.11.1)-influenced locale execution environment encoding. The <i>wide execution encoding</i> is the implementation-defined <code class="c-kw">LC_CTYPE</code> (7.11.1)-influenced locale wide execution environment encoding. Functions which use `char` and `wchar_t`, or their qualified forms, derive their implementation-defined encoding from the locale.
+The <i>narrow execution encoding</i> is the implementation-defined <code class="c-kw">LC_CTYPE</code> (7.11.1)-influenced locale execution environment encoding. The <i>wide execution encoding</i> is the implementation-defined <code class="c-kw">LC_CTYPE</code> (7.11.1)-influenced locale wide execution environment encoding. Functions which use <code class="c-kw">char</code> and <code class="c-kw">wchar_t</code>, or their qualified forms, derive their implementation-defined encoding from the locale.
 </p></div>
 
 
 <div class="numbered"><p>
-The types declared are `mbstate_t` (described in 7.29.1), `wchar_t` (described in 7.19), `char16_t` (described in 7.28), `char32_t` (described in 7.28), `size_t` (described in 7.19), and;
-
-```c
-mcerr_t
-```
-
-which is a type definition for `int` which represents error codes returned from the functions below.
-</p></div>
-
-<div class="numbered"><p>
-The types declared are `mbstate_t` (described in 7.29.1), `wchar_t` (described in 7.19), `char16_t` (described in 7.28), `char32_t` (described in 7.28), `size_t` (described in 7.19), and;
+The types declared are <code class="c-kw">mbstate_t</code> (described in 7.29.1), <code class="c-kw">wchar_t</code> (described in 7.19), <code class="c-kw">char16_t</code> (described in 7.28), <code class="c-kw">char32_t</code> (described in 7.28), <code class="c-kw">size_t</code> (described in 7.19), and;
 
 ```c
 mcerr_t
@@ -740,9 +782,12 @@ STDC_MWC_MAX
 which correspond to the maximum output for each single unit conversion function (7.S�.1) and its corresponding output type. Each macro shall expand into an integer constant expression with minimum values, as described in the following table.
 </p></div>
 
-<div class="numbered"><p>
+<div class="numbered">
+<p>
 There is an association of naming convention, types, meaning, and maximums, used to describe the functions in this clause:
+</p>
 
+<p>
 <table>
 	<tr>
 		<th>Name</th>
@@ -818,46 +863,49 @@ No other value shall be returned from the functions described in this clause.
 
 <blockquote>
 <ins>
-<p><h6><b>7.S�.1 &emsp; Restartable and Non-Restartable Sized Single Unit Conversion Functions </b></h4></p>
+<p><h5><b>7.S�.1 &emsp; Restartable and Non-Restartable Sized Single Unit Conversion Functions </b></h5></p>
 
-```c
+````c
 #include <stdmchar.h>
 
-size_t mcntomwcn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size);
-size_t mcnrtomwcn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-size_t mcntoc8n(const char** input, size_t* input_size, unsigned char** output, size_t* output_size);
-size_t mcnrtoc8n(const char** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
-size_t mcntoc16n(const char** input, size_t* input_size, char16_t** output, size_t* output_size);
-size_t mcnrtoc16n(const char** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
-size_t mcntoc32n(const char** input, size_t* input_size, char32_t** output, size_t* output_size);
-size_t mcnrtoc32n(const char** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcntomwcn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size);
 
-size_t mwcntomcn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size);
-size_t mwcnrtomcn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-size_t mwcntoc8n(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
-size_t mwcnrtoc8n(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
-size_t mwcntoc16n(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size);
-size_t mwcnrtoc16n(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
-size_t mwcntoc32n(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size);
-size_t mwcnrtoc32n(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcnrtomwcn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcntoc8n(const char** input, size_t* input_size, unsigned char** output, size_t* output_size);
+mcerr_t mcnrtoc8n(const char** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcntoc16n(const char** input, size_t* input_size, char16_t** output, size_t* output_size);
+mcerr_t mcnrtoc16n(const char** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcntoc32n(const char** input, size_t* input_size, char32_t** output, size_t* output_size);
+mcerr_t mcnrtoc32n(const char** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c8ntomcn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size);
-size_t c8nrtomcn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-size_t c8ntomwcn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size);
-size_t c8nrtomwcn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mwcntomcn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size);
+mcerr_t mwcnrtomcn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+mcerr_t mwcntoc8n(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
+mcerr_t mwcnrtoc8n(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+mcerr_t mwcntoc16n(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size);
+mcerr_t mwcnrtoc16n(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mwcntoc32n(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size);
+mcerr_t mwcnrtoc32n(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c16ntomcn(const char16_t** input, size_t* input_size, char** output, size_t* output_size);
-size_t c16nrtomcn(const char16_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-size_t c16ntomwcn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
-size_t c16nrtomwcn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t c8ntomcn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size);
+mcerr_t c8nrtomcn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+mcerr_t c8ntomwcn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size);
+mcerr_t c8nrtomwcn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c32ntomcn(const char32_t** input, size_t* input_size, char** output, size_t* output_size);
-size_t c32nrtomcn(const char32_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-size_t c32ntomwcn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
-size_t c32nrtomwcn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-```
+mcerr_t c16ntomcn(const char16_t** input, size_t* input_size, char** output, size_t* output_size);
+mcerr_t c16nrtomcn(const char16_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+mcerr_t c16ntomwcn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+mcerr_t c16nrtomwcn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
 
+mcerr_t c32ntomcn(const char32_t** input, size_t* input_size, char** output, size_t* output_size);
+mcerr_t c32nrtomcn(const char32_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+mcerr_t c32ntomwcn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+mcerr_t c32nrtomwcn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+````
+
+<div class="numbered"><p>
 These functions take an input buffer and an output buffer as well as an input and output size. The function consumes any number of code units to perform a single indivisible unit of work, which may result in zero or more output code units. The single unit conversion functions are of two forms, a restartable form (contains an `r` in the function name) and a non-restartable form (does not contain an `r` in the function name).
+</p></div>
 
 <p><b>Constraints</b></p>
 <div class="numbered"><p>
@@ -868,9 +916,9 @@ On success or failure, this function shall return one of the above error codes (
 <div class="numbered"><p>
 The restartable form is as follows:
 
-```c
+````c
 mcerr_t XnrtoYn(const charX** input, size_t* input_size, const charY** output, size_t* output_size, mbstate_t* state);
-```
+````
 
 It converts from code units of type `charX` with its associated placeholder encoding of `X` to code units of type `charY` with its associated placeholder encoding of `Y` given a conversion state of value `*state`. The placeholder encodings are determined by the values of `X` and `Y` in the "Name" column of the association table above (7.S�). This function only performs a single indivisible unit of work, or it does nothing and returns `MCHAR_OK` if the input is empty (`*input_size` is zero). The behavior is as follows.
 
@@ -896,9 +944,9 @@ Otherwise, an error is returned is none of the above occurs. If the return value
 <div class="numbered"><p>
 The non-restartable form is as follows:
 
-```c
+````c
 mcerr_t XntoYn(const charX** input, size_t* input_size, const charY** output, size_t* output_size);
-```
+````
 
 which behaves as-if it:
 
@@ -909,49 +957,45 @@ which behaves as-if it:
 
 The values of the parameters contain identical meaning to the restartable form.
 </p></div>
-</ins>
-</blockquote>
 
-<blockquote>
-<ins>
-<p><h6><b>7.S�.2 &emsp; Restartable and Non-Restartable Sized Multi Unit Conversion Functions </b></h4></p>
+<p><h5><b>7.S�.2 &emsp; Restartable and Non-Restartable Sized Multi Unit Conversion Functions </b></h5></p>
 
-```c
+````c
 #include <stdmchar.h>
 
-size_t mcsntomwcsn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size);
-size_t mcsnrtomwcsn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-size_t mcsntoc8sn(const char** input, size_t* input_size, unsigned char** output, size_t* output_size);
-size_t mcsnrtoc8sn(const char** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
-size_t mcsntoc16sn(const char** input, size_t* input_size, char16_t** output, size_t* output_size);
-size_t mcsnrtoc16sn(const char** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
-size_t mcsntoc32sn(const char** input, size_t* input_size, char32_t** output, size_t* output_size);
-size_t mcsnrtoc32sn(const char** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcsntomwcsn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size);
+mcerr_t mcsnrtomwcsn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcsntoc8sn(const char** input, size_t* input_size, unsigned char** output, size_t* output_size);
+mcerr_t mcsnrtoc8sn(const char** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcsntoc16sn(const char** input, size_t* input_size, char16_t** output, size_t* output_size);
+mcerr_t mcsnrtoc16sn(const char** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mcsntoc32sn(const char** input, size_t* input_size, char32_t** output, size_t* output_size);
+mcerr_t mcsnrtoc32sn(const char** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
 
-size_t mwcsntomcsn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size);
-size_t mwcsnrtomcsn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-size_t mwcsntoc8sn(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
-size_t mwcsnrtoc8sn(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
-size_t mwcsntoc16sn(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size);
-size_t mwcsnrtoc16sn(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
-size_t mwcsntoc32sn(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size);
-size_t mwcsnrtoc32sn(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mwcsntomcsn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size);
+mcerr_t mwcsnrtomcsn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+mcerr_t mwcsntoc8sn(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
+mcerr_t mwcsnrtoc8sn(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+mcerr_t mwcsntoc16sn(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size);
+mcerr_t mwcsnrtoc16sn(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t mwcsntoc32sn(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size);
+mcerr_t mwcsnrtoc32sn(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
 
-size_t c8sntomwcsn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size);
-size_t c8snrtomwcsn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-size_t c8sntomcsn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size);
-size_t c8snrtomcsn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+mcerr_t c8sntomwcsn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size);
+mcerr_t c8snrtomwcsn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t c8sntomcsn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size);
+mcerr_t c8snrtomcsn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
 
-size_t c16sntomwcsn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
-size_t c16snrtomwcsn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-size_t c16sntomcsn(const char16_t** input, size_t* input_size, char** output, size_t* output_size);
-size_t c16snrtomcsn(const char16_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+mcerr_t c16sntomwcsn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+mcerr_t c16snrtomwcsn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+mcerr_t c16sntomcsn(const char16_t** input, size_t* input_size, char** output, size_t* output_size);
+mcerr_t c16snrtomcsn(const char16_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
 
-size_t c32sntomcsn(const char32_t** input, size_t* input_size, char** output, size_t* output_size);
-size_t c32snrtomcsn(const char32_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-size_t c32sntomwcsn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
-size_t c32snrtomwcsn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-```
+mcerr_t c32sntomcsn(const char32_t** input, size_t* input_size, char** output, size_t* output_size);
+mcerr_t c32snrtomcsn(const char32_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+mcerr_t c32sntomwcsn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+mcerr_t c32snrtomwcsn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+````
 
 These functions take an input buffer and an output buffer as well as an input and output size. The function consumes any number of code units to perform a single indivisible unit of work, which may result in zero or more output code units. It performs this work repeatedly on the whole input string until the input is exhausted or an error occurs. The multi unit conversion functions are of two forms, a restartable form (contains an `r` in the function name) and a non-restartable form (does not contain an `r` in the function name).
 

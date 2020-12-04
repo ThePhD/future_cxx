@@ -5,12 +5,10 @@ author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
 layout: paper
 redirect_from:
-  - /_vendor/future_cxx/papers/source/nXXX2.html
   - /_vendor/future_cxx/papers/source/d1967.html
   - /_vendor/future_cxx/papers/source/n2470.html
   - /_vendor/future_cxx/papers/source/n2499.html
   - /_vendor/future_cxx/papers/source/n2592.html
-  - /_vendor/future_cxx/papers/source/n26X0.html
 hide: true
 ---
 
@@ -19,7 +17,7 @@ _**Previous Revisions**_: WG14 n2470, n2499, n2592 | WG21 p1967r0, p1967r1, p196
 _**Audience**_: WG14, WG21  
 _**Proposal Category**_: New Features  
 _**Target Audience**_: General Developers, Application Developers, Compiler/Tooling Developers  
-_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/source/C - embed.html](https://thephd.github.io/_vendor/future_cxx/papers/source/C%20-%20embed.html)
+_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20embed.html](https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20embed.html)
 
 <div class="pagebreak"></div>
 

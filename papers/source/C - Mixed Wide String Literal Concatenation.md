@@ -1,5 +1,5 @@
 ---
-title: Mixed Wide String Literal Concatenation
+title: Mixed Wide String Literal Concatenation | r0
 date: October 26th, 2020
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
@@ -14,7 +14,7 @@ _**Previous Revisions**_: None
 _**Audience**_: WG14  
 _**Proposal Category**_: New Features  
 _**Target Audience**_: General Developers, Compiler/Tooling Developers  
-_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/source/n2594.html](https://thephd.github.io/_vendor/future_cxx/papers/source/n2594.html)
+_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20Mixed%20Wide%20String%20Literal%20Concatenation.html](https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20Mixed%20Wide%20String%20Literal%20Concatenation.html)
 
 <div class="text-center">
 <h6>Abstract:</h6>

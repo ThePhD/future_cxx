@@ -1,13 +1,13 @@
 ---
 title: Not-So-Magic - typeof(...) in C | r1
-date: December 1st, 2020
+date: December 4th, 2020
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
   - Shepherd (Shepherd's Oasis) \<<shepherd@soasis.org>\>
 layout: paper
 redirect_from:
   - /_vendor/future_cxx/papers/source/n2593.html
-  - /_vendor/future_cxx/papers/source/n2620.html
+  - /_vendor/future_cxx/papers/source/n2619.html
 hide: true
 ---
 
@@ -34,10 +34,11 @@ Getting the type of an expression in Standard C code.
 
 
 
-## Revision 1 - December 1st, 2020
+## Revision 1 - December 4th, 2020
 
 - Completely Reformulate Paper based on community, GCC, and LLVM implementation feedback.
 - Address major implementation contention of qualifiers with both `_Typeof` and `_Unqual_typeof`.
+- Note that variably modified types are their own special nightmare.
 - Add section about not using C++'s `decltype` identifier for this and other compatibility issues.
 - Completely rewrite the wording section.
 
@@ -66,15 +67,22 @@ Every implementation in existence since C89 has an implementation of `typeof`. S
 > The `sizeof` operator yields the size (in bytes) of its operand, which may be an expression or the parenthesized name of a type. **The size is determined from the type of the operand.**
 > — [N2573, Programming Languages C - Working Draft, §6.5.3.4 The `sizeof` and `_Alignof` operators, Semantics](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf)
 
-Any implementation that can process `sizeof("foo")` is already doing `sizeof(typeof("foo"))` internally. This feature is the most "existing practice"-iest feature to be proposed to the C Standard, possibly in the entire history of the C standard. The feature was also mentioned in an "extension round up" paper that went over the state of C Extensions in 2007[^N1229]. Typeof was also considered an important extension[^N1267].
+Any implementation that can process `sizeof("foo")` is already doing `sizeof(typeof("foo"))` internally. This feature is the most "existing practice"-iest feature to be proposed to the C Standard, possibly in the entire history of the C standard. The feature was also mentioned in an "extension round up" paper that went over the state of C Extensions in 2007[^N1229]. `typeof` was also considered an important extension during the discussion of that paper, but nobody brought forth the paper previously to make it a reality[^N1267].
+
+Notes:
+
+- Use direct semantic wording to say attributes/qualifiers are kept, or everything is stripped
+- Take the keyword space, rather than note?
+- Make sure to clarify unevaluated contexts
+- NAMING: qual_typeof and unqual_typeof (also avoids stepping on implementers)
 
 
 
-## Corner cases: Types and VLAs
+## Corner cases: Variably-Modified Types and VLAs
 
 [Putting a normal or VLA-type computation results in an idempotent](https://godbolt.org/z/3hqr6x) type computation that simply yields that type in most implementations that support the feature. If the compiler supports Variable Length Arrays, then `__typeof` -- if it is similar to GCC, Clang, tcc, and others -- then it is already supported with these semantics. These semantics also match how `sizeof` would behave (computing the expression or having an internal placeholder "VLA" type), so we propagate that same ability in an identical manner.
 
-Notably, this is how current implementations evaluate the semantics as well.
+Notably, this is how current implementations evaluate the semantics as well. Note that the standard claims that whether or not any computation done for Variably Modified Types -- with side effects -- is actually unspecified behavior, so there's no additional guarantees about the evaluation for such types.
 
 
 
@@ -496,6 +504,6 @@ If the same qualifier appears more than once in the same specifier-qualifier lis
 
 [^N1229]: Nick Stoughton. Potential Extensions For Inclusion In a Revision of ISO/IEC 9899. ISO/IEC SC22 WG14 - Programming Languages C. [http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1229.pdf](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1229.pdf)
 
-[^N1229]: ISO/IEC JTC1 SC22 WG14. Meeting Minutes April 2007. ISO/IEC SC22 WG14 - Programming Languages C. [http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1267.pdf](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1267.pdf)
+[^N1267]: ISO/IEC JTC1 SC22 WG14. Meeting Minutes April 2007. ISO/IEC SC22 WG14 - Programming Languages C. [http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1267.pdf](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1267.pdf)
 
 [^named-address-space-bug]: Uros Bizjak. typeof and operands in named address spaces. GNU Compiler Collection. [https://gcc.gnu.org/pipermail/gcc/2020-November/234119.html](https://gcc.gnu.org/pipermail/gcc/2020-November/234119.html)
