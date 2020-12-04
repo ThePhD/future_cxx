@@ -569,10 +569,10 @@ Here is the full list of proposed functions:
 
 typedef /* implementation-defined */ mcerr_t;
 
-const mcerr_t MCHAR_OK                  =  0,
-const mcerr_t MCHAR_ENCODING_ERROR      = -1,
-const mcerr_t MCHAR_INCOMPLETE_INPUT    = -2,
-const mcerr_t MCHAR_INSUFFICIENT_OUTPUT = -3,
+const mcerr_t MCHAR_OK                  =  0;
+const mcerr_t MCHAR_ENCODING_ERROR      = -1;
+const mcerr_t MCHAR_INCOMPLETE_INPUT    = -2;
+const mcerr_t MCHAR_INSUFFICIENT_OUTPUT = -3;
 
 mcerr_t mcntomwcn(const char** input, size_t* input_size,
                  wchar_t** output, size_t* output_size);
@@ -863,7 +863,7 @@ No other value shall be returned from the functions described in this clause.
 
 <blockquote>
 <ins>
-<p><h5><b>7.S�.1 &emsp; Restartable and Non-Restartable Sized Single Unit Conversion Functions </b></h5></p>
+<p><h5><b>7.S�.1 &emsp; Restartable and Non-Restartable Sized Single Unit Conversion Functions</b></h5></p>
 
 ````c
 #include <stdmchar.h>
@@ -958,9 +958,9 @@ which behaves as-if it:
 The values of the parameters contain identical meaning to the restartable form.
 </p></div>
 
-<p><h5><b>7.S�.2 &emsp; Restartable and Non-Restartable Sized Multi Unit Conversion Functions </b></h5></p>
+<p><h5><b>7.S�.2 &emsp; Restartable and Non-Restartable Sized Multi Unit Conversion Functions</b></h5></p>
 
-````c
+```c
 #include <stdmchar.h>
 
 mcerr_t mcsntomwcsn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size);
@@ -995,7 +995,7 @@ mcerr_t c32sntomcsn(const char32_t** input, size_t* input_size, char** output, s
 mcerr_t c32snrtomcsn(const char32_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
 mcerr_t c32sntomwcsn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
 mcerr_t c32snrtomwcsn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-````
+```
 
 These functions take an input buffer and an output buffer as well as an input and output size. The function consumes any number of code units to perform a single indivisible unit of work, which may result in zero or more output code units. It performs this work repeatedly on the whole input string until the input is exhausted or an error occurs. The multi unit conversion functions are of two forms, a restartable form (contains an `r` in the function name) and a non-restartable form (does not contain an `r` in the function name).
 
