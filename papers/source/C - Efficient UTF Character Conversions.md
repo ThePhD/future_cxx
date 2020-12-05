@@ -41,7 +41,7 @@ The Committee asked for UTF to UTF conversions as an addendum to an existing pap
 
 # Introduction and Motivation {#intro}
 
-This paper is strictly an addendum after ISO/IEC JTC1 SC22 WG14 - Programming Languages, C voted for the author of the [^non-utf-functions] to bring forward a (separate) paper for UTF ↔ UTF transcoding functions. That is, the Committee very strongly recommended a paper for being able to convert text in one Unicode encodings to other Unicode encodings, particularly UTF-8, UTF-16, and UTF-32.
+This paper is strictly an addendum after ISO/IEC JTC1 SC22 WG14 - Programming Languages, C voted for the authors of the original Efficient Character Conversions paper[^non-utf-functions] to bring forward a (separate) paper for UTF ↔ UTF transcoding functions. That is, the Committee very strongly recommended a paper for being able to convert text in one Unicode encodings to other Unicode encodings, particularly UTF-8, UTF-16, and UTF-32.
 
 All of the motivation and reasoning for this paper and its sister paper can be found [here](https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20Efficient%20Character%20Conversions.html). All of it applies identically to this paper.
 
