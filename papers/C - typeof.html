@@ -112,24 +112,28 @@ src: url(data:font/woff2;base64,d09GMgABAAAABOEoABIAAAAL5xQABOCvAAEAAAAAAAAAAAAA
 <h1 class="title">Not-So-Magic - typeof(…) in C | r1</h1>
 <p class="author">JeanHeyd Meneide &lt;<a href="mailto:phdofthehouse@gmail.com" class="email">phdofthehouse@gmail.com</a>&gt;</p>
 <p class="author">Shepherd (Shepherd’s Oasis) &lt;<a href="mailto:shepherd@soasis.org" class="email">shepherd@soasis.org</a>&gt;</p>
-<p class="date">December 1st, 2020</p>
+<p class="date">December 4th, 2020</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
 <li><a href="#changelog"><span class="toc-section-number">1</span> Changelog</a>
 <ul>
-<li><a href="#revision-1---december-1st-2020"><span class="toc-section-number">1.1</span> Revision 1 - December 1st, 2020</a></li>
+<li><a href="#revision-1---december-5th-2020"><span class="toc-section-number">1.1</span> Revision 1 - December 5th, 2020</a></li>
 <li><a href="#revision-0---october-25th-2020"><span class="toc-section-number">1.2</span> Revision 0 - October 25th, 2020</a></li>
 </ul></li>
 <li><a href="#introduction-motivation"><span class="toc-section-number">2</span> Introduction &amp; Motivation</a></li>
 <li><a href="#implementation-existing-practice"><span class="toc-section-number">3</span> Implementation &amp; Existing Practice</a>
 <ul>
-<li><a href="#corner-cases-types-and-vlas"><span class="toc-section-number">3.1</span> Corner cases: Types and VLAs</a></li>
+<li><a href="#corner-cases-variably-modified-types-and-vlas"><span class="toc-section-number">3.1</span> Corner cases: Variably-Modified Types and VLAs</a></li>
 <li><a href="#why-not-decltype"><span class="toc-section-number">3.2</span> Why not “decltype”?</a></li>
 <li><a href="#c-compatibility"><span class="toc-section-number">3.3</span> C++ Compatibility</a></li>
 <li><a href="#qualifiers"><span class="toc-section-number">3.4</span> Qualifiers</a></li>
 </ul></li>
-<li><a href="#wording"><span class="toc-section-number">4</span> Wording</a></li>
+<li><a href="#proposed-changes"><span class="toc-section-number">4</span> Proposed Changes</a>
+<ul>
+<li><a href="#keyword-name-ideas"><span class="toc-section-number">4.1</span> Keyword Name Ideas</a></li>
+<li><a href="#proposed-wording"><span class="toc-section-number">4.2</span> Proposed Wording</a></li>
+</ul></li>
 </ul>
 </nav>
 <p><em><strong>Document</strong></em>: n2619<br />
@@ -150,10 +154,11 @@ Getting the type of an expression in Standard C code.
 
 </div>
 <h1 data-number="1" id="changelog"><span class="header-section-number">1</span> Changelog</h1>
-<h2 data-number="1.1" id="revision-1---december-1st-2020"><span class="header-section-number">1.1</span> Revision 1 - December 1st, 2020</h2>
+<h2 data-number="1.1" id="revision-1---december-5th-2020"><span class="header-section-number">1.1</span> Revision 1 - December 5th, 2020</h2>
 <ul>
 <li>Completely Reformulate Paper based on community, GCC, and LLVM implementation feedback.</li>
-<li>Address major implementation contention of qualifiers with both <code>_Typeof</code> and <code>_Unqual_typeof</code>.</li>
+<li>Address major implementation contention of qualifiers with both <code>_Typeof</code> and <code>_Remove_quals</code>.</li>
+<li>Note that variably modified types are their own special nightmare.</li>
 <li>Add section about not using C++’s <code>decltype</code> identifier for this and other compatibility issues.</li>
 <li>Completely rewrite the wording section.</li>
 </ul>
@@ -177,9 +182,9 @@ Getting the type of an expression in Standard C code.
 <li>Make sure to clarify unevaluated contexts</li>
 <li>NAMING: qual_typeof and unqual_typeof (also avoids stepping on implementers)</li>
 </ul>
-<h2 data-number="3.1" id="corner-cases-types-and-vlas"><span class="header-section-number">3.1</span> Corner cases: Types and VLAs</h2>
+<h2 data-number="3.1" id="corner-cases-variably-modified-types-and-vlas"><span class="header-section-number">3.1</span> Corner cases: Variably-Modified Types and VLAs</h2>
 <p><a href="https://godbolt.org/z/3hqr6x">Putting a normal or VLA-type computation results in an idempotent</a> type computation that simply yields that type in most implementations that support the feature. If the compiler supports Variable Length Arrays, then <code>__typeof</code> – if it is similar to GCC, Clang, tcc, and others – then it is already supported with these semantics. These semantics also match how <code>sizeof</code> would behave (computing the expression or having an internal placeholder “VLA” type), so we propagate that same ability in an identical manner.</p>
-<p>Notably, this is how current implementations evaluate the semantics as well.</p>
+<p>Notably, this is how current implementations evaluate the semantics as well. Note that the standard claims that whether or not any computation done for Variably Modified Types – with side effects – is actually unspecified behavior, so there’s no additional guarantees about the evaluation for such types.</p>
 <h2 data-number="3.2" id="why-not-decltype"><span class="header-section-number">3.2</span> Why not “decltype”?</h2>
 <p>C++ has a feature it calls <code>decltype(...)</code>, which serves most of the same purpose. “Most” is because it has a subtle difference which would wreak havoc on C code if it was employed in shared header code:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> value = <span class="dv">20</span>;</span>
@@ -206,13 +211,34 @@ Getting the type of an expression in Standard C code.
 <p>There is also some disagreement between implementations about what qualifiers are worth keeping with respect to <code>_Atomic</code> between implementations. Therefore, <code>typeof</code> as proposed does not <em>strips all qualifiers from the computed type result</em>. The reason for this is that a user can add specifiers and qualifications to a type, but can not take them away once they are part of the expression. For example, consider the specification of <code>&lt;complex.h&gt;</code> that contains macro-provided constants like <code>_Imaginary_I</code>. These constants have the type <code>const float _Imaginary</code>: should all <code>typeof(_Imaginary_I)</code> expressions therefore result in a <code>const float _Imaginary</code>, or a <code>float _Imaginary</code>? What about <code>volatile</code>? And so on, and so forth.</p>
 <p>There is an argument to strip all type qualifiers (<code>_Atomic</code>, <code>const</code>, <code>restrict</code>, and <code>volatile</code>) from the final type expression is because they can be added back by the programmer easily. However, the opposite is not true: you cannot add back qualifiers or create macros where those qualifiers can be taken in as parameters and re-applied to the function. This does leave some room to be desired: some folk may want to deliberately propagate the <code>const</code>-ness, <code>volatile</code>-ness, or <code>_Atomic</code>-ness of an expression to its end users.</p>
 <h3 data-number="3.4.1" id="qualifiers---the-solution"><span class="header-section-number">3.4.1</span> Qualifiers - The Solution</h3>
-<p>Given how Qualifiers are, we propose that <code>_Typeof</code> be enhanced with a second version: <code>_Unqual_typeof</code>. That means there will be two new keywords introduced in this paper: <code>_Typeof</code> and <code>_Unqual_typeof</code>, where the first one keeps all the qualifiers of the original, and the second strips all qualifiers from the type. This importantly solves a (currently ongoing) debate for the above-linked GCC patch and conversation about how to strip qualifiers in the Linux Kernel properly. We note that this is better than the forced <em>lvalue conversion</em> route, which decays arrays and function types and thusly may not directly represent the original type.</p>
+<p>Originally, the idea of a <code>_Typeof</code> and an <code>_Unqual_typeof</code> was explored. This was a tempting direction but ultimately unsuitable as it duplicated functionality with a slight caveat and did not have a targeted purpose. A much better set name for the functionality is <code>_Typeof</code> and <code>_Remove_quals</code>. <code>_Typeof</code> is an all-qualifier-preserving type reproduction (or pass-through if a type is given) of the expression. It suitably envelopes the total space of existing practice. The only reason <code>_Unqual_typeof</code> would exist is to… well, remove qualifiers. It only makes sense to just name it appropriately, then: <code>_Remove_quals</code> is the name! It has identical functionality to the previously talked about <code>_Unqual_typeof</code> but with the massive benefit that:</p>
+<ul>
+<li>there are no search hits for this in searching the ACT database (catalogue of Debian/Fedora/etc. open source packages and their code); and,</li>
+<li>there are no search hits for this in the entirety of GitHub save for 4 instances of Python Code.</li>
+</ul>
+<p>This means that we need not entertain the idea of a special keyword and can simply directly name it <code>remove_quals</code> in the code instead, saving ourselves a massive debate about what should and should not be a keyword.</p>
 <h3 data-number="3.4.2" id="in-general"><span class="header-section-number">3.4.2</span> In General</h3>
-<p>Separately, we should consider a Macro Programming facility for C that can address larger questions. This paper strives to focus on the material gains from existing practice and the pitfalls of said existing practice. Therefore, this paper proposes only <code>_Typeof</code> and <code>_Unqual_typeof</code>.</p>
+<p>Separately, we should consider a Macro Programming facility for C that can address larger questions. This paper strives to focus on the material gains from existing practice and the pitfalls of said existing practice. Therefore, this paper proposes only <code>_Typeof</code> and <code>_Remove_quals</code>.</p>
 <p>After this paper is handled, further research should be given to handling qualifiers, function types, and arrays in Macros for generic programming. Further research should be done in the area of conversions, which may aid in ABI issues from, e.g., certain function names creating ABI problems (c.f. the entire <code>intmax_t</code> discussion<a href="#fn5" class="footnote-ref" id="fnref5" role="doc-noteref"><sup>5</sup></a> currently in deadlock right now). <code>_ExtInt</code><a href="#fn6" class="footnote-ref" id="fnref6" role="doc-noteref"><sup>6</sup></a> also brings up interesting consequences for <code>_Generic</code>, with respect to how to match various types of <code>_ExtInt</code> without having to write out a truly enormous list of explicit bit size associations, from 1 to some large <code>N</code>. Answering those questions may prove useful, but this paper does not explore any further than the existing practice.</p>
-<h1 data-number="4" id="wording"><span class="header-section-number">4</span> Wording</h1>
+<h1 data-number="4" id="proposed-changes"><span class="header-section-number">4</span> Proposed Changes</h1>
+<p>There is a choice that affects the wording here, to be voted on during the Virtual March WG14 - Programming Languages C meeting, contained below:</p>
+<h2 data-number="4.1" id="keyword-name-ideas"><span class="header-section-number">4.1</span> Keyword Name Ideas</h2>
+<p>There are 3 options for names. We have wording for the options using find-and-replace on the <code>TYPEOF_KEYWORD_TOKEN</code>. The option that provides the most consensus will be what is chosen:</p>
+<h3 data-number="4.1.1" id="option-1-_typeof-keyword-stdtypeof.h-header"><span class="header-section-number">4.1.1</span> Option 1: <code>_Typeof</code> keyword, <code>&lt;stdtypeof.h&gt;</code> header</h3>
+<p>This is the hyper conservative option that uses a <code>_Typeof</code> keyword plus <code>&lt;stdtypeof.h&gt;</code> to get access to the convenient spelling. It prevents implementations that have already settled on the <code>typeof()</code> keyword in their extension modes from having to warn users or breakage or deal with that problem. Many have raised issues with this, annoyed at the constant spelling of keywords in fundamentally awkward and strange ways while requiring headers to fix up the messed up usages. This is consistent with other new keywords introduced in the Standard to avoid breakage at all costs, but suffers from strong lamentations in needing a header to access a common spelling. This is the authors’ middle of the road option.</p>
+<h3 data-number="4.1.2" id="option-2-typeof-keyword"><span class="header-section-number">4.1.2</span> Option 2: <code>typeof</code> keyword</h3>
+<p>This is the relatively aggressive (but still somewhat milquetoast) option. It takes over the extension that is used in non-conforming C modes in a few compilers, such as XL C and GCC. Maintainers/implementers from GCC and Clang have noted their approval for this option, but XL C maintainers and implementers are less enthused. The reason some folks are against this change is because there are “bugs” in the implementation where some qualifiers are preserved, but other implementation-defined qualifiers are not. An argument can be made that implementations can continue to do whatever they want with implementation-defined qualifiers as far as <code>typeof</code> is concerned, since all of them preserve almost all of the pre-existing <em>standard</em> qualifiers present. This is the authors’ overwhelmingly strong preference.</p>
+<h3 data-number="4.1.3" id="option-3-use-a-completely-new-keyword-spelling"><span class="header-section-number">4.1.3</span> Option 3: Use a completely new keyword spelling</h3>
+<p>This uses a completely novel name to avoid the problem altogether. These names take no interesting space from users or implementers and it is the safest option, though it risks obscurity in what is a commonly anticipated feature. Names for this include:</p>
+<ul>
+<li><code>qual_typeof</code></li>
+<li><code>qualified_typeof</code></li>
+<li><code>decltypeof</code> (not the same as <code>decltype</code>)</li>
+</ul>
+<p>Choosing this options means picking one of these novel keywords and substituting it for the <code>TYPEOF_KEYWORD_TOKEN</code> spelling in the wording below. This is the authors’ least favorite option.</p>
+<h2 data-number="4.2" id="proposed-wording"><span class="header-section-number">4.2</span> Proposed Wording</h2>
 <p>The following wording is relative to <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf">N2573</a>.</p>
-<p><strong>Modify §6.3.2.1 Lvalues, arrays, and function designators, paragraphs 3 and 4 with footnote 68:</strong></p>
+<h3 data-number="4.2.1" id="modify-6.3.2.1-lvalues-arrays-and-function-designators-paragraphs-3-and-4-with-footnote-68"><span class="header-section-number">4.2.1</span> Modify §6.3.2.1 Lvalues, arrays, and function designators, paragraphs 3 and 4 with footnote 68:</h3>
 <blockquote>
 <div class="numbered numbered-3">
 <p>
@@ -231,10 +257,10 @@ A <i>function designator</i> is an expression that has function type. Except whe
 <p><strong>Add a keyword to the §6.4.1 Keywords:</strong></p>
 <blockquote>
 <p>
-    <code class="c-kw">_Thread_local</code><br /> <ins>    <code class="c-kw">_Typeof</code></ins><br /> <ins>    <code class="c-kw">_Unqual_typeof</code></ins><br />
+    <code class="c-kw">_Thread_local</code><br /> <ins>    <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code></ins><br /> <ins>    <code class="c-kw">remove_quals</code></ins><br />
 </p>
 </blockquote>
-<p><strong>Modify §6.6 Constant expressions, paragraphs 6 and 8:</strong></p>
+<h3 data-number="4.2.2" id="modify-6.6-constant-expressions-paragraphs-6-and-8"><span class="header-section-number">4.2.2</span> Modify §6.6 Constant expressions, paragraphs 6 and 8:</h3>
 <blockquote>
 <div class="numbered numbered-6">
 <p>
@@ -250,7 +276,7 @@ An arithmetic constant expression shall have arithmetic type and shall only have
 </p>
 </div>
 </blockquote>
-<p><strong>Adjust the Syntax grammar of §6.7.2 Type specifiers, the paragraph 2 list, and paragraph 4 Semantics:</strong></p>
+<h3 data-number="4.2.3" id="adjust-the-syntax-grammar-of-6.7.2-type-specifiers-the-paragraph-2-list-and-paragraph-4-semantics"><span class="header-section-number">4.2.3</span> Adjust the Syntax grammar of §6.7.2 Type specifiers, the paragraph 2 list, and paragraph 4 Semantics:</h3>
 <blockquote>
 <p>
 <i>type-specifier</i>:<br />     <code class="c-kw">void</code><br />     …<br />     <i>typedef-name</i><br /> <ins>    <i>typeof-specifier</i></ins>
@@ -281,13 +307,13 @@ Specifiers for <del>structures, unions, enumerations, and atomic types</del><ins
 </p>
 </div>
 </blockquote>
-<p><strong>Adjust the footnote 133) in §6.7.2.1 Structure and union specifiers:</strong></p>
+<h3 data-number="4.2.4" id="adjust-the-footnote-133-in-6.7.2.1-structure-and-union-specifiers"><span class="header-section-number">4.2.4</span> Adjust the footnote 133) in §6.7.2.1 Structure and union specifiers:</h3>
 <blockquote>
 <p>
 <sup>133)</sup><sub>As specified in 6.7.2 above, if the actual type specifier used is <code class="c-kw">int</code> or a typedef-name defined as <code class="c-kw">int</code>, then it is implementation-defined whether the bit-field is signed or unsigned. <ins>This includes an <code class="c-kw">int</code> type specifier produced by the use of the typeof specifier (6.7.2.5).</ins></sub>
 </p>
 </blockquote>
-<p><strong>Add a new §6.7.2.5 The Typeof specifiers:</strong></p>
+<h3 data-number="4.2.5" id="add-a-new-6.7.2.5-the-typeof-specifiers"><span class="header-section-number">4.2.5</span> Add a new §6.7.2.5 The Typeof specifiers:</h3>
 <blockquote>
 <ins>
 <p>
@@ -302,7 +328,7 @@ Specifiers for <del>structures, unions, enumerations, and atomic types</del><ins
 </p>
 <div class="numbered">
 <p>
-<i>typeof-specifier</i>:<br />     <code class="c-kw">_Typeof</code> <b>(</b> <i>expression</i> <b>)</b><br />     <code class="c-kw">_Typeof</code> <b>(</b> <i>type-name</i> <b>)</b><br />     <code class="c-kw">_Unqual_typeof</code> <b>(</b> <i>expression</i> <b>)</b><br />     <code class="c-kw">_Unqual_typeof</code> <b>(</b> <i>type-name</i> <b>)</b>
+<i>typeof-specifier</i>:<br />     <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> <b>(</b> <i>expression</i> <b>)</b><br />     <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> <b>(</b> <i>type-name</i> <b>)</b><br />     <code class="c-kw">remove_quals</code> <b>(</b> <i>expression</i> <b>)</b><br />     <code class="c-kw">remove_quals</code> <b>(</b> <i>type-name</i> <b>)</b>
 </p>
 </div>
 <p>
@@ -322,23 +348,23 @@ The <i>typeof-specifier</i> shall not be applied to an expression that designate
 </p>
 <div class="numbered">
 <p>
-The <i>typeof-specifier</i> applies the <code class="c-kw">_Typeof</code> or <code class="c-kw">_Unqual_typeof</code> operator (collectively, the <i>typeof operators</i>) to a <i>unary-expression</i> (6.5) or a <i>type-specifier</i>. If the typeof operators are applied to an <i>expression</i>, they yield the <i>type-name</i> representing the type of their operand<sup>11�0)</sup>. Otherwise, they produce the <i>type-name</i> with any nested <i>typeof-specifier</i> evaluated <sup>11�1)</sup>. If the type of the operand is a variably modified type, the operand is evaluated; otherwise, the operand is not evaluated.
+The <i>typeof-specifier</i> applies the <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> or <code class="c-kw">remove_quals</code> operator (collectively, the <i>typeof operators</i>) to a <i>unary-expression</i> (6.5) or a <i>type-specifier</i>. If the typeof operators are applied to an <i>expression</i>, they yield the <i>type-name</i> representing the type of their operand<sup>11�0)</sup>. Otherwise, they produce the <i>type-name</i> with any nested <i>typeof-specifier</i> evaluated <sup>11�1)</sup>. If the type of the operand is a variably modified type, the operand is evaluated; otherwise, the operand is not evaluated.
 </p>
 </div>
 <div class="numbered">
 <p>
-All qualifiers (6.7.3) on the type from the result of a <code class="c-kw">_Unqual_typeof</code> operation are removed, including <code class="c-kw">_Atomic</code>. Otherwise, for <code class="c-kw">_Typeof</code> operations, all qualifiers are preserved.
+All qualifiers (6.7.3) on the type from the result of a <code class="c-kw">remove_quals</code> operation are removed, including <code class="c-kw">_Atomic</code>. Otherwise, for <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> operations, all qualifiers are preserved.
 </p>
 </div>
 <p>
-<sup>11�0)</sup><sub> When applied to a parameter declared to have array or function type, the <code class="c-kw">_Typeof</code> operator yields the adjusted (pointer) type (see 6.9.1).</sub>
+<sup>11�0)</sup><sub> When applied to a parameter declared to have array or function type, the <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> operator yields the adjusted (pointer) type (see 6.9.1).</sub>
 </p>
 <p>
 <sup>11�1)</sup><sub> If the operand is a typeof operator, the operand will be evaluated before evaluating the current typeof operation. This happens recursively until a <i>typeof-specifier</i> is no longer the operand.</sub>
 </p>
 </ins>
 </blockquote>
-<p><strong>Add the following examples to new §6.7.2.5 The Typeof specifier:</strong></p>
+<h3 data-number="4.2.6" id="add-the-following-examples-to-new-6.7.2.5-the-typeof-specifier"><span class="header-section-number">4.2.6</span> Add the following examples to new §6.7.2.5 The Typeof specifier:</h3>
 <blockquote>
 <ins>
 <sup>5</sup> <strong>EXAMPLE 1</strong> Type of an expression.<br />
@@ -347,7 +373,7 @@ All qualifiers (6.7.3) on the type from the result of a <code class="c-kw">_Unqu
 The following program:
 </ins>
 <blockquote>
-<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">_Typeof</span>(<span class="dv">1</span>+<span class="dv">1</span>) main () {</span>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>TYPEOF_KEYWORD_TOKEN(<span class="dv">1</span>+<span class="dv">1</span>) main () {</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
 </blockquote>
@@ -374,11 +400,11 @@ The following program:
 <span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;catte&quot;</span>,</span>
 <span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>};</span>
 <span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="kw">_Typeof</span>(purr) main (<span class="dt">int</span> argc, <span class="dt">char</span>* argv[]) {</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    _Unqual_typeof(purr)           plain_purr;</span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Typeof</span>(<span class="kw">_Atomic</span> <span class="kw">_Typeof</span>(meow)) atomic_meow;</span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Typeof</span>(mew)                   mew_array;</span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    _Unqual_typeof(mew)            mew2_array;</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>TYPEOF_KEYWORD_TOKEN(purr) main (<span class="dt">int</span> argc, <span class="dt">char</span>* argv[]) {</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    remove_quals(purr)           plain_purr;</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    TYPEOF_KEYWORD_TOKEN(<span class="kw">_Atomic</span> TYPEOF_KEYWORD_TOKEN(meow)) atomic_meow;</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    TYPEOF_KEYWORD_TOKEN(mew)                   mew_array;</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    remove_quals(mew)            mew2_array;</span>
 <span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
 <span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
 </blockquote>
@@ -409,32 +435,32 @@ is equivalent to this program:
 <div class="sourceCode" id="cb6"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main (<span class="dt">int</span> argc, <span class="dt">char</span>* argv[]) {</span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">// this program has no constraint violations</span></span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="dt">int</span>));</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="ch">&#39;p&#39;</span>));</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>((<span class="dt">char</span>)<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="dt">char</span>));</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>((<span class="dt">char</span>)<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>((<span class="dt">char</span>)<span class="ch">&#39;p&#39;</span>));</span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(<span class="st">&quot;meow&quot;</span>)) == <span class="kw">sizeof</span>(<span class="dt">char</span>[<span class="dv">5</span>]));</span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(<span class="st">&quot;meow&quot;</span>)) == <span class="kw">sizeof</span>(<span class="st">&quot;meow&quot;</span>));</span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(argc)) == <span class="kw">sizeof</span>(<span class="dt">int</span>));</span>
-<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(argc)) == <span class="kw">sizeof</span>(argc));</span>
-<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(argv)) == <span class="kw">sizeof</span>(<span class="dt">const</span> <span class="dt">char</span>**));</span>
-<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(<span class="kw">_Typeof</span>(argv)) == <span class="kw">sizeof</span>(argv));</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(TYPEOF_KEYWORD_TOKEN(<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="dt">int</span>));</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(TYPEOF_KEYWORD_TOKEN(<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="ch">&#39;p&#39;</span>));</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(TYPEOF_KEYWORD_TOKEN((<span class="dt">char</span>)<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="dt">char</span>));</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(TYPEOF_KEYWORD_TOKEN((<span class="dt">char</span>)<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>((<span class="dt">char</span>)<span class="ch">&#39;p&#39;</span>));</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(TYPEOF_KEYWORD_TOKEN(<span class="st">&quot;meow&quot;</span>)) == <span class="kw">sizeof</span>(<span class="dt">char</span>[<span class="dv">5</span>]));</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(TYPEOF_KEYWORD_TOKEN(<span class="st">&quot;meow&quot;</span>)) == <span class="kw">sizeof</span>(<span class="st">&quot;meow&quot;</span>));</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(TYPEOF_KEYWORD_TOKEN(argc)) == <span class="kw">sizeof</span>(<span class="dt">int</span>));</span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(TYPEOF_KEYWORD_TOKEN(argc)) == <span class="kw">sizeof</span>(argc));</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(TYPEOF_KEYWORD_TOKEN(argv)) == <span class="kw">sizeof</span>(<span class="dt">const</span> <span class="dt">char</span>**));</span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(TYPEOF_KEYWORD_TOKEN(argv)) == <span class="kw">sizeof</span>(argv));</span>
 <span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(_Unqual_typeof(<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="dt">int</span>));</span>
-<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(_Unqual_typeof(<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="ch">&#39;p&#39;</span>));</span>
-<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(_Unqual_typeof((<span class="dt">char</span>)<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="dt">char</span>));</span>
-<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(_Unqual_typeof((<span class="dt">char</span>)<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>((<span class="dt">char</span>)<span class="ch">&#39;p&#39;</span>));</span>
-<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(_Unqual_typeof(<span class="st">&quot;meow&quot;</span>)) == <span class="kw">sizeof</span>(<span class="dt">char</span>[<span class="dv">5</span>]));</span>
-<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(_Unqual_typeof(<span class="st">&quot;meow&quot;</span>)) == <span class="kw">sizeof</span>(<span class="st">&quot;meow&quot;</span>));</span>
-<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(_Unqual_typeof(argc)) == <span class="kw">sizeof</span>(<span class="dt">int</span>));</span>
-<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(_Unqual_typeof(argc)) == <span class="kw">sizeof</span>(argc));</span>
-<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(_Unqual_typeof(argv)) == <span class="kw">sizeof</span>(<span class="dt">const</span> <span class="dt">char</span>**));</span>
-<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(_Unqual_typeof(argv)) == <span class="kw">sizeof</span>(argv));</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(remove_quals(<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="dt">int</span>));</span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(remove_quals(<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="ch">&#39;p&#39;</span>));</span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(remove_quals((<span class="dt">char</span>)<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>(<span class="dt">char</span>));</span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(remove_quals((<span class="dt">char</span>)<span class="ch">&#39;p&#39;</span>)) == <span class="kw">sizeof</span>((<span class="dt">char</span>)<span class="ch">&#39;p&#39;</span>));</span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(remove_quals(<span class="st">&quot;meow&quot;</span>)) == <span class="kw">sizeof</span>(<span class="dt">char</span>[<span class="dv">5</span>]));</span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(remove_quals(<span class="st">&quot;meow&quot;</span>)) == <span class="kw">sizeof</span>(<span class="st">&quot;meow&quot;</span>));</span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(remove_quals(argc)) == <span class="kw">sizeof</span>(<span class="dt">int</span>));</span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(remove_quals(argc)) == <span class="kw">sizeof</span>(argc));</span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(remove_quals(argv)) == <span class="kw">sizeof</span>(<span class="dt">const</span> <span class="dt">char</span>**));</span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Static_assert</span>(<span class="kw">sizeof</span>(remove_quals(argv)) == <span class="kw">sizeof</span>(argv));</span>
 <span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span>;</span>
 <span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
 </blockquote>
 <ins>
-<sup>8</sup> <strong>EXAMPLE 4</strong> Nested <code>_Typeof(...)</code>.<br />
+<sup>8</sup> <strong>EXAMPLE 4</strong> Nested <code>TYPEOF_KEYWORD_TOKEN(...)</code>.<br />
 </ins>
 <ins>
 The following program:
@@ -442,7 +468,7 @@ The following program:
 <blockquote>
 <div class="sourceCode" id="cb7"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main (<span class="dt">int</span> argc, <span class="dt">char</span>*[]) {</span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> val = <span class="fl">6.0</span><span class="bu">f</span>;</span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> (<span class="kw">_Typeof</span>(_Unqual_Typeof(<span class="kw">_Typeof</span>(argc))))val;</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> (TYPEOF_KEYWORD_TOKEN(remove_quals(TYPEOF_KEYWORD_TOKEN(argc))))val;</span>
 <span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
 </blockquote>
 <ins>
@@ -464,8 +490,8 @@ is equivalent to this program:
 <span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">typedef</span> <span class="dt">char</span> vla_type[n + <span class="dv">3</span>];</span>
 <span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>    vla_type b; <span class="co">// variable length array</span></span>
 <span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="kw">sizeof</span>(</span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>        _Unqual_typeof(b)</span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>    ); <span class="co">// execution-time sizeof, translation-time _Typeof</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>        remove_quals(b)</span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>    ); <span class="co">// execution-time sizeof, translation-time typeof operation</span></span>
 <span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>}</span>
 <span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main () {</span>
@@ -477,7 +503,7 @@ is equivalent to this program:
 </ins>
 <blockquote>
 <div class="sourceCode" id="cb10"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main () {</span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">_Typeof</span>(<span class="kw">_Typeof</span>(<span class="dt">const</span> <span class="dt">char</span>*)[<span class="dv">4</span>]) y = {</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    TYPEOF_KEYWORD_TOKEN(TYPEOF_KEYWORD_TOKEN(<span class="dt">const</span> <span class="dt">char</span>*)[<span class="dv">4</span>]) y = {</span>
 <span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;a&quot;</span>,</span>
 <span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;b&quot;</span>,</span>
 <span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;c&quot;</span>,</span>
@@ -487,13 +513,13 @@ is equivalent to this program:
 <span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
 </blockquote>
 </blockquote>
-<p><strong>Modify §6.7.3 Type specifiers, paragraph 6:</strong></p>
+<h3 data-number="4.2.7" id="modify-6.7.3-type-specifiers-paragraph-6"><span class="header-section-number">4.2.7</span> Modify §6.7.3 Type specifiers, paragraph 6:</h3>
 <blockquote>
 <div class="numbered numbered-6">
 <p>If the same qualifier appears more than once in the same specifier-qualifier list or as declaration specifiers, either directly<ins>, via one or more typeof specifiers,</ins> or via one or more <code class="c-kw">typedef</code>s, the behavior is the same as if it appeared only once. If other qualifiers appear along with the <code class="c-kw">_Atomic</code> qualifier the resulting type is the so-qualified atomic type.</p>
 </div>
 </blockquote>
-<p><strong>Modify §6.7.6.2 Array declarators, paragraph 5:</strong></p>
+<h3 data-number="4.2.8" id="modify-6.7.6.2-array-declarators-paragraph-5"><span class="header-section-number">4.2.8</span> Modify §6.7.6.2 Array declarators, paragraph 5:</h3>
 <blockquote>
 <div class="numbered numbered-5">
 <p>
@@ -501,7 +527,7 @@ If the size is an expression that is not an integer constant expression: if it o
 </p>
 </div>
 </blockquote>
-<p><strong>Modify §6.9 External definitions, paragraphs 3 and 5:</strong></p>
+<h3 data-number="4.2.9" id="modify-6.9-external-definitions-paragraphs-3-and-5"><span class="header-section-number">4.2.9</span> Modify §6.9 External definitions, paragraphs 3 and 5:</h3>
 <blockquote>
 <div class="numbered numbered-3">
 <p>
@@ -530,25 +556,25 @@ An <i>external definition</i> is an external declaration that is also a definiti
 </p>
 </div>
 </blockquote>
-<p><strong>Add a new §7.� Typeof <code>&lt;stdtypeof.h&gt;</code>:</strong></p>
+<h3 data-number="4.2.10" id="add-a-new-7.-typeof-stdtypeof.h-if-and-only-if-option-1-is-not-chosen"><span class="header-section-number">4.2.10</span> Add a new §7.� Typeof <code>&lt;stdtypeof.h&gt;</code> (<strong>IF AND ONLY IF: Option 1 is not chosen</strong>):</h3>
 <blockquote>
 <ins>
 <div class="numbered">
 <p>
-The header <code>&lt;stdtypeof.h&gt;</code> defines four macros.
+The header <code>&lt;stdtypeof.h&gt;</code> defines two macros.
 </p>
 </div>
 <div class="numbered">
 <p>
-The macros
+The macro
 </p>
 <p>
 <blockquote>
-<code>typeof</code><br /> <code>unqual_typeof</code>
+<code>typeof</code><br />
 </blockquote>
 </p>
 <p>
-expands to <code class="c-kw">_Typeof</code> and <code class="c-kw">_Unqual_typeof</code>, respectively.
+expands to <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code>.
 </p>
 </div>
 <div class="numbered">
@@ -557,7 +583,7 @@ The macros
 </p>
 <p>
 <blockquote>
-<code>__typeof_is_defined</code><br /> <code>__unqual_typeof_is_defined</code>
+<code>STDC_TYPEOF_IS_DEFINED</code><br />
 </blockquote>
 </p>
 <p>

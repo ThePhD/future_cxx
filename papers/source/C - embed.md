@@ -4,11 +4,6 @@ date: December 1st, 2020
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
 layout: paper
-redirect_from:
-  - /_vendor/future_cxx/papers/source/d1967.html
-  - /_vendor/future_cxx/papers/source/n2470.html
-  - /_vendor/future_cxx/papers/source/n2499.html
-  - /_vendor/future_cxx/papers/source/n2592.html
 hide: true
 ---
 
