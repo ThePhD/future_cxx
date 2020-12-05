@@ -561,11 +561,11 @@ Here is the full list of proposed functions:
 ```cpp
 #include <stdmchar.h>
 
-#define STDC_C8_MAX  16
-#define STDC_C16_MAX 8
-#define STDC_C32_MAX 4
-#define STDC_MC_MAX  16
-#define STDC_MWC_MAX 4
+#define STDC_C8_MAX  4
+#define STDC_C16_MAX 2
+#define STDC_C32_MAX 1
+#define STDC_MC_MAX  1
+#define STDC_MWC_MAX 1
 
 typedef /* implementation-defined */ mcerr_t;
 
@@ -721,68 +721,76 @@ The ecosystem deserves ways to get to a statically-known encoding and not rely o
 
 
 
-# Wording {#wording}
+# Proposed Changes {#wording}
 
 The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf).
 
-Note: The � is a stand-in character to be replaced by the editor.
 
 
-
-## Intent {#wording-intent}
+## Intent {#proposed-intent}
 
 The intent of the wording is to provide transcoding functions that:
 
 - define "code unit" as the smallest piece of information;
 - define the notion of an "indivisible unit of work";
-- introduce the notion of multi-unit work that does use the same 1:N or M:1 design as the precious `wchar_t` functions;
+- introduce the notion of multi-unit work that does not use the same 1:N or M:1 design as the precious `wchar_t` functions;
 - convert from the execution ("mc") and wide execution ("mwc") encodings to the unicode ("c8", "c16", "c32") encodings and vice-versa;
 - convert from the execution encoding ("mc") to the wide execution ("mwc") encoding and vice-versa;
-- provide a way to `mbstate_t` to be properly initialized as the initial conversion sequence; and,
+- provide a way for `mbstate_t` to be properly initialized as the initial conversion sequence; and,
 - to be entirely thread-safe by default with no magic internal state asides from what is already required by locales.
 
 
 
-## Proposed Library Wording {#wording-lib}
+## Proposed Library Wording {#proposed-wording}
+
+_Author's Note: Any � is a stand-in character to be replaced by the editor._
+
+
+### Create a new section 7.S� Text Transcoding Utilities
 
 <blockquote>
+<div class="wording-section">
 <ins>
 <p><h4><b>7.S� &emsp; Text transcoding utilities &lt;stdmchar.h&gt;</b></h4></p>
 
-<div class="numbered"><p>
-The header &lt;stdmchar.h&gt; declares four status codes, five macros, types and functions for transcoding encoded text safely and effectively. It is meant to supersede and obsolete text conversion utilities from Unicode utilities (7.28) and Extended multibyte and wide character utilities (7.29). These functions can be used to count the number of input that form a complete sequence, count the number of output characters required for a conversion with no additional allocation, validate an input sequence, or just convert some input text. Particularly, it provides single unit and multi unit output functions for transcoding by working on <i>code units</i> until it consumes enough input to perform an <i>indivisible unit of work</i>. An indivisible unit is the smallest possible input, as defined by the encoding, that can produce either one or more <i>code points</i> or perform a transformation of some internal state. This production is called an <i>indivisible unit of work</i>, and it is used to produce an output to complete the transcoding operation. A code unit is a single compositional unit of encoded information, where one or more when interpreted in a specific way can produce an indivisible unit of work.
+<div class="wording-numbered"><p>
+The header &lt;stdmchar.h&gt; declares four status codes, five macros, types and functions for transcoding encoded text safely and effectively. It is meant to supersede and obsolete text conversion utilities from Unicode utilities (7.28) and Extended multibyte and wide character utilities (7.29). It is meant to represent "multi character" functions. These functions can be used to count the number of input that form a complete sequence, count the number of output characters required for a conversion with no additional allocation, validate an input sequence, or just convert some input text. Particularly, it provides single unit and multi unit output functions for transcoding by working on <i>code units</i>.
 </p></div>
 
-<div class="numbered"><p>
-The <i>narrow execution encoding</i> is the implementation-defined <code class="c-kw">LC_CTYPE</code> (7.11.1)-influenced locale execution environment encoding. The <i>wide execution encoding</i> is the implementation-defined <code class="c-kw">LC_CTYPE</code> (7.11.1)-influenced locale wide execution environment encoding. Functions which use <code class="c-kw">char</code> and <code class="c-kw">wchar_t</code>, or their qualified forms, derive their implementation-defined encoding from the locale.
+<div class="wording-numbered"><p>
+A code unit is a single compositional unit of encoded information, usually of type <code class="c-kw">char</code>, <code class="c-kw">unsigned char</code>, <code class="c-kw">char16_t</code>, <code class="c-kw">char32_t</code>, or <code class="c-kw">wchar_t</code>. One or more code units are interpreted in a specific way specified by the related encoding of the operation. They are read until enough input to perform an <i>indivisible unit of work</i>. An indivisible unit is the smallest possible input, as defined by the encoding, that can produce either one or more outputs or perform a transformation of some internal state. The production of these indivisible units is called an <i>indivisible unit of work</i>, and they are used to complete the below specified transcoding operations. When an <i>indivisible unit of work</i> is successfully output, then the input is consumed by the below specified functions.
+</p></div>
+
+<div class="wording-numbered"><p>
+The <i>narrow execution encoding</i> is the implementation-defined <code class="c-kw">LC_CTYPE</code> (7.11.1)-influenced locale execution environment encoding. The <i>wide execution encoding</i> is the implementation-defined <code class="c-kw">LC_CTYPE</code> (7.11.1)-influenced locale wide execution environment encoding. Functions which use <code class="c-kw">char</code> and <code class="c-kw">wchar_t</code>, or their qualified forms, derive their implementation-defined encoding from the locale. The other encodings are UTF-8, associated with <code class="c-kw">unsigned char</code>, UTF-16, associated with <code class="c-kw">char16_t</code>, and UTF-32, associated with <code class="c-kw">char32_t</code>.
 </p></div>
 
 
-<div class="numbered"><p>
+<div class="wording-numbered"><p>
 The types declared are <code class="c-kw">mbstate_t</code> (described in 7.29.1), <code class="c-kw">wchar_t</code> (described in 7.19), <code class="c-kw">char16_t</code> (described in 7.28), <code class="c-kw">char32_t</code> (described in 7.28), <code class="c-kw">size_t</code> (described in 7.19), and;
 
-```c
-mcerr_t
-```
+> ```c
+> mcerr_t
+> ```
 
-which is a type definition for `int` which represents error codes returned from the functions below.
+which is a type definition for a signed integer type which represents error codes returned from the functions below.
 </p></div>
 
-<div class="numbered"><p>
+<div class="wording-numbered"><p>
 The five macros declared are
 
-```c
-STDC_C8_MAX
-STDC_C16_MAX
-STDC_C32_MAX
-STDC_MC_MAX
-STDC_MWC_MAX
-```
+> ```c
+> STDC_C8_MAX
+> STDC_C16_MAX
+> STDC_C32_MAX
+> STDC_MC_MAX
+> STDC_MWC_MAX
+> ```
 
 which correspond to the maximum output for each single unit conversion function (7.S�.1) and its corresponding output type. Each macro shall expand into an integer constant expression with minimum values, as described in the following table.
 </p></div>
 
-<div class="numbered">
+<div class="wording-numbered">
 <p>
 There is an association of naming convention, types, meaning, and maximums, used to describe the functions in this clause:
 </p>
@@ -791,7 +799,7 @@ There is an association of naming convention, types, meaning, and maximums, used
 <table>
 	<tr>
 		<th>Name</th>
-		<th>Type</th>
+		<th>Code Unit Type</th>
 		<th>Meaning</th>
 		<th>Maximum Output Macro</th>
 		<th>Minimum Value</th>
@@ -800,56 +808,56 @@ There is an association of naming convention, types, meaning, and maximums, used
 		<td>mc</td>
 		<td><code class="c-kw">char</code></td>
 		<td>The <i>narrow execution encoding</i>,<br/>influenced by <code class="c-kw">LC_CTYPE</code></td>
-		<td>`STDC_MC_MAX`</td>
-		<td>`16`</td>
+		<td><code class="c-kw">STDC_MC_MAX</code></td>
+		<td>`1`</td>
 	</tr>
 	<tr>
 		<td>mwc</td>
 		<td><code class="c-kw">wchar_t</code></td>
 		<td>The <i>wide execution encoding</i>,<br/>influenced by <code class="c-kw">LC_CTYPE</code></td>
-		<td>`STDC_MWC_MAX`</td>
-		<td>`4`</td>
+		<td><code class="c-kw">STDC_MWC_MAX</code></td>
+		<td>`1`</td>
 	</tr>
 	<tr>
 		<td>c8</td>
 		<td><code class="c-kw">unsigned char</code></td>
 		<td>UTF-8</td>
-		<td>`STDC_C8_MAX`</td>
-		<td>`16`</td>
+		<td><code class="c-kw">STDC_C8_MAX</code></td>
+		<td>`4`</td>
 	</tr>
 	<tr>
 		<td>c16</td>
 		<td><code class="c-kw">char16_t</code></td>
 		<td>UTF-16</td>
-		<td>`STDC_C16_MAX`</td>
-		<td>`8`</td>
+		<td><code class="c-kw">STDC_C16_MAX</code></td>
+		<td>`2`</td>
 	</tr>
 	<tr>
 		<td>c32</td>
 		<td><code class="c-kw">char32_t</code></td>
 		<td>UTF-32</td>
-		<td>`STDC_C32_MAX`</td>
-		<td>`4`</td>
+		<td><code class="c-kw">STDC_C32_MAX</code></td>
+		<td>`1`</td>
 	</tr>
 </table>
 </p>
 
 <p>
-The maximum output value specified in the above table is related to the single unit conversion functions (7.S�.1). The maximum output values do not affect the multi unit conversion functions (7.S�.2).
+The maximum output value specified in the above table is related to the single unit conversion functions (7.S�.1). These functions perform at most one indivisible unit of work, or return an error. The values shall be integer constant expressions large enough that conversions between each of the 5 encodings do not overflow a buffer of the maximum output size. The maximum output values do not affect the multi unit conversion functions (7.S�.2), which perform as many indivisible units of work as is possible until an error occurs.
 </p>
 </div>
 
-<div class="numbered"><p>
-The error code values are integral constants of type `const mcerr_t`, and are defined as follows:
+<div class="wording-numbered"><p>
+The error code values are integral constants of type <code class="c-kw">mcerr_t</code>, and are defined as follows:
 
-```c
-const mcerr_t MCHAR_OK                  =  0;
-const mcerr_t MCHAR_ENCODING_ERROR      = -1;
-const mcerr_t MCHAR_INCOMPLETE_INPUT    = -2;
-const mcerr_t MCHAR_INSUFFICIENT_OUTPUT = -3;
-```
+> ```c
+> const mcerr_t MCHAR_OK                  =  0;
+> const mcerr_t MCHAR_ENCODING_ERROR      = -1;
+> const mcerr_t MCHAR_INCOMPLETE_INPUT    = -2;
+> const mcerr_t MCHAR_INSUFFICIENT_OUTPUT = -3;
+> ```
 
-They represent:
+Each value represents an error case when calling the relevant transcoding functions in &lt;stdmchar.h&gt;:
 
 - `MCHAR_INSUFFICIENT_OUTPUT`, when the input is correct and an indivisible unit of work can be performed but there is not enough output space;
 - `MCHAR_INCOMPLETE_INPUT`, when an incomplete input was found after exhausting the input'
@@ -858,198 +866,244 @@ They represent:
 
 No other value shall be returned from the functions described in this clause.
 </p></div>
+
+<p><b>Recommended Practice</b></p>
+<div class="wording-numbered"><p>
+The Maximum Output Macro values are intended for use in making automatic storage duration array declarations. Implementations should choose values for the macros that are spacious enough to accommodate a variety of underlying implementation choices for the target encodings supported by the narrow execution encodings and wide execution encodings. Below is a set of values that can be resilient to future additions and changes:
+
+> ```c
+> #define STDC_C8_MAX  32
+> #define STDC_C16_MAX 16
+> #define STDC_C32_MAX  8
+> #define STDC_MC_MAX  32
+> #define STDC_MWC_MAX 16
+> ```
+
+</p></div>
 </ins>
+</div>
 </blockquote>
 
 <blockquote>
+<div class="wording-section">
 <ins>
 <p><h5><b>7.S�.1 &emsp; Restartable and Non-Restartable Sized Single Unit Conversion Functions</b></h5></p>
 
-````c
-#include <stdmchar.h>
+> ```c
+> #include <stdmchar.h>
+> 
+> mcerr_t mcntomwcn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size);
+> mcerr_t mcnrtomwcn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+> mcerr_t mcntoc8n(const char** input, size_t* input_size, unsigned char** output, size_t* output_size);
+> mcerr_t mcnrtoc8n(const char** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+> mcerr_t mcntoc16n(const char** input, size_t* input_size, char16_t** output, size_t* output_size);
+> mcerr_t mcnrtoc16n(const char** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+> mcerr_t mcntoc32n(const char** input, size_t* input_size, char32_t** output, size_t* output_size);
+> mcerr_t mcnrtoc32n(const char** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
+> 
+> mcerr_t mwcntomcn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size);
+> mcerr_t mwcnrtomcn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+> mcerr_t mwcntoc8n(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
+> mcerr_t mwcnrtoc8n(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+> mcerr_t mwcntoc16n(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size);
+> mcerr_t mwcnrtoc16n(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+> mcerr_t mwcntoc32n(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size);
+> mcerr_t mwcnrtoc32n(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
+> 
+> mcerr_t c8ntomcn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size);
+> mcerr_t c8nrtomcn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+> mcerr_t c8ntomwcn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size);
+> mcerr_t c8nrtomwcn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+> 
+> mcerr_t c16ntomcn(const char16_t** input, size_t* input_size, char** output, size_t* output_size);
+> mcerr_t c16nrtomcn(const char16_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+> mcerr_t c16ntomwcn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+> mcerr_t c16nrtomwcn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+> 
+> mcerr_t c32ntomcn(const char32_t** input, size_t* input_size, char** output, size_t* output_size);
+> mcerr_t c32nrtomcn(const char32_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+> mcerr_t c32ntomwcn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+> mcerr_t c32nrtomwcn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+> ```
 
-mcerr_t mcntomwcn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size);
+<div class="wording-numbered"><p>
+Let:
+<ul>
+	<li><i>transcoding function</i> be one of the functions listed above transcribed in the form `mcerr_t XntoYn(const charX** input, size_t* input_size, const charY** output, size_t* output_size)`;</li>
+	<li><i>restartable transcoding function</i> be one of the functions listed above transcribed in the form `mcerr_t XnrtoYn(const charX** input, size_t* input_size, const charY** output, size_t* output_size, mbstate_t* state)`;</li>
+	<li><i>X</i> and <i>Y</i> be one of the prefixes from the table from 7.S�;</li>
+	<li><i>`charX`</i> and <i>`charY`</i> be the associated code unit types for <i>X</i> and <i>Y</i> from the table from 7.S�; and</li>
+	<li><i>encoding X</i> and <i>encoding Y</i> be the associated encoding types for <i>X</i> and <i>Y</i> from the table from 7.S�.</li>
+</ul>
 
-mcerr_t mcnrtomwcn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-mcerr_t mcntoc8n(const char** input, size_t* input_size, unsigned char** output, size_t* output_size);
-mcerr_t mcnrtoc8n(const char** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
-mcerr_t mcntoc16n(const char** input, size_t* input_size, char16_t** output, size_t* output_size);
-mcerr_t mcnrtoc16n(const char** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
-mcerr_t mcntoc32n(const char** input, size_t* input_size, char32_t** output, size_t* output_size);
-mcerr_t mcnrtoc32n(const char** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
-
-mcerr_t mwcntomcn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size);
-mcerr_t mwcnrtomcn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-mcerr_t mwcntoc8n(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
-mcerr_t mwcnrtoc8n(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
-mcerr_t mwcntoc16n(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size);
-mcerr_t mwcnrtoc16n(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
-mcerr_t mwcntoc32n(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size);
-mcerr_t mwcnrtoc32n(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
-
-mcerr_t c8ntomcn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size);
-mcerr_t c8nrtomcn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-mcerr_t c8ntomwcn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size);
-mcerr_t c8nrtomwcn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-
-mcerr_t c16ntomcn(const char16_t** input, size_t* input_size, char** output, size_t* output_size);
-mcerr_t c16nrtomcn(const char16_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-mcerr_t c16ntomwcn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
-mcerr_t c16nrtomwcn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-
-mcerr_t c32ntomcn(const char32_t** input, size_t* input_size, char** output, size_t* output_size);
-mcerr_t c32nrtomcn(const char32_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-mcerr_t c32ntomwcn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
-mcerr_t c32nrtomwcn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-````
-
-<div class="numbered"><p>
-These functions take an input buffer and an output buffer as well as an input and output size. The function consumes any number of code units to perform a single indivisible unit of work, which may result in zero or more output code units. The single unit conversion functions are of two forms, a restartable form (contains an `r` in the function name) and a non-restartable form (does not contain an `r` in the function name).
+The transcoding functions and restartable transcoding functions take an input buffer and an output buffer of the associated code unit types, potentially with their sizes. The function consumes any number of code units of type `charX` to perform a single indivisible unit of work necessary to convert some amount of input from encoding X to encoding Y, which results in zero or more output code units of type `charY`.
 </p></div>
 
 <p><b>Constraints</b></p>
-<div class="numbered"><p>
-On success or failure, this function shall return one of the above error codes (7.S�). For the "restartable" variants, if `input` is `NULL`, then `*state` is set to the initial conversion sequence as described below. Otherwise, `input` must not be `NULL`. `state` shall not be `NULL`.
+<div class="wording-numbered"><p>
+On success or failure, the transcoding functions and restartable transcoding functions shall return one of the above error codes (7.S�). `state` shall not be `NULL`. If `state` is not initialized to the initial conversion sequence for the function, or is used after being input into a function whose result was not one of `MCHAR_OK`, `MCHAR_INSUFFICIENT_OUTPUT`, or `MCHAR_INCOMPLETE_INPUT`, then the behavior of the functions is unspecified. For the restartable transcoding functions, if `input` is `NULL`, then `*state` is set to the initial conversion sequence as described below and no other work is performed. Otherwise, for both restartable and non-restartable functions, `input` must not be `NULL`.
 </p></div>
 
 <p><b>Semantics</b></p>
-<div class="numbered"><p>
-The restartable form is as follows:
+<div class="wording-numbered"><p>
+The restartable transcoding functions take the form:
 
-````c
-mcerr_t XnrtoYn(const charX** input, size_t* input_size, const charY** output, size_t* output_size, mbstate_t* state);
-````
+> ```c
+> mcerr_t XnrtoYn(const charX** input, size_t* input_size, const charY** output, size_t* output_size, mbstate_t* state);
+> ```
 
-It converts from code units of type `charX` with its associated placeholder encoding of `X` to code units of type `charY` with its associated placeholder encoding of `Y` given a conversion state of value `*state`. The placeholder encodings are determined by the values of `X` and `Y` in the "Name" column of the association table above (7.S�). This function only performs a single indivisible unit of work, or it does nothing and returns `MCHAR_OK` if the input is empty (`*input_size` is zero). The behavior is as follows.
+They convert from code units of type `charX` interpreted according to encoding X to code units of type `charY` according to encoding Y given a conversion state of value `*state`. This function only performs a single indivisible unit of work. It does nothing and returns `MCHAR_OK` if the input is empty (only signified by `*input_size` is zero, if `input_size` is not `NULL`). The behavior of the restartable transcoding functions is as follows.
 
-- If `input` is `NULL`, then `*state` is set to the initial conversion sequence associated with the encoding of `X`.
-- If `input_size` is not `NULL`, then the function reads values from `*input` if `*input_size` is large enough to produce an indivisible unit of work. If no encoding errors have occurred but the input is exhausted, the function returns `MCHAR_INCOMPLETE_INPUT`.
-- If `input_size` is `NULL`, then `*input` is read that it points to a buffer of sufficient size and values. The behavior is undefined if the input buffer is not large enough.
-- If `output` is `NULL`, then no output will be written.
-- If `output_size` is not `NULL`, then `*output_size` will be decremented the amount of characters that would have been written to `*output` (even if `output` was `NULL`). If the output is exhausted (`*output_size` will be decremented below zero), the function returns `MCHAR_INSUFFICIENT_OUTPUT`.
-- If `output_size` is `NULL` and output is not `NULL`, then enough space is assumed in the buffer pointed to by `*output` for the entire operation and the behavior is undefined if the output buffer is not large enough.
+- If `input` is `NULL`, then `*state` is set to the initial conversion sequence associated with encoding X. The function returns `MCHAR_OK`.
+- If `input_size` is not `NULL`, then the function reads code units from `*input` if `*input_size` is large enough to produce an indivisible unit of work. If no encoding errors have occurred but the input is exhausted before an indivisible unit of work can be computed, the function returns `MCHAR_INCOMPLETE_INPUT`.
+- If `input_size` is `NULL`, then `*input` is incremented and read as if it points to a buffer of sufficient size for a successful operation. The behavior is undefined if the supplied input is not large enough.
+- If `output` is `NULL`, then no output will be written. `*input` is still read and incremented.
+- If `output_size` is not `NULL`, then `*output_size` will be decremented the amount of code units that would have been written to `*output` (even if `output` was `NULL`). If the output is exhausted (`*output_size` will be decremented below zero), the function returns `MCHAR_INSUFFICIENT_OUTPUT`.
+- If `output_size` is `NULL` and output is not `NULL`, then enough space is assumed in the buffer pointed to by `*output` for the entire operation. The behavior is undefined if the output buffer is not large enough.
 </p></div>
 
-<div class="numbered"><p>
-If the function returns `MCHAR_OK`, then all of the following happens:
+<div class="wording-numbered"><p>
+If the function returns `MCHAR_OK`, then all of the following is true:
 
 - `*input` will be incremented by the number of code units read and successfully converted;
 - if `input_size` is not `NULL`, `*input_size` is decremented by the number of code units read and successfully converted from the input;
-- if `output` is not `NULL`, `*output` will be incremented by the number of code units written; and,
+- if `output` is not `NULL`, `*output` will be incremented by the number of code units written to the output; and,
 - if `output_size` is not `NULL`, `*output_size` is decremented by the number of code units written to the output.
 
 Otherwise, an error is returned is none of the above occurs. If the return value is `MCHAR_ENCODING_ERROR`, then `*state` is in an unspecified state.
 </p></div>
 
-<div class="numbered"><p>
-The non-restartable form is as follows:
+<div class="wording-numbered"><p>
+The non-restartable transcoding functions take the form:
 
-````c
-mcerr_t XntoYn(const charX** input, size_t* input_size, const charY** output, size_t* output_size);
-````
+> ```c
+> mcerr_t XntoYn(const charX** input, size_t* input_size, const charY** output, size_t* output_size);
+> ```
 
-which behaves as-if it:
+Let `XnrtoYn` be the <i>analogous restartable transcoding function</i>. The transcoding functions behave as-if they:
 
-- creates an automatic storage duration object of `mbstate_t` type called `temporary_state`,
-- initializes `temporary_state` to the initial conversion sequence for the associated encoding of `X`;
-- calls the function and saves the result as if by `mcerr_t err = XnrtoYn(input, input_size, output, output_size, &temporary_state);`; and,
-- returns `err`.
+- create an automatic storage duration object of `mbstate_t` type called `temporary_state`,
+- initialize `temporary_state` to the initial conversion sequence by calling the analogous restartable transcoding function with `NULL` for `input` and `&temporary_state`, as-if by invoking `XnrtoYn(NULL, NULL, NULL, NULL, &temporary_state)`;
+- call the function and saves the result as-if by invoking `mcerr_t err = XnrtoYn(input, input_size, output, output_size, &temporary_state);`; and,
+- return `err`.
 
-The values of the parameters contain identical meaning to the restartable form.
+The interpretation of the values of the transcoding functions parameters are identical meaning to the restartable form.
 </p></div>
 
 <p><h5><b>7.S�.2 &emsp; Restartable and Non-Restartable Sized Multi Unit Conversion Functions</b></h5></p>
 
-```c
-#include <stdmchar.h>
+> ```c
+> #include <stdmchar.h>
+> 
+> mcerr_t mcsntomwcsn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size);
+> mcerr_t mcsnrtomwcsn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+> mcerr_t mcsntoc8sn(const char** input, size_t* input_size, unsigned char** output, size_t* output_size);
+> mcerr_t mcsnrtoc8sn(const char** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+> mcerr_t mcsntoc16sn(const char** input, size_t* input_size, char16_t** output, size_t* output_size);
+> mcerr_t mcsnrtoc16sn(const char** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+> mcerr_t mcsntoc32sn(const char** input, size_t* input_size, char32_t** output, size_t* output_size);
+> mcerr_t mcsnrtoc32sn(const char** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
+> 
+> mcerr_t mwcsntomcsn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size);
+> mcerr_t mwcsnrtomcsn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+> mcerr_t mwcsntoc8sn(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
+> mcerr_t mwcsnrtoc8sn(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+> mcerr_t mwcsntoc16sn(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size);
+> mcerr_t mwcsnrtoc16sn(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+> mcerr_t mwcsntoc32sn(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size);
+> mcerr_t mwcsnrtoc32sn(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
+> 
+> mcerr_t c8sntomwcsn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size);
+> mcerr_t c8snrtomwcsn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+> mcerr_t c8sntomcsn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size);
+> mcerr_t c8snrtomcsn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+> 
+> mcerr_t c16sntomwcsn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+> mcerr_t c16snrtomwcsn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+> mcerr_t c16sntomcsn(const char16_t** input, size_t* input_size, char** output, size_t* output_size);
+> mcerr_t c16snrtomcsn(const char16_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+> 
+> mcerr_t c32sntomcsn(const char32_t** input, size_t* input_size, char** output, size_t* output_size);
+> mcerr_t c32snrtomcsn(const char32_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+> mcerr_t c32sntomwcsn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+> mcerr_t c32snrtomwcsn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+> ```
 
-mcerr_t mcsntomwcsn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size);
-mcerr_t mcsnrtomwcsn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-mcerr_t mcsntoc8sn(const char** input, size_t* input_size, unsigned char** output, size_t* output_size);
-mcerr_t mcsnrtoc8sn(const char** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
-mcerr_t mcsntoc16sn(const char** input, size_t* input_size, char16_t** output, size_t* output_size);
-mcerr_t mcsnrtoc16sn(const char** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
-mcerr_t mcsntoc32sn(const char** input, size_t* input_size, char32_t** output, size_t* output_size);
-mcerr_t mcsnrtoc32sn(const char** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
+<div class="wording-numbered"><p>
+Let:
+<ul>
+	<li><i>transcoding function</i> be one of the functions listed above transcribed in the form `mcerr_t XsntoYsn(const charX** input, size_t* input_size, const charY** output, size_t* output_size)`;</li>
+	<li><i>restartable transcoding function</i> be one of the functions listed above transcribed in the form `mcerr_t XnrtoYn(const charX** input, size_t* input_size, const charY** output, size_t* output_size, mbstate_t* state)`;</li>
+	<li><i>X</i> and <i>Y</i> be one of the prefixes from the table from 7.S�;</li>
+	<li><i>`charX`</i> and <i>`charY`</i> be the associated code unit types for <i>X</i> and <i>Y</i> from the table from 7.S�; and</li>
+	<li><i>encoding X</i> and <i>encoding Y</i> be the associated encoding types for <i>X</i> and <i>Y</i> from the table from 7.S�.</li>
+</ul>
 
-mcerr_t mwcsntomcsn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size);
-mcerr_t mwcsnrtomcsn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-mcerr_t mwcsntoc8sn(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
-mcerr_t mwcsnrtoc8sn(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
-mcerr_t mwcsntoc16sn(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size);
-mcerr_t mwcsnrtoc16sn(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
-mcerr_t mwcsntoc32sn(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size);
-mcerr_t mwcsnrtoc32sn(const wchar_t** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
-
-mcerr_t c8sntomwcsn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size);
-mcerr_t c8snrtomwcsn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-mcerr_t c8sntomcsn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size);
-mcerr_t c8snrtomcsn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-
-mcerr_t c16sntomwcsn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
-mcerr_t c16snrtomwcsn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-mcerr_t c16sntomcsn(const char16_t** input, size_t* input_size, char** output, size_t* output_size);
-mcerr_t c16snrtomcsn(const char16_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-
-mcerr_t c32sntomcsn(const char32_t** input, size_t* input_size, char** output, size_t* output_size);
-mcerr_t c32snrtomcsn(const char32_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
-mcerr_t c32sntomwcsn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
-mcerr_t c32snrtomwcsn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
-```
-
-These functions take an input buffer and an output buffer as well as an input and output size. The function consumes any number of code units to perform a single indivisible unit of work, which may result in zero or more output code units. It performs this work repeatedly on the whole input string until the input is exhausted or an error occurs. The multi unit conversion functions are of two forms, a restartable form (contains an `r` in the function name) and a non-restartable form (does not contain an `r` in the function name).
+The transcoding functions and restartable transcoding functions take an input buffer and an output buffer of the associated code unit types, potentially with their sizes. The functions consume any number of code units to repeatedly perform a indivisible unit of work, which results in zero or more output code units. The functions will repeatedly perform an indivisible unit of work until either an error occurs or the input is exhausted.
+</p></div>
 
 <p><b>Constraints</b></p>
-<div class="numbered"><p>
-On success or failure, this function shall return one of the above error codes (7.S�). For the "restartable" variants, if `input` is `NULL`, then `*state` is set to the initial conversion sequence as described below. Otherwise, `input` must not be `NULL`. `state` shall not be `NULL`.
+<div class="wording-numbered"><p>
+On success or failure, the transcoding functions and restartable transcoding functions shall return one of the above error codes (7.S�). `state` shall not be `NULL`. If `state` is not initialized to the initial conversion sequence for the function, or is used after being input into a function whose result was not one of `MCHAR_OK`, `MCHAR_INSUFFICIENT_OUTPUT`, or `MCHAR_INCOMPLETE_INPUT`, then the behavior of the functions is unspecified. For the restartable transcoding functions, if `input` is `NULL`, then `*state` is set to the initial conversion sequence as described below and no other work is performed. Otherwise, for both restartable and non-restartable functions, `input` must not be `NULL` and `input_size` must not be `NULL`.
 </p></div>
 
 <p><b>Semantics</b></p>
-<div class="numbered"><p>
-The restartable form is as follows:
+<div class="wording-numbered"><p>
+The restartable transcoding functions take the form:
 
-```c
-mcerr_t XnsrtoYn(const charX** input, size_t* input_size, const charY** output, size_t* output_size, mbstate_t* state);
-```
+> ```c
+> mcerr_t XnsrtoYn(const charX** input, size_t* input_size, const charY** output, size_t* output_size, mbstate_t* state);
+> ```
 
-It converts from code units of type `charX` with its associated placeholder encoding of `X` to code units of type `charY` with its associated placeholder encoding of `Y` given a conversion state of value `*state`. The placeholder encodings are determined by the values of `X` and `Y` in the "Name" column of the association table above (7.S�). The behavior of this function is as-if `XnrtoYn` was called, repeatedly, until an error occurred or the input is exhausted. This function performs multiple indivisible units of work, until the input is empty (`*input_size` is zero) or an error occurs. The behavior is as follows.
+It converts from code units of type `charX` interpreted according to encoding X to code units of type `charY` according to encoding Y given a conversion state of value `*state`. The behavior of these functions is as-if the analogous single unit function `XnrtoYn` was repeatedly called, with the same `input`, `input_size`, `output`, `output_size`, and `state` parameters, to perform multiple indivisible units of work. The function stops when an error occurs or the input is empty (only signified by `*input_size` is zero).
+</p></div>
 
-- If `input` is `NULL`, then `*state` is set to the initial conversion sequence associated with the encoding of `X`.
-- If `input_size` is not `NULL`, then the function reads values from `*input` if `*input_size` is large enough to produce an indivisible unit of work. If no encoding errors have occurred but the input is exhausted, the function returns `MCHAR_INCOMPLETE_INPUT`.
+<div class="wording-numbered"><p>
+Let <i>indivisible work</i> be defined as performing the following:
+
+- If `input` is `NULL`, then `*state` is set to the initial conversion sequence associated with encoding X. The function returns `MCHAR_OK`.
+- If `input_size` is not `NULL`, then the function reads code units from `*input` if `*input_size` is large enough to produce an indivisible unit of work. If no encoding errors have occurred but the input is exhausted before an indivisible unit of work can be computed, the function returns `MCHAR_INCOMPLETE_INPUT`.
 - If `input_size` is `NULL`, then `*input` is read that it points to a buffer of sufficient size and values. The behavior is undefined if the input buffer is not large enough.
 - If `output` is `NULL`, then no output will be written.
 - If `output_size` is not `NULL`, then `*output_size` will be decremented the amount of characters that would have been written to `*output` (even if `output` was `NULL`). If the output is exhausted (`*output_size` will be decremented below zero), the function returns `MCHAR_INSUFFICIENT_OUTPUT`.
 - If `output_size` is `NULL` and output is not `NULL`, then enough space is assumed in the buffer pointed to by `*output` for the entire operation and the behavior is undefined if the output buffer is not large enough.
+
+The behavior of the restartable transcoding functions is as follows.
+
+- Evaluate indivisible work once.
+- If the function has not yet returned and the input is not empty (`*input_size` is not zero), return to the first step.
+- Otherwise, if the input is empty, return `MCHAR_OK`.
 </p></div>
 
-<div class="numbered"><p>
-The effects are as follows:
+<div class="wording-numbered"><p>
+The following is true after the invocation:
 
-- `*input` will be incremented by the number of code units read and successfully converted. If no error occurred, then this will consume all the input. Otherwise, `*input` will point to the location just after the last successfully performed conversion.
-- if `input_size` is not `NULL`, `*input_size` is decremented by the number of code units read from `*input` that were successfully converted. If no error occurred, then `*input_size` will be zero.
-- if `output` is not `NULL`, `*output` will be incremented by the number of code units written; and,
-- if `output_size` is not `NULL`, `*output_size` is decremented by the number of code units written to the output;
+- `*input` will be incremented by the number of code units read and successfully converted. If `MCHAR_OK` is returned, then this will consume all the input. Otherwise, `*input` will point to the location just after the last successfully performed conversion.
+- `*input_size` is decremented by the number of code units read from `*input` that were successfully converted. If no error occurred, then `*input_size` will be 0.
+- if `output` is not `NULL`, `*output` will be incremented by the number of code units written.
+- if `output_size` is not `NULL`, `*output_size` is decremented by the number of code units written to the output.
 
 If the return value is `MCHAR_ENCODING_ERROR`, then `*state` is in an unspecified state.
 </p></div>
 
-<div class="numbered"><p>
-The non-restartable form is as follows:
+<div class="wording-numbered"><p>
+The non-restartable transcoding functions take the form:
 
-```c
-mcerr_t XnstoYn(const charX** input, size_t* input_size, const charY** output, size_t* output_size);
-```
+> ```c
+> mcerr_t XsntoYsn(const charX** input, size_t* input_size, const charY** output, size_t* output_size);
+> ```
 
-which behaves as-if it:
+Let `XsnrtoYsn` be the <i>analogous restartable transcoding function</i>. The transcoding functions behave as-if they:
 
-- creates an automatic storage duration object of `mbstate_t` type called `temporary_state`,
-- initializes `temporary_state` to the initial conversion sequence for the associated encoding of `X`;
-- calls the function and saves the result as if by `mcerr_t err = XnsrtoYn(input, input_size, output, output_size, &temporary_state);`; and,
+- create an automatic storage duration object of `mbstate_t` type called `temporary_state`,
+- initialize `temporary_state` to the initial conversion sequence by calling the analogous restartable transcoding function with `NULL` for `input` and `&temporary_state`, as-if by invoking `XsnrtoYsn(NULL, NULL, NULL, NULL, &temporary_state)`;
+- calls the analogous restartable transcoding function and saves the result as if by `mcerr_t err = XsnrtoYsn(input, input_size, output, output_size, &temporary_state);`; and,
 - returns `err`.
 
 The values of the parameters contain identical meaning to the restartable form.
 </p></div>
 </ins>
+</div>
 </blockquote>
 
 
@@ -1060,6 +1114,7 @@ The values of the parameters contain identical meaning to the restartable form.
 Thank you to Philipp K. Krause for responding to the e-mails of a newcomer to matters of C and providing me with helpful guidance. Thank you to Rajan Bhakta, Daniel Plakosh, and David Keaton for guidance on how to submit these papers and get started in WG14. Thank you to Tom Honermann for lighting the passionate fire for proper text handling in me for not just C++, but for our sibling language C.
 
 <div class="pagebreak"></div>
+
 
 
 

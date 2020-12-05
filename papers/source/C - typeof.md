@@ -34,10 +34,10 @@ Getting the type of an expression in Standard C code.
 
 
 
-## Revision 1 - December 4th, 2020
+## Revision 1 - December 5th, 2020
 
 - Completely Reformulate Paper based on community, GCC, and LLVM implementation feedback.
-- Address major implementation contention of qualifiers with both `_Typeof` and `_Unqual_typeof`.
+- Address major implementation contention of qualifiers with both `_Typeof` and `_Remove_quals`.
 - Note that variably modified types are their own special nightmare.
 - Add section about not using C++'s `decltype` identifier for this and other compatibility issues.
 - Completely rewrite the wording section.
@@ -133,30 +133,68 @@ There is an argument to strip all type qualifiers (`_Atomic`, `const`, `restrict
 
 ### Qualifiers - The Solution
 
-Given how Qualifiers are, we propose that `_Typeof` be enhanced with a second version: `_Unqual_typeof`. That means there will be two new keywords introduced in this paper: `_Typeof` and `_Unqual_typeof`, where the first one keeps all the qualifiers of the original, and the second strips all qualifiers from the type. This importantly solves a (currently ongoing) debate for the above-linked GCC patch and conversation about how to strip qualifiers in the Linux Kernel properly. We note that this is better than the forced _lvalue conversion_ route, which decays arrays and function types and thusly may not directly represent the original type.
+Originally, the idea of a `_Typeof` and an `_Unqual_typeof` was explored. This was a tempting direction but ultimately unsuitable as it duplicated functionality with a slight caveat and did not have a targeted purpose. A much better set name for the functionality is `_Typeof` and `_Remove_quals`. `_Typeof` is an all-qualifier-preserving type reproduction (or pass-through if a type is given) of the expression. It suitably envelopes the total space of existing practice. The only reason `_Unqual_typeof` would exist is to... well, remove qualifiers. It only makes sense to just name it appropriately, then: `_Remove_quals` is the name! It has identical functionality to the previously talked about `_Unqual_typeof` but with the massive benefit that:
+
+- there are no search hits for this in searching the ACT database (catalogue of Debian/Fedora/etc. open source packages and their code); and,
+- there are no search hits for this in the entirety of GitHub save for 4 instances of Python Code.
+
+This means that we need not entertain the idea of a special keyword and can simply directly name it `remove_quals` in the code instead, saving ourselves a massive debate about what should and should not be a keyword.
 
 
 ### In General
 
-Separately, we should consider a Macro Programming facility for C that can address larger questions. This paper strives to focus on the material gains from existing practice and the pitfalls of said existing practice. Therefore, this paper proposes only `_Typeof` and `_Unqual_typeof`.
+Separately, we should consider a Macro Programming facility for C that can address larger questions. This paper strives to focus on the material gains from existing practice and the pitfalls of said existing practice. Therefore, this paper proposes only `_Typeof` and `_Remove_quals`.
 
 After this paper is handled, further research should be given to handling qualifiers, function types, and arrays in Macros for generic programming. Further research should be done in the area of conversions, which may aid in ABI issues from, e.g., certain function names creating ABI problems (c.f. the entire `intmax_t` discussion[^N2498] currently in deadlock right now). `_ExtInt`[^N2590] also brings up interesting consequences for `_Generic`, with respect to how to match various types of `_ExtInt` without having to write out a truly enormous list of explicit bit size associations, from 1 to some large `N`. Answering those questions may prove useful, but this paper does not explore any further than the existing practice.
 
 
 
 
-# Wording
+# Proposed Changes
+
+There is a choice that affects the wording here, to be voted on during the Virtual March WG14 - Programming Languages C meeting, contained below:
+
+
+
+## Keyword Name Ideas
+
+There are 3 options for names. We have wording for the options using find-and-replace on the `TYPEOF_KEYWORD_TOKEN`. The option that provides the most consensus will be what is chosen:
+
+
+### Option 1: `_Typeof` keyword, `<stdtypeof.h>` header
+
+This is the hyper conservative option that uses a `_Typeof` keyword plus `<stdtypeof.h>` to get access to the convenient spelling. It prevents implementations that have already settled on the `typeof()` keyword in their extension modes from having to warn users or breakage or deal with that problem. Many have raised issues with this, annoyed at the constant spelling of keywords in fundamentally awkward and strange ways while requiring headers to fix up the messed up usages. This is consistent with other new keywords introduced in the Standard to avoid breakage at all costs, but suffers from strong lamentations in needing a header to access a common spelling. This is the authors' middle of the road option.
+
+
+### Option 2: `typeof` keyword
+
+This is the relatively aggressive (but still somewhat milquetoast) option. It takes over the extension that is used in non-conforming C modes in a few compilers, such as XL C and GCC. Maintainers/implementers from GCC and Clang have noted their approval for this option, but XL C maintainers and implementers are less enthused. The reason some folks are against this change is because there are "bugs" in the implementation where some qualifiers are preserved, but other implementation-defined qualifiers are not. An argument can be made that implementations can continue to do whatever they want with implementation-defined qualifiers as far as `typeof` is concerned, since all of them preserve almost all of the pre-existing _standard_ qualifiers present. This is the authors' overwhelmingly strong preference.
+
+
+### Option 3: Use a completely new keyword spelling
+
+This uses a completely novel name to avoid the problem altogether. These names take no interesting space from users or implementers and it is the safest option, though it risks obscurity in what is a commonly anticipated feature. Names for this include:
+
+- `qual_typeof`
+- `qualified_typeof`
+- `decltypeof` (not the same as `decltype`)
+
+Choosing this options means picking one of these novel keywords and substituting it for the `TYPEOF_KEYWORD_TOKEN` spelling in the wording below. This is the authors' least favorite option.
+
+
+
+## Proposed Wording
 
 The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf).
 
 
-**Modify §6.3.2.1 Lvalues, arrays, and function designators, paragraphs 3 and 4 with footnote 68:**
+### Modify §6.3.2.1 Lvalues, arrays, and function designators, paragraphs 3 and 4 with footnote 68:
 
 <blockquote>
-<div class="numbered numbered-3">
+<div class="wording-numbered wording-numbered-3">
 <p>Except when it is the operand of the <del><code class="c-kw">sizeof</code> operator</del><ins><code class="c-kw">sizeof</code>, or typeof operators</ins>, or the unary <code>&</code> operator, or is a string literal used to initialize an array, an expression that has type "array of <i>type</i>" is converted to an expression with type "pointer to <i>type</i>" that points to the initial element of the array object and is not an lvalue. If the array object has register storage class, the behavior is undefined.</p>
 </div>
-<div class="numbered numbered-4">
+<div class="wording-numbered wording-numbered-4">
 <p>A <i>function designator</i> is an expression that has function type. Except when it is the operand of the <del><code class="c-kw">sizeof</code> operator</del><ins><code class="c-kw">sizeof</code> operator, a typeof operator</ins><sup>68)</sup>or the unary <code>&</code> operator, a function designator with type "function returning <i>type</i>" is converted to an expression that has type "pointer to function returning <i>type</i>".</p>
 </div>
 
@@ -171,30 +209,30 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 <blockquote>
 <p>
 &emsp; &emsp; <code class="c-kw">_Thread_local</code><br/>
-<ins>&emsp; &emsp; <code class="c-kw">_Typeof</code></ins><br/>
-<ins>&emsp; &emsp; <code class="c-kw">_Unqual_typeof</code></ins><br/>
+<ins>&emsp; &emsp; <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code></ins><br/>
+<ins>&emsp; &emsp; <code class="c-kw">remove_quals</code></ins><br/>
 </p>
 </blockquote>
 
 
 
-**Modify §6.6 Constant expressions, paragraphs 6 and 8:**
+### Modify §6.6 Constant expressions, paragraphs 6 and 8:
 
 <blockquote>
-<div class="numbered numbered-6">
+<div class="wording-numbered wording-numbered-6">
 <p>An integer constant expression<sup>125)</sup> shall have integer type and shall only have operands that are integer constants, enumeration constants, character constants, <code class="c-kw">sizeof</code> expressions whose results are integer constants, <code class="c-kw">_Alignof</code> expressions, and floating constants that are the immediate operands of casts. Cast operators in an integer constant expression shall only convert arithmetic types to integer types, except as part of an operand to the <del><code class="c-kw">sizeof</code></del><ins>typeof operators, <code class="c-kw">sizeof</code> operator,</ins> or <code class="c-kw">_Alignof</code> operator.</p>
 </div>
 
 <p>...</p>
 
-<div class="numbered numbered-8">
+<div class="wording-numbered wording-numbered-8">
 <p>An arithmetic constant expression shall have arithmetic type and shall only have operands that are integer constants, floating constants, enumeration constants, character constants,<code class="c-kw">sizeof</code> expressions whose results are integer constants, and <code class="c-kw">_Alignof</code> expressions. Cast operators in an arithmetic constant expression shall only convert arithmetic types to arithmetic types, except as part of an operand to the <del><code class="c-kw">sizeof</code></del><ins>typeof operators, <code class="c-kw">sizeof</code> operator,</ins> or <code class="c-kw">_Alignof</code> operator.
 </p></div>
 </blockquote>
 
 
 
-**Adjust the Syntax grammar of §6.7.2 Type specifiers, the paragraph 2 list, and paragraph 4 Semantics:**
+### Adjust the Syntax grammar of §6.7.2 Type specifiers, the paragraph 2 list, and paragraph 4 Semantics:
 
 <blockquote>
 <p>
@@ -219,14 +257,14 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 </blockquote>
 
 <blockquote>
-<div class="numbered numbered-4">
+<div class="wording-numbered wording-numbered-4">
 <p>Specifiers for <del>structures, unions, enumerations, and atomic types</del><ins>structures, unions, enumerations, atomic types, and typeof specifiers</ins> are discussed in 6.7.2.1 through <del>6.7.2.4</del><ins>6.7.2.5</ins>. Declarations of typedef names are discussed in 6.7.8. The characteristics of the other types are discussed in 6.2.5.</p>
 </div>
 </blockquote>
 
 
 
-**Adjust the footnote 133) in §6.7.2.1 Structure and union specifiers:**
+### Adjust the footnote 133) in §6.7.2.1 Structure and union specifiers:
 
 <blockquote>
 <p>
@@ -236,7 +274,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 
 
 
-**Add a new §6.7.2.5 The Typeof specifiers:**
+### Add a new §6.7.2.5 The Typeof specifiers:
 
 <blockquote>
 <ins>
@@ -244,46 +282,46 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 
 <p><h4><b>Syntax</b></h4></p>
 
-<div class="numbered">
+<div class="wording-numbered">
 <p>
 <i>typeof-specifier</i>:<br/>
-&emsp; &emsp; <code class="c-kw">_Typeof</code> <b>(</b> <i>expression</i> <b>)</b><br/>
-&emsp; &emsp; <code class="c-kw">_Typeof</code> <b>(</b> <i>type-name</i> <b>)</b><br/>
-&emsp; &emsp; <code class="c-kw">_Unqual_typeof</code> <b>(</b> <i>expression</i> <b>)</b><br/>
-&emsp; &emsp; <code class="c-kw">_Unqual_typeof</code> <b>(</b> <i>type-name</i> <b>)</b>
+&emsp; &emsp; <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> <b>(</b> <i>expression</i> <b>)</b><br/>
+&emsp; &emsp; <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> <b>(</b> <i>type-name</i> <b>)</b><br/>
+&emsp; &emsp; <code class="c-kw">remove_quals</code> <b>(</b> <i>expression</i> <b>)</b><br/>
+&emsp; &emsp; <code class="c-kw">remove_quals</code> <b>(</b> <i>type-name</i> <b>)</b>
 </p>
 </div>
 
 <p><h4><b>Constraints</b></h4></p>
 
-<div class="numbered">
+<div class="wording-numbered">
 <p>The <i>typeof-specifier</i> shall not be applied to an expression that designates a bit-field member.</p>
 </div>
 
 <p><h4><b>Semantics</b></h4></p>
 
-<div class="numbered">
-<p>The <i>typeof-specifier</i> applies the <code class="c-kw">_Typeof</code> or <code class="c-kw">_Unqual_typeof</code> operator (collectively, the <i>typeof operators</i>) to a <i>unary-expression</i> (6.5) or a <i>type-specifier</i>. If the typeof operators are applied to an <i>expression</i>, they yield the <i>type-name</i> representing the type of their operand<sup>11�0)</sup>. Otherwise, they produce the <i>type-name</i> with any nested <i>typeof-specifier</i> evaluated <sup>11�1)</sup>. If the type of the operand is a variably modified type, the operand is evaluated; otherwise, the operand is not evaluated.</p>
+<div class="wording-numbered">
+<p>The <i>typeof-specifier</i> applies the <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> or <code class="c-kw">remove_quals</code> operator (collectively, the <i>typeof operators</i>) to a <i>unary-expression</i> (6.5) or a <i>type-specifier</i>. If the typeof operators are applied to an <i>expression</i>, they yield the <i>type-name</i> representing the type of their operand<sup>11�0)</sup>. Otherwise, they produce the <i>type-name</i> with any nested <i>typeof-specifier</i> evaluated <sup>11�1)</sup>. If the type of the operand is a variably modified type, the operand is evaluated; otherwise, the operand is not evaluated.</p>
 </div>
 
-<div class="numbered">
-<p>All qualifiers (6.7.3) on the type from the result of a <code class="c-kw">_Unqual_typeof</code> operation are removed, including <code class="c-kw">_Atomic</code>. Otherwise, for <code class="c-kw">_Typeof</code> operations, all qualifiers are preserved.</p>
+<div class="wording-numbered">
+<p>All qualifiers (6.7.3) on the type from the result of a <code class="c-kw">remove_quals</code> operation are removed, including <code class="c-kw">_Atomic</code>. Otherwise, for <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> operations, all qualifiers are preserved.</p>
 </div>
 
-<p><sup>11�0)</sup><sub> When applied to a parameter declared to have array or function type, the <code class="c-kw">_Typeof</code> operator yields the adjusted (pointer) type (see 6.9.1).</sub></p>
+<p><sup>11�0)</sup><sub> When applied to a parameter declared to have array or function type, the <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> operator yields the adjusted (pointer) type (see 6.9.1).</sub></p>
 <p><sup>11�1)</sup><sub> If the operand is a typeof operator, the operand will be evaluated before evaluating the current typeof operation. This happens recursively until a <i>typeof-specifier</i> is no longer the operand.</sub></p>
 </ins>
 </blockquote>
 
 
-**Add the following examples to new §6.7.2.5 The Typeof specifier:**
+### Add the following examples to new §6.7.2.5 The Typeof specifier:
 
 > <ins><sup>5</sup> **EXAMPLE 1** Type of an expression.<br/></ins>
 > 
 > <ins>The following program:</ins>
 > 
 > > ```c
-> > _Typeof(1+1) main () {
+> > TYPEOF_KEYWORD_TOKEN(1+1) main () {
 > > 	return 0;
 > > }
 > > ```
@@ -309,11 +347,11 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > 	"catte",
 > > };
 > > 
-> > _Typeof(purr) main (int argc, char* argv[]) {
-> > 	_Unqual_typeof(purr)           plain_purr;
-> > 	_Typeof(_Atomic _Typeof(meow)) atomic_meow;
-> > 	_Typeof(mew)                   mew_array;
-> > 	_Unqual_typeof(mew)            mew2_array;
+> > TYPEOF_KEYWORD_TOKEN(purr) main (int argc, char* argv[]) {
+> > 	remove_quals(purr)           plain_purr;
+> > 	TYPEOF_KEYWORD_TOKEN(_Atomic TYPEOF_KEYWORD_TOKEN(meow)) atomic_meow;
+> > 	TYPEOF_KEYWORD_TOKEN(mew)                   mew_array;
+> > 	remove_quals(mew)            mew2_array;
 > > 	return 0;
 > > }
 > > ```
@@ -345,39 +383,39 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > int main (int argc, char* argv[]) {
 > > 	// this program has no constraint violations
 > > 
-> > 	_Static_assert(sizeof(_Typeof('p')) == sizeof(int));
-> > 	_Static_assert(sizeof(_Typeof('p')) == sizeof('p'));
-> > 	_Static_assert(sizeof(_Typeof((char)'p')) == sizeof(char));
-> > 	_Static_assert(sizeof(_Typeof((char)'p')) == sizeof((char)'p'));
-> > 	_Static_assert(sizeof(_Typeof("meow")) == sizeof(char[5]));
-> > 	_Static_assert(sizeof(_Typeof("meow")) == sizeof("meow"));
-> > 	_Static_assert(sizeof(_Typeof(argc)) == sizeof(int));
-> > 	_Static_assert(sizeof(_Typeof(argc)) == sizeof(argc));
-> > 	_Static_assert(sizeof(_Typeof(argv)) == sizeof(const char**));
-> > 	_Static_assert(sizeof(_Typeof(argv)) == sizeof(argv));
+> > 	_Static_assert(sizeof(TYPEOF_KEYWORD_TOKEN('p')) == sizeof(int));
+> > 	_Static_assert(sizeof(TYPEOF_KEYWORD_TOKEN('p')) == sizeof('p'));
+> > 	_Static_assert(sizeof(TYPEOF_KEYWORD_TOKEN((char)'p')) == sizeof(char));
+> > 	_Static_assert(sizeof(TYPEOF_KEYWORD_TOKEN((char)'p')) == sizeof((char)'p'));
+> > 	_Static_assert(sizeof(TYPEOF_KEYWORD_TOKEN("meow")) == sizeof(char[5]));
+> > 	_Static_assert(sizeof(TYPEOF_KEYWORD_TOKEN("meow")) == sizeof("meow"));
+> > 	_Static_assert(sizeof(TYPEOF_KEYWORD_TOKEN(argc)) == sizeof(int));
+> > 	_Static_assert(sizeof(TYPEOF_KEYWORD_TOKEN(argc)) == sizeof(argc));
+> > 	_Static_assert(sizeof(TYPEOF_KEYWORD_TOKEN(argv)) == sizeof(const char**));
+> > 	_Static_assert(sizeof(TYPEOF_KEYWORD_TOKEN(argv)) == sizeof(argv));
 > > 
-> > 	_Static_assert(sizeof(_Unqual_typeof('p')) == sizeof(int));
-> > 	_Static_assert(sizeof(_Unqual_typeof('p')) == sizeof('p'));
-> > 	_Static_assert(sizeof(_Unqual_typeof((char)'p')) == sizeof(char));
-> > 	_Static_assert(sizeof(_Unqual_typeof((char)'p')) == sizeof((char)'p'));
-> > 	_Static_assert(sizeof(_Unqual_typeof("meow")) == sizeof(char[5]));
-> > 	_Static_assert(sizeof(_Unqual_typeof("meow")) == sizeof("meow"));
-> > 	_Static_assert(sizeof(_Unqual_typeof(argc)) == sizeof(int));
-> > 	_Static_assert(sizeof(_Unqual_typeof(argc)) == sizeof(argc));
-> > 	_Static_assert(sizeof(_Unqual_typeof(argv)) == sizeof(const char**));
-> > 	_Static_assert(sizeof(_Unqual_typeof(argv)) == sizeof(argv));
+> > 	_Static_assert(sizeof(remove_quals('p')) == sizeof(int));
+> > 	_Static_assert(sizeof(remove_quals('p')) == sizeof('p'));
+> > 	_Static_assert(sizeof(remove_quals((char)'p')) == sizeof(char));
+> > 	_Static_assert(sizeof(remove_quals((char)'p')) == sizeof((char)'p'));
+> > 	_Static_assert(sizeof(remove_quals("meow")) == sizeof(char[5]));
+> > 	_Static_assert(sizeof(remove_quals("meow")) == sizeof("meow"));
+> > 	_Static_assert(sizeof(remove_quals(argc)) == sizeof(int));
+> > 	_Static_assert(sizeof(remove_quals(argc)) == sizeof(argc));
+> > 	_Static_assert(sizeof(remove_quals(argv)) == sizeof(const char**));
+> > 	_Static_assert(sizeof(remove_quals(argv)) == sizeof(argv));
 > > 	return 0;
 > > }
 > > ```
 > 
-> <ins><sup>8</sup> **EXAMPLE 4** Nested `_Typeof(...)`.<br/></ins>
+> <ins><sup>8</sup> **EXAMPLE 4** Nested `TYPEOF_KEYWORD_TOKEN(...)`.<br/></ins>
 > 
 > <ins>The following program:</ins>
 > 
 > > ```c
 > > int main (int argc, char*[]) {
 > > 	float val = 6.0f;
-> > 	return (_Typeof(_Unqual_Typeof(_Typeof(argc))))val;
+> > 	return (TYPEOF_KEYWORD_TOKEN(remove_quals(TYPEOF_KEYWORD_TOKEN(argc))))val;
 > > }
 > > ```
 > 
@@ -400,8 +438,8 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > 	typedef char vla_type[n + 3];
 > > 	vla_type b; // variable length array
 > > 	return sizeof(
-> > 		_Unqual_typeof(b)
-> > 	); // execution-time sizeof, translation-time _Typeof
+> > 		remove_quals(b)
+> > 	); // execution-time sizeof, translation-time typeof operation
 > > }
 > > 
 > > int main () {
@@ -413,7 +451,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > 
 > > ```c
 > > int main () {
-> > 	_Typeof(_Typeof(const char*)[4]) y = {
+> > 	TYPEOF_KEYWORD_TOKEN(TYPEOF_KEYWORD_TOKEN(const char*)[4]) y = {
 > > 		"a",
 > > 		"b",
 > > 		"c",
@@ -424,28 +462,28 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > ```
 
 
-**Modify §6.7.3 Type specifiers, paragraph 6:**
+### Modify §6.7.3 Type specifiers, paragraph 6:
 
 <blockquote>
-<div class="numbered numbered-6">
+<div class="wording-numbered wording-numbered-6">
 If the same qualifier appears more than once in the same specifier-qualifier list or as declaration specifiers, either directly<ins>, via one or more typeof specifiers,</ins> or via one or more <code class="c-kw">typedef</code>s, the behavior is the same as if it appeared only once. If other qualifiers appear along with the <code class="c-kw">_Atomic</code> qualifier the resulting type is the so-qualified atomic type.
 </div>
 </blockquote>
 
 
-**Modify §6.7.6.2 Array declarators, paragraph 5:**
+### Modify §6.7.6.2 Array declarators, paragraph 5:
 
 <blockquote>
-<div class="numbered numbered-5">
+<div class="wording-numbered wording-numbered-5">
 <p>If the size is an expression that is not an integer constant expression: if it occurs in a declaration at function prototype scope, it is treated as if it were replaced by <code>*</code>; otherwise, each time it is evaluated it shall have a value greater than zero. The size of each instance of a variable length array type does not change during its lifetime. Where a size expression is part of the operand of a <ins>typeof or</ins> <code class="c-kw">sizeof</code> operator and changing the value of the size expression would not affect the result of the operator, it is unspecified whether or not the size expression is evaluated. Where a size expression is part of the operand of an <code class="c-kw">_Alignof</code> operator, that expression is not evaluated.</p>
 </div>
 </blockquote>
 
 
-**Modify §6.9 External definitions, paragraphs 3 and 5:**
+### Modify §6.9 External definitions, paragraphs 3 and 5:
 
 <blockquote>
-<div class="numbered numbered-3">
+<div class="wording-numbered wording-numbered-3">
 <p>There shall be no more than one external definition for each identifier declared with internal linkage in a translation unit. Moreover, if an identifier declared with internal linkage is used in an expression <del>(other than as a part of the operand of a <code class="c-kw">sizeof</code> or <code class="c-kw">_Alignof</code> operator whose result is an integer constant), </del>there shall be exactly one external definition for the identifier in the translation unit<del>.</del><ins>, unless it is:</ins></p>
 <ins>
 <ul>
@@ -458,40 +496,38 @@ If the same qualifier appears more than once in the same specifier-qualifier lis
 
 <p>...</p>
 
-<div class="numbered numbered-5">
+<div class="wording-numbered wording-numbered-5">
 <p>An <i>external definition</i> is an external declaration that is also a definition of a function (other than an inline definition) or an object. If an identifier declared with external linkage is used in an expression (other than as a part of the operand of a <del><code class="c-kw">sizeof</code>,</del><ins>typeof operator whose result is not a variably modified type, or a <code class="c-kw">sizeof</code></ins> or <code class="c-kw">_Alignof</code> operator whose result is an integer constant), somewhere in the entire program there shall be exactly one external definition for the identifier; otherwise, there shall be no more than one.<sup>173)</sup></p>
 </div>
 </blockquote>
 
 
-**Add a new §7.� Typeof `<stdtypeof.h>`:**
+### Add a new §7.� Typeof `<stdtypeof.h>` (**IF AND ONLY IF: Option 1 is not chosen**):
 
 <blockquote>
 <ins>
-<div class="numbered">
-<p>The header <code>&lt;stdtypeof.h&gt;</code> defines four macros.</p>
+<div class="wording-numbered">
+<p>The header <code>&lt;stdtypeof.h&gt;</code> defines two macros.</p>
 </div>
 
-<div class="numbered">
-<p>The macros</p>
+<div class="wording-numbered">
+<p>The macro</p>
 <p>
 <blockquote>
 <code>typeof</code><br/>
-<code>unqual_typeof</code>
 </blockquote>
 </p>
-<p>expands to <code class="c-kw">_Typeof</code> and <code class="c-kw">_Unqual_typeof</code>, respectively.</p>
+<p>expands to <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code>.</p>
 </div>
 
-<div class="numbered">
-<p>The macros</p>
+<div class="wording-numbered">
+<p>The macro</p>
 <p>
 <blockquote>
-<code>__typeof_is_defined</code><br/>
-<code>__unqual_typeof_is_defined</code>
+<code>STDC_TYPEOF_IS_DEFINED</code><br/>
 </blockquote>
 </p>
-<p>are suitable for use in <code class="c-kw">#if</code> preprocessing directives. They expand to the integer constant <code>1</code>.</p>
+<p>is suitable for use in <code class="c-kw">#if</code> preprocessing directives. It expands to the integer constant <code>1</code>.</p>
 </div>
 </ins>
 </blockquote>
