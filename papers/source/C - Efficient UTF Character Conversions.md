@@ -273,7 +273,7 @@ Let `XnrtoYn` be the <i>analogous restartable transcoding function</i>. The tran
 - call the function and saves the result as-if by invoking `mcerr_t err = XnrtoYn(input, input_size, output, output_size, &temporary_state);`; and,
 - return `err`.
 
-The interpretation of the values of the transcoding functions parameters are identical meaning to the restartable form.
+The interpretation of the values of the transcoding functions' parameters are identical meaning to the restartable transcoding functions' parameters.
 </p></div>
 
 <p><h5><b>7.S�.2 &emsp; Restartable and Non-Restartable Sized Multi Unit Conversion Functions</b></h5></p>
@@ -368,7 +368,7 @@ Let `XsnrtoYsn` be the <i>analogous restartable transcoding function</i>. The tr
 - calls the analogous restartable transcoding function and saves the result as if by `mcerr_t err = XsnrtoYsn(input, input_size, output, output_size, &temporary_state);`; and,
 - returns `err`.
 
-The values of the parameters contain identical meaning to the restartable form.
+The interpretation of the values of the transcoding functions' parameters are identical meaning to the restartable transcoding functions' parameters.
 </p></div>
 </ins>
 </div>
