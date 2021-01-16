@@ -892,6 +892,8 @@ The Maximum Output Macro values are intended for use in making automatic storage
 > ```c
 > #include <stdmchar.h>
 > 
+> mcerr_t mcntomcn(const char** input, size_t* input_size, char** output, size_t* output_size);
+> mcerr_t mcnrtowcn(const char** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
 > mcerr_t mcntomwcn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size);
 > mcerr_t mcnrtomwcn(const char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
 > mcerr_t mcntoc8n(const char** input, size_t* input_size, unsigned char** output, size_t* output_size);
@@ -903,6 +905,8 @@ The Maximum Output Macro values are intended for use in making automatic storage
 > 
 > mcerr_t mwcntomcn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size);
 > mcerr_t mwcnrtomcn(const wchar_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
+> mcerr_t mwcntomwcn(const wchar_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
+> mcerr_t mwcnrtomwcn(const wchar_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
 > mcerr_t mwcntoc8n(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
 > mcerr_t mwcnrtoc8n(const wchar_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
 > mcerr_t mwcntoc16n(const wchar_t** input, size_t* input_size, char16_t** output, size_t* output_size);
@@ -914,16 +918,35 @@ The Maximum Output Macro values are intended for use in making automatic storage
 > mcerr_t c8nrtomcn(const unsigned char** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
 > mcerr_t c8ntomwcn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size);
 > mcerr_t c8nrtomwcn(const unsigned char** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+> mcerr_t c8ntoc8n(const unsigned char** input, size_t* input_size, unsigned char** output, size_t* output_size);
+> mcerr_t c8nrtoc8n(const unsigned char** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+> mcerr_t c8ntoc16n(const unsigned char** input, size_t* input_size, char16_t** output, size_t* output_size);
+> mcerr_t c8nrtoc16n(const unsigned char** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+> mcerr_t c8ntoc32n(const unsigned char** input, size_t* input_size, char32_t** output, size_t* output_size);
+> mcerr_t c8nrtoc32n(const unsigned char** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
 > 
 > mcerr_t c16ntomcn(const char16_t** input, size_t* input_size, char** output, size_t* output_size);
 > mcerr_t c16nrtomcn(const char16_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
 > mcerr_t c16ntomwcn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
 > mcerr_t c16nrtomwcn(const char16_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+> mcerr_t c16ntoc8n(const char16_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
+> mcerr_t c16nrtoc8n(const char16_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+> mcerr_t c16ntoc16n(const char16_t** input, size_t* input_size, char16_t** output, size_t* output_size);
+> mcerr_t c16nrtoc16n(const char16_t** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+> mcerr_t c16ntoc32n(const char16_t** input, size_t* input_size, char32_t** output, size_t* output_size);
+> mcerr_t c16nrtoc32n(const char16_t** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
 > 
 > mcerr_t c32ntomcn(const char32_t** input, size_t* input_size, char** output, size_t* output_size);
 > mcerr_t c32nrtomcn(const char32_t** input, size_t* input_size, char** output, size_t* output_size, mbstate_t* state);
 > mcerr_t c32ntomwcn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size);
 > mcerr_t c32nrtomwcn(const char32_t** input, size_t* input_size, wchar_t** output, size_t* output_size, mbstate_t* state);
+> mcerr_t c32ntoc8n(const char32_t** input, size_t* input_size, unsigned char** output, size_t* output_size);
+> mcerr_t c32nrtoc8n(const char32_t** input, size_t* input_size, unsigned char** output, size_t* output_size, mbstate_t* state);
+> mcerr_t c32ntoc16n(const char32_t** input, size_t* input_size, char16_t** output, size_t* output_size);
+> mcerr_t c32nrtoc16n(const char32_t** input, size_t* input_size, char16_t** output, size_t* output_size, mbstate_t* state);
+> mcerr_t c32ntoc32n(const char32_t** input, size_t* input_size, char32_t** output, size_t* output_size);
+> mcerr_t c32nrtoc32n(const char32_t** input, size_t* input_size, char32_t** output, size_t* output_size, mbstate_t* state);
+> 
 > ```
 
 <div class="wording-numbered"><p>
