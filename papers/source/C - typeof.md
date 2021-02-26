@@ -34,10 +34,17 @@ Getting the type of an expression in Standard C code.
 
 
 
+## Revision 2 - January 23rd, 2021
+
+- Focus on `remove_quals` spelling.
+- Fix up some of the section talking about macro-generic facilities for later.
+
+
+
 ## Revision 1 - December 5th, 2020
 
 - Completely Reformulate Paper based on community, GCC, and LLVM implementation feedback.
-- Address major implementation contention of qualifiers with both `_Typeof` and `_Remove_quals`.
+- Address major implementation contention of qualifiers with both `_Typeof` (or appropriate flavor) and `_Remove_quals`.
 - Note that variably modified types are their own special nightmare.
 - Add section about not using C++'s `decltype` identifier for this and other compatibility issues.
 - Completely rewrite the wording section.
@@ -65,16 +72,9 @@ There are many uses for `typeof` that have come up over the intervening decades 
 Every implementation in existence since C89 has an implementation of `typeof`. Some compilers (GCC, Clang, EDG, tcc, and many, many more) expose this with the implementation extension `typeof`. But, the Standard already requires `typeof` to exist. Notably, with emphasis (not found in the standard) added:
 
 > The `sizeof` operator yields the size (in bytes) of its operand, which may be an expression or the parenthesized name of a type. **The size is determined from the type of the operand.**
-> — [N2573, Programming Languages C - Working Draft, §6.5.3.4 The `sizeof` and `_Alignof` operators, Semantics](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf)
+> — [N2596, Programming Languages C - Working Draft, §6.5.3.4 The `sizeof` and `_Alignof` operators, Semantics](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2596.pdf)
 
 Any implementation that can process `sizeof("foo")` is already doing `sizeof(typeof("foo"))` internally. This feature is the most "existing practice"-iest feature to be proposed to the C Standard, possibly in the entire history of the C standard. The feature was also mentioned in an "extension round up" paper that went over the state of C Extensions in 2007[^N1229]. `typeof` was also considered an important extension during the discussion of that paper, but nobody brought forth the paper previously to make it a reality[^N1267].
-
-Notes:
-
-- Use direct semantic wording to say attributes/qualifiers are kept, or everything is stripped
-- Take the keyword space, rather than note?
-- Make sure to clarify unevaluated contexts
-- NAMING: qual_typeof and unqual_typeof (also avoids stepping on implementers)
 
 
 
@@ -133,19 +133,19 @@ There is an argument to strip all type qualifiers (`_Atomic`, `const`, `restrict
 
 ### Qualifiers - The Solution
 
-Originally, the idea of a `_Typeof` and an `_Unqual_typeof` was explored. This was a tempting direction but ultimately unsuitable as it duplicated functionality with a slight caveat and did not have a targeted purpose. A much better set name for the functionality is `_Typeof` and `_Remove_quals`. `_Typeof` is an all-qualifier-preserving type reproduction (or pass-through if a type is given) of the expression. It suitably envelopes the total space of existing practice. The only reason `_Unqual_typeof` would exist is to... well, remove qualifiers. It only makes sense to just name it appropriately, then: `_Remove_quals` is the name! It has identical functionality to the previously talked about `_Unqual_typeof` but with the massive benefit that:
+Originally, the idea of a `_Typeof` and an `_Unqual_typeof` was explored. This was a tempting direction but ultimately unsuitable as it duplicated functionality with a slight caveat and did not have a targeted purpose. A much better set name for the functionality is `_Typeof` and `remove_quals`. `_Typeof` is an all-qualifier-preserving type reproduction of the expression (or pass-through if a type is given) . It suitably envelopes the total space of existing practice. The only reason `_Unqual_typeof` would exist is to... well, remove qualifiers. It only makes sense to just name it appropriately by using `remove_quals` as a keyword. The benefits of choosing this name are also clear:
 
-- there are no search hits for this in searching the ACT database (catalogue of Debian/Fedora/etc. open source packages and their code); and,
-- there are no search hits for this in the entirety of GitHub save for 4 instances of Python Code.
+- there are no search hits for `remove_quals` in searching the ACT database (catalogue of Debian/Fedora/etc. open source packages and their code) (December 5th, 2020); and,
+- there are no search hits for `remove_quals` in the entirety of GitHub save for 4 instances of Python Code (December 5th, 2020).
 
-This means that we need not entertain the idea of a special keyword and can simply directly name it `remove_quals` in the code instead, saving ourselves a massive debate about what should and should not be a keyword.
+This means that we need not entertain the idea of needing a header or some other choice and can simply directly name `remove_quals` as a keyword in the code instead, saving ourselves a massive debate about what should and should not be a keyword.
 
 
 ### In General
 
-Separately, we should consider a Macro Programming facility for C that can address larger questions. This paper strives to focus on the material gains from existing practice and the pitfalls of said existing practice. Therefore, this paper proposes only `_Typeof` and `_Remove_quals`.
+Separately, we should consider a Macro Programming facility for C that can address larger questions. This paper strives to focus on the material gains from existing practice and the pitfalls of said existing practice. Therefore, this paper proposes only `_Typeof` (of some flavor) and `remove_quals`.
 
-After this paper is handled, further research should be given to handling qualifiers, function types, and arrays in Macros for generic programming. Further research should be done in the area of conversions, which may aid in ABI issues from, e.g., certain function names creating ABI problems (c.f. the entire `intmax_t` discussion[^N2498] currently in deadlock right now). `_ExtInt`[^N2590] also brings up interesting consequences for `_Generic`, with respect to how to match various types of `_ExtInt` without having to write out a truly enormous list of explicit bit size associations, from 1 to some large `N`. Answering those questions may prove useful, but this paper does not explore any further than the existing practice.
+After this paper is handled, further research should be given to handling qualifiers, function types, and arrays in Macros for generic programming. This paper focuses only on what we can find existing practice for.
 
 
 
@@ -158,17 +158,29 @@ There is a choice that affects the wording here, to be voted on during the Virtu
 
 ## Keyword Name Ideas
 
-There are 3 options for names. We have wording for the options using find-and-replace on the `TYPEOF_KEYWORD_TOKEN`. The option that provides the most consensus will be what is chosen:
+There are 3 options for names. We have wording for the options using find-and-replace on the `TYPEOF_KEYWORD_TOKEN` as well as the `REMOVE_QUALIFIERS_KEYWORD_TOKEN`. The option that provides the most consensus will be what is chosen:
 
 
 ### Option 1: `_Typeof` keyword, `<stdtypeof.h>` header
 
-This is the hyper conservative option that uses a `_Typeof` keyword plus `<stdtypeof.h>` to get access to the convenient spelling. It prevents implementations that have already settled on the `typeof()` keyword in their extension modes from having to warn users or breakage or deal with that problem. Many have raised issues with this, annoyed at the constant spelling of keywords in fundamentally awkward and strange ways while requiring headers to fix up the messed up usages. This is consistent with other new keywords introduced in the Standard to avoid breakage at all costs, but suffers from strong lamentations in needing a header to access a common spelling. This is the authors' middle of the road option.
+- `_Typeof` for the type of keyword
+- `remove_quals` for the remove qualifications keyword
+
+This is the relatively conservative option that uses a `_Typeof` keyword plus `<stdtypeof.h>` to get access to the convenient spelling. It prevents implementations that have already settled on the `typeof()` keyword in their extension modes from having to warn users or breakage or deal with that problem. Many have raised issues with this, annoyed at the constant spelling of keywords in fundamentally awkward and strange ways while requiring headers to fix up usage. This is consistent with other new keywords introduced in the Standard to avoid breakage at all costs, but suffers from strong lamentations in needing a header to access a common spelling.
+
+This is the authors' status quo and compromise position.
 
 
 ### Option 2: `typeof` keyword
 
-This is the relatively aggressive (but still somewhat milquetoast) option. It takes over the extension that is used in non-conforming C modes in a few compilers, such as XL C and GCC. Maintainers/implementers from GCC and Clang have noted their approval for this option, but XL C maintainers and implementers are less enthused. The reason some folks are against this change is because there are "bugs" in the implementation where some qualifiers are preserved, but other implementation-defined qualifiers are not. An argument can be made that implementations can continue to do whatever they want with implementation-defined qualifiers as far as `typeof` is concerned, since all of them preserve almost all of the pre-existing _standard_ qualifiers present. This is the authors' overwhelmingly strong preference.
+- `typeof` for the type of keyword
+- `remove_quals` for the remove qualifications keyword
+
+This is the relatively aggressive (but still milquetoast, overall) option. It takes over the extension that is used in non-conforming C modes in a few compilers, such as XL C and GCC. Maintainers/implementers from GCC and Clang have noted their approval for this option, but e.g. XL C maintainers and implementers are less enthused.
+
+The reason some folks are against this change is because there are "bugs" in the implementation where some qualifiers are preserved, but other implementation-defined qualifiers are not. Most implementations agree that things like `_Atomic` and `volatile` should be preserved (and the compiler that did not implement it this way acknowledged that it was, more or less, a mistake). There are also qualifiers that are dropped on some implementations for their vendor-specific extensions. An argument can be made that implementations can continue to do whatever they want with implementation-defined qualifiers as far as `typeof` is concerned, as long as they preserve the standard qualifiers.
+
+This option is the authors' overwhelmingly strong preference.
 
 
 ### Option 3: Use a completely new keyword spelling
@@ -176,16 +188,23 @@ This is the relatively aggressive (but still somewhat milquetoast) option. It ta
 This uses a completely novel name to avoid the problem altogether. These names take no interesting space from users or implementers and it is the safest option, though it risks obscurity in what is a commonly anticipated feature. Names for this include:
 
 - `qual_typeof`
+  `remove_quals`
 - `qualified_typeof`
-- `decltypeof` (not the same as `decltype`)
+  `remove_qualifiers`
+- `typeof_qual`
+  `remove_quals`
+- `typeof_qualified`
+  `remove_qualifiers`
 
-Choosing this options means picking one of these novel keywords and substituting it for the `TYPEOF_KEYWORD_TOKEN` spelling in the wording below. This is the authors' least favorite option.
+Choosing this options means picking one of these novel keywords and substituting it for the `TYPEOF_KEYWORD_TOKEN` spelling in the wording below.
+
+This is the authors' least favorite option.
 
 
 
 ## Proposed Wording
 
-The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf).
+The following wording is relative to [N2596](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2596.pdf).
 
 
 ### Modify §6.3.2.1 Lvalues, arrays, and function designators, paragraphs 3 and 4 with footnote 68:
@@ -195,10 +214,10 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 <p>Except when it is the operand of the <del><code class="c-kw">sizeof</code> operator</del><ins><code class="c-kw">sizeof</code>, or typeof operators</ins>, or the unary <code>&</code> operator, or is a string literal used to initialize an array, an expression that has type "array of <i>type</i>" is converted to an expression with type "pointer to <i>type</i>" that points to the initial element of the array object and is not an lvalue. If the array object has register storage class, the behavior is undefined.</p>
 </div>
 <div class="wording-numbered wording-numbered-4">
-<p>A <i>function designator</i> is an expression that has function type. Except when it is the operand of the <del><code class="c-kw">sizeof</code> operator</del><ins><code class="c-kw">sizeof</code> operator, a typeof operator</ins><sup>68)</sup>or the unary <code>&</code> operator, a function designator with type "function returning <i>type</i>" is converted to an expression that has type "pointer to function returning <i>type</i>".</p>
+<p>A <i>function designator</i> is an expression that has function type. Except when it is the operand of the <del><code class="c-kw">sizeof</code> operator</del><ins><code class="c-kw">sizeof</code> operator, a typeof operator</ins><sup>69)</sup>or the unary <code>&</code> operator, a function designator with type "function returning <i>type</i>" is converted to an expression that has type "pointer to function returning <i>type</i>".</p>
 </div>
 
-<div><sub><sup>68)</sup>Because this conversion does not occur, the operand of the <del><code class="c-kw">sizeof</code> operator</del><ins><code class="c-kw">sizeof</code> and typeof operators</ins> remains a function designator and violates the constraints in 6.5.3.4.</sub>
+<div><sub><sup>69)</sup>Because this conversion does not occur, the operand of the <code class="c-kw">sizeof</code> operator remains a function designator and violates the constraints in 6.5.3.4.</sub>
 </div>
 </blockquote>
 
@@ -210,7 +229,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 <p>
 &emsp; &emsp; <code class="c-kw">_Thread_local</code><br/>
 <ins>&emsp; &emsp; <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code></ins><br/>
-<ins>&emsp; &emsp; <code class="c-kw">remove_quals</code></ins><br/>
+<ins>&emsp; &emsp; <code class="c-kw">REMOVE_QUALIFIERS_KEYWORD_TOKEN</code></ins><br/>
 </p>
 </blockquote>
 
@@ -287,25 +306,29 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 <i>typeof-specifier</i>:<br/>
 &emsp; &emsp; <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> <b>(</b> <i>expression</i> <b>)</b><br/>
 &emsp; &emsp; <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> <b>(</b> <i>type-name</i> <b>)</b><br/>
-&emsp; &emsp; <code class="c-kw">remove_quals</code> <b>(</b> <i>expression</i> <b>)</b><br/>
-&emsp; &emsp; <code class="c-kw">remove_quals</code> <b>(</b> <i>type-name</i> <b>)</b>
+&emsp; &emsp; <code class="c-kw">REMOVE_QUALIFIERS_KEYWORD_TOKEN</code> <b>(</b> <i>expression</i> <b>)</b><br/>
+&emsp; &emsp; <code class="c-kw">REMOVE_QUALIFIERS_KEYWORD_TOKEN</code> <b>(</b> <i>type-name</i> <b>)</b>
 </p>
+</div>
+
+<div class="wording-numbered">
+<p>The <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> and <code class="c-kw">REMOVE_QUALIFIERS_KEYWORD_TOKEN</code> operators are collectively called the <i>typeof operators</i>.</p>
 </div>
 
 <p><h4><b>Constraints</b></h4></p>
 
 <div class="wording-numbered">
-<p>The <i>typeof-specifier</i> shall not be applied to an expression that designates a bit-field member.</p>
+<p>The <i>typeof operators</i> shall not be applied to an expression that designates a bit-field member.</p>
 </div>
 
 <p><h4><b>Semantics</b></h4></p>
 
 <div class="wording-numbered">
-<p>The <i>typeof-specifier</i> applies the <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> or <code class="c-kw">remove_quals</code> operator (collectively, the <i>typeof operators</i>) to a <i>unary-expression</i> (6.5) or a <i>type-specifier</i>. If the typeof operators are applied to an <i>expression</i>, they yield the <i>type-name</i> representing the type of their operand<sup>11�0)</sup>. Otherwise, they produce the <i>type-name</i> with any nested <i>typeof-specifier</i> evaluated <sup>11�1)</sup>. If the type of the operand is a variably modified type, the operand is evaluated; otherwise, the operand is not evaluated.</p>
+<p>The <i>typeof-specifier</i> applies the typeof operators to an <i>expression</i> (6.5) or a <i>type-name</i>. If the typeof operators are applied to an <i>expression</i>, they yield the <i>type-name</i> representing the type of their operand<sup>11�0)</sup>. Otherwise, they produce the <i>type-name</i> with any nested <i>typeof-specifier</i> evaluated <sup>11�1)</sup>. If the type of the operand is a variably modified type, the operand is evaluated; otherwise, the operand is not evaluated.</p>
 </div>
 
 <div class="wording-numbered">
-<p>All qualifiers (6.7.3) on the type from the result of a <code class="c-kw">remove_quals</code> operation are removed, including <code class="c-kw">_Atomic</code>. Otherwise, for <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> operations, all qualifiers are preserved.</p>
+<p>All qualifiers (6.7.3) on the type from the result of a <code class="c-kw">REMOVE_QUALIFIERS_KEYWORD_TOKEN</code> operation are removed, including <code class="c-kw">_Atomic</code>. Otherwise, for <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> operations, all qualifiers are preserved.</p>
 </div>
 
 <p><sup>11�0)</sup><sub> When applied to a parameter declared to have array or function type, the <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> operator yields the adjusted (pointer) type (see 6.9.1).</sub></p>
@@ -348,10 +371,10 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > };
 > > 
 > > TYPEOF_KEYWORD_TOKEN(purr) main (int argc, char* argv[]) {
-> > 	remove_quals(purr)           plain_purr;
+> > 	REMOVE_QUALIFIERS_KEYWORD_TOKEN(purr)                    lain_purr;
 > > 	TYPEOF_KEYWORD_TOKEN(_Atomic TYPEOF_KEYWORD_TOKEN(meow)) atomic_meow;
-> > 	TYPEOF_KEYWORD_TOKEN(mew)                   mew_array;
-> > 	remove_quals(mew)            mew2_array;
+> > 	TYPEOF_KEYWORD_TOKEN(mew)                                mew_array;
+> > 	REMOVE_QUALIFIERS_KEYWORD_TOKEN(mew)                     mew2_array;
 > > 	return 0;
 > > }
 > > ```
@@ -391,19 +414,19 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > 	_Static_assert(sizeof(TYPEOF_KEYWORD_TOKEN("meow")) == sizeof("meow"));
 > > 	_Static_assert(sizeof(TYPEOF_KEYWORD_TOKEN(argc)) == sizeof(int));
 > > 	_Static_assert(sizeof(TYPEOF_KEYWORD_TOKEN(argc)) == sizeof(argc));
-> > 	_Static_assert(sizeof(TYPEOF_KEYWORD_TOKEN(argv)) == sizeof(const char**));
+> > 	_Static_assert(sizeof(TYPEOF_KEYWORD_TOKEN(argv)) == sizeof(char**));
 > > 	_Static_assert(sizeof(TYPEOF_KEYWORD_TOKEN(argv)) == sizeof(argv));
 > > 
-> > 	_Static_assert(sizeof(remove_quals('p')) == sizeof(int));
-> > 	_Static_assert(sizeof(remove_quals('p')) == sizeof('p'));
-> > 	_Static_assert(sizeof(remove_quals((char)'p')) == sizeof(char));
-> > 	_Static_assert(sizeof(remove_quals((char)'p')) == sizeof((char)'p'));
-> > 	_Static_assert(sizeof(remove_quals("meow")) == sizeof(char[5]));
-> > 	_Static_assert(sizeof(remove_quals("meow")) == sizeof("meow"));
-> > 	_Static_assert(sizeof(remove_quals(argc)) == sizeof(int));
-> > 	_Static_assert(sizeof(remove_quals(argc)) == sizeof(argc));
-> > 	_Static_assert(sizeof(remove_quals(argv)) == sizeof(const char**));
-> > 	_Static_assert(sizeof(remove_quals(argv)) == sizeof(argv));
+> > 	_Static_assert(sizeof(REMOVE_QUALIFIERS_KEYWORD_TOKEN('p')) == sizeof(int));
+> > 	_Static_assert(sizeof(REMOVE_QUALIFIERS_KEYWORD_TOKEN('p')) == sizeof('p'));
+> > 	_Static_assert(sizeof(REMOVE_QUALIFIERS_KEYWORD_TOKEN((char)'p')) == sizeof(char));
+> > 	_Static_assert(sizeof(REMOVE_QUALIFIERS_KEYWORD_TOKEN((char)'p')) == sizeof((char)'p'));
+> > 	_Static_assert(sizeof(REMOVE_QUALIFIERS_KEYWORD_TOKEN("meow")) == sizeof(char[5]));
+> > 	_Static_assert(sizeof(REMOVE_QUALIFIERS_KEYWORD_TOKEN("meow")) == sizeof("meow"));
+> > 	_Static_assert(sizeof(REMOVE_QUALIFIERS_KEYWORD_TOKEN(argc)) == sizeof(int));
+> > 	_Static_assert(sizeof(REMOVE_QUALIFIERS_KEYWORD_TOKEN(argc)) == sizeof(argc));
+> > 	_Static_assert(sizeof(REMOVE_QUALIFIERS_KEYWORD_TOKEN(argv)) == sizeof(char**));
+> > 	_Static_assert(sizeof(REMOVE_QUALIFIERS_KEYWORD_TOKEN(argv)) == sizeof(argv));
 > > 	return 0;
 > > }
 > > ```
@@ -415,7 +438,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > ```c
 > > int main (int argc, char*[]) {
 > > 	float val = 6.0f;
-> > 	return (TYPEOF_KEYWORD_TOKEN(remove_quals(TYPEOF_KEYWORD_TOKEN(argc))))val;
+> > 	return (TYPEOF_KEYWORD_TOKEN(REMOVE_QUALIFIERS_KEYWORD_TOKEN(TYPEOF_KEYWORD_TOKEN(argc))))val;
 > > }
 > > ```
 > 
@@ -438,7 +461,7 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > 	typedef char vla_type[n + 3];
 > > 	vla_type b; // variable length array
 > > 	return sizeof(
-> > 		remove_quals(b)
+> > 		REMOVE_QUALIFIERS_KEYWORD_TOKEN(b)
 > > 	); // execution-time sizeof, translation-time typeof operation
 > > }
 > > 
@@ -460,6 +483,29 @@ The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/w
 > > 	return 0;
 > > }
 > > ```
+> 
+> <ins><sup>11</sup> **EXAMPLE 7** Function types, pointer types, and array types.</ins>
+> 
+> > ```c
+> > void f(int);
+> > 
+> > typeof(f(5)) g(double x) {          // g has type "void(double)"
+> > 	 	printf("value %g\n", x);
+> > }
+> > 
+> > typeof(g)* h;                      // h has type "void(*)(double)"
+> > typeof(true ? g : NULL) k;         // k has type "void(*)(double)"
+> > 
+> > void j(double A[5], typeof(A)* B); // j has type "void(double*, double**)"
+> > 
+> > extern typeof(double[]) D;         // D has an incomplete type
+> > typeof(D) C = { 0.7, 99 };         // C has type "double[2]"
+> > 
+> > typeof(D) D = { 5, 8.9, 0.1, 99 }; // D is now completed to "double[4]"
+> > typeof(D) E;                       // E has type "double[4]" from D's completed type
+> > ```
+
+
 
 
 ### Modify §6.7.3 Type specifiers, paragraph 6:
@@ -531,10 +577,6 @@ If the same qualifier appears more than once in the same specifier-qualifier lis
 </div>
 </ins>
 </blockquote>
-
-[^N2590]: Aaron Ballman, Melanie Blower, Tommy Hoffner, and Erich Keane. Adding a Fundamental Type for N-bit integers. ISO/IEC JTC1 SC22 WG14 - Programming Languages C. [http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2590.pdf](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2590.pdf)
-
-[^N2498]: Martin Uecker. intmax_t, again. ISO/IEC JTC1 SC22 WG14 - Programming Languages C. [http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2498.pdf](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2498.pdf)
 
 [^N1607]: Jaakko Järvi and Bjarne Stroustrup. Decltype and auto (revision 3). ISO/IEC JTC1 SC22 WG21 - Programming Languages C++. [http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2004/n1607.pdf](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2004/n1607.pdf)
 
