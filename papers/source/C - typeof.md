@@ -1,6 +1,6 @@
 ---
-title: Not-So-Magic - typeof(...) in C | r1
-date: December 4th, 2020
+title: Not-So-Magic - typeof(...) in C | r2
+date: February 26th, 2021
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
   - Shepherd (Shepherd's Oasis) \<<shepherd@soasis.org>\>
@@ -11,12 +11,12 @@ redirect_from:
 hide: true
 ---
 
-_**Document**_: n2619  
+_**Document**_: n26XX  
 _**Previous Revisions**_: None  
 _**Audience**_: WG14  
 _**Proposal Category**_: New Features  
 _**Target Audience**_: General Developers, Compiler/Tooling Developers  
-_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/source/C%20-%20typeof.html](https://thephd.github.io/_vendor/future_cxx/papers/source/C%20-%20typeof.html)
+_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20typeof.html](https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20typeof.html)
 
 <div class="text-center">
 <h6>Abstract:</h6>
@@ -34,9 +34,10 @@ Getting the type of an expression in Standard C code.
 
 
 
-## Revision 2 - January 23rd, 2021
+## Revision 2 - February 26th, 2021
 
 - Focus on `remove_quals` spelling.
+- Give equal choice in keyword token for `remove_quals` (to match the other declarations)
 - Fix up some of the section talking about macro-generic facilities for later.
 
 

@@ -2,7 +2,7 @@
 title: _Imaginary_I and _Complex_I Qualifiers | r0
 date: February 26th, 2021
 author:
-  - JeanHeyd Meneide \<<wg14@soasis.org>\>
+  - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
 layout: paper
 hide: true
 ---
@@ -10,8 +10,8 @@ hide: true
 _**Document**_: n26XX  
 _**Previous Revisions**_: None  
 _**Audience**_: WG14  
-_**Proposal Category**_: New Features  
-_**Target Audience**_: General Developers, Compiler/Tooling Developers  
+_**Proposal Category**_: Change Request  
+_**Target Audience**_: General Developers, Library Developers  
 _**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20_Imaginary_I%20and%20_Complex_I%20Qualifiers.html](https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20_Imaginary_I%20and%20_Complex_I%20Qualifiers.html)
 
 <div class="text-center">
