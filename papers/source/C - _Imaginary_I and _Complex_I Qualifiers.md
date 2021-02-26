@@ -28,7 +28,7 @@ This paper fixes some strange qualifiers on imaginary and complex macro expressi
 
 # Introduction & Motivation
 
-It was noted in discussion around the Typeof papers that `_Complex_I` and `_Imaginary_I` both are specifically expanded to a `const` r-value, which seems strangely specified considering almost no other macro expansions are like this. Digging into archives failed to yield any particularly enlightening reasoning for this constant, of all the constants, was marked as `const` particular. The constants were introduced in C99, and have always been `const` qualified.
+It was noted in discussion around the Typeof papers that `_Complex_I` and `_Imaginary_I` both are specifically stated to expand to expressions which yield a `const` r-value, which seems strangely specified. Considering almost no other macros are specified like this, I looked into the past a bit to see if there was any particular reason for the `const`-ness of the Macro. The archives failed to yield any particularly enlightening reasoning for why this constant, of all the constants, was marked as `const`. The constants were introduced in C99, and have always been `const` qualified. The C99 Rationale makes no mention of it being `const`, and only talks about `float` as if the macro was not `const`-qualified.
 
 Because it may become possible to observe types in the (very near) future, we should remove the `const` qualification from these macro productions. Current analysis indicates that this should affect no code, as all current generic facilities perform l-value conversion and the type of these macros are expressions (r-values), and thusly cannot have their address taken directly to expose it.
 
