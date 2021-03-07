@@ -20,10 +20,10 @@ _**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/C%20-
 <div class="text-center">
 <h6>Abstract:</h6>
 <p>
-Pulling binary data into a program often involves external tools and build system coordination. Many programs need binary data such as images, encoded text, icons and other data in a specific format. Current state of the art for working with such static data in C includes creating files which contain solely string literals, directly invoking the linker to create data blobs to access through carefully named extern variables, or generating large brace-delimited lists of integers to place into arrays. As binary data has grown larger, these approaches have begun to have drawbacks and issues scaling. From parsing 5 megabytes worth of integer literal expressions into AST nodes to arbitrary string literal length limits in compilers, portably putting binary data in a C program has become an arduous task that taxes build infrastructure and compilation memory and time.
+This paper attempts to solve 2 intrinsic problems with Library Development in C, including its Standard Library. The first is the ability to have type definitions that are just aliases without functions that can do the same. The second is ABi issues resulting from the inability to provide a small, invisible indirection layer.
 </p>
 <p>
-This proposal provides a flexible preprocessor directive for making this data available to the user in a straightforward manner.
+This proposal provides a simple, no-cost way to indirect a function's identifier from the actual called function, opening the door to a C Standard Library that can be implemented without fear of backwards compatibility/ABI problems. It also enables general developers to upgrade their libraries seamlessly and without interruption. 
 </p>
 </div>
 
@@ -36,7 +36,7 @@ This proposal provides a flexible preprocessor directive for making this data av
 
 
 
-## Revision 0 - December 27th, 2020
+## Revision 0 - February 27th, 2020
 
 - Initial release.
 
@@ -45,7 +45,7 @@ This proposal provides a flexible preprocessor directive for making this data av
 
 # Introduction
 
-After at least 3 papers were burned through attempting to [solve the intmax_t problem](https://thephd.github.io/intmax_t-hell-c++-c)[^N2465][^N2498][^N2425], a number of issues were unearthed with each individual solution.
+After at least 3 papers were burned through attempting to [solve the intmax_t problem](https://thephd.github.io/intmax_t-hell-c++-c)[^N2465][^N2498][^N2425], a number of issues were unearthed with each individual solution. Whether it was having to specifically lift the ban that § places on macros for standard library functions, or having to break the promise that `intmax_t` can keep expanding to fit larger integer types, we always had issues.
 
 
 

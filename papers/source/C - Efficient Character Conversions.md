@@ -8,8 +8,8 @@ layout: paper
 hide: true
 ---
 
-_**Document**_: n2620  
-_**Previous Revisions**_: n2431, n2440, n2500, n2595  
+_**Document**_: n26ZZ  
+_**Previous Revisions**_: n2431, n2440, n2500, n2595, n2620  
 _**Audience**_: WG14  
 _**Proposal Category**_: New Library Features  
 _**Target Audience**_: General Developers, Text Processing Developers  
@@ -848,13 +848,13 @@ The maximum output value specified in the above table is related to the single u
 </div>
 
 <div class="wording-numbered"><p>
-The error code values are integral constants of type <code class="c-kw">mcerr_t</code>, and are defined as follows:
+The error code values are integer constant expressions of type <code class="c-kw">mcerr_t</code>, and are defined as follows:
 
 > ```c
-> const mcerr_t MCHAR_OK                  =  0;
-> const mcerr_t MCHAR_ENCODING_ERROR      = -1;
-> const mcerr_t MCHAR_INCOMPLETE_INPUT    = -2;
-> const mcerr_t MCHAR_INSUFFICIENT_OUTPUT = -3;
+> MCHAR_OK                  =  0;
+> MCHAR_ENCODING_ERROR      = -1;
+> MCHAR_INCOMPLETE_INPUT    = -2;
+> MCHAR_INSUFFICIENT_OUTPUT = -3;
 > ```
 
 Each value represents an error case when calling the relevant transcoding functions in &lt;stdmchar.h&gt;:

@@ -1,6 +1,6 @@
 ---
 title: Not-So-Magic - typeof(...) in C | r2
-date: February 26th, 2021
+date: March 7th, 2021
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
   - Shepherd (Shepherd's Oasis) \<<shepherd@soasis.org>\>
@@ -34,7 +34,7 @@ Getting the type of an expression in Standard C code.
 
 
 
-## Revision 2 - February 26th, 2021
+## Revision 2 - March 7th, 2021
 
 - Focus on `remove_quals` spelling.
 - Give equal choice in keyword token for `remove_quals` (to match the other declarations)
@@ -305,15 +305,17 @@ The following wording is relative to [N2596](http://www.open-std.org/jtc1/sc22/w
 <div class="wording-numbered">
 <p>
 <i>typeof-specifier</i>:<br/>
-&emsp; &emsp; <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> <b>(</b> <i>expression</i> <b>)</b><br/>
-&emsp; &emsp; <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> <b>(</b> <i>type-name</i> <b>)</b><br/>
-&emsp; &emsp; <code class="c-kw">REMOVE_QUALIFIERS_KEYWORD_TOKEN</code> <b>(</b> <i>expression</i> <b>)</b><br/>
-&emsp; &emsp; <code class="c-kw">REMOVE_QUALIFIERS_KEYWORD_TOKEN</code> <b>(</b> <i>type-name</i> <b>)</b>
+&emsp; &emsp; <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> <b>(</b> <i>typeof-specifier-argument</i> <b>)</b><br/>
+&emsp; &emsp; <code class="c-kw">REMOVE_QUALIFIERS_KEYWORD_TOKEN</code> <b>(</b> <i>typeof-specifier-argument</i> <b>)</b><br/>
+<br/>
+<i>typeof-specifier-argument</i>:<br/>
+&emsp; &emsp; <i>expression</i><br/>
+&emsp; &emsp; <i>type-name</i> <br/>
 </p>
 </div>
 
 <div class="wording-numbered">
-<p>The <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> and <code class="c-kw">REMOVE_QUALIFIERS_KEYWORD_TOKEN</code> operators are collectively called the <i>typeof operators</i>.</p>
+<p>The <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> and <code class="c-kw">REMOVE_QUALIFIERS_KEYWORD_TOKEN</code> tokens are collectively called the <i>typeof operators</i>.</p>
 </div>
 
 <p><h4><b>Constraints</b></h4></p>
@@ -333,7 +335,7 @@ The following wording is relative to [N2596](http://www.open-std.org/jtc1/sc22/w
 </div>
 
 <p><sup>11�0)</sup><sub> When applied to a parameter declared to have array or function type, the <code class="c-kw">TYPEOF_KEYWORD_TOKEN</code> operator yields the adjusted (pointer) type (see 6.9.1).</sub></p>
-<p><sup>11�1)</sup><sub> If the operand is a typeof operator, the operand will be evaluated before evaluating the current typeof operation. This happens recursively until a <i>typeof-specifier</i> is no longer the operand.</sub></p>
+<p><sup>11�1)</sup><sub> If the <i>typeof-specifier-argument</i> is itself a <i>typeof-specifier</i>, the operand will be evaluated before evaluating the current typeof operation. This happens recursively until a <i>typeof-specifier</i> is no longer the operand.</sub></p>
 </ins>
 </blockquote>
 
@@ -371,8 +373,8 @@ The following wording is relative to [N2596](http://www.open-std.org/jtc1/sc22/w
 > > 	"catte",
 > > };
 > > 
-> > TYPEOF_KEYWORD_TOKEN(purr) main (int argc, char* argv[]) {
-> > 	REMOVE_QUALIFIERS_KEYWORD_TOKEN(purr)                    lain_purr;
+> > REMOVE_QUALIFIERS_KEYWORD_TOKEN(meow) main (int argc, char* argv[]) {
+> > 	REMOVE_QUALIFIERS_KEYWORD_TOKEN(purr)                    plain_purr;
 > > 	TYPEOF_KEYWORD_TOKEN(_Atomic TYPEOF_KEYWORD_TOKEN(meow)) atomic_meow;
 > > 	TYPEOF_KEYWORD_TOKEN(mew)                                mew_array;
 > > 	REMOVE_QUALIFIERS_KEYWORD_TOKEN(mew)                     mew2_array;
@@ -490,7 +492,7 @@ The following wording is relative to [N2596](http://www.open-std.org/jtc1/sc22/w
 > > ```c
 > > void f(int);
 > > 
-> > typeof(f(5)) g(double x) {          // g has type "void(double)"
+> > typeof(f(5)) g(double x) {         // g has type "void(double)"
 > > 	 	printf("value %g\n", x);
 > > }
 > > 
