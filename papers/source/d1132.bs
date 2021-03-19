@@ -1,9 +1,9 @@
 <pre class='metadata'>
 Title: out_ptr - a scalable output pointer abstraction
 Shortname: P1132
-Revision: 6
+Revision: 7
 Audience: LWG
-Status: P
+Status: D
 Group: WG21
 URL: 
 !Target: C++23
@@ -15,7 +15,7 @@ Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Todor Buyukliev, tbuyukliev@vmware.com
 Editor: Isabella Muerte, https://twitter.com/slurpsmadrips
 Abstract: out_ptr and inout_ptr are abstractions to bring both C APIs and smart pointers back into the promised land by creating a temporary pointer-to-pointer that updates (using a reset call or semantically equivalent behavior) the smart pointer when it destructs.
-Date: 2019-10-07
+Date: 2021-03-19
 Markup Shorthands: markdown yes, biblio yes, markup yes
 </pre>
 
@@ -29,12 +29,18 @@ path: resources/css/wording.bs
 
 
 
+## Revision 7 - March 19th, 2021 ## {#changelog-r7}
+
+	- Wording improvements.
+	- "Why are the conversion operators `const`" added.
+
+
+
 ## Revision 6 - October 7th, 2019 ## {#changelog-r5ii}
 
 	- Library Evolution Working Group roundtrip NOT done: additional trait like std::ranges to make it easier to reject patently wrong arguments.
 	- Will join its sister paper, `std::retain_ptr` -- yay!
 	- Constructors are marked non-`noexcept` to allow for implementations to strengthen them as per their implementation strategies. This includes leaving it non-`noexcept` and forward-allocating `std::shared_ptr`'s control block in the constructor.
-	- Additional
 
 
 
@@ -337,7 +343,7 @@ In practice, this has not been observed (or reported). Still, the C++ standard m
 
 Additionally, functions which have a non-`noexcept` reset function are guaranteed to delete the resource before releasing the exception, as is specified in e.g. [[util.smartptr.shared.const](http://eel.is/c++draft/util.smartptr.shared.const)]. This means that it is the responsibility of the pointer to release any resources once their `reset(...)` (or equivalent) function is successfully called.
 
-Finally, the original design had an unconditionally `noexcept` constructor. It has been suggested that the constructor be non-noexcept, and to allow an implementation to prevent throwing in the destructor by forward-allocating any necessary internal storage for the `reset` operation (for example, the control block of a `shared_ptr`) in the constructor. This would prevent termination from happening in the destructor when a common non-noexcept `reset` call is invoked. We leave answering this question to the discretion of LEWG. 
+Finally, the original design had an unconditionally `noexcept` constructor. It has been suggested that the constructor be non-noexcept, and to allow an implementation to prevent throwing in the destructor by forward-allocating any necessary internal storage for the `reset` operation (for example, the control block of a `shared_ptr`) in the constructor. This would prevent termination from happening in the destructor when a common non-noexcept `reset` call is invoked. LEWG has voted in favor of this change.
 
 
 
@@ -376,7 +382,7 @@ if (FAILED(result)) {
 // adapter.get() contains strongly-typed pointer
 ```
 
-No manual casting, `.release()` fiddling, or `.reset()` is required: the returned type from `out_ptr` handles that. This is because the `out_ptr_t` and `inout_ptr_t` types have conversion operations to not only the detected `::pointer` or `::element_type*` of the smart pointer, but a `reinterpret_cast` conversion to `void*` as well. While the size of `void*` is not required by the C++ standard to be the same as the size of any other types pointer (except const/volatile qualified `char*`), most C APIs that use this technique have already sanctioned the conversion from whatever type the API works with to `void*` and, subsequently, `void**`.
+No manual casting, `.release()` fiddling, or `.reset()` is required: the returned type from `out_ptr` handles that. This is because the `out_ptr_t` and `inout_ptr_t` types have conversion operations to not only the detected `::pointer` or `::element_type*` of the smart pointer, but a `reinterpret_cast` conversion to `void*` as well. While the size of `void*` is not required by the C++ standard to be the same as the size of any other types pointer (except `const`/`volatile` qualified `char*`), most C APIs that use this technique have already sanctioned the conversion from whatever type the API works with to `void*` and, subsequently, `void**`.
 
 This idiom is also useful for the `QueryInterface` base function for COM's `IUnknown`, and for Vulkan's `vkMapMemory`.
 
@@ -769,41 +775,38 @@ The goals of the wording are to not restrict implementation strategies (e.g., a 
 
 ## Proposed Wording ## {#wording-library}
 
-Append to §17.3.1 General [**support.limits.general**]'s **Table 35** one additional entry:
+Add to §17.3.2 Header `<version>` [**version.syn**]'s **Table 35** an additional entry in the `#define` list:
 
 <blockquote>
-<table>
-<tr>
-	<th>Macro name</th>
-	<th>Value</th>
-	<th>Header(s)</th>
-</tr>
-<tr>
-	<td><ins>__cpp_lib_out_ptr</ins></td>
-	<td><ins>201907L</ins></td>
-</tr>
-<tr>
-	<td><ins>`<memory>`</ins></td>
-</tr>
-</table>
+<ins>
+<xmp>
+#define __cpp_lib_out_ptr /* EDITOR-CHOSEN VALUE HERE */ // also in <memory>
+</xmp>
+</ins>
 </blockquote>
 
 Modify §20.10.1 In general [**memory.general**] as follows:
 
 <blockquote>
-<p><sup>1</sup> The header <memory> defines several types and function templates that describe properties of pointers and pointer-like types, manage memory for containers and other template types, destroy objects, and construct multiple objects in uninitialized memory buffers (20.10.3–19.10.11). The header also defines the templates unique_ptr, shared_ptr, weak_ptr, <ins>out_ptr_t, inout_ptr_t,</ins> and various function templates that operate on objects of these types (20.11).</p></blockquote>
+<p><sup>1</sup> The header <memory> defines several types and function templates that describe properties of pointers and pointer-like types, manage memory for containers and other template types, destroy objects, and construct multiple objects in uninitialized memory buffers (20.10.3 — 20.10.11). The header also defines the templates unique_ptr, shared_ptr, weak_ptr, <ins>out_ptr_t, inout_ptr_t,</ins> and various function templates that operate on objects of these types (20.11).</p></blockquote>
 
 Add §20.10.2 Definitions [**memory.defns**] as follows:
 
-<blockquote><p><ins><sup>1</sup> Definition: Let `POINTER_OF_OR(T, U)` denote a type that is:
+<blockquote><p><ins><sup>1</sup> Let `POINTER_OF_OR(T, U)` denote a type that is:
 <dl>
-	<dd><ins>— `T::pointer` if the qualified-id `T::pointer` is valid and denotes a type, or</ins></dd>
+	<dd><ins>— `typename T::pointer` if the qualified-id `T::pointer` is valid and denotes a type,</ins></dd>
 	<dd><ins>— otherwise, `typename T::element_type*` if the qualified-id `T::element_type` is valid and denotes a type,</ins></dd>
+	<dd><ins>— otherwise, `typename std::pointer_traits<T>::element_type*` if `typename std::pointer_traits<T>::element_type` is valid and denotes a type,</ins></dd>
 	<dd><ins>— otherwise, `U`.</ins></dd>
 </dl>
 </ins></p>
 
-<p><ins><sup>2</sup> Definition: Let `POINTER_OF(T)` denote a type that is defined as `POINTER_OF_OR(T, typename std::pointer_traits<T>::element_type*)`
+<p><ins><sup>2</sup> Let `POINTER_OF(T)` denote a type that is:
+<dl>
+	<dd><ins>— otherwise, `typename T::pointer` if the qualified-id `T::pointer` is valid and denotes a type,</ins></dd>
+	<dd><ins>— otherwise, `typename T::element_type*` if the qualified-id `T::element_type` is valid and denotes a type,</ins></dd>
+	<dd><ins>— otherwise, `typename std::pointer_traits<T>::element_type*`.</ins></dd>
+</dl>
 </ins></p>
 </blockquote>
 
@@ -832,7 +835,7 @@ template <class Pointer, class Smart, class... Args>
 	inout_ptr_t<Smart, Pointer, Args...> inout_ptr(Smart& s, Args&&... args);
 	
 template <class Smart, class... Args>
-	inout_ptr_t<Smart, POINTER_OF(SMART), Args...> inout_ptr(Smart& s, Args&&... args); 
+	inout_ptr_t<Smart, POINTER_OF(Smart), Args...> inout_ptr(Smart& s, Args&&... args); 
 </xmp>
 </ins>
 </blockquote>
@@ -844,7 +847,7 @@ Insert §20.11.9 [**out_ptr.class**]:
 
 <p><ins><sup>1</sup> *out_ptr_t* is a type used with smart pointers (<a href="http://eel.is/c++draft/smartptr">[**smartptr**] 20.11</a>) and types which are designed on the same principles to interoperate easily with functions that use output pointer parameters. [ Note — For example, a function of the form `void foo(void**)` — <i>end note</i> ].</ins></p>
 
-<p><ins><sup>2</sup> *out_ptr_t* may be specialized (<a href="http://eel.is/c++draft/temp.class.spec">[**temp.class.spec**] 13.6.5</a>) for program-defined types.</ins></p>
+<p><ins><sup>2</sup> *out_ptr_t* may be specialized (<a href="http://eel.is/c++draft/temp.spec.partial">[**temp.spec.partial**] 13.7.6</a>) for all types and all arguments paired with those types.</ins></p>
 
 <ins>
 <xmp>
@@ -855,13 +858,13 @@ namespace std {
 	public:
 		// 20.11.9.1, constructors
 		out_ptr_t(Smart&, Args...);
-		out_ptr_t(out_ptr_t&&) noexcept;
+		out_ptr_t(out_ptr_t&&) noexcept(/* see-below */);
 
 		// 20.11.9.2, assignment
-		out_ptr_t& operator=(out_ptr_t&&) noexcept;
+		out_ptr_t& operator=(out_ptr_t&&) noexcept(/* see-below */);
 
 		// 20.11.9.3, destructors
-		~out_ptr_t() noexcept;
+		~out_ptr_t();
 
 		// 20.11.9.4, conversion operators
 		operator Pointer*() noexcept const;
@@ -884,30 +887,33 @@ namespace std {
 
 <p><ins>20.11.9.1 Constructors [**out_ptr.class.ctor**]</ins></p>
 
-<p><ins><xmp>out_ptr_t(Smart& smart, Args&&... args);</xmp></ins></p>
+<p><ins><xmp>out_ptr_t(Smart& smart, Args... args);</xmp></ins></p>
 
-<p><ins><sup>1</sup> Effects: initializes `s` with `addressof(smart)`, `a` with `std::forward<Args>(args)...`, and initializes `p` to its value initialization.</ins></p>
+<p><ins><sup>1</sup> Effects: initializes `s` with `addressof(smart)`, `a` with `std::forward<Args>(args)...`, and value-initializes `p`.</ins></p>
 
-<p><ins><sup>2</sup> [ <i>Note:</i> The constructor is not `noexcept` to allow for a variety of non-terminating and safe implementation strategies. For example, an implementation may allocate a `shared_ptr`'s internal node in the constructor and let implementation-defined exceptions escape safely. The destructor can then move the allocated control block in directly and avoid any other exceptions. — <i>end note</i> ]</ins></p>
+<p><ins><sup>2</sup> [ <i>Note:</i> The constructor is not `noexcept` to allow for a variety of non-terminating and safe implementation strategies. For example, an implementation could allocate a `shared_ptr`'s internal node in the constructor and let implementation-defined exceptions escape safely. The destructor can then move the allocated control block in directly and avoid any other exceptions. — <i>end note</i> ]</ins></p>
 
-<p><ins><xmp>out_ptr_t(out_ptr&& rhs) noexcept;</xmp></ins></p>
+<p><ins><xmp>out_ptr_t(out_ptr&& rhs) noexcept(/* see-below */);</xmp></ins></p>
 
-<p><ins><sup>3</sup> Effects: initializes `s` with `std::move(rhs.s)`, `a` with `std::move(args)...`, and `p` with `std::move(rhs.p)`. Then sets `rhs.p` to `nullptr`.</ins></p>
+<p><ins><sup>3</sup> Effects: initializes `s` with `std::move(rhs.s)`, `a` with `std::move(rhs.a)`, and `p` with `std::move(rhs.p)`. Then sets `rhs.p` to `nullptr`.</ins></p>
+
+<p><ins><sup>4</sup> Throws: any exceptions from the move construction of `s`, `a`, or `p`.</ins></p>
 
 <p><ins>20.11.9.2 Assignment [**out_ptr.class.assign**]</ins></p>
 
-<p><ins><xmp>out_ptr_t& operator=(out_ptr&& rhs) noexcept;</xmp></ins></p>
+<p><ins><xmp>out_ptr_t& operator=(out_ptr&& rhs) noexcept(/* see-below */);</xmp></ins></p>
 
 <p><ins><sup>1</sup>Effects: Equivalent to:
 <xmp>
-s = std::move(rhs.s); 
-a = std::move(rhs.a); 
+s = std::move(rhs.s);
+a = std::move(rhs.a);
 p = std::move(rhs.p);
 rhs.p = nullptr;
 return *this;
 </xmp>
 </ins></p>
 
+<p><ins><sup>3</sup> Throws: any exceptions from the move assignment of `s`, `a`, or `p`.</ins></p>
 
 <p><ins>20.11.9.3 Destructors [**out_ptr.class.dtor**]</ins></p>
 
@@ -917,10 +923,9 @@ return *this;
 
 <p><ins><sup>2</sup> Effects: Equivalent to:
 <dl>
-	<dd><ins>— `if (p) { s->reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if the expression `s->reset(static_cast<SP>(p), std::forward<Args>(args)...)` is well-formed,</ins></dd>
-	<dd><ins>— otherwise `if (p) { *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`;</ins></dd>
+	<dd><ins>— `apply([&](auto&&... args) { if (p) { s->reset( static_cast<SP>(p), std::forward<decltype(args)>(args)... ); } }, std::move(a))` if the expression `s->reset(static_cast<SP>(p), std::forward<Args>(args)...)` is well-formed,</ins></dd>
+	<dd><ins>— otherwise `apply([&](auto&&... args) { if (p) { *s = Smart{ static_cast<SP>(p), std::forward<decltype(args)>(args)... }; } }, std::move(a))`;</ins></dd>
 </dl>
-<ins>where `Args` are the arguments stored in `a`.</ins>
 </ins></p>
 
 <p><ins>20.11.9.4 Conversions [**out_ptr.class.conv**]</ins></p>
@@ -940,7 +945,7 @@ operator void**() noexcept const;
 </xmp>
 </ins></p>
 
-<p><ins><sup>2</sup> Constraints: `is_same_v<remove_cvref_t<Pointer>, void*>` is false.</ins></p>
+<p><ins><sup>2</sup> Constraints: `is_same_v<Pointer, void*>` is false.</ins></p>
 
 <p><ins><sup>3</sup> Effects: Equivalent to: `returns reinterpret_cast<void**>(static_cast<Pointer*>(*this));`.</ins></p>
 </blockquote>
@@ -951,7 +956,7 @@ Insert §20.11.10 [**out_ptr**]:
 <blockquote>
 <p><ins>20.11.10 **Function Template** `out_ptr` [**out_ptr**]</ins><p>
 
-<p><ins><sup>1</sup> *out_ptr* is a function template that produces an object of type *out_ptr_t* ([**out_ptr.class**] 20.11.9).</ins></p>
+<p><ins><sup>1</sup> *out_ptr* is a function template that produces an object of type *out_ptr_t* ([**out_ptr.class**] 20.11.9) [ <i>Note:</i> For example, a function of the form `int av_always_allocate(struct ContextAV**)` — <i>end note</i> ]. The returned temporary value is intended to be used in place of (smart) pointer parameters to functions which give output pointer parameters. The exact pointer type can be specified as the first template argument (the first function declaration), or inferred (the second function declaration).</ins></p>
 
 <ins>
 <xmp>
@@ -960,16 +965,16 @@ template <class Pointer, class Smart, class... Args>
 </xmp>
 </ins>
 
-<p><ins><sup>2</sup> Returns: `return out_ptr_t<Smart, Pointer, Args...>(s, std::forward<Args>(args)...);`</ins></p>
+<p><ins><sup>2</sup> Returns: `out_ptr_t<Smart, Pointer, Args...>(s, std::forward<Args>(args)...);`</ins></p>
 
 <ins>
 <xmp>
-template <class Pointer, class Smart, class... Args>
-  out_ptr_t<Smart, Pointer, Args...> out_ptr(Smart& s, Args&&... args);
+template <class Smart, class... Args>
+  out_ptr_t<Smart, POINTER_OF(Smart), Args...> out_ptr(Smart& s, Args&&... args);
 </xmp>
 </ins>
 
-<p><ins><sup>3</sup> Returns: `return out_ptr_t<Smart, POINTER_OF(Smart), Args...>(s, std::forward<Args>(args)...);`</ins></p>
+<p><ins><sup>3</sup> Returns: `out_ptr_t<Smart, POINTER_OF(Smart), Args...>(s, std::forward<Args>(args)...);`</ins></p>
 </blockquote>
 
 
@@ -980,7 +985,7 @@ Insert §20.11.11 [**inout_ptr.class**]:
 
 <p><ins><sup>1</sup> *inout_ptr_t* is a type used with smart pointers (<a href="http://eel.is/c++draft/smartptr">[**smartptr**] 20.11</a>) and types which are designed on the same principles to interoperate easily with functions that use output pointer parameters. [ <i>Note:</i> For example, a function of the form `errno_t foo_realloc(void**)` — <i>end note</i> ].</ins></p>
 
-<p><ins><sup>2</sup> *inout_ptr_t* may be specialized (<a href="http://eel.is/c++draft/temp.class.spec">[**temp.class.spec**] 13.6.5</a>) for program-defined types.</ins></p>
+<p><ins><sup>2</sup> *inout_ptr_t* may be specialized (<a href="http://eel.is/c++draft/temp.spec.partial">[**temp.spec.partial**] 13.7.6</a>) for program-defined types.</ins></p>
 
 <ins>
 <xmp>
@@ -991,10 +996,10 @@ namespace std {
 	public:
 		// 20.11.11.1, constructors
 		inout_ptr_t(Smart&, Args...);
-		inout_ptr_t(inout_ptr_t&&) noexcept;
+		inout_ptr_t(inout_ptr_t&&) noexcept(/* see-below */);
 
 		// 20.11.11.2, assignment
-		inout_ptr_t& operator=(inout_ptr_t&&) noexcept;
+		inout_ptr_t& operator=(inout_ptr_t&&)  noexcept(/* see-below */);
 
 		// 20.11.11.3, destructors
 		~inout_ptr_t();
@@ -1033,26 +1038,30 @@ namespace std {
 
 <p><ins><sup>3</sup> Remarks: if an implementation calls `smart.release()` or `s->release()`, then it shall not call `s->release()` in the destructor.</ins></p>
 
-<p><ins><sup>4</sup> [ <i>Note:</i> The constructor is not `noexcept` to allow for a variety of non-terminating and safe implementation strategies. For example, an intrusive pointer with a control block may allocate in the constructor and safely fail with an exception. — <i>end note</i> ]</ins></p>
+<p><ins><sup>4</sup> [ <i>Note:</i> The constructor is not `noexcept` to allow for a variety of non-terminating and safe implementation strategies. For example, an intrusive pointer with a control block could allocate in the constructor and safely fail with an exception. — <i>end note</i> ]</ins></p>
 
-<p><ins><xmp>inout_ptr_t(inout_ptr&& rhs) noexcept;</xmp></ins></p>
+<p><ins><xmp>inout_ptr_t(inout_ptr&& rhs) noexcept(/* see-below */)t;</xmp></ins></p>
 
-<p><ins><sup>4</sup> Effects: initializes `s` with `std::move(rhs.s)`, `a` with `std::move(args)...`, and `p` with `std::move(rhs.p)`. Then sets `rhs.p` to `nullptr`.</ins></p>
+<p><ins><sup>4</sup> Effects: initializes `s` with `std::move(rhs.s)`, `a` with `std::move(a)`, and `p` with `std::move(rhs.p)`. Then sets `rhs.p` to `nullptr`.</ins></p>
+
+<p><ins><sup>5</sup> Throws: any exceptions from the move construction of `s`, `a`, or `p`.</ins></p>
 
 
 <p><ins>20.11.11.2 Assignment [**inout_ptr.class.assign**]</ins></p>
 
-<p><ins><xmp>inout_ptr_t& operator=(inout_ptr&& rhs) noexcept;</xmp></ins></p>
+<p><ins><xmp>inout_ptr_t& operator=(inout_ptr&& rhs) noexcept(/* see-below */);</xmp></ins></p>
 
 <p><ins><sup>1</sup> Effects: Equivalent to:
 <xmp>
-s = std::move(rhs.s); 
-a = std::move(rhs.a); 
+s = std::move(rhs.s);
+a = std::move(rhs.a);
 p = std::move(rhs.p);
 rhs.p = nullptr;
 return *this;
 </xmp>
 </ins></p>
+
+<p><ins><sup>2</sup> Throws: any exceptions from the move assignment of `s`, `a`, or `p`.</ins></p>
 
 <p><ins>20.11.11.3 Destructors [**inout_ptr.class.dtor**]</ins></p>
 
@@ -1064,11 +1073,12 @@ return *this;
 
 <p><ins><sup>3</sup> Effects: Equivalent to:
 <dl>
-	<dd><ins>— `if (p) { *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }` if `std::is_pointer_v<Smart>` is true,</ins></dd>
-	<dd><ins>— `if (p) { s->release(); s->reset( static_cast<SP>(p), std::forward<Args>(args)... ); }` if the expression `s->reset(static_cast<SP>(p), std::forward<Args>(args)...)` is well-formed,</ins></dd>
-	<dd><ins>— otherwise, `if (p) { s->release(); *s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }`.</ins></dd>
+	<dd><ins>— `apply([&](auto&&... args) { if (p) { *s = Smart{ static_cast<SP>(p), std::forward<decltype(args)>(args)... }; } }, std::move(a))` if `std::is_pointer_v<Smart>` is true,</ins></dd>
+	<dd><ins>— `apply([&](auto&&... args) { if (p) { s->release(); s->reset( static_cast<SP>(p), std::forward<decltype(args)>(args)... ); } }, std::move(a))` if the expression `s->reset(static_cast<SP>(p), std::forward<decltype(args)>(args)...)` is well-formed,</ins></dd>
+	<dd><ins>— otherwise, `apply([&](auto&&... args) { if (p) { s->release(); *s = Smart{ static_cast<SP>(p), std::forward<decltype(args)>(args)... }; } }, std::move(a))`.</ins></dd>
 </dl>
-<ins>where `Args` are the arguments stored in `a`.</ins>
+
+<p><ins><sup>4</sup> Remarks: if an implementation calls `s->release()` in the destructor, then it shall not call `s->release()` or `smart.release()` in the constructor.</ins></p>
 </ins></p>
 
 <p><ins>20.11.11.4 Conversions [**inout_ptr.class.conv**]</ins></p>
@@ -1081,12 +1091,12 @@ operator Pointer*() noexcept const;
 <p><ins><sup>1</sup> Effects: returns a pointer to `p`.</ins></p>
 <p><ins>
 
-<xmp>
+```
 operator void**() noexcept const;
-</xmp>
+```
 </ins></p>
 
-<p><ins><sup>2</sup> Constraints: `is_same_v<remove_cvref_t<Pointer>, void*>` is false.</ins></p>
+<p><ins><sup>2</sup> Constraints: `is_same_v<Pointer, void*>` is false.</ins></p>
 
 <p><ins><sup>3</sup> Effects: Equivalent to: `returns reinterpret_cast<void**>(static_cast<Pointer*>(*this));`.</ins></p>
 </blockquote>
@@ -1096,7 +1106,7 @@ Insert §20.11.12 [**inout_ptr**]:
 <blockquote>
 <p><ins>20.11.12 **Function Template** `inout_ptr` [**inout_ptr**]</ins><p>
 
-<p><ins><sup>1</sup> *inout_ptr* is a function template that produces an object of type *inout_ptr_t* ([**inout_ptr.class**] 20.11.11).</ins></p>
+<p><ins><sup>1</sup> *inout_ptr* is a function template that produces an object of type *inout_ptr_t* ([**inout_ptr.class**] 20.11.11). The returned temporary value is intended to be used in place of (smart) pointer parameters to functions which give output pointer parameters [ <i>Note:</i> For example, a function of the form `int av_reallocate(struct ContextAV**)` — <i>end note</i> ]. The exact pointer type can be specified as the first template argument (the first function declaration), or inferred (the second function declaration).</ins></p>
 
 <ins>
 <xmp>
