@@ -1,6 +1,6 @@
 <pre class='metadata'>
 Title: out_ptr - a scalable output pointer abstraction
-Shortname: P1132
+Shortname: D1132
 Revision: 7
 Audience: LWG
 Status: D
@@ -17,10 +17,6 @@ Editor: Isabella Muerte, https://twitter.com/slurpsmadrips
 Abstract: out_ptr and inout_ptr are abstractions to bring both C APIs and smart pointers back into the promised land by creating a temporary pointer-to-pointer that updates (using a reset call or semantically equivalent behavior) the smart pointer when it destructs.
 Date: 2021-03-19
 Markup Shorthands: markdown yes, biblio yes, markup yes
-</pre>
-
-<pre class=include>
-path: resources/css/wording.bs
 </pre>
 
 
@@ -110,7 +106,7 @@ This library automates the `.reset(...)` and -- sometimes additionally -- the `.
 #include <avformat.h>
 
 struct AVFormatContextDeleter {
-		void operator() (AVFormatContext* c) noexcept const {
+		void operator() (AVFormatContext* c) const noexcept {
 			avformat_close_input(&c);
 			avformat_free_context(c);
 		}
@@ -194,44 +190,36 @@ The function template's full specification is:
 
 ```
 namespace std {
-	template <class Pointer, class Smart, class... Args>
-	out_ptr_t<Smart, Pointer, Args...> 
+	template <class Pointer = void, class Smart, class... Args>
+	out_ptr_t<Smart, conditional_t<is_void_v<Pointer>, POINTER_OF(Smart), Pointer>, Args...> 
 	out_ptr(Smart& s, Args&&... args) noexcept;
 	
-	template <class Smart, class... Args>
-	out_ptr_t<Smart, POINTER_OF(Smart), Args...> 
-	out_ptr(Smart& s, Args&&... args) noexcept;
-
-	template <class Pointer, class Smart, class... Args>
-	inout_ptr_t<Smart, Pointer, Args...> 
-	inout_ptr(Smart& s, Args&&... args) noexcept;
-	
-	template <class Smart, class... Args>
-	inout_ptr_t<Smart, POINTER_OF(Smart), Args...> 
+	template <class Pointer = void, class Smart, class... Args>
+	inout_ptr_t<Smart, conditional_t<is_void_v<Pointer>, POINTER_OF(Smart), Pointer>, Args...>
 	inout_ptr(Smart& s, Args&&... args) noexcept;
 }
 ```
 
-Where `POINTER_OF` is the `::pointer` type, then the `::element_type*` type, then `typename std::pointer_traits<Smart>::element_type*` type in that order. The return type `out_ptr_t` and its sister type `inout_ptr_t` are templated types and must at-minimum have the following:
+Where `POINTER_OF` is the `::pointer` type, then the `::element_type*` type, then `std::pointer_traits<Smart>::element_type*` type in that order. The return type `out_ptr_t` and its sister type `inout_ptr_t` are templated types and must at-minimum have the following:
 
 ```
 template <class Smart, class Pointer, class... Args>
 class out_ptr_t {
 public:
-	out_ptr_t(Smart&, Args...);
-	~out_ptr_t () noexcept;
-	operator Pointer* () noexcept const; 
-	operator void** () noexcept const;
+	out_ptr_t(Smart&, Args...) noexcept(/* conditional */);
+	~out_ptr_t ();
+	operator Pointer* () const noexcept; 
+	operator void** () const noexcept;
 	// ^ only if Pointer != void*
 };
 
 template <class Smart, class Pointer, class... Args>
 class inout_ptr_t {
 public:
-	inout_ptr_t(Smart&, Args...);
-	~inout_ptr_t () noexcept;
-	operator Pointer* () noexcept const;
-	operator void** () noexcept const;
+	inout_ptr_t(Smart&, Args...) noexcept(/* conditional */);
+	~inout_ptr_t ();
+	operator Pointer* () const noexcept;
+	operator void** () const noexcept;
 	// ^ only if Pointer != void*
 };
 ```
@@ -788,29 +776,25 @@ Add to §17.3.2 Header `<version>` [**version.syn**]'s **Table 35** an additiona
 Modify §20.10.1 In general [**memory.general**] as follows:
 
 <blockquote>
-<p><sup>1</sup> The header <memory> defines several types and function templates that describe properties of pointers and pointer-like types, manage memory for containers and other template types, destroy objects, and construct multiple objects in uninitialized memory buffers (20.10.3 — 20.10.11). The header also defines the templates unique_ptr, shared_ptr, weak_ptr, <ins>out_ptr_t, inout_ptr_t,</ins> and various function templates that operate on objects of these types (20.11).</p></blockquote>
-
-Add §20.10.2 Definitions [**memory.defns**] as follows:
-
-<blockquote><p><ins><sup>1</sup> Let `POINTER_OF_OR(T, U)` denote a type that is:
-<dl>
-	<dd><ins>— `typename T::pointer` if the qualified-id `T::pointer` is valid and denotes a type,</ins></dd>
-	<dd><ins>— otherwise, `typename T::element_type*` if the qualified-id `T::element_type` is valid and denotes a type,</ins></dd>
-	<dd><ins>— otherwise, `typename std::pointer_traits<T>::element_type*` if `typename std::pointer_traits<T>::element_type` is valid and denotes a type,</ins></dd>
-	<dd><ins>— otherwise, `U`.</ins></dd>
-</dl>
-</ins></p>
+<p><sup>1</sup> The header `<memory>` defines several types and function templates that describe properties of pointers and pointer-like types, manage memory for containers and other template types, destroy objects, and construct multiple objects in uninitialized memory buffers (20.10.3 — 20.10.11). The header also defines the templates unique_ptr, shared_ptr, weak_ptr, <ins>out_ptr_t, inout_ptr_t,</ins> and various function templates that operate on objects of these types (20.11).</p>
 
 <p><ins><sup>2</sup> Let `POINTER_OF(T)` denote a type that is:
 <dl>
-	<dd><ins>— otherwise, `typename T::pointer` if the qualified-id `T::pointer` is valid and denotes a type,</ins></dd>
-	<dd><ins>— otherwise, `typename T::element_type*` if the qualified-id `T::element_type` is valid and denotes a type,</ins></dd>
-	<dd><ins>— otherwise, `typename std::pointer_traits<T>::element_type*`.</ins></dd>
+	<dd><ins>— otherwise, `T::pointer` if the _qualified-id_ `T::pointer` is valid and denotes a type,</ins></dd>
+	<dd><ins>— otherwise, `T::element_type*` if the _qualified-id_ `T::element_type` is valid and denotes a type,</ins></dd>
+	<dd><ins>— otherwise, `pointer_traits<T>::element_type*`.</ins></dd>
+</dl>
+</ins></p>
+
+<p><ins><sup>3</sup> Let `POINTER_OF_OR(T, U)` denote a type that is:
+<dl>
+	<dd><ins>— `POINTER_OF(T)` if `POINTER_OF(T)` is valid and denotes a type,</ins></dd>
+	<dd><ins>— otherwise, `U`.</ins></dd>
 </dl>
 </ins></p>
 </blockquote>
 
-Add to §20.10.3 (previously §20.10.2) Header `<memory>` synopsis [**memory.syn**] the `out_ptr`, `inout_ptr`, `out_ptr_t` and `inout_ptr_t` functions and types:
+Add to §20.10.2 Header `<memory>` synopsis [**memory.syn**] the `out_ptr`, `inout_ptr`, `out_ptr_t` and `inout_ptr_t` functions and types:
 
 <blockquote>
 <ins>
@@ -820,22 +804,16 @@ template <class Smart, class Pointer, class... Args>
 	class out_ptr_t;
 
 // 20.11.10, out_ptr
-template <class Pointer, class Smart, class... Args>
-	out_ptr_t<Smart, Pointer, Args...> out_ptr(Smart& s, Args&&... args);
+template <class Pointer = void, class Smart, class... Args>
+	auto out_ptr(Smart& s, Args&&... args);
 	
-template <class Smart, class... Args>
-	out_ptr_t<Smart, POINTER_OF(Smart), Args...> out_ptr(Smart& s, Args&&... args);
-
 // 20.11.11, inout_ptr_t
 template <class Smart, class Pointer, class... Args>
 	class inout_ptr_t;
 	
 // 20.11.12, inout_ptr
-template <class Pointer, class Smart, class... Args>
-	inout_ptr_t<Smart, Pointer, Args...> inout_ptr(Smart& s, Args&&... args);
-	
-template <class Smart, class... Args>
-	inout_ptr_t<Smart, POINTER_OF(Smart), Args...> inout_ptr(Smart& s, Args&&... args); 
+template <class Pointer = void, class Smart, class... Args>
+	auto inout_ptr(Smart& s, Args&&... args);
 </xmp>
 </ins>
 </blockquote>
@@ -843,11 +821,11 @@ template <class Smart, class... Args>
 Insert §20.11.9 [**out_ptr.class**]:
 
 <blockquote>
-<ins>20.11.9 **Class Template** `out_ptr_t` [**out_ptr.class**]</ins>
+<ins>20.11.9 **Class Template** *out_ptr_t* [**out_ptr.class**]</ins>
 
-<p><ins><sup>1</sup> *out_ptr_t* is a type used with smart pointers (<a href="http://eel.is/c++draft/smartptr">[**smartptr**] 20.11</a>) and types which are designed on the same principles to interoperate easily with functions that use output pointer parameters. [ Note — For example, a function of the form `void foo(void**)` — <i>end note</i> ].</ins></p>
+<p><ins><sup>1</sup> *out_ptr_t* is a class template used with smart pointers (<a href="http://eel.is/c++draft/smartptr">[**smartptr**] 20.11</a>) and types which are designed on the same principles to interoperate easily with functions that use output pointer parameters. [ Note — For example, a function of the form `void foo(void**)` — <i>end note</i> ].</ins></p>
 
-<p><ins><sup>2</sup> *out_ptr_t* may be specialized (<a href="http://eel.is/c++draft/temp.spec.partial">[**temp.spec.partial**] 13.7.6</a>) for all types and all arguments paired with those types.</ins></p>
+<p><ins><sup>2</sup> `Pointer` shall meet the *Cpp17NullablePointer* requirements. If `Smart` is a specialization of `shared_ptr` and `sizeof...(Args) == 0`, the program is ill-formed. [ <i>Note:</i> It is typically a user error to reset a `shared_ptr` without specifying a deleter, as `shared_ptr` will replace a custom deleter with the default deleter upon usage of `.reset()`, as specified in (<a href="https://eel.is/c++draft/util.smartptr.shared.mod">[**util.smartptr.shared.mod**] 20.11.3.5</a>). This prevents this program error. — <i>end note</i> ]</ins></p>
 
 <ins>
 <xmp>
@@ -867,8 +845,8 @@ namespace std {
 		~out_ptr_t();
 
 		// 20.11.9.4, conversion operators
-		operator Pointer*() noexcept const;
-		operator void**() noexcept const;
+		operator Pointer*() const noexcept;
+		operator void**() const noexcept;
 
 	private:
 		Smart* s; // exposition only
@@ -879,11 +857,6 @@ namespace std {
 }
 </xmp>
 </ins>
-
-<p><ins><sup>2</sup> If `Smart` is a specialization of `shared_ptr` and `sizeof...(Args) == 0`, the program is ill-formed.</ins></p>
-
-<p><ins><sup>3</sup> [ <i>Note:</i> It is typically a user error to reset a `shared_ptr` without specifying a deleter, as `shared_ptr` will replace a custom deleter with the default deleter upon usage of `.reset()`, as specified in 20.11.3.4. — <i>end note</i> ]</ins></p>
-
 
 <p><ins>20.11.9.1 Constructors [**out_ptr.class.ctor**]</ins></p>
 
@@ -913,13 +886,13 @@ return *this;
 </xmp>
 </ins></p>
 
-<p><ins><sup>3</sup> Throws: any exceptions from the move assignment of `s`, `a`, or `p`.</ins></p>
+<p><ins><sup>1</sup> Throws: any exceptions from the move assignment of `s`, `a`, or `p`.</ins></p>
 
 <p><ins>20.11.9.3 Destructors [**out_ptr.class.dtor**]</ins></p>
 
 <p><ins><xmp>~out_ptr_t();</xmp></ins></p>
 
-<p><ins><sup>1</sup> Let `SP` be `POINTER_OF_OR(Smart, Pointer)` ([**memory.defns**] 20.10.2).</ins></p>
+<p><ins><sup>1</sup> Let `SP` be `POINTER_OF_OR(Smart, Pointer)` ([**memory.general**] 20.10.1).</ins></p>
 
 <p><ins><sup>2</sup> Effects: Equivalent to:
 <dl>
@@ -932,60 +905,52 @@ return *this;
 
 <p><ins>
 <xmp>
-operator Pointer*() noexcept const;
+operator Pointer*() const noexcept;
 </xmp>
 </ins></p>
 
-<p><ins><sup>1</sup> Effects: returns a pointer to `p`.</ins></p>
-</blockquote>
+<p><ins><sup>1</sup> Returns: `addressof(const_cast<Pointer>(p))`.</ins></p>
 
 <p><ins>
 <xmp>
-operator void**() noexcept const;
+operator void**() const noexcept;
 </xmp>
 </ins></p>
 
-<p><ins><sup>2</sup> Constraints: `is_same_v<Pointer, void*>` is false.</ins></p>
+<p><ins><sup>2</sup> Constraints: `is_same_v<Pointer, void*>` is false, `alignof(void**) == alignof(Pointer*)` is true, and `sizeof(void**) == sizeof(Pointer*)` is true.</ins></p>
 
-<p><ins><sup>3</sup> Effects: Equivalent to: `returns reinterpret_cast<void**>(static_cast<Pointer*>(*this));`.</ins></p>
+<p><ins><sup>3</sup> Returns: `reinterpret_cast<void**>(static_cast<Pointer*>(*this))`.</ins></p>
 </blockquote>
 
 
 Insert §20.11.10 [**out_ptr**]:
 
 <blockquote>
-<p><ins>20.11.10 **Function Template** `out_ptr` [**out_ptr**]</ins><p>
+<p><ins>20.11.10 **Function Template** *out_ptr* [**out_ptr**]</ins><p>
 
-<p><ins><sup>1</sup> *out_ptr* is a function template that produces an object of type *out_ptr_t* ([**out_ptr.class**] 20.11.9) [ <i>Note:</i> For example, a function of the form `int av_always_allocate(struct ContextAV**)` — <i>end note</i> ]. The returned temporary value is intended to be used in place of (smart) pointer parameters to functions which give output pointer parameters. The exact pointer type can be specified as the first template argument (the first function declaration), or inferred (the second function declaration).</ins></p>
-
-<ins>
-<xmp>
-template <class Pointer, class Smart, class... Args>
-  out_ptr_t<Smart, Pointer, Args...> out_ptr(Smart& s, Args&&... args);
-</xmp>
-</ins>
-
-<p><ins><sup>2</sup> Returns: `out_ptr_t<Smart, Pointer, Args...>(s, std::forward<Args>(args)...);`</ins></p>
+<p><ins><sup>1</sup> *out_ptr* is a function template that produces an object of type *out_ptr_t* ([**out_ptr.class**] 20.11.9) [ <i>Note:</i> For example, a function of the form `int av_always_allocate(struct ContextAV**)` — <i>end note</i> ]. The returned temporary value is intended to be used in place of (smart) pointer parameters to functions which give output pointer parameters. The exact pointer type can be specified as the first template argument, or inferred if not given.</ins></p>
 
 <ins>
 <xmp>
-template <class Smart, class... Args>
-  out_ptr_t<Smart, POINTER_OF(Smart), Args...> out_ptr(Smart& s, Args&&... args);
+template <class Pointer = void, class Smart, class... Args>
+  auto out_ptr(Smart& s, Args&&... args);
 </xmp>
 </ins>
 
-<p><ins><sup>3</sup> Returns: `out_ptr_t<Smart, POINTER_OF(Smart), Args...>(s, std::forward<Args>(args)...);`</ins></p>
+<p><ins><sup>2</sup> Let `P` be `Pointer`, if `!is_same_v<Pointer, void>` is false, otherwise `POINTER_OF(Smart)`.</ins></p>
+
+<p><ins><sup>3</sup> Returns: `out_ptr_t<Smart, P, Args...>(s, std::forward<Args>(args)...)`</ins></p>
 </blockquote>
 
 
 Insert §20.11.11 [**inout_ptr.class**]:
 
 <blockquote>
-<ins>20.11.11 **Class Template** `inout_ptr_t` [**inout_ptr.class**]</ins>
+<ins>20.11.11 **Class Template** *inout_ptr_t* [**inout_ptr.class**]</ins>
 
 <p><ins><sup>1</sup> *inout_ptr_t* is a type used with smart pointers (<a href="http://eel.is/c++draft/smartptr">[**smartptr**] 20.11</a>) and types which are designed on the same principles to interoperate easily with functions that use output pointer parameters. [ <i>Note:</i> For example, a function of the form `errno_t foo_realloc(void**)` — <i>end note</i> ].</ins></p>
 
-<p><ins><sup>2</sup> *inout_ptr_t* may be specialized (<a href="http://eel.is/c++draft/temp.spec.partial">[**temp.spec.partial**] 13.7.6</a>) for program-defined types.</ins></p>
+<p><ins><sup>2</sup> `Pointer` shall meet the *Cpp17NullablePointer* requirements. If `Smart` is a specialization of `shared_ptr`, the program is ill-formed. [ *Note:* It is impossible to properly acquire unique ownership the managed resource from a `shared_ptr` given its shared ownership model. This makes it unsafe to use with this function. — <i>end note</i> ]</ins></p>
 
 <ins>
 <xmp>
@@ -1005,8 +970,8 @@ namespace std {
 		~inout_ptr_t();
 
 		// 20.11.11.4, conversion operators
-		operator Pointer*() noexcept const;
-		operator void**() noexcept const;
+		operator Pointer*() const noexcept;
+		operator void**() const noexcept;
 
 	private:
 		Smart* s; // exposition only
@@ -1018,11 +983,6 @@ namespace std {
 </xmp>
 </ins>
 
-<p><ins><sup>2</sup> If `Smart` is a specialization of `shared_ptr`, the program is ill-formed.</ins></p>
-
-<p><ins><sup>3</sup> [ *Note:* It is impossible to properly release the managed resource from a `shared_ptr` given its shared ownership model. — <i>end note</i> ]</ins></p>
-
-
 <p><ins>20.11.11.1 Constructors [**inout_ptr.class.ctor**]</ins></p>
 
 <p><ins><xmp>inout_ptr_t(Smart& smart, Args... args);</xmp></ins></p>
@@ -1030,7 +990,7 @@ namespace std {
 <p><ins><sup>1</sup> Effects: initializes `s` with `addressof(smart)`, `a` with `std::forward<Args>(args)...`, and `p` to either
 <dl>
 	<dd><ins>— `smart` if `std::is_pointer_v<Smart>` is true,</ins></dd>
-	<dd><ins>— otherwise, an unspecified value of either `smart.get()` or its value initialization.</ins></dd>
+	<dd><ins>— otherwise, an unspecified value of either `smart.release()`, `smart.get()`, or its value initialization.</ins></dd>
 </dl>
 </ins></p>
 
@@ -1038,7 +998,7 @@ namespace std {
 
 <p><ins><sup>3</sup> Remarks: if an implementation calls `smart.release()` or `s->release()`, then it shall not call `s->release()` in the destructor.</ins></p>
 
-<p><ins><sup>4</sup> [ <i>Note:</i> The constructor is not `noexcept` to allow for a variety of non-terminating and safe implementation strategies. For example, an intrusive pointer with a control block could allocate in the constructor and safely fail with an exception. — <i>end note</i> ]</ins></p>
+<p><ins><sup>4</sup> [ <i>Note:</i> The constructor is not `noexcept` to allow for a variety of non-terminating and safe implementation strategies. For example, an intrusive pointer implementation with a control block could allocate in the constructor and safely fail with an exception. — <i>end note</i> ]</ins></p>
 
 <p><ins><xmp>inout_ptr_t(inout_ptr&& rhs) noexcept(/* see-below */)t;</xmp></ins></p>
 
@@ -1067,11 +1027,9 @@ return *this;
 
 <p><ins><xmp>~inout_ptr_t();</xmp></ins></p>
 
-<p><ins><sup>1</sup> Constraints: Either `std::is_pointer_v<Smart>` is `true` or the expression `s->release()` is well-formed.</ins></p>
+<p><ins><sup>1</sup> Let `SP` be `POINTER_OF_OR(Smart, Pointer)` ([**memory.general**] 20.10.1).</ins></p>
 
-<p><ins><sup>2</sup> Let `SP` be `POINTER_OF_OR(Smart, Pointer)` ([**memory.defns**] 20.10.2).</ins></p>
-
-<p><ins><sup>3</sup> Effects: Equivalent to:
+<p><ins><sup>2</sup> Effects: Equivalent to:
 <dl>
 	<dd><ins>— `apply([&](auto&&... args) { if (p) { *s = Smart{ static_cast<SP>(p), std::forward<decltype(args)>(args)... }; } }, std::move(a))` if `std::is_pointer_v<Smart>` is true,</ins></dd>
 	<dd><ins>— `apply([&](auto&&... args) { if (p) { s->release(); s->reset( static_cast<SP>(p), std::forward<decltype(args)>(args)... ); } }, std::move(a))` if the expression `s->reset(static_cast<SP>(p), std::forward<decltype(args)>(args)...)` is well-formed,</ins></dd>
@@ -1085,47 +1043,39 @@ return *this;
 
 <p><ins>
 <xmp>
-operator Pointer*() noexcept const;
+operator Pointer*() const noexcept;
 </xmp>
 </ins></p>
-<p><ins><sup>1</sup> Effects: returns a pointer to `p`.</ins></p>
+<p><ins><sup>1</sup> Returns: `addressof(const_cast<Pointer>(p))`.</ins></p>
 <p><ins>
 
 ```
-operator void**() noexcept const;
+operator void**() const noexcept;
 ```
 </ins></p>
 
-<p><ins><sup>2</sup> Constraints: `is_same_v<Pointer, void*>` is false.</ins></p>
+<p><ins><sup>2</sup> Constraints: `is_same_v<Pointer, void*>` is false, `alignof(void**) == alignof(Pointer*)` is true, and `sizeof(void**) == sizeof(Pointer*)` is true.</ins></p>
 
-<p><ins><sup>3</sup> Effects: Equivalent to: `returns reinterpret_cast<void**>(static_cast<Pointer*>(*this));`.</ins></p>
+<p><ins><sup>3</sup> Effects: `reinterpret_cast<void**>(static_cast<Pointer*>(*this))`.</ins></p>
 </blockquote>
 
 Insert §20.11.12 [**inout_ptr**]:
 
 <blockquote>
-<p><ins>20.11.12 **Function Template** `inout_ptr` [**inout_ptr**]</ins><p>
+<p><ins>20.11.12 **Function Template** *inout_ptr* [**inout_ptr**]</ins><p>
 
-<p><ins><sup>1</sup> *inout_ptr* is a function template that produces an object of type *inout_ptr_t* ([**inout_ptr.class**] 20.11.11). The returned temporary value is intended to be used in place of (smart) pointer parameters to functions which give output pointer parameters [ <i>Note:</i> For example, a function of the form `int av_reallocate(struct ContextAV**)` — <i>end note</i> ]. The exact pointer type can be specified as the first template argument (the first function declaration), or inferred (the second function declaration).</ins></p>
-
-<ins>
-<xmp>
-template <class Pointer, class Smart, class... Args>
-	inout_ptr_t<Smart, Pointer, Args...> inout_ptr(Smart& s, Args&&... args);
-</xmp>
-</ins>
-
-<p><ins><sup>2</sup> Returns: `inout_ptr_t<Smart, Pointer, Args...>(s, std::forward<Args>(args)...);`</ins></p>
-
+<p><ins><sup>1</sup> *inout_ptr* is a function template that produces an object of type *inout_ptr_t* ([**inout_ptr.class**] 20.11.11). The returned temporary value is intended to be used in place of (smart) pointer parameters to functions which give output pointer parameters [ <i>Note:</i> For example, a function of the form `int av_reallocate(struct ContextAV**)` — <i>end note</i> ]. The exact pointer type can be specified as the first template argument, or inferred if not given.</ins></p>
 
 <ins>
 <xmp>
-template <class Smart, class... Args>
-	inout_ptr<Smart, POINTER_OF(Smart), Args...> inout_ptr(Smart& s, Args&&... args);
+template <class Pointer = void, class Smart, class... Args>
+	auto inout_ptr(Smart& s, Args&&... args);
 </xmp>
 </ins>
 
-<p><ins><sup>3</sup> Returns: `inout_ptr_t<Smart, POINTER_OF(Smart), Args...>(s, std::forward<Args>(args)...);`</ins></p>
+<p><ins><sup>2</sup> Let `P` be `Pointer`, if `!is_same_v<Pointer, void>` is false, otherwise `POINTER_OF(Smart)`.</ins></p>
+
+<p><ins><sup>3</sup> Returns: `inout_ptr_t<Smart, P, Args...>(s, std::forward<Args>(args)...)`.</ins></p>
 </blockquote>
 
 
