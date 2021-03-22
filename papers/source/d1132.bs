@@ -27,14 +27,18 @@ path: resources/css/bikeshed-darkmode.html
 
 
 
-## Revision 7 - March 19th, 2021 ## {#changelog-r7}
+## Revision 7 - March 22nd, 2021 ## {#changelog-r7}
 
-	- Wording improvements:
+	- Wording improvements (many thanks to Tim Song and LWG's review!):
+		- Conditionally call `.release()` for `inout_ptr_t` in BOTH the constructor and the destructor.
+		- Italicize *qualified-id*;
 		- Drop `typename` in the specification;
-		- Add constraints to the class by adding a paragraph about `Pointer` being a `Cpp17NullablePointer`;
-		- 
-	- "Why are the conversion operators `const`" added.
-	- Fix Darkmode by-hand with some wonky CSS.
+		- Add constraints to the class by adding a paragraph about `Pointer` being a `Cpp17NullablePointer` (thanks Jonathan Wakely!);
+		- `void**` conversions are constrained with `sizeof(...)` and `alignof(...)`, but they still need more work to invoke no UB;
+		- Use the `Pointer = void` trick to get rid of ambiguity from the old syntax when `Smart` and `Pointer` were of identical types (Thanks, Tomasz Kamiński!); and,
+		- Adjust the `POINTER_OF`/`POINTER_OF_OR` definition location and specification (thanks, Jens Maurer!).
+	- "Why are the conversion operators `const`" [[#design-casting-const|added to the design section]].
+	- Fix dark mode by-hand with some wonky CSS.
 
 
 
@@ -175,7 +179,7 @@ int main (int, char* argv[]) {
 	</tr>
 </table>
 
-We have very good tools for handling unique and shared resource semantics, alongside more coming with [[p0468|Intrusive Smart Pointers]]. Independently between several different companies, studios, and shops -- from VMWare and Microsoft to small game development startups -- a common type has been implemented. It has many names: `ptrptr`, `OutPtr`, `PtrToPtr`, `out_ptr`, [[wrl-comptrref|WRL::ComPtrRef]], [[std-proposals-overload-operator|a proposal on std-proposals]] and even [[ccomptr|unary operator& on CComPtr]]. It is universally focused on one task: making it so a smart pointer can be passed as a parameter to a function which uses an output pointer parameter in C API functions (e.g., `my_type**`).
+We have very good tools for handling unique and shared resource semantics, alongside more coming with [[p0468|Intrusive Smart Pointers]]. Independently between several different companies, studios, and shops -- from VMWare and Microsoft to small game development startups -- a common type has been implemented. It has many names: `ptrptr`, `OutPtr`, `PtrToPtr`, `out_ptr`, [[wrl-comptrref|WRL::ComPtrRef]], [[std-proposals-overload-operator|a proposal on std-proposals]] and even [[c-com-ptr|unary operator& on ccomptr]]. It is universally focused on one task: making it so a smart pointer can be passed as a parameter to a function which uses an output pointer parameter in C API functions (e.g., `my_type**`).
 
 This paper is a culmination of a private survey of types from the industry to propose a common, future-proof, high-performance `out_ptr` type that is easy to use. It makes interop with pointer types a little bit simpler and easier for everyone who has ever wanted something like `my_c_function( &my_unique );` to behave properly.
 
@@ -526,7 +530,7 @@ else {
 
 This happens whether the expression is chained with multiple comma/conditional expressions or if someone uses the new flow-control initializer statements. This is an unfortunately holdover of how temporaries are treated, and rather being fixed with flow control initializer statements the same quirky rules for the old `if` were carried over.
 
-This was pointed out as strange, but we feel this is not much of a blocker for this proposal. All RAII-based, action-on-destroy resources suffer from this problem: it is neither a new nor novel problem. One does not use a `std::lock_guard` in similar fashion to the snippet above; neither should `std::out_ptr` be used to that effect. Even [[oldnewthing-handle-proxy|Microsoft's Raymond Chen]] takes issues with temporary destructors and lifetimes in `if` statements and similar, but takes that problem up with C++ in general, not the abstraction presented in the write up or here.
+This was pointed out as strange, but we feel this is not much of a blocker for this proposal. All RAII-based, action-on-destroy resources suffer from this problem: it is neither a new nor novel problem. One does not use a `std::lock_guard` in similar fashion to the snippet above; neither should `std::out_ptr` be used to that effect. Even [[old-new-thing-handle-proxy|Microsoft's Raymond Chen]] takes issues with temporary destructors and lifetimes in `if` statements and similar, but takes that problem up with C++ in general, not the abstraction presented in the write up or here.
 
 In most cases, when working with C APIs, there are error numbers to check which are infinitely more reliable than testing the pointer. APIs would do better to switch to such a method, rather than relying on testing for the null state on a pointer. Which is another way of saying, the following code is still just fine:
 
@@ -561,7 +565,7 @@ This solution seeks to resolve performance problems and reseating issues by havi
 
 ### Rejected: adding `&operator` to this type ### {#design-extension-addressof}
 
-This is the same sin committed by Microsoft with `CComPtr` that ushered in the age of `std::addressof` with all due experience for Windows users. While proposed a few times throughout history (including in the early incubation tank of std-proposals), this is not a mistake the community should make twice.
+This is the same sin committed by Microsoft with `c-com-ptr` that ushered in the age of `std::addressof` with all due experience for Windows users. While proposed a few times throughout history (including in the early incubation tank of std-proposals), this is not a mistake the community should make twice.
 
 
 ### Rejected: unrestricted ADL ### {#design-extension-adl}
@@ -593,7 +597,7 @@ We propose that the struct specialization stays because it gives the user the mo
 
 # Implementation Experience # {#experience}
 
-This library has been brewed at many companies in their private implementations, and implementations in the wild are scattered throughout code bases with no unifying type. As noted in [[#motivation]], Microsoft has implemented this in `WRL::ComPtrRef`. Its earlier iteration -- `CComPtr` -- simply overrode `operator&`. We assume they prefer the former after having forced the need with `CComPtr` for `std::addressof`. the WRL is a public library used in thousands of applications, and has an interface similar to the proposed `std::out_ptr`/`std::inout_ptr`.
+This library has been brewed at many companies in their private implementations, and implementations in the wild are scattered throughout code bases with no unifying type. As noted in [[#motivation]], Microsoft has implemented this in `WRL::ComPtrRef`. Its earlier iteration -- `c-com-ptr` -- simply overrode `operator&`. We assume they prefer the former after having forced the need with `c-com-ptr` for `std::addressof`. the WRL is a public library used in thousands of applications, and has an interface similar to the proposed `std::out_ptr`/`std::inout_ptr`.
 
 VMWare has a type that much more closely matches the specification in this paper, titled `Vtl::OutPtr`. The primary author of this paper wrote and used `out_ptr` for over 5 years in their code base working primarily with graphics APIs such as DirectX and OpenGL, and more recently Vulkan. They have also seen a similar abstraction in the places they have interned at.
 
@@ -623,7 +627,7 @@ There is no indication whatsoever that conditional noexcept specification has an
 
 Research into the Standard Library and scanning of the latest working draft, [[n4820]], there is only a handful of destructors that could have potentially been marked throwing. However, due to the guidance of [[res.on.exception.handling](http://eel.is/c++draft/res.on.exception.handling)], all of them have been marked as `noexcept`. Even the one destructor that logically could have thrown is marked explicitly `noexcept`, and it makes sure the "exception is caught but not rethrown" ([[filebuf.cons](http://eel.is/c++draft/filebuf.cons#5)], clause 5). While nobody is going to argue that `<iostream>`s and anything related to it is a paragon of good design, there is clear precedent in the Standard Library not to throw in destructors no matter what.
 
-Furthermore, there are plenty of things in the standard which error and should throw to communicate that error, but errors are deliberately not mentioned or ignored for the sake of destructors and usage idioms in the standard library. Consider the class of mutex types in the standard, including `std::mutex`: their unlock operations on all platforms can signal Out of Resource-style errors (`EAGAIN` for resource exhaustion pthreads mutices, for example). Absolutely no platforms throw an error for this, including [libstdc++ which simply ignores the error even after acknowledging it in comments](https://github.com/gcc-mirror/gcc/blob/fbd263526ad105a953fd51d9f7bca2c3f268cf82/libstdc%2B%2B-v3/include/bits/std_mutex.h#L117) and [libc++ which only has an assertion tanking in an assert-enabled build of libc++, otherwise nothing](https://github.com/llvm/llvm-project/blob/8baf83839e9a22fff98d3b906a63063f62934d16/libcxx/src/mutex.cpp#L45). While this is not "as bad" as `basic_filebuf`, it's morally equivalent to just not bothering with the error: `std::lock_guard` could trigger any of these errors, and absolutely nothing will inform the programmer that something exploded, which is arguably *worse* than just letting the exception hit the `noexcept(true)` barrier of a standard destructor and tank the program because an important invariant has been violated.
+Furthermore, there are plenty of things in the standard which error and should throw to communicate that error, but errors are deliberately not mentioned or ignored for the sake of destructors and usage idioms in the standard library. Consider the class of mutex types in the standard, including `std::mutex`: their unlock operations on all platforms can signal Out of Resource-style errors (`EAGAIN` for resource exhaustion on pthread mutices, for example). Absolutely no platforms throw an error for this, including [libstdc++ which simply ignores the error even after acknowledging it in comments](https://github.com/gcc-mirror/gcc/blob/fbd263526ad105a953fd51d9f7bca2c3f268cf82/libstdc%2B%2B-v3/include/bits/std_mutex.h#L117) and [libc++ which only has an assertion tanking in an assert-enabled build of libc++, otherwise nothing](https://github.com/llvm/llvm-project/blob/8baf83839e9a22fff98d3b906a63063f62934d16/libcxx/src/mutex.cpp#L45). While this is not "as bad" as `basic_filebuf`, it's morally equivalent to just not bothering with the error: `std::lock_guard` could trigger any of these errors, and absolutely nothing will inform the programmer that something exploded, which is arguably *worse* than just letting the exception hit the `noexcept(true)` barrier of a standard destructor and tank the program because an important invariant has been violated.
 
 In short, given the long policy and history of `noexcept`-marked destructors even in the face of errors, the lack of performance differentiation for the happy path with or without `noexcept` markings, and the clear guidance in both Specification and Implementation to drop out-of-resource errors on the floor, `out_ptr_t` and `inout_ptr_t` will both remain unconditionally `noexcept` to be consistent with C++ in letter, implementation and spirit.
 
@@ -1143,11 +1147,11 @@ Thank you to Zach Laine and the Boost Community for reviewing the code.
 
 <pre class=biblio>
 {
-	"ccomptr": {
+	"c-com-ptr": {
 		"authors": [
 			"Microsoft"
 		],
-		"title": "CComPtr::operator& Operator",
+		"title": "c-com-ptr::operator& Operator",
 		"href": "https://msdn.microsoft.com/en-us/library/31k6d0k7.aspx",
 		"date": "2015"
 	},
@@ -1175,12 +1179,12 @@ Thank you to Zach Laine and the Boost Community for reviewing the code.
 		"href": "https://github.com/adobe/chromium/blob/master/base/win/scoped_comptr.h#L80",
 		"date": "November 25th, 2018"
 	},
-	"oldnewthing-handle-proxy": {
+	"old-new-thing-handle-proxy": {
 		"authors": [
 			"Raymond Chen"
 		],
 		"title": "Spotting problems with destructors for C++ temporaries",
-		"href": "https://devblogs.microsoft.com/oldnewthing/20190429-00/?p=102456",
+		"href": "https://devblogs.microsoft.com/old-new-thing/20190429-00/?p=102456",
 		"date": "April 29th, 2019"
 	},
 	"p0468": {
