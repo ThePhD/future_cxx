@@ -72,7 +72,9 @@ While some of these types aren't contained in this paper, the end goal is to ena
 
 int main (int, char*[]) {
 	using namespace std::literals;
+	// future proposal: container type
 	std::text::u8text my_text
+		// this proposal: transcoding
 		= std::text::transcode(“안녕하세요 👋”sv, std::text::utf8{});
 	std::cout << my_text << std::endl; // prints 안녕하세요 👋 to a capable console
 	std::cout << std::hex;
@@ -173,6 +175,7 @@ class session : public std::enable_shared_from_this<session> {
 			std::text::utf16,
 			std::endian::big
 		> from_encoding{};
+		// alternatively: std::text::utf16_be
 
 		std::text::utf8 to_encoding{};
 
@@ -270,12 +273,13 @@ Here are some handy definitions which will be used liberally to shorten the spec
 - Unicode Code Point: the 21-bit value (often represented as a 32-bit number for implementation-related reasons) that represents a code point from the Unicode Standard. Specifically, it is the range of integers 0 to 0x10FFFF inclusive.
 - Unicode Scalar Value: the 21-bit value that represents a code point from the Unicode Standard, but without Surrogate Unicode Code Point values. Specifically, it is the ranges of integers 0 to 0xD7FF and 0xE000 to 0x10FFFF inclusive.
 - `unicode_code_point`: a type in C++ that represent at Unicode Code Point. Alias of `char32_t`.
-- `unicode_scalar_value`: a type for C++ that represents. Strong typedef that supports all the same operations as `char32_t`.
+- `unicode_scalar_value`: a type for C++ that represents. Strong typedef that supports all the same operations as `char32_t`. It's constructor may assert / trap on values outside of the allowed 21 Unicode bits and may assert / trap on values that are surrogate characters.
 - `using UEncoding = std::remove_cvref_t<Encoding>` given the existence of a template parameter `Encoding`.
-- `template <typename T> using encoding_state_t = typename std::remove_cvref_t<T>::state;`.
-- `template <typename T> using encoding_code_unit_t = typename std::remove_cvref_t<T>::code_unit;`.
-- `template <typename T> using encoding_code_point_t = typename std::remove_cvref_t<T>::code_point;`: this is the `code_point` type definition for a given type `T`, ignoring cv-qualifiers.
-- `is_encoding_self_state_v<T>`: a boolean trait that tells whether or not an encoding uses itself as the state type, rather than a separate state type.
+- `template <typename T> using encode_state_t = typename std::remove_cvref_t<T>::state;`.
+- `template <typename T> using decode_state_t = typename std::remove_cvref_t<T>::state;`.
+- `template <typename T> using code_unit_t = typename std::remove_cvref_t<T>::code_unit;`.
+- `template <typename T> using code_point_t = typename std::remove_cvref_t<T>::code_point;`: this is the `code_point` type definition for a given type `T`, ignoring cv-qualifiers.
+- `is_encoding_self_state_v<T>`: a boolean trait that tells whether or not an encoding uses itself as the state type, rather than a separate state type;
 
 ```cpp
 template <typename T>
@@ -308,12 +312,12 @@ The high-level interfaces must be built on *something*: it cannot be magically w
 
 ### Error Codes ### {#design-low-level-error_codes}
 
-There is some boilerplate that needs to be taken care of before building our encoding, decoding, transcoding and similar functionality begins. First and foremost is the error codes and result types that will go in and out of our encoding functions. The error code enumeration is `std::text::encoding_errc`. It lists all the reasons an encoding or decoding operation can fail:
+There is some boilerplate that needs to be taken care of before building our encoding, decoding, transcoding and similar functionality begins. First and foremost is the error codes and result types that will go in and out of our encoding functions. The error code enumeration is `std::text::encoding_error`. It lists all the reasons an encoding or decoding operation can fail:
 
 ```cpp
 namespace std::text {
 
-	enum class encoding_errc : int {
+	enum class encoding_error {
 		// just fine
 		ok = 0x00,
 		// input contains ill-formed sequences
@@ -331,27 +335,6 @@ namespace std::text {
 }
 ```
 
-The comments give some small amount of examples about what each one means. The reason 0 is used to signal success is very simple: the next part of the API creates an `encoding_error_category` class and hooks up the machinery for a `std::error_condition`:
-
-```cpp
-namespace std {
-
-	template <>
-	class is_error_condition_enum<encoding_errc> : true_type {};
-
-	class encoding_error_category : public error_category {
-	public:
-		constexpr encoding_error_category() noexcept;
-
-		virtual const char* name() const noexcept override;
-		virtual string message(int condition) const override;
-	};
-
-}
-```
-
-This allows the creation of a `std::error_condition`, which is used as an all-encompassing text error code for the standard.
-
 
 ### Result Types ### {#design-low-level-results}
 
@@ -363,7 +346,7 @@ namespace std::text {
 
 	template <typename Input, typename Output, typename State>
 	class encode_result {
-		encoding_errc error_code;
+		encoding_error error_code;
 		bool handled_error;
 		State& state;
 		Output output;
@@ -371,18 +354,16 @@ namespace std::text {
 		
 		template <typename InRange, typename OutRange, typename EncodingState>
 		constexpr encode_result(InRange&& input, OutRange&& output,
-			EncodingState&& state, encoding_errc error_code = encoding_errc::ok);
+			EncodingState&& state, encoding_error error_code = encoding_error::ok);
 
 		template <typename InRange, typename OutRange, typename EncodingState>
 		constexpr encode_result(InRange&& input, OutRange&& output,
-			EncodingState&& state, encoding_errc error_code, bool handled_error);
-
-		constexpr std::error_condition error() const;
+			EncodingState&& state, encoding_error error_code, bool handled_error);
 	};
 
 	template <typename Input, typename Output, typename State>
 	class decode_result {
-		encoding_errc error_code;
+		encoding_error error_code;
 		bool handled_error;
 		State& state;
 		Output output;
@@ -390,18 +371,16 @@ namespace std::text {
 		
 		template <typename InRange, typename OutRange, typename EncodingState>
 		constexpr decode_result(InRange&& input, OutRange&& output,
-			EncodingState&& state, encoding_errc error_code = encoding_errc::ok);
+			EncodingState&& state, encoding_error error_code = encoding_error::ok);
 
 		template <typename InRange, typename OutRange, typename EncodingState>
 		constexpr decode_result(InRange&& input, OutRange&& output,
-			EncodingState&& state, encoding_errc error_code, bool handled_error);
-
-		constexpr std::error_condition error() const;
+			EncodingState&& state, encoding_error error_code, bool handled_error);
 	};
 
 	template <typename Input, typename Output, typename FromState, typename ToState>
 	class transcode_result {
-		encoding_errc error_code;
+		encoding_error error_code;
 		bool handled_error;
 		FromState& state;
 		ToState& state;
@@ -412,15 +391,13 @@ namespace std::text {
 			typename FromEncodingState, typename ToEncodingState>
 		constexpr decode_result(InRange&& input, OutRange&& output,
 			FromEncodingState&& from_state, ToEncodingState&& to_state,
-			encoding_errc error_code = encoding_errc::ok);
+			encoding_error error_code = encoding_error::ok);
 
 		template <typename InRange, typename OutRange,
 			typename FromEncodingState, typename ToEncodingState>
 		constexpr decode_result(InRange&& input, OutRange&& output,
 			FromEncodingState&& from_state, ToEncodingState&& to_state,
-			encoding_errc error_code, bool handled_error);
-
-		constexpr std::error_condition error() const;
+			encoding_error error_code, bool handled_error);
 	};
 
 	template <typename Input, typename State>
@@ -453,7 +430,7 @@ namespace std::text {
 }
 ```
 
-There is a lot to unpack here. There are two essentially identical structures: `std::text::encode_result` and `std::text::decode_result`. These contain the input range, the output range, a reference to the encoding's current state, the error code and whether or not the error handler was invoked. The `bool error_handled` is important because some error handlers may change the `error_code` member to `std::text::encoding_errc::ok`, indicating that things are fine (e.g., a replacement character was successfully inserted into the output stream to replace some bad input).
+There is a lot to unpack here. There are two essentially identical structures: `std::text::encode_result` and `std::text::decode_result`. These contain the input range, the output range, a reference to the encoding's current state, the error code and whether or not the error handler was invoked. The `bool error_handled` is important because some error handlers may change the `error_code` member to `std::text::encoding_error::ok`, indicating that things are fine (e.g., a replacement character was successfully inserted into the output stream to replace some bad input).
 
 Note: Having 2 differently-named types with much the same interface is paramount to allow an `error_handler` callable to know how to interpret some errors and whether to try to insert code units into the output stream or code points into the output stream (encoding means code units into output, decoding means code points into the output). If the structures were merged, this information would be lost at compile-time and have to attempt to coerce that information out by examining the `value_type` and `reference` types of the output or input range. Unfortunately, even that is not foolproof because neither the input range or output ranges need to exactly dereference to exactly `Encoding::code_unit` or `Encoding::code_point` types, just things convertible to / from them.
 
@@ -478,6 +455,8 @@ namespace std::text {
 	class throw_handler;
 	class assume_valid_handler;
 	class default_handler;
+	template <typename ErrorHandler>
+	class incomplete_handler;
 
 }
 ```
@@ -512,7 +491,7 @@ namespace std::text {
 }
 ```
 
-The specification here is a value-based one. `encoding` is a reference to the encoding which threw the error. `current_result` is passed to the error handler and it represents an `encode` or `decode` function's current progress. The `result` types provide the current input range, the current output range, a reference to the current state, and the type of error encountered according to the `std::text::encoding_errc`. Finally, the `progress` object is a `std::contiguous_range` passed from the encoder with the code points or code units already read from the input range. (This is important for e.g. reading from one-way iterators like `istream_iterator`, where it is impossible to go back and recover information consumed by the algorithm.) The error handler is then responsible for performing any modifications it wants to the result type, before returning the modified result to be propagated back by the encoding interface.
+The specification here is a value-based one. `encoding` is a reference to the encoding which threw the error. `current_result` is passed to the error handler and it represents an `encode` or `decode` function's current progress. The `result` types provide the current input range, the current output range, a reference to the current state, and the type of error encountered according to the `std::text::encoding_error`. Finally, the `progress` object is a `std::contiguous_range` passed from the encoder with the code points or code units already read from the input range. (This is important for e.g. reading from one-way iterators like `istream_iterator`, where it is impossible to go back and recover information consumed by the algorithm.) The error handler is then responsible for performing any modifications it wants to the result type, before returning the modified result to be propagated back by the encoding interface.
 
 There are a few things that can be done in the commented code shown above. First and foremost is that someone could look at `current_result.error()` and simply throw a hand-tailored exception. This would bubble out of the function and let the caller decide what to do.
 
@@ -520,23 +499,25 @@ Note: Throwing is **explicitly not recommended by default** by prominent vendors
 
 The default error handler will be the `std::text::default_handler`, as hinted by the name. The `default_handler` is a "strong typedef" over the `std::text::replacement_handler`, done for the purposes of [[#design-high-level-safety|safety in the higher-level API]].
 
-The `replacement_handler` will look inside `Encoding` to see if the expression `encoding.replacement_code_points()` or `encoding.replacement_code_units()` is well-formed. If so, it will take the range returned from that function and will attempt to insert it into the `output` range. Specifically:
+The `replacement_handler` will look inside `Encoding` to see if the expression `encoding.replacement_code_points()`, `encoding.maybe_replacement_code_points()`, `encoding.maybe_replacement_code_units()`, or `encoding.replacement_code_units()` is well-formed. If so, it will take the range returned from that function and will attempt to insert it into the `output` range. Specifically:
 
 - On a failure in `decode_one`:
 	- If the output is at its end, return the result as-is.
 	- If the expression `decltype(auto) replacement_points = encoding.replacement_code_points();` is well-formed, then `replacement_points` is iterated over and code points are inserted into the output range in linear ascending order, if there is space. If there is not enough space, return the result as-is. Note that this may write partial data to the range if `replacement_points` contains more than one code point.
+	- If the expression `decltype(auto) maybe_replacement_points = encoding.maybe_replacement_code_points();` is well-formed, then `maybe_replacement_points` is checked to see if it produces a `true` value when contextually converted to a `bool`. If it is, then `decltype(auto) replacement_points = *maybe_replacement_points;` is used to obtain a range. `replacement_points` is iterated over and code points are inserted into the output range in linear ascending order, if there is space. If there is not enough space, return the result as-is with the error code as-is. Note that this may write partial data to the range if `replacement_points` contains more than one code point and the output range is not sized and cannot be changed.
 	- Otherwise, if the `code_point` type is a Unicode Code Point type (`char32_t`, `unicode_code_point`, `unicode_scalar_value`), an array of `{ U'\uFFFD' }` is assumed to be the replacement characters for the standard error handlers.
-	- Otherwise, if the expression `decltype(auto) replacement_units = encoding.replacement_code_units();` is well-formed, then `replacement_units` is passed to a call to `auto intermediate_result = encoding.decode_one(replacement_units, result.output, /* implementation-defined pass-through handler */, result.state);`. If `intermediate_result.error_code` is not equal to `std::text::encoding_errc::ok`, then return the original result. Note that this may write partial data to the range if the decode operation needs to write more than one code point to the `output`.
+	- Otherwise, if the expression `decltype(auto) replacement_units = encoding.replacement_code_units();` is well-formed, then `replacement_units` is passed to a call to `auto intermediate_result = encoding.decode_one(replacement_units, result.output, /* implementation-defined pass-through handler */, result.state);`. If `intermediate_result.error_code` is not equal to `std::text::encoding_error::ok`, then return the original result. Note that this may write partial data to the range if the decode operation needs to write more than one code point to the `output`.
+	- Otherwise, if the expression `decltype(auto) maybe_replacement_units = encoding.maybe_replacement_code_units();` is well-formed, the object `maybe_replacement_units` is contextually converted to `bool` to see if it evaluates to `true`. If so, then ` decltype(auto) replacement_units = *maybe_replacement_units;` is evaluated, and `replacement_units` is passed to a call to `auto intermediate_result = encoding.decode_one(replacement_units, result.output, /* implementation-defined pass-through handler */, result.state);`. If `intermediate_result.error_code` is not equal to `std::text::encoding_error::ok`, then return the original result. Note that this may write partial data to the range if the decode operation needs to write more than one code point to the `output`.
 	- Otherwise, the program is ill-formed.
 
 - On a failure in `encode_one`:
 	- If the output is at its end, return the `result` as-is.
 	- If the expression `decltype(auto) replacement_units = encoding.replacement_code_units();` is well-formed, then `replacement_units` is iterated over and code points are inserted into the output range in linear ascending order, if there is space. If there is not enough space, return the `result` as-is. Note that this may write partial data to the `result.output` range if `replacement_units` contains more than one unit but the output reaches its limit.
 	- Otherwise, if the `code_point` type is a Unicode Code Point type (`char32_t`, `unicode_code_point`, `unicode_scalar_value`), an array of `{ U'\uFFFD' }` is assumed to be the replacement characters for the standard error handlers.
-	- Otherwise, if the expression `decltype(auto) replacement_points = encoding.replacement_code_points();` is well-formed, then `replacement_points` is passed to a call to `auto intermediate_result = encoding.encode_one(replacement_points, result.output, /* implementation-defined pass-through handler */, result.state);`. If `intermediate_result.error_code` is not equal to `std::text::encoding_errc::ok`, then return the original result. Note that this may write partial data to the range if the encode operation needs to write more than one code point to the `result.output`.
+	- Otherwise, if the expression `decltype(auto) replacement_points = encoding.replacement_code_points();` is well-formed, then `replacement_points` is passed to a call to `auto intermediate_result = encoding.encode_one(replacement_points, result.output, /* implementation-defined pass-through handler */, result.state);`. If `intermediate_result.error_code` is not equal to `std::text::encoding_error::ok`, then return the original result. Note that this may write partial data to the range if the encode operation needs to write more than one code point to the `result.output`.
 	- Otherwise, the program is ill-formed.
 
-If successful, the error code on the result will be corrected to say "everything is fine" (`std::text::encoding_errc::ok`) and then returned from the function. This allows algorithms continue looping over input with the replacement characters inserted. If there is no room in the output, then the error is returned untouched.
+If successful, the error code on the result will be corrected to say "everything is fine" (`std::text::encoding_error::ok`) and then returned from the function. This allows algorithms continue looping over input with the replacement characters inserted. If there is no room in the output, then the error is returned untouched.
 
 For performance reasons and flexibility, the error callable must have a way to ensure that the user and implementation can agree on whether or not Undefined Behavior is invoked by assuming that the text is valid. [[libogonek]] made an object of type `assume_valid_t`. This paper provides the same here: an error handler of `assume_valid_handler` means that the implementation will eliminate all of its checks and subsequent calls to the error handling interface. A user must provide the `assume_valid_handler` to achieve this behavior: it will never be the default behavior because it is error-prone and dangerous and only to be performed with explicit user consent.
 
@@ -804,7 +785,7 @@ int main () {
 	for (;;) {
 		auto result = encoding.decode(working_input, working_output,
 			handler, encoding_state);
-		if (result.error_code != encoding_errc::ok) {
+		if (result.error_code != encoding_error::ok) {
 			// not what we wanted.
 			return -1;
 		}
@@ -842,8 +823,8 @@ The free functions are written in a way to eagerly consume input and output spac
 The `decode` free function provides a High Level API for decoding text. It allows performance with some degree of flexibility and customization through its parameters, as well as additional improvements with the use of some ADL customization points. The core loops behaves as follows:
 
 0. Performing an `auto result = encoding.decode_one(...)` call using the current target input and output views.
-1. Checking if the return value's error code is `std::text::encoding_errc::ok`, and returning the result early if it is not.
-2. Checking `std::ranges::empty(result.input)`, and returning with a result that has `error_code` set to `std::text::encoding_errc::ok` if it is empty.
+1. Checking if the return value's error code is `std::text::encoding_error::ok`, and returning the result early if it is not.
+2. Checking `std::ranges::empty(result.input)`, and returning with a result that has `error_code` set to `std::text::encoding_error::ok` if it is empty.
 3. Otherwise, go to 0 and use the `result.input` and `result.output` views.
 
 The surface of the `decode` API is as follows:
@@ -903,8 +884,8 @@ Note: in the current running implementation, there are also separate overloads f
 The `encode` free function provides a High Level API for encoding text. It allows performance with some degree of flexibility and customization through its parameters, as well as additional improvements with the use of some ADL customization points. The core loop behaves as follows:
 
 0. Performing an `auto result = encoding.encode_one(...)` call using the current target input and output views.
-1. Checking if the return value's error code is `std::text::encoding_errc::ok`, and returning the result early if it is not.
-2. Checking `std::ranges::empty(result.input)`, and returning with a result that has `error_code` set to `std::text::encoding_errc::ok` if it is empty.
+1. Checking if the return value's error code is `std::text::encoding_error::ok`, and returning the result early if it is not.
+2. Checking `std::ranges::empty(result.input)`, and returning with a result that has `error_code` set to `std::text::encoding_error::ok` if it is empty.
 3. Otherwise, go to 0 and use the `result.input` and `result.output` views.
 
 
@@ -970,10 +951,10 @@ Note: in the current running implementation, there are also separate overloads f
 The `transcode` free function provides a High Level API for transforming text from one encoding to another. It allows performance with some degree of flexibility and customization through its parameters, as well as additional improvements with the use of some ADL customization points. The core loop behaves as follows:
 
 0. Performing an `auto d_result = from_encoding.decode_one(...)` call using the current input view and an intermediate temporary output of `encoding_code_point_t<FromEncoding> intermediate[FromEncoding::max_code_points];`.
-1. Checking if the return value's error code is `std::text::encoding_errc::ok`, and returning the result early if it is not.
+1. Checking if the return value's error code is `std::text::encoding_error::ok`, and returning the result early if it is not.
 2. Performing an `auto e_result = to_encoding.encode_one(...)` call using the previous temporary `intermediate` output wrapped in a view as the input and the target output view.
-3. Checking if the return value's error code is `std::text::encoding_errc::ok`, and returning the result early if it is not.
-4. Checking `std::ranges::empty(d_result.input)`, and returning with a result that has `error_code` set to `std::text::encoding_errc::ok` if it is empty.
+3. Checking if the return value's error code is `std::text::encoding_error::ok`, and returning the result early if it is not.
+4. Checking `std::ranges::empty(d_result.input)`, and returning with a result that has `error_code` set to `std::text::encoding_error::ok` if it is empty.
 5. Otherwise, go to 0 and use the `d_result.input` and `e_result.output` views.
 
 
@@ -1321,7 +1302,7 @@ ascii_to_utf8_result text_transcode_one(std::span<char> input, std::text::ascii&
 			to, output,
 			from_error_handler, to_error_handler,
 			from_state, to_state,
-			std::text::encoding_errc::insufficient_output_space,
+			std::text::encoding_error::insufficient_output_space,
 			std::span<char, 0>{});
 	}
 	if ((input[0] & '\x7f') != 0) {
@@ -1330,7 +1311,7 @@ ascii_to_utf8_result text_transcode_one(std::span<char> input, std::text::ascii&
 			to, output,
 			from_error_handler, to_error_handler,
 			from_state, to_state,
-			std::text::encoding_errc::invalid_sequence,
+			std::text::encoding_error::invalid_sequence,
 			input.subspan<1, 1>());
 	}
 	// bitwise compatible
@@ -1402,7 +1383,7 @@ text_transcode(
 		// handle error ...
 		return std::text::propagate_transcode_error(input, output,
 			from_handler, to_handler, from_state, to_state,
-			std::text::encoding_errc::insufficient_output_space,
+			std::text::encoding_error::insufficient_output_space,
 			std::span<char, 0>{});
 	}
 
@@ -1414,7 +1395,7 @@ text_transcode(
 		return std::text::propagate_transcode_error(input, to_encoding,
 			output, from_encoding,
 			transcode_result</*...*/>(/* ... */),
-			std::text::encoding_errc::invalid_sequence,
+			std::text::encoding_error::invalid_sequence,
 			std::span<char, 0>{});
 	}
 	return transcode_result</*...*/>(/* ... */);
