@@ -69,14 +69,14 @@ We settle on this solution because it is existing practice. A survey of implemen
 
 To achieve our goal, we state this in the front-matter for "string literals". We then provide wording in other relevant places for `char16_t` and `char32_t` functions that state the desired encoding (UTF-16 and UTF-32 respectively). Finally, we disentangle the compile-time encoding of string literals and the locale-based functions.
 
-Note that the disentanglement does not reduce implementer freedom. The encoding for string literals and `wchar_t` string literals is still implementation-defined; it is just explicitly defined as such now and no longer makes any forward mention of `mbtowc`, `mbstowcs`, `mbrtoc16` or `mbrtoc32`. The translation from the translation time execution character set to the *literal* and *wide literal encoding* is implementation-defined; that means implementations can continue to:
+Note that the disentanglement does not reduce implementer freedom. The encoding for string literals and `wchar_t` string literals is still implementation-defined; it is just explicitly defined as such now and no longer makes any forward mention of `mbtowc`, `mbstowcs`, `mbrtoc16` or `mbrtoc32`. The translation from the translation time execution character set to the *literal* and *wide literal encoding* is *still** completely implementation-defined; that means implementations can continue to:
 
 - call `mbtowc`/`mbstowcs` and friends on their Host platform (a very literal interpretation) to encode/decode string literals from the execution character set (older compilers relying directly on the packaged C library)
 - ignore those completely and do whatever `-fexec-charset=owo` + `-fexec-charset=owo`, or `/execution-charset:uwu`, are supposed to accomplish (GCC, MSVC, and many others)
 - take the flag `-fexec-charset=owo` and completely ignore it (Clang)
 - and more!
 
-We also reduce hypothetical implementer freedom in exchange for programmer guarantees by making `char16_t` and `char32_t` be UTF-16 and UTF-32. We, once again, note that no implementer has taken advantage of this flexibility since 2006 when these features were first being cooked up by the C Standards Committee.
+This is, essentially, an expansion of an implementation's rights for normal and wide string literals. In exchange, we reduce hypothetical implementer freedom in exchange for programmer guarantees by making `char16_t` and `char32_t` be UTF-16 and UTF-32. We, once again, note that no implementer has taken advantage of this flexibility since 2006 when these features were first being cooked up by the C Standards Committee.
 
 
 
