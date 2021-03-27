@@ -17,7 +17,7 @@ _**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/C%20-
 <div class="text-center">
 <h6>Abstract:</h6>
 <p>
-This paper closes a as-yet unused degree of freedom in string literal representations. We observe that wide string literals and narrow string literals provide the implementation-definedness that vendors need for choosing an arbitrary representation, and that no vendor (that we currently know of) has taken advantage of such functionality for char16_t and char32_t string literals. Therefore, we are hoping to settle on UTF-16 and UTF-32 for char16_t literals, similar to have u8-string literals are defined to be UTF-8.
+This paper closes a as-yet unused degree of freedom in string literal representations. We observe that wide string literals and narrow string literals provide the implementation-defined flexibility that vendors need for choosing an arbitrary representation, and that no vendor (that we currently know of) has taken advantage of such functionality for char16_t and char32_t string literals. Therefore, we are hoping to settle on UTF-16 and UTF-32 for char16_t literals, similar to have u8-string literals are defined to be UTF-8.
 </p>
 </div>
 
@@ -106,8 +106,52 @@ The following wording is relative to [N2596](http://www.open-std.org/jtc1/sc22/w
 </blockquote>
 
 
-## Modify §6.4.5 String literals, paragraph 6
+## Modify §6.4.5 String literals, paragraph 3 and 6
 
 <blockquote>
-<p><sup>6</sup> In translation phase 7, a byte or code of value zero is appended to each multibyte character sequence that results from a string literal or literals.<sup>86)</sup> The multibyte character sequence is then used to initialize an array of static storage duration and length just sufficient to contain the sequence. For character string literals, the array elements have type `char`, and are initialized with the individual bytes of the multibyte character sequence <ins>corresponding to the literal encoding</ins>. For UTF–8 string literals, the array elements have type `char`, and are initialized with the characters of the multibyte character sequence, as encoded in UTF–8. For wide string literals prefixed by the letter `L`, the array elements have type `wchar_t` and are initialized with the sequence of wide characters corresponding <del>to the multibyte character sequence, as defined by the `mbstowcs` function with an implementation-defined current locale.</del><ins>to the wide literal encoding</ins> For wide string literals prefixed by the letter `u` or `U`, the array elements have type `char16_t` or `char32_t`, respectively, and are initialized with the <del>sequence of wide characters corresponding to the multibyte character sequence, as defined by successive calls to the `mbrtoc16`, or `mbrtoc32` function as appropriate for its type, with an implementation-defined current locale</del><ins>sequence of wide characters corresponding to UTF-16 and UTF-32 encoded text, respectively</ins>. The value of a string literal containing a multibyte character or escape sequence not represented in the execution character set is implementation-defined.<ins> Any hexademical escape sequence or octal escape sequence specified in a `u8`, `u`, or `U` that is numeric specifies a single `char`, `char16_t`, or `char32_t` value and may result in the full character sequence not being valid UTF-8, UTF-16, or UTF-32.</ins></p>
+<p><sup>3</sup>... A <i>UTF–8 string literal</i> is the same, except prefixed by `u8`.<ins> A <i>`wchar_t` string literal</i> is the same, except prefixed by `L`. A <i>UTF–16 string literal is the same, except prefixed by `u`. A <i>UTF–32 string literal</i> is the same, except prefixed by `u8`.</ins> <del>A wide string literal</i> is the same, except prefixed by the letter `L`, `u`, or `U`.</del><ins>Collectively, `wchar_t`, UTF-16, and UTF-32 string literals are called <i>wide string literals</i>.</ins></p>
+
+<p>...</p>
+
+<p><sup>6</sup> In translation phase 7, a byte or code of value zero is appended to each multibyte character sequence that results from a string literal or literals.<sup>86)</sup> The multibyte character sequence is then used to initialize an array of static storage duration and length just sufficient to contain the sequence. For character string literals, the array elements have type `char`, and are initialized with the individual bytes of the multibyte character sequence <ins>corresponding to the literal encoding</ins>. For UTF–8 string literals, the array elements have type `char`, and are initialized with the characters of the multibyte character sequence, as encoded in UTF–8. For wide string literals prefixed by the letter `L`, the array elements have type `wchar_t` and are initialized with the sequence of wide characters corresponding <del>to the multibyte character sequence, as defined by the `mbstowcs` function with an implementation-defined current locale.</del><ins>to the wide literal encoding</ins> For wide string literals prefixed by the letter `u` or `U`, the array elements have type `char16_t` or `char32_t`, respectively, and are initialized with the <del>sequence of wide characters corresponding to the multibyte character sequence, as defined by successive calls to the `mbrtoc16`, or `mbrtoc32` function as appropriate for its type, with an implementation-defined current locale</del><ins>sequence of wide characters corresponding to UTF-16 and UTF-32 encoded text, respectively</ins>. The value of a string literal containing a multibyte character or escape sequence not represented in the execution character set is implementation-defined.<ins> Any hexadecimal escape sequence or octal escape sequence specified in a `u8`, `u`, or `U` that is numeric specifies a single `char`, `char16_t`, or `char32_t` value and may result in the full character sequence not being valid UTF-8, UTF-16, or UTF-32.</ins></p>
+</blockquote>
+
+
+## Add the `__STDC_UTF_16__` and `__STDC_UTF_32__` Macros to  §6.10.8.1 Mandatory Macros so that they are always defined
+
+<blockquote>
+<p><sup>1</sup> The following macro names shall be defined by the implementation:</p>
+<p>...</p>
+<blockquote>
+<ins>
+<p>`__STDC_UTF_16__` The integer constant `1`, intended to indicate that values of type `char16_t` are UTF–16 encoded.</p>
+<p>`__STDC_UTF_32__` The integer constant `1`, intended to indicate that values of type `char32_t` are UTF–32 encoded.</p>
+</ins>
+</blockquote>
+</blockquote>
+
+
+## Remove the `__STDC_UTF_16__` and `__STDC_UTF_32__` Macros from §6.10.8.2 Environment Macros
+
+<blockquote>
+<p><sup>1</sup> The following macro names are conditionally defined by the implementation:</p>
+<p>...</p>
+<blockquote>
+<del>
+<p>`__STDC_UTF_16__` The integer constant `1`, intended to indicate that values of type `char16_t` are UTF–16 encoded. If some other encoding is used, the macro shall not be defined and the actual encoding used is implementation-defined.</p>
+<p>`__STDC_UTF_32__` The integer constant `1`, intended to indicate that values of type `char32_t` are UTF–32 encoded. If some other encoding is used, the macro shall not be defined and the actual encoding used is implementation-defined.</p>
+</del>
+</blockquote>
+</blockquote>
+
+
+## Modify §J.3.4 bullet for implementation-defined behavior
+
+<blockquote>
+<p><del>
+— The encoding of any of `wchar_t`, `char16_t`, and `char32_t` where the corresponding standard encoding macro (`__STDC_ISO_10646__`, `__STDC_UTF_16__`, or `__STDC_UTF_32__`) is not defined (6.10.8.2).
+</del></p>
+<p><ins>
+— The encoding of any of `wchar_t` where the corresponding standard encoding macro (`__STDC_ISO_10646__`) is not defined (6.10.8.2).
+</ins></p>
 </blockquote>
