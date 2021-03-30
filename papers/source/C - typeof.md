@@ -34,8 +34,9 @@ Getting the type of an expression in Standard C code.
 
 
 
-## Revision 3 - March 11th, 2021
+## Revision 3 - March 29th, 2021
 
+- Make sure we mention the old C99 Rationale.
 - Added final direction based on the March 2021 Virtual Standard Meeting's Vote. The numbers listed are in the form `Yes/No/Abstain` to the given question / option.
 
 > Keyword Options:
@@ -551,7 +552,19 @@ If the same qualifier appears more than once in the same specifier-qualifier lis
 
 # Appendix
 
-The following are old sections or references related to older parts of the proposal that have since been superceded and other interesting information not critical.
+The following are old sections or references related to older parts of the proposal that have since been superceded and other interesting, but not critical, information.
+
+
+
+## Prior Art in Standardization
+
+The [C99 rationale](http://www.open-std.org/jtc1/sc22/wg14/www/C99RationaleV5.10.pdf) states that:
+
+> A proposed typeof operator was rejected on the grounds of insufficient utility.
+
+The times have since changed drastically and `typeof(...)` became powerfully useful and proved itself as good. Therefore, we are happy to include it. Another paper closer to the release of C11/C17 also came out: [N1229](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1229.pdf), an omnibus that listed all of the different extensions and evaluated them. There, support was greater for `typeof`, but nobody came forward with a paper to follow up on Nick Stoughton's work.
+
+This paper closes the loop on the request that Nick Stoughton did in that analysis as well as many user requests over the intervening more-than-a-decade of time.
 
 
 
