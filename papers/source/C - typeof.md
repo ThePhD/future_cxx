@@ -241,6 +241,16 @@ The following wording is relative to [N2596](http://www.open-std.org/jtc1/sc22/w
 
 
 
+### Adjust the footnote 131) in §6.7.1 Storage-class specifiers:
+
+<blockquote>
+<p>
+<sup>131)</sup><sub> Thus, the only operator that can be applied to an array declared with storage-class specifier <code class="c-kw">register</code> is <code class="c-kw">sizeof</code><ins> and the typeof operators</ins>.</sub>
+</p>
+</blockquote>
+
+
+
 ### Adjust the Syntax grammar of §6.7.2 Type specifiers, the paragraph 2 list, and paragraph 4 Semantics:
 
 <blockquote>
