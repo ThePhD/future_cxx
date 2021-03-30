@@ -36,7 +36,7 @@ Getting the type of an expression in Standard C code.
 
 ## Revision 3 - March 29th, 2021
 
-- Make sure we mention the old C99 Rationale.
+- Make sure we mention the old C99 Rationale and Nick Stoughton's previous evaluation of `typeof` in the Appendix.
 - Added final direction based on the March 2021 Virtual Standard Meeting's Vote. The numbers listed are in the form `Yes/No/Abstain` to the given question / option.
 
 > Keyword Options:
