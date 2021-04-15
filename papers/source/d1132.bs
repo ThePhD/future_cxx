@@ -1,21 +1,21 @@
 <pre class='metadata'>
 Title: out_ptr - a scalable output pointer abstraction
-Shortname: D1132
+Shortname: P1132
 Revision: 7
 Audience: LWG
-Status: D
+Status: P
 Group: WG21
 URL: 
 !Target: C++23
 !Latest: <a href="https://thephd.github.io/_vendor/future_cxx/papers/d1132.html">https://thephd.github.io/_vendor/future_cxx/papers/d1132.html</a>
-!Implementation: <a href="https://github.com/ThePhD/out_ptr">https://github.com/ThePhD/out_ptr</a>
+!Implementation: <a href="https://github.com/soasis/out_ptr">https://github.com/soasis/out_ptr</a>
 !Reply To: <a href="mailto:phdofthehouse@gmail.com">JeanHeyd Meneide</a></a>
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Todor Buyukliev, tbuyukliev@vmware.com
 Editor: Isabella Muerte, https://twitter.com/slurpsmadrips
 Abstract: out_ptr and inout_ptr are abstractions to bring both C APIs and smart pointers back into the promised land by creating a temporary pointer-to-pointer that updates (using a reset call or semantically equivalent behavior) the smart pointer when it destructs.
-Date: 2021-03-19
+Date: 2021-04-15
 Markup Shorthands: markdown yes, biblio yes, markup yes
 </pre>
 
@@ -27,19 +27,23 @@ path: resources/css/bikeshed-color-fix.html
 
 
 
-## Revision 7 - March 27th, 2021 ## {#changelog-r7}
+## Revision 7 - April 15th, 2021 ## {#changelog-r7}
 
 	- Wording improvements (many thanks to Tim Song and LWG's review!):
 		- Conditionally call `.release()` for `inout_ptr_t` in BOTH the constructor and the destructor.
 		- Italicize *qualified-id*;
 		- Drop `typename` in the specification;
 		- Add constraints to the class by adding a paragraph about `Pointer` being a `Cpp17NullablePointer` (thanks Jonathan Wakely!);
-		- Adjusted the `void**` conversion to allow for a potentially separately-stored value from the exposition-only `reinterpret_cast<void**>(addressof(const_cast<Pointer&>(p)))` to be used. Still allows for old exposition-only-style `reinterpret_cast`;
 		- Use the `Pointer = void` trick to get rid of ambiguity from the old syntax when `Smart` and `Pointer` were of identical types (Thanks, Tomasz Kamiński!); and,
 		- Adjust the `POINTER_OF`/`POINTER_OF_OR` definition location and specification (thanks, Jens Maurer!).
-		- Remove prose for `inout_ptr` and `out_ptr` functions and instead use an example.
+		- Remove prose for `inout_ptr` and `out_ptr` functions and instead use an example;
+		- Use "Preconditions:" clauses on both pointers to solve for the `void**` conversion problem. Add a note to say that an implementation may use an implementation of `reinterpret_cast` or a union with `void*`, so that implementers are gently encouraged to use `reinterpret_cast` for performance reasons where possible;
+		- Created a `release-statement` definition to switch on whether or not `.release()` was called in the constructor vs. the destructor;
+		- Originally, it was settled on `is_pointer_v` to constraint the `void**` conversion. This was the path of least resistance, but it costs us very little to change that to "Mandates: `is_convertible_v<Pointer, void*>` and `is_convertible_v<void*, Pointer> is true`". This from has several benefits, including: being a more general form than `is_pointer_v`, solving the problem of wide pointers that can convert to and from `void*`, and allowing an implementation to `reinterpret_cast` if they can make stronger guarantees in their implementation. There has been no use case for this for a C API, but for C++ or for advanced C APIs with handles this may be a better choice (will ask LWG if this is good since we had agreed on `is_pointer_v` before);
+		- Make sure there's a proper `otherwise` in the bulleted lists; and,
+		- Remove `extern` from global function parameters.
 	- "Why are the conversion operators `const`" [[#design-casting-const|added to the design section]].
-	- Fix dark mode by-hand with some wonky CSS.
+	- Fix dark mode by-hand with some wonky CSS!
 
 
 
@@ -122,7 +126,7 @@ struct AVFormatContextDeleter {
 			avformat_free_context(c);
 		}
 };
-typedef std::unique_ptr<AVFormatContext, AVFormatContextDeleter> av_format_context_ptr;
+using av_format_context_ptr = std::unique_ptr<AVFormatContext, AVFormatContextDeleter>;
 // Signature from libavformat:
 // int avformat_open_input(AVFormatContext **ps, const char *url, AVInputFormat *fmt, AVDictionary **options);
 ```
@@ -761,7 +765,7 @@ The following wording is for the Library section, relative to [[n4820]]. This fe
 
 This should be available with the rest of the smart pointers, and thusly be included by simply including `<memory>`. If there is a desire for more fine-grained control, then we recommend the header `<out_ptr>` (subject to change based on bikeshed painting above). There has been some expressed desire for wanting to provide more fine-grained control of what entities the standard library produces when including headers: this paper does not explicitly propose adding such headers or doing such work, merely making a recommendation if this direction is desired by WG21.
 
-The proposed feature test macro for this is `__cpp_lib_out_ptr`. The exposure of `__cpp_lib_out_ptr` denotes the existence of both `inout_ptr` and `out_ptr`, as well as its customization points `out_ptr_t` and `inout_ptr_t`. 
+The proposed feature test macro for this is `__cpp_lib_out_ptr`. The exposure of `__cpp_lib_out_ptr` denotes the existence of both `inout_ptr` and `out_ptr`, as well as its potentially-user-specialized structs `out_ptr_t` and `inout_ptr_t`. 
 
 
 
@@ -842,7 +846,7 @@ Insert §20.11.9 [**out_ptr.class**]:
 <blockquote>
 <ins>20.11.9 **Class Template** `out_ptr_t` [**out_ptr.class**]</ins>
 
-<p><ins><sup>1</sup> `out_ptr_t` is a class template used with smart pointers (<a href="http://eel.is/c++draft/smartptr">[**smartptr**] 20.11</a>) and types which are designed on the same principles to interoperate with functions that use output pointer parameters.</ins></p>
+<p><ins><sup>1</sup> `out_ptr_t` is a class template used with smart pointers (<a href="http://eel.is/c++draft/smartptr">[**smartptr**] 20.11</a>) and alike types with functions that use output pointer parameters.</ins></p>
 
 <p><ins><sup>2</sup> [ <i>Example:</i></ins></p>
 
@@ -851,7 +855,7 @@ Insert §20.11.9 [**out_ptr.class**]:
 #include <memory>
 #include <cstdio>
 
-extern int fopen_s(std::FILE** f, const char* name, const char* mode);
+int fopen_s(std::FILE** f, const char* name, const char* mode);
 
 struct fclose_deleter {
 	void operator()(std::FILE* f) const noexcept {
@@ -883,6 +887,7 @@ namespace std {
 	public:
 		// 20.11.9.1, constructors
 		explicit out_ptr_t(Smart&, Args...);
+		out_ptr_t(const out_ptr_t&) = delete;
 
 		// 20.11.9.2, destructors
 		~out_ptr_t();
@@ -907,7 +912,7 @@ namespace std {
 
 <ins>
 ```
-out_ptr_t(Smart& smart, Args... args);
+explicit out_ptr_t(Smart& smart, Args... args);
 ```
 </ins>
 
@@ -928,12 +933,14 @@ out_ptr_t(Smart& smart, Args... args);
 <p><ins><sup>2</sup> Effects: Equivalent to:
 <dl>
 	<dd><ins>— `if (p) { apply([&](auto&&... args) { s.reset( static_cast<SP>(p), std::forward<Args>(args)... ); }, std::move(a)) }` if the expression `s.reset(static_cast<SP>(p), std::forward<Args>(args)...)` is well-formed,</ins></dd>
-	<dd><ins>— otherwise `if (p) { apply([&](auto&&... args) { s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }, std::move(a)) }` if `is_constructible_v<Smart, SP, Args...>` is true,</ins></dd>
+	<dd><ins>— otherwise `if (p) { apply([&](auto&&... args) { s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }, std::move(a)) }` if `is_constructible_v<Smart, SP, Args...>` is `true`,</ins></dd>
 	<dd><ins>— otherwise the program is ill-formed.</ins></dd>
 </dl>
 </ins></p>
 
-<p><ins>20.11.9.3 Conversions [**out_ptr.class.conv**]</ins></p>
+<p><ins>20.11.9.4 Conversions [**out_ptr.class.conv**]</ins></p>
+
+<p><ins><sup>1</sup> Evaluations of the functions in this subclause on the same object may conflict (<a href="http://eel.is/c++draft/intro.races">[intro.races]</a>).</ins></p>
 
 <ins>
 ```
@@ -941,7 +948,9 @@ operator Pointer*() const noexcept;
 ```
 </ins>
 
-<p><ins><sup>1</sup> Returns: `addressof(const_cast<Pointer&>(p))`.</ins></p>
+<p><ins><sup>2</sup> Preconditions: `operator void**()` has not been and is not being concurrently called on `*this`.</ins></p>
+
+<p><ins><sup>3</sup> Returns: `addressof(const_cast<Pointer&>(p))`.</ins></p>
 
 <ins>
 ```
@@ -949,18 +958,22 @@ operator void**() const noexcept;
 ```
 </ins>
 
-<p><ins><sup>2</sup> Preconditions: `operator Pointer*()` is shall not be called on `*this`.</ins></p>
+<p><ins><sup>4</sup> Preconditions: `operator Pointer*()` has not been and is not being concurrently called on `*this`.</ins></p>
 
-<p><ins><sup>3</sup> Constraints: `is_same_v<Pointer, void*>` is false.</ins></p>
+<p><ins><sup>5</sup> Constraints: `is_same_v<Pointer, void*>` is `false`.</ins></p>
 
-<p><ins><sup>4</sup> Returns: A pointer value `v`, such that:
+<p><ins><sup>6</sup> Mandates: `is_convertible_v<Pointer, void*>` and `is_convertible_v<void*, Pointer>` are `true`.</ins></p>
+
+<p><ins><sup>7</sup> Returns: A pointer value `v`, such that:
 <dl>
   <dd><ins>— the initial value `*v` is equivalent to `static_cast<void*>(p)`,</ins></dd>
   <dd><ins>— and, any modification of `*v` that is not followed by subsequent modification of `*this`, affects the value of `p` during the destruction of `*this`, such that `static_cast<void*>(p) == *v`.</ins></dd>
 </dl>
 </ins></p>
 
-<p><ins><sup>5</sup> Remarks: Accessing `*v` after end of the `*this` lifetime has undefined behavior.</ins></p>
+<p><ins><sup>8</sup> Remarks: Accessing `*v` outside the lifetime of `*this` has undefined behavior.</ins></p>
+
+<p><ins><sup>9</sup> [ <i>Note</i>: `reinterpret_cast<void**>(static_cast<Pointer*>(*this))` could be a viable implementation if such an implementation can meet the requirements of this subclause. — <i>end note</i> ]</ins></p>
 </blockquote>
 
 
@@ -976,7 +989,7 @@ template <class Pointer = void, class Smart, class... Args>
 ```
 </ins>
 
-<p><ins><sup>1</sup> Let `P` be `Pointer` if `is_void_v<Pointer>` is false, otherwise `POINTER_OF(Smart)`.</ins></p>
+<p><ins><sup>1</sup> Let `P` be `Pointer` if `is_void_v<Pointer>` is `false`, otherwise `POINTER_OF(Smart)`.</ins></p>
 
 <p><ins><sup>2</sup> Returns: `out_ptr_t<Smart, P, Args&&...>(s, std::forward<Args>(args)...)`</ins></p>
 </blockquote>
@@ -987,7 +1000,7 @@ Insert §20.11.11 [**inout_ptr.class**]:
 <blockquote>
 <ins>20.11.11 **Class Template** `inout_ptr_t` [**inout_ptr.class**]</ins>
 
-<p><ins><sup>1</sup> `inout_ptr_t` is a class template used with smart pointers (<a href="http://eel.is/c++draft/smartptr">[**smartptr**] 20.11</a>) and types which are designed on the same principles to interoperate with functions that use output pointer parameters whose dereferenced values may first be deleted before being set to another allocated value.</ins></p>
+<p><ins><sup>1</sup> `inout_ptr_t` is a class template used with smart pointers (<a href="http://eel.is/c++draft/smartptr">[**smartptr**] 20.11</a>) and alike types with functions that use output pointer parameters whose dereferenced values may first be deleted before being set to another allocated value.</ins></p>
 
 <p><ins><sup>2</sup> [ <i>Example:</i></ins></p>
 
@@ -995,14 +1008,14 @@ Insert §20.11.11 [**inout_ptr.class**]:
 ```
 #include <memory>
 
-extern struct StarFish* starfish_alloc();
-extern int starfish_populate(struct StarFish **ps, const char *description);
+struct StarFish* starfish_alloc();
+int starfish_populate(struct StarFish** ps, const char *description);
 
 struct StarFishDeleter {
 	void operator() (struct StarFish* c) const noexcept;
 };
 
-typedef std::unique_ptr<StarFish, StarFishDeleter> StarFishPtr;
+using StarFishPtr = std::unique_ptr<StarFish, StarFishDeleter>;
 
 int main(int, char*[]) {
 	StarFishPtr peach(starfish_context());
@@ -1025,6 +1038,7 @@ namespace std {
 	public:
 		// 20.11.11.1, constructors
 		explicit inout_ptr_t(Smart&, Args...);
+		inout_ptr_t(const inout_ptr_t&) = delete;
 
 		// 20.11.11.2, destructors
 		~inout_ptr_t();
@@ -1043,7 +1057,7 @@ namespace std {
 ```
 </ins>
 
-<p><ins><sup>3</sup> `Pointer` shall meet the *Cpp17NullablePointer* requirements. If `Smart` is a specialization of `shared_ptr`, the program is ill-formed. [ *Note:* It is impossible to properly acquire unique ownership of the managed resource from a `shared_ptr` given its shared ownership model. — <i>end note</i> ]</ins></p>
+<p><ins><sup>3</sup> `Pointer` shall meet the *Cpp17NullablePointer* requirements. If `Smart` is a specialization of `shared_ptr`, the program is ill-formed. [ <i>Note:</i> It is impossible to properly acquire unique ownership of the managed resource from a `shared_ptr` given its shared ownership model. — <i>end note</i> ]</ins></p>
 
 <p><ins>20.11.11.1 Constructors [**inout_ptr.class.ctor**]</ins></p>
 
@@ -1055,16 +1069,14 @@ explicit inout_ptr_t(Smart& smart, Args... args);
 
 <p><ins><sup>1</sup> Effects: initializes `s` with `smart`, `a` with `std::forward<Args>(args)...`, and `p` to either
 <dl>
-	<dd><ins>— `smart` if `std::is_pointer_v<Smart>` is true,</ins></dd>
+	<dd><ins>— `smart` if `is_pointer_v<Smart>` is `true`,</ins></dd>
 	<dd><ins>— otherwise, `smart.get()`.</ins></dd>
 </dl>
 </ins></p>
 
 <p><ins><sup>2</sup> Remarks: An implementation may call `s.release()`. If it does call `release`, then it shall not call `s.release()` in the destructor.</ins></p>
 
-<p><ins><sup>3</sup> [ <i>Note:</i> Picking either value allows an implementation to pick an option which fits an implementation's purpose and potential implementation-specific optimizations. — <i>end note</i> ].</ins></p>
-
-<p><ins><sup>4</sup> [ <i>Note:</i> The constructor is not `noexcept` to allow for a variety of non-terminating and safe implementation strategies. For example, an intrusive pointer implementation with a control block could allocate in the constructor and safely fail with an exception. — <i>end note</i> ]</ins></p>
+<p><ins><sup>3</sup> [ <i>Note:</i> The constructor is not `noexcept` to allow for a variety of non-terminating and safe implementation strategies. For example, an intrusive pointer implementation with a control block could allocate in the constructor and safely fail with an exception. — <i>end note</i> ]</ins></p>
 
 <p><ins>20.11.11.2 Destructors [**inout_ptr.class.dtor**]</ins></p>
 
@@ -1076,25 +1088,29 @@ explicit inout_ptr_t(Smart& smart, Args... args);
 
 <p><ins><sup>1</sup> Let `SP` be `POINTER_OF_OR(Smart, Pointer)` ([**memory.general**] 20.10.1).</ins></p>
 
+<p><ins><sup>1</sup> Let `release-statement` be `s.release();` if an implementation does not call call `s.release()` in the constructor. Otherwise, it is empty.</ins></p>
+
 <p><ins><sup>2</sup> Effects: Equivalent to:
 <dl>
-	<dd><ins>— `if (p) { apply([&](auto&&... args) { s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }, std::move(a)); }` if `std::is_pointer_v<Smart>` is true,</ins></dd>
-	<dd><ins>— `if (p) { apply([&](auto&&... args) { s.release(); s.reset( static_cast<SP>(p), std::forward<Args>(args)... ); }, std::move(a)); }` if the expression `s.reset(static_cast<SP>(p), std::forward<Args>(args)...)` is well-formed,</ins></dd>
-	<dd><ins>— otherwise, `if (p) { apply([&](auto&&... args) { s.release(); s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }, std::move(a)); }` if `is_constructible_v<Smart, SP, Args...>` is true,</ins></dd>
+	<dd><ins>—`if (p) { apply([&](auto&&... args) { s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }, std::move(a)); }` if `is_pointer_v<Smart>` is `true`,</ins></dd>
+	<dd><ins>— otherwise, `if (p) { apply([&](auto&&... args) { <i>release-statement</i>; s.reset( static_cast<SP>(p), std::forward<Args>(args)... ); }, std::move(a)); }` if the expression `s.reset(static_cast<SP>(p), std::forward<Args>(args)...)` is well-formed,</ins></dd>
+	<dd><ins>— otherwise, `if (p) { apply([&](auto&&... args) { s.release(); s = Smart( static_cast<SP>(p), std::forward<Args>(args)... ); }, std::move(a)); }` if `is_constructible_v<Smart, SP, Args...>` is `true`,</ins></dd>
 	<dd><ins>— otherwise, the program is ill-formed.</ins></dd>
 </dl>
-
-<p><ins><sup>3</sup> Remarks: if an implementation calls `s.release()` in the destructor, then it shall not call `s.release()` in the constructor.</ins></p>
 </ins></p>
 
 <p><ins>20.11.11.3 Conversions [**inout_ptr.class.conv**]</ins></p>
+
+<p><ins><sup>1</sup> Evaluations of the functions in this subclause on the same object may conflict (<a href="http://eel.is/c++draft/intro.races">[intro.races]</a>).</ins></p>
 
 <ins>
 ```
 operator Pointer*() const noexcept;
 ```
 </ins>
-<p><ins><sup>1</sup> Returns: `addressof(const_cast<Pointer&>(p))`.</ins></p>
+<p><ins><sup>2</sup> Preconditions: `operator void**()` has not been and is not being concurrently called on `*this`.</ins></p>
+
+<p><ins><sup>3</sup> Returns: `addressof(const_cast<Pointer&>(p))`.</ins></p>
 
 <ins>
 ```
@@ -1102,18 +1118,22 @@ operator void**() const noexcept;
 ```
 </ins>
 
-<p><ins><sup>2</sup> Preconditions: `operator Pointer*()` is shall not be called on `*this`.</ins></p>
+<p><ins><sup>4</sup> Preconditions: `operator Pointer*()` has not been and is not being concurrently called on `*this`.</ins></p>
 
-<p><ins><sup>3</sup> Constraints: `is_same_v<Pointer, void*>` is false.</ins></p>
+<p><ins><sup>5</sup> Constraints: `is_same_v<Pointer, void*>` is `false`.</ins></p>
 
-<p><ins><sup>4</sup> Returns: A pointer value `v`, such that:
+<p><ins><sup>6</sup> Mandates: `is_convertible_v<Pointer, void*>` and `is_convertible_v<void*, Pointer>` are `true`.</ins></p>
+
+<p><ins><sup>7</sup> Returns: A pointer value `v`, such that:
 <dl>
   <dd><ins>— the initial value `*v` is equivalent to `static_cast<void*>(p)`,</ins></dd>
   <dd><ins>— and, any modification of `*v` that is not followed by subsequent modification of `*this`, affects the value of `p` during the destruction of `*this`, such that `static_cast<void*>(p) == *v`.</ins></dd>
 </dl>
 </ins></p>
 
-<p><ins><sup>5</sup> Remarks: Accessing `*v` after end of the `*this` lifetime has undefined behavior.</ins></p>
+<p><ins><sup>8</sup> Remarks: Accessing `*v` outside the lifetime of `*this` has undefined behavior.</ins></p>
+
+<p><ins><sup>9</sup> [ <i>Note</i>: `reinterpret_cast<void**>(static_cast<Pointer*>(*this))` could be a viable implementation strategy if such an implementation can meet the requirements of this subclause. — <i>end note</i> ]</ins></p>
 
 </blockquote>
 
@@ -1129,7 +1149,7 @@ template <class Pointer = void, class Smart, class... Args>
 ```
 </ins>
 
-<p><ins><sup>1</sup> Let `P` be `Pointer` if `is_void_v<Pointer>` is false, otherwise `POINTER_OF(Smart)`.</ins></p>
+<p><ins><sup>1</sup> Let `P` be `Pointer` if `is_void_v<Pointer>` is `false`, otherwise `POINTER_OF(Smart)`.</ins></p>
 
 <p><ins><sup>2</sup> Returns: `inout_ptr_t<Smart, P, Args&&...>(s, std::forward<Args>(args)...)`.</ins></p>
 </blockquote>

@@ -35,7 +35,7 @@ This proposal provides a flexible preprocessor directive for making this data av
 
 
 
-## Revision 4 - February 26th, 2021
+## Revision 4 - April 15th, 2021
 
 - Added post C meeting fixes to prepare for hopeful success next meeting.
 - Added 2 more examples to C and C++ wording.
@@ -624,7 +624,7 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 > 
 > int main (int, char*[]) {
 > 	constexpr const unsigned char baa_baa[] = {
-> #embed "black_sheep.ico"
+> #embed "in.ico"
 > 	};
 > 
 > 	have_you_any_wool(baa_baa, sizeof(baa_baa));
@@ -765,7 +765,7 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 
 Thank you to Alex Gilding for bolstering this proposal with additional ideas and motivation. Thank you to Aaron Ballman, David Keaton, and Rajan Bhakta for early feedback on this proposal. Thank you to the [#include<C++>](https://www.includecpp.org/) for bouncing lots of ideas off the idea in their Discord.
 
-Thank you to the Lounge<C++> for their continued support, and to rmf for the valuable early implementation feedback.
+Thank you to the Lounge&lt;C++&gt; for their continued support, and to rmf for the valuable early implementation feedback.
 
 <div class="pagebreak"></div>
 
