@@ -1559,7 +1559,7 @@ Possible extra rowspan handling
   </style>
   <meta content="Bikeshed version b94c7e755, updated Fri Feb 19 16:28:59 2021 -0800" name="generator">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="d2fc451a7749da5260563928ca2ae7fa35045342" name="document-revision">
+  <meta content="bce46833e0c1e8bb2ff3cd5f49edbee03db40748" name="document-revision">
 <style>
 <pre class=include-raw line-number=-1 path='resources/css/wording.css'></pre></style>
 <style>
@@ -2253,9 +2253,10 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
     <li>
      <a href="#design"><span class="secno">3</span> <span class="content">Design</span></a>
      <ol class="toc">
-      <li><a href="#design-all"><span class="secno">3.1</span> <span class="content">Should this apply to all Ranges?</span></a>
-      <li><a href="#design-applicable"><span class="secno">3.2</span> <span class="content">Applicability</span></a>
-      <li><a href="#design-dual"><span class="secno">3.3</span> <span class="content">Two Concepts</span></a>
+      <li><a href="#design-multiple"><span class="secno">3.1</span> <span class="content">Multiple, Safe Reconstruction Points</span></a>
+      <li><a href="#design-all"><span class="secno">3.2</span> <span class="content">Should this apply to all Ranges?</span></a>
+      <li><a href="#design-applicable"><span class="secno">3.3</span> <span class="content">Applicability</span></a>
+      <li><a href="#design-dual"><span class="secno">3.4</span> <span class="content">Two Concepts</span></a>
      </ol>
     <li><a href="#experience"><span class="secno">4</span> <span class="content">Deployment Experience</span></a>
     <li><a href="#impact"><span class="secno">5</span> <span class="content">Impact</span></a>
@@ -2482,10 +2483,10 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    <p>This makes it work with any two pair of iterators, but quickly becomes undesirable from an interface point of view. If a user passes in a <code class="highlight"><c- n>quickcpplib</c-><c- o>::</c-><c- n>span</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Extent</c-><c- o>></c-></code> or a <code class="highlight"><c- n>llvm</c-><c- o>::</c-><c- n>StringRef</c-></code> that interface and information is entirely lost to the user of the above function. <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-><c- o>&lt;</c-><c- n>Iterator</c-><c- p>,</c-> <c- n>Sentinel</c-><c- p>,</c-> <c- n>Kind</c-><c- o>></c-></code> does not -- and cannot/should not -- mimic the interface of the view it was created from other than what information comes from its iterators: it is the barebones idea of a pair-of-iterators/iterator-sentinel style of range. This is useful in the generic sense that if a library developer must work with iterators, they can always rely on creation of a <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-></code> of the iterator and sentinel.</p>
    <h3 class="heading settled" data-level="2.1" id="motivation-preservation"><span class="secno">2.1. </span><span class="content">Preservation of Properties</span><a class="self-link" href="#motivation-preservation"></a></h3>
    <p>Unfortunately, always using <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-></code> decreases usability for end users. Users who have, for example a <code class="highlight"><c- n>llvm</c-><c- o>::</c-><c- n>StringRef</c-></code>, would prefer to have the same type after calling an algorithm. These types have functions and code that are purpose-made for <code class="highlight"><c- n>string_view</c-></code>-like code: losing that intent means needing to reconstruct that from the ground up all over again. There is little reason why the original type needs to be discarded if it supports being put back together from its iterators.</p>
-   <p>The break-it-apart-and-then-generic-<code class="highlight"><c- n>subrange</c-></code> approach also discards any range-specific storage optimizations and layout considerations, leaving us with the most bland kind of range similar to the "pair of iterators" model. Consider, for example, <code class="highlight"><c- n>llfio</c-><c- o>::</c-><c- n>span</c-><c- o>&lt;</c-><c- n>T</c-><c- o>></c-></code>. The author of the Low Level File IO (LLFIO) library, Niall Douglass, has spent countless days submitting pull requests and change requests to MSVC, GCC, and Clang’s standard libraries to ask them to change their structural layout to match things like the <code class="highlight"><c- n>iovec</c-></code> of their platform or their async buffer span types. This optimization matters because it realizes the performance difference between having to individually transformed a container of <code class="highlight"><c- n>span</c-></code>s to a more suitable type, or being able to simply <code class="highlight"><c- n>memcpy</c-></code> the desired sequences of spans into the underlying asynchronous operations. If range operations were to be performed on the <code class="highlight"><c- n>llfio</c-><c- o>::</c-><c- n>span</c-><c- o>&lt;</c-><c- n>T</c-><c- o>></c-></code> type, a <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-></code> would hold, in most cases, two iterators rather than an iterator and a size. This completely eliminates the <code class="highlight"><c- n>memcpy</c-></code> optimization. This is not the only place this happens, however: other types have different storages requirements that are not appropriately captured by the underlying type.</p>
+   <p>The break-it-apart-and-then-generic-<code class="highlight"><c- n>subrange</c-></code> approach also discards any range-specific storage optimizations and layout considerations, leaving us with the most bland kind of range similar to the "pair of iterators" model. Consider, for example, <code class="highlight"><c- n>llfio</c-><c- o>::</c-><c- n>span</c-><c- o>&lt;</c-><c- n>T</c-><c- o>></c-></code>. The author of the Low Level File IO (LLFIO) library, Niall Douglass, has spent countless days submitting pull requests and change requests to MSVC, GCC, and Clang’s standard libraries to ask them to change their structural layout to match things like the <code class="highlight"><c- n>iovec</c-></code> of their platform or their asynchronous buffer span types. This optimization matters because it realizes the performance difference between having to individually transformed a container of <code class="highlight"><c- n>span</c-></code>s to a more suitable type, or being able to simply <code class="highlight"><c- n>memcpy</c-></code> the desired sequences of spans into the underlying asynchronous operations. If range operations were to be performed on the <code class="highlight"><c- n>llfio</c-><c- o>::</c-><c- n>span</c-><c- o>&lt;</c-><c- n>T</c-><c- o>></c-></code> type, a <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-></code> would hold, in most cases, two iterators rather than an iterator and a size. This completely eliminates the <code class="highlight"><c- n>memcpy</c-></code> optimization. This is not the only place this happens, however: other types have different storages requirements that are not appropriately captured by their iterators in the most general sense, but may benefit from reconstruction and desired type information for the target range they should be constructed into.</p>
    <h3 class="heading settled" data-level="2.2" id="motivation-compilation"><span class="secno">2.2. </span><span class="content">Compile-Time and Interoperability</span><a class="self-link" href="#motivation-compilation"></a></h3>
    <p>Compilation time goes up as well in the current paradigm. Users must spawn a fresh <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-><c- o>&lt;</c-><c- n>I</c-><c- p>,</c-> <c- n>S</c-><c- p>,</c-> <c- n>K</c-><c- o>></c-></code> for every different set of iterator/sentinel/kind triplet, or handle deeply nested templates in templates as the input types. This makes it impossible to compile interfaces as dynamic libraries without having to explicitly materialize or manually cajole a <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-></code> into something more palatable for the regular world.</p>
-   <p>There is also a problem where there are a wide variety of ranges that could conceivably meet this criterion, but do not. The author of this paper was not the only one to see utility for this. <a data-link-type="biblio" href="#biblio-p1739r0">[p1739r0]</a> does much the same that this paper does, without the introduction of a concept to formalize the behavior it presents. In particular, it selects views which can realistically have their return types changed to match the input range and operations being performed (or a similarly powerful alternative) by asking whether they can be called with a function called <code class="highlight"><c- n>reconstruct</c-></code> from a subrange of the iterators with the expressions acted upon.</p>
+   <p>There is also a problem where there are a wide variety of ranges that could conceivably meet this criterion, but do not. The author of this paper was not the only one to see utility for this. <a data-link-type="biblio" href="#biblio-p1739r4">[p1739r4]</a> does much the same that this paper does, without the introduction of a concept to formalize the behavior it presents. In particular, it selects views which can realistically have their return types changed to match the input range and operations being performed (or a similarly powerful alternative) by asking whether they can be called with a function called <code class="highlight"><c- n>reconstruct</c-></code> from a subrange of the iterators with the expressions acted upon.</p>
    <ul>
     <li data-md>
      <p>Ranges should be reconstructible from their iterators (or subrange of their iterators) where applicable;</p>
@@ -2521,10 +2522,35 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 		<c- p>);</c->
 	<c- p>};</c->
 </pre>
-   <p>It is the formalization that a range can be reconstructed from its begin iterator and end iterator/sentinel. It also provides a concept for allowing a range to be put back together from another range, which may be useful for some types of ranges where more than the iterator and sentinel are required. This allows a developer to propagate the input type’s properties after modifying its iterators for some underlying work, algorithm or other effect. This concept is also the basis of the idea behind <a data-link-type="biblio" href="#biblio-p1739r0">[p1739r0]</a>, which was accepted in a lesser form for C++20 with the intent of this paper following up on it.</p>
+   <p>It is the formalization that a range can be reconstructed from its begin iterator and end iterator/sentinel. It also provides a concept for allowing a range to be put back together from another range, which may be useful for some types of ranges where more than the iterator and sentinel are required. This allows a developer to propagate the input type’s properties after modifying its iterators for some underlying work, algorithm or other effect. This concept is also the basis of the idea behind <a data-link-type="biblio" href="#biblio-p1739r4">[p1739r4]</a>, which was accepted in a lesser form for C++20 with the intent of this paper following up on it.</p>
    <p>Both concepts require that the type with any references removed model the concept <code class="highlight"><c- n>borrowed_range</c-></code>. This ensures that the validity of the iterators is in fact independent of the lifetime of the range they originate from and that a "reconstructed" range does not depend on the original. We remove reference before performing this check, because all reference types that model <code class="highlight"><c- n>Range</c-></code> also model <code class="highlight"><c- n>borrowed_range</c-></code> and the intent of the proposed changes is narrower: (re)construction is assumed to be in constant time (this typically implies that <code class="highlight"><c- n>R</c-></code> also models <code class="highlight"><c- n>View</c-></code>, but it is sufficient to check <code class="highlight"><c- n>borrowed_range</c-><c- o>&lt;</c-><c- n>remove_reference_t</c-><c- o>&lt;</c-><c- n>R</c-><c- o>>></c-></code>).</p>
    <p>Note that this explicitly excludes types like <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>vector</c-><c- o>&lt;</c-><c- b>int</c-><c- o>></c-> <c- k>const</c-> <c- o>&amp;</c-></code> from being reconstructible.</p>
-   <h3 class="heading settled" data-level="3.1" id="design-all"><span class="secno">3.1. </span><span class="content">Should this apply to all Ranges?</span><a class="self-link" href="#design-all"></a></h3>
+   <h3 class="heading settled" data-level="3.1" id="design-multiple"><span class="secno">3.1. </span><span class="content">Multiple, Safe Reconstruction Points</span><a class="self-link" href="#design-multiple"></a></h3>
+   <p>Consider a hypothetical <code class="highlight"><c- n>c_string_view</c-></code> type. It is impossible to, from normal <code class="highlight"><c- k>const</c-> <c- b>char</c-><c- o>*</c-></code> iterator pair ascertain the range is null-terminated and is thus a "C string". Therefore, a reconstruct for <code class="highlight"><c- n>c_string_view</c-></code> would not return a <code class="highlight"><c- n>c_string_view</c-></code>, but a normal <code class="highlight"><c- n>string_view</c-></code>.</p>
+   <p>On the other hand, if there was a <code class="highlight"><c- n>c_string_sentinel</c-></code> sentinel with a <code class="highlight"><c- k>const</c-> <c- b>char</c-><c- o>*</c-></code> iterator that was preserved through a series of actions and algorithms, that kind of information would allow us to return a <code class="highlight"><c- n>c_string_view</c-></code> from a reconstruction operation.</p>
+   <p>The <code class="highlight"><c- n>reconstruct</c-></code> extension point supports both of these scenarios:</p>
+<pre class="language-cpp highlight"><c- k>class</c-> <c- nc>c_string_view</c-> <c- p>{</c->
+	<c- d>/* blah... */</c->
+
+	<c- c1>// reconstruct: with [const char*, const char*) iterators</c->
+	<c- c1>// no guarantee it’s null terminated: decay to string_view</c->
+	<c- k>friend</c-> <c- k>constexpr</c-> <c- n>std</c-><c- o>::</c-><c- n>string_view</c-> <c- n>reconstruct</c-> <c- p>(</c->
+		<c- n>std</c-><c- o>::</c-><c- n>in_place_type_t</c-><c- o>&lt;</c-><c- n>c_string_view</c-><c- o>></c-><c- p>,</c->
+		<c- k>const</c-> <c- b>char</c-><c- o>*</c-> <c- n>first</c-><c- p>,</c-> <c- k>const</c-> <c- b>char</c-><c- o>*</c-> <c- n>last</c-><c- p>)</c-> <c- p>{</c->
+		<c- k>return</c-> <c- n>std</c-><c- o>::</c-><c- n>string_view</c-><c- p>(</c-><c- n>first</c-><c- p>,</c-> <c- n>last</c-><c- p>);</c->
+	<c- p>}</c->
+
+	<c- c1>// reconstruct: with static [const char*, c_string_sentinel)</c->
+	<c- c1>// static guarantee by type: return a c_string_view</c->
+	<c- k>friend</c-> <c- k>constexpr</c-> <c- n>c_string_view</c-> <c- n>reconstruct</c-> <c- p>(</c->
+		<c- n>std</c-><c- o>::</c-><c- n>in_place_type_t</c-><c- o>&lt;</c-><c- n>c_string_view</c-><c- o>></c-><c- p>,</c->
+		<c- k>const</c-> <c- b>char</c-><c- o>*</c-> <c- n>first</c-><c- p>,</c-> <c- n>c_string_sentinel</c-><c- p>)</c-> <c- p>{</c->
+		<c- k>return</c-> <c- nf>c_string_view</c-><c- p>(</c-><c- n>first</c-><c- p>);</c->
+	<c- p>}</c->
+<c- p>};</c->
+</pre>
+   <p>This is a level of flexibility that is better than the Revision 0 design, and can aid in providing better static guarantees while decaying gracefully in other situations.</p>
+   <h3 class="heading settled" data-level="3.2" id="design-all"><span class="secno">3.2. </span><span class="content">Should this apply to all Ranges?</span><a class="self-link" href="#design-all"></a></h3>
    <p>Not all ranges can meet this requirement. Some ranges contain state which cannot be trivially propagated into the iterators, or state that cannot be reconstructed from the iterator/sentinel pair itself. However, most of the common ranges representing unbounded views, empty views, iterations viewing some section of non-owned storage, or similar can all be reconstructed from their iterator/iterator or iterator/sentinel pair.</p>
    <p>For example <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>single_view</c-></code> contains a <a href="http://eel.is/c++draft/range.semi.wrap">exposition *semiregular-box* template type (ranges.semi.wrap)</a> which holds a value to iterate over. It would not be possible to reconstruct the exact same range (e.g., iterators pointing to the exact same object) with the semi-regular wrapper.</p>
    <p>Finally, there are ranges which could be reconstructible by just the definition of a constructor that takes iterators or a <code class="highlight"><c- n>subrange</c-></code>. While this was a benefit in that the majority of conforming ranges were reconstructible, it made a situation where someone could write a strange range. For example, consider this alternative implementation of <code class="highlight"><c- n>rng</c-> <c- o>|</c-> <c- n>views</c-><c- o>::</c-><c- n>drop</c-><c- p>(</c-><c- mi>1</c-><c- p>)</c-></code>:</p>
@@ -2545,7 +2571,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 <c- p>};</c->
 </pre>
    <p>Reconstructing this range using the constructors is a surefire way to have a developer scratching at their head, wondering what is going on. Therefore, rather than require reconstruction through the constructor, we rely instead on an Customization Point Object design instead.</p>
-   <h3 class="heading settled" data-level="3.2" id="design-applicable"><span class="secno">3.2. </span><span class="content">Applicability</span><a class="self-link" href="#design-applicable"></a></h3>
+   <h3 class="heading settled" data-level="3.3" id="design-applicable"><span class="secno">3.3. </span><span class="content">Applicability</span><a class="self-link" href="#design-applicable"></a></h3>
    <p>There are many ranges to which this is applicable, but only a handful in the standard library need or satisfy this. If <a data-link-type="biblio" href="#biblio-p1391r2">[p1391r2]</a> and <a data-link-type="biblio" href="#biblio-p1394r2">[p1394r2]</a> are accepted (they were), then the two most important view types -- <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>span</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Extent</c-><c- o>></c-></code> and <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>basic_string_view</c-><c- o>&lt;</c-><c- n>Char</c-><c- p>,</c-> <c- n>Traits</c-><c- o>></c-></code> -- will model the _spirit_ of the concept (but lack the customization point to make it generic). <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-><c- o>&lt;</c-><c- n>Iterator</c-><c- p>,</c-> <c- n>Sentinel</c-><c- p>,</c-> <c- n>Kind</c-><c- o>></c-></code> already fits this as well. By formalizing concepts in the standard, we can dependably and reliably assert that these properties continue to hold for these ranges. We intend to add a <code class="highlight"><c- k>constexpr</c-> <c- k>friend</c-> <c- n>reconstruct</c-></code> function to all of the non-<code class="highlight"><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-></code> types.</p>
    <p>There are also upcoming ranges from <a data-link-type="biblio" href="#biblio-range-v3">[range-v3]</a> and elsewhere that could model this concept:</p>
    <ul>
@@ -2562,17 +2588,17 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
      <p><code class="highlight"><c- n>views</c-><c- o>::</c-><c- n>slice</c-></code>, <code class="highlight"><c- n>views</c-><c- o>::</c-><c- n>take_exactly</c-></code>, <code class="highlight"><c- n>views</c-><c- o>::</c-><c- n>drop_exactly</c-></code> and <code class="highlight"><c- n>views</c-><c- o>::</c-><c- n>take_last</c-></code> from <a data-link-type="biblio" href="#biblio-range-v3">[range-v3]</a></p>
    </ul>
    <p>Note that these changes will greatly aid other algorithm writers who want to preserve the same input ranges. In the future, the standard may provide an <code class="highlight"><c- n>ranges</c-><c- o>::</c-><c- n>reconstruct</c-><c- p>(...)</c-></code> algorithm for these types.</p>
-   <h3 class="heading settled" data-level="3.3" id="design-dual"><span class="secno">3.3. </span><span class="content">Two Concepts</span><a class="self-link" href="#design-dual"></a></h3>
+   <h3 class="heading settled" data-level="3.4" id="design-dual"><span class="secno">3.4. </span><span class="content">Two Concepts</span><a class="self-link" href="#design-dual"></a></h3>
    <p>By giving these ranges <code class="highlight"><c- n>Iterator</c-><c- p>,</c-> <c- n>Sentinel</c-></code>, and/or <code class="highlight"><c- n>Range</c-></code> reconstruction functions, we can enable a greater degree of interface fidelity without having to resort to <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-></code> for all generic algorithms or similar input/output iterator holders as we have in much of the current <code class="highlight"><c- n>ranges</c-></code> <code class="highlight"><c- o>&lt;</c-><c- n>algorithms</c-><c- o>></c-></code> library.</p>
    <p><code class="highlight"><c- n>reconstruct</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>inplace_type</c-><c- o>&lt;</c-><c- n>R</c-><c- o>></c-><c- p>,</c-> <c- n>Iterator</c-><c- p>,</c-> <c- n>Sentinel</c-><c- p>)</c-></code> reconstruction is important for building <code class="highlight"><c- n>llvm</c-><c- o>::</c-><c- n>StringRef</c-></code>, <code class="highlight"><c- n>llfio</c-><c- o>::</c-><c- n>span</c-></code>, <code class="highlight"><c- n>kokos</c-><c- o>::</c-><c- n>mdspan</c-></code>, and other types that go into algorithms.</p>
    <p>because one-argument functions can have extremely overloaded meanings. It also produces less compiler boilerplate to achieve the same result of reconstructing the range when one does not have to go through <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-><c- o>&lt;</c-><c- n>I</c-><c- p>,</c-> <c- n>S</c-><c- p>,</c-> <c- n>K</c-><c- o>></c-></code>. However, it is important to attempt to move away from the iterator, sentinel model being deployed all the time: <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-></code> offers a single type that can accurately represent the intent and can be fairly easy to constrain overload sets on (most of the time) due to being a single family of types (anyone can check for a the type being a specialization of <code class="highlight"><c- n>ranges</c-><c- o>::</c-><c- n>subrange</c-></code>, whereas iterators span multiple different families of types).</p>
    <p>This paper includes two concepts that cover both reconstructible methods.</p>
    <h2 class="heading settled" data-level="4" id="experience"><span class="secno">4. </span><span class="content">Deployment Experience</span><a class="self-link" href="#experience"></a></h2>
-   <p>This change was motivated by Hannes Hauswedell’s <a data-link-type="biblio" href="#biblio-p1789r0">[p1789r0]</a> and became very important for the ranges work done with text encoding. There is a C++17 implementation <a href="https://github.com/soasis/text/blob/main/include/ztd/text/detail/reconstruct.hpp">at the soasis/text repository here</a>, which is mimicking the interface needed for <a data-link-type="biblio" href="#biblio-p1629r1">[p1629r1]</a>.</p>
+   <p>This change was motivated by Hannes Hauswedell’s <a data-link-type="biblio" href="#biblio-p1739r4">[p1739r4]</a> and became very important for the ranges work done with text encoding. There is a C++17 implementation <a href="https://github.com/soasis/text/blob/main/include/ztd/text/detail/reconstruct.hpp">at the soasis/text repository here</a>, which is mimicking the interface needed for <a data-link-type="biblio" href="#biblio-p1629r1">[p1629r1]</a>.</p>
    <h2 class="heading settled" data-level="5" id="impact"><span class="secno">5. </span><span class="content">Impact</span><a class="self-link" href="#impact"></a></h2>
    <p>As a feature that is opt-in thanks to the <code class="highlight"><c- n>ranges</c-><c- o>::</c-><c- n>reconstruct</c-></code> Customization Point Design, no currently created range or previously made range is permanently affected.</p>
    <p>Furthermore, this is a new and separate concept. It is not to be added to the base <code class="highlight"><c- n>Range</c-></code> concept, or added to any other concept. It is to be applied separately to the types which can reasonably support it for the benefit of algorithms and code which can enhance the quality of their implementation.</p>
-   <p>Finally, we merged Hannes Hauswedell’s <a data-link-type="biblio" href="#biblio-p1789r0">[p1789r0]</a> with the explicit intention to mark certain ranges as reconstructible by hardcoding their behavior into the standard and come back with an opt-in fix during the C++23 cycle. This paper completes that promise.</p>
+   <p>Finally, Hannes Hauswedell’s <a data-link-type="biblio" href="#biblio-p1739r4">[p1739r4]</a> with the explicit intention to mark certain ranges as reconstructible by hardcoding their behavior into the standard and come back with an opt-in fix during the C++23 cycle. This paper completes that promise.</p>
    <h2 class="heading settled" data-level="6" id="wording"><span class="secno">6. </span><span class="content">Proposed Changes</span><a class="self-link" href="#wording"></a></h2>
    <p>The following wording is relative to the latest C++ Draft paper.</p>
    <h3 class="heading settled" data-level="6.1" id="wording-feature"><span class="secno">6.1. </span><span class="content">Feature Test Macro</span><a class="self-link" href="#wording-feature"></a></h3>
@@ -2661,9 +2687,86 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
      <p></p>
     </ins>
    </blockquote>
+   <p>Add to "§21.4.3.1 <code class="highlight"><c- n>General</c-></code>" [<a href="eel.is/c++draft/string.view#template.general">string.view.template.general</a>] a <code class="highlight"><c- k>friend</c-></code> function ADL extension point for <code class="highlight"><c- n>basic_string_view</c-></code>:</p>
+   <blockquote>
+    <ins>
+<pre class="language-cpp highlight">	<c- c1>// [string.view.reconstruct]</c->
+	<c- k>friend</c-> <c- k>constexpr</c-> <c- n>basic_string_view</c->
+	<c- n>reconstruct</c-><c- p>(</c-><c- n>const_iterator</c-> <c- n>first</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>last</c-><c- p>)</c-> <c- k>noexcept</c-><c- p>;</c->
+</pre>
+    </ins>
+   </blockquote>
+   <p>Add a new subclause "§21.4.��� <code class="highlight"><c- n>Range</c-> <c- n>Reconstruction</c-></code>" [string.view.reconstruct] in §21.4:</p>
+   <blockquote>
+    <ins>
+     <p><b>21.4.���</b>     <b>Range Reconstruction</b> <span style="float: right">[<b>string.view.reconstruct</b>]</span></p>
+<pre class="language-cpp highlight">	<c- k>friend</c-> <c- k>constexpr</c-> <c- n>basic_string_view</c->
+	<c- n>reconstruct</c-><c- p>(</c-><c- n>const_iterator</c-> <c- n>first</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>last</c-><c- p>)</c-> <c- k>noexcept</c-><c- p>;</c->
+</pre>
+     <p><sup>1</sup> Returns: Equivalent to: <code class="highlight"><c- k>return</c-> <c- n>basic_string</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>first</c-><c- p>),</c-> <c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>last</c-><c- p>))</c-></code>.</p>
+    </ins>
+   </blockquote>
+   <p>Add to "§22.7.3.1 <code class="highlight"><c- n>Overview</c-></code>" [<a href="http://eel.is/c++draft/span.overview">span.overview</a>] a <code class="highlight"><c- k>friend</c-></code> function ADL extension point for <code class="highlight"><c- n>span</c-></code>:</p>
+   <blockquote>
+    <ins>
+<pre class="language-cpp highlight">	<c- c1>// [span.reconstruct]</c->
+	<c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>It</c-><c- p>,</c-> <c- k>class</c-> <c- nc>End</c-><c- o>></c->
+		<c- k>friend</c-> <c- k>constexpr</c-> <c- k>auto</c->
+		<c- n>reconstruct</c-><c- p>(</c-><c- n>It</c-> <c- n>first</c-><c- p>,</c-> <c- n>End</c-> <c- n>last</c-><c- p>)</c-> <c- k>noexcept</c-><c- p>;</c->
+</pre>
+    </ins>
+   </blockquote>
+   <p>Add a new subclause "§22.7.3.���� <code class="highlight"><c- n>Range</c-> <c- n>Reconstruction</c-></code>" [span.reconstruct] in §22.7.3:</p>
+   <blockquote>
+    <ins>
+     <p><b>22.7.3.����</b>     <b>Range Reconstruction</b> <span style="float: right">[<b>span.reconstruct</b>]</span></p>
+<pre class="language-cpp highlight">	<c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>It</c-><c- p>,</c-> <c- k>class</c-> <c- nc>End</c-><c- o>></c->
+		<c- k>friend</c-> <c- k>constexpr</c-> <c- k>auto</c->
+		<c- n>reconstruct</c-><c- p>(</c-><c- n>const_iterator</c-> <c- n>first</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>last</c-><c- p>)</c-> <c- k>noexcept</c-><c- p>;</c->
+</pre>
+     <p><sup>1</sup> Constraints: Let <code class="highlight"><c- n>U</c-></code> be <code class="highlight"><c- n>remove_</c->­<c- n>reference_</c->­<c- n>t</c-><c- o>&lt;</c-><c- n>iter_</c->­<c- n>reference_</c->­<c- n>t</c-><c- o>&lt;</c-><c- n>It</c-><c- o>>></c-></code>. </p>
+     <dl>
+      <dd><sup>(1.1)</sup> — <code class="highlight"><c- n>is_</c->­<c- n>convertible_</c->­<c- n>v</c-><c- o>&lt;</c-><c- n>U</c-><c- p>(</c-><c- o>*</c-><c- p>)[],</c-> <c- n>element_</c->­<c- n>type</c-><c- p>(</c-><c- o>*</c-><c- p>)[]</c-><c- o>></c-></code> is <code class="highlight">true</code>. [<i>Note 2</i>: The intent is to allow only qualification conversions of the iterator reference type to element_­type. — <i>end note</i>]
+      <dd><sup>(1.2)</sup> — <code class="highlight"><c- n>It</c-></code> satisfies <code class="highlight"><c- n>contiguous_</c->­<c- n>iterator</c-></code>.
+      <dd><sup>(1.3)</sup> — <code class="highlight"><c- n>End</c-></code> satisfies <code class="highlight"><c- n>sized_</c->­<c- n>sentinel_</c->­<c- k>for</c-><c- o>&lt;</c-><c- n>It</c-><c- o>></c-></code>.
+      <dd><sup>(1.4)</sup> — <code class="highlight"><c- n>is_</c->­<c- n>convertible_</c->­<c- n>v</c-><c- o>&lt;</c-><c- n>End</c-><c- p>,</c-> <c- n>size_</c->­<c- n>t</c-><c- o>></c-></code> is <code class="highlight">false</code>.
+     </dl>
+     <p></p>
+     <p><sup>2</sup> Let <code class="highlight"><c- n>MaybeExtent</c-></code> be an implementation-defined constant expression of type <code class="highlight"><c- b>size_t</c-></code>. If it is not equal to <code class="highlight"><c- n>dynamic_extent</c-></code>, then <code class="highlight"><c- n>MaybeExtent</c-></code> shall be a value equal to <code class="highlight"><c- n>distance</c-><c- p>(</c-><c- n>first</c-><c- p>,</c-> <c- n>last</c-><c- p>)</c-></code>.</p>
+     <p><sup>3</sup> Returns: Equivalent to: <code class="highlight"><c- k>return</c-> <c- n>span</c-><c- o>&lt;</c-><c- n>ElementType</c-><c- p>,</c-> <c- n>MaybeExtent</c-><c- o>></c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>first</c-><c- p>),</c-> <c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>last</c-><c- p>))</c-></code>.</p>
+     <p><sup>4</sup> Remarks: the return type can be promoted to a <code class="highlight"><c- n>span</c-></code> with a static extent if the implementation is capable of deriving such information from the given iterator and sentinel.</p>
+    </ins>
+   </blockquote>
+   <p>Add to "§24.6.4.2 Class template <code class="highlight"><c- n>iota_view</c-></code>" [<a href="http://eel.is/c++draft/range.iota">range.iota</a>] a <code class="highlight"><c- k>friend</c-></code> function ADL extension point for <code class="highlight"><c- n>iota_view</c-></code>:</p>
+   <blockquote>
+    <ins>
+<pre class="language-cpp highlight">	<c- k>friend</c-> <c- k>constexpr</c-> <c- n>iota_view</c->
+	<c- n>reconstruct</c-><c- p>(</c-><c- n>iterator</c-> <c- n>first</c-><c- p>,</c-> <c- n>sentinel</c-> <c- n>last</c-><c- p>)</c-> <c- k>noexcept</c-><c- p>;</c->
+</pre>
+    </ins>
+   </blockquote>
+   <p>Add one new paragraph to "§24.6.4.2 Class template <code class="highlight"><c- n>iota_view</c-></code>" [<a href="http://eel.is/c++draft/range.iota">range.iota</a>]:</p>
+   <blockquote>
+    <ins>
+<pre class="language-cpp highlight">	<c- k>friend</c-> <c- k>constexpr</c-> <c- n>iota_view</c->
+	<c- n>reconstruct</c-><c- p>(</c-><c- n>iterator</c-> <c- n>first</c-><c- p>,</c-> <c- n>sentinel</c-> <c- n>last</c-><c- p>)</c-> <c- k>noexcept</c-><c- p>;</c->
+</pre>
+     <p><sup>��</sup> Returns: Equivalent to: <code class="highlight"><c- k>return</c-> <c- n>iota_view</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>first</c-><c- p>),</c-> <c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>last</c-><c- p>))</c-></code>.</p>
+    </ins>
+   </blockquote>
+   <p>Add to "§24.6.2.2 Class template <code class="highlight"><c- n>empty_view</c-></code>" [<a href="http://eel.is/c++draft/range.iota">range.empty.view</a>] a <code class="highlight"><c- k>friend</c-></code> function ADL extension point for <code class="highlight"><c- n>empty_view</c-></code>:</p>
+   <blockquote>
+    <ins>
+<pre class="language-cpp highlight">	<c- k>friend</c-> <c- k>constexpr</c-> <c- n>empty_view</c->
+	<c- n>reconstruct</c-><c- p>(</c-><c- n>iterator</c-><c- p>,</c-> <c- n>sentinel</c-><c- p>)</c-> <c- k>noexcept</c-> <c- p>{</c->
+		<c- k>return</c-> <c- nf>empty_view</c-><c- p>();</c->
+	<c- p>}</c->
+</pre>
+    </ins>
+   </blockquote>
    <h2 class="heading settled" data-level="7" id="acknowledgements"><span class="secno">7. </span><span class="content">Acknowledgements</span><a class="self-link" href="#acknowledgements"></a></h2>
-   <p>Thanks to Corentin Jabot, Christopher DiBella, and Hannes Hauswedell for pointing me to p1035 and p1739 to review both papers and combine some of their ideas in here. Thanks to Eric Niebler for prompting me to think of the generic, scalable solution to this problem rather than working on one-off fixes for individuals views.</p>
-   <p>Thank you to Oktal, Anointed of ADL, Blessed Among Us and Morwenn, the ever-watching Code Guardian for suggesting improvements to the current concept form.</p>
+   <p>Thanks to Corentin Jabot, Christopher DiBella, and Hannes Hauswedell for pointing me to <a data-link-type="biblio" href="#biblio-p1035r7">[p1035r7]</a> and <a data-link-type="biblio" href="#biblio-p1739r4">[p1739r4]</a> to review both papers and combine some of their ideas in here. Thanks to Eric Niebler for prompting me to think of the generic, scalable solution to this problem rather than working on one-off fixes for individuals views.</p>
+   <p>Thank you to Oktal, Anointed of ADL, Blessed Among Us, and Morwenn, the ever-watching Code Guardian for suggesting improvements to the current concept form.</p>
   </main>
 <script>
 (function() {
@@ -2801,6 +2904,8 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    <dd>Richard Smith. <a href="https://wg21.link/n4835">Working Draft, Standard for Programming Language C++</a>. 8 October 2019. URL: <a href="https://wg21.link/n4835">https://wg21.link/n4835</a>
    <dt id="biblio-p0009r9">[P0009R9]
    <dd>H. Carter Edwards, Bryce Adelstein Lelbach, Daniel Sunderland, D. S. Hollman, Christian Trott, Mauro Bianco, Ben Sander, Athanasios Iliopoulos, John Michopoulos, Mark Hoemmen. <a href="https://wg21.link/p0009r9">mdspan: A Non-Owning Multidimensional Array Reference</a>. 20 January 2019. URL: <a href="https://wg21.link/p0009r9">https://wg21.link/p0009r9</a>
+   <dt id="biblio-p1035r7">[P1035R7]
+   <dd>Christopher Di Bella, Casey Carter, Corentin Jabot. <a href="https://wg21.link/p1035r7">Input Range Adaptors</a>. 2 August 2019. URL: <a href="https://wg21.link/p1035r7">https://wg21.link/p1035r7</a>
    <dt id="biblio-p1255r4">[P1255R4]
    <dd>Steve Downey. <a href="https://wg21.link/p1255r4">A view of 0 or 1 elements: view::maybe</a>. 17 June 2019. URL: <a href="https://wg21.link/p1255r4">https://wg21.link/p1255r4</a>
    <dt id="biblio-p1391r2">[P1391R2]
@@ -2809,10 +2914,8 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    <dd>Corentin Jabot, Casey Carter. <a href="https://wg21.link/p1394r2">Range constructor for std::span</a>. 17 June 2019. URL: <a href="https://wg21.link/p1394r2">https://wg21.link/p1394r2</a>
    <dt id="biblio-p1629r1">[P1629R1]
    <dd>JeanHeyd Meneide. <a href="https://wg21.link/p1629r1">Transcoding the world - Standard Text Encoding</a>. 2 March 2020. URL: <a href="https://wg21.link/p1629r1">https://wg21.link/p1629r1</a>
-   <dt id="biblio-p1739r0">[P1739R0]
-   <dd>Hannes Hauswedell. <a href="https://wg21.link/p1739r0">Type erasure for forwarding ranges in combination with "subrange-y" view adaptors</a>. 15 June 2019. URL: <a href="https://wg21.link/p1739r0">https://wg21.link/p1739r0</a>
-   <dt id="biblio-p1789r0">[P1789R0]
-   <dd>Alisdair Meredith. <a href="https://wg21.link/p1789r0">Library Support for Expansion Statements</a>. 17 June 2019. URL: <a href="https://wg21.link/p1789r0">https://wg21.link/p1789r0</a>
+   <dt id="biblio-p1739r4">[P1739R4]
+   <dd>Hannes Hauswedell. <a href="https://wg21.link/p1739r4">Avoid template bloat for safe_ranges in combination with 'subrange-y' view adaptors.</a>. 1 March 2020. URL: <a href="https://wg21.link/p1739r4">https://wg21.link/p1739r4</a>
    <dt id="biblio-range-v3">[RANGE-V3]
    <dd>Eric Niebler; Casey Carter. <a href="https://github.com/ericniebler/range-v3">range-v3</a>. June 11th, 2019. URL: <a href="https://github.com/ericniebler/range-v3">https://github.com/ericniebler/range-v3</a>
   </dl>
