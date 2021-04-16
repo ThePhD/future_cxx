@@ -116,7 +116,8 @@ This library automates the `.reset(...)` and -- sometimes additionally -- the `.
 	<tr>
 		<td colspan="2">
 [From libavformat](http://git.videolan.org/?p=ffmpeg.git;a=blob;f=libavformat/avformat.h;h=fdaffa5bf41b6ed83fa4f7acebcf04ed796296fd;hb=refs/heads/master)
-```
+
+```cpp
 #include <memory>
 #include <avformat.h>
 
@@ -138,7 +139,7 @@ using av_format_context_ptr = std::unique_ptr<AVFormatContext, AVFormatContextDe
 	</tr>
 	<tr>
 		<td>
-```
+```cpp
 int main (int, char* argv[]) {
 	av_format_context_ptr context(avformat_alloc_context());
 	// ...
@@ -160,7 +161,7 @@ int main (int, char* argv[]) {
 ```
 		</td>
 		<td>
-```
+```cpp
 int main (int, char* argv[]) {
 	av_format_context_ptr context(avformat_alloc_context());
 	// ...
@@ -203,7 +204,7 @@ The core of `out_ptr`'s (and `inout_ptr`'s) design revolves around avoiding the 
 
 The function template's full specification is:
 
-```
+```cpp
 namespace std {
 	template <class Pointer = void, class Smart, class... Args>
 	out_ptr_t<Smart, conditional_t<is_void_v<Pointer>, POINTER_OF(Smart), Pointer>, Args&&...> 
@@ -217,7 +218,7 @@ namespace std {
 
 Where `POINTER_OF` is the `::pointer` type, then the `::element_type*` type, then `std::pointer_traits<Smart>::element_type*` type in that order. The return type `out_ptr_t` and its sister type `inout_ptr_t` are templated types and must at-minimum have the following:
 
-```
+```cpp
 template <class Smart, class Pointer, class... Args>
 class out_ptr_t {
 public:
@@ -249,7 +250,7 @@ We chose this extension point because the other options (ADL extension, friend A
 
 `out_ptr`/`inout_ptr` are free functions meant to be used for C APIs:
 
-```
+```cpp
 error_num c_api_create_handle(int seed_value, int** p_handle);
 error_num c_api_re_create_handle(int seed_value, int** p_handle);
 void c_api_delete_handle(int* handle);
@@ -263,7 +264,7 @@ struct resource_deleter {
 
 Given a smart pointer, it can be used like so:
 
-```
+```cpp
 std::unique_ptr<int, resource_deleter> resource(nullptr);
 error_num err = c_api_create_handle(
 	24, std::out_ptr(resource)
@@ -276,7 +277,7 @@ if (err == C_API_ERROR_CONDITION) {
 
 Or, in the re-create (reallocation) case:
 
-```
+```cpp
 std::unique_ptr<int, resource_deleter> resource(nullptr);
 error_num err = c_api_re_create_handle(
 	24, std::inout_ptr(resource)
@@ -293,7 +294,7 @@ if (err == C_API_ERROR_CONDITION) {
 
 This implementation uses a pack of `...Args` in the signature of `out_ptr` to allow it to be used with other types whose `.reset()` functions may require more than just the pointer value to form a valid and proper smart pointer. This is the case with `std::shared_ptr` and `boost::shared_ptr`:
 
-```
+```cpp
 std::shared_ptr<int> resource(nullptr);
 error_num err = c_api_create_handle(
 	24, std::out_ptr(resource, resource_deleter{})
@@ -309,7 +310,7 @@ Additional arguments past the smart pointer stored in `out_ptr`'s return type wi
 
 Of importance here is to note that `std::shared_ptr` can and will overwrite any custom deleter present when called with just `.reset(some_pointer);`. Therefore, we make it a compiler error to not pass in a second argument when using `std::shared_ptr` without a deleter:
 
-```
+```cpp
 std::shared_ptr<int> resource(nullptr);
 error_num err = c_api_create_handle(
 	42, std::out_ptr(resource)
@@ -326,7 +327,7 @@ It is likely the intent of the programmer to also pass the fictional `c_api_dele
 
 This is two-fold. First, by placing the `.reset()` call into the destructor of `out_ptr`/`inout_ptr`, we can guarantee safety that trivial code does not have. For example, consider this abstracted form of the production code shown in the Tony Table:
 
-```
+```cpp
 std::unique_ptr<int> num(new int());
 // use, then have to prepare for some 
 // c_api call
@@ -361,7 +362,7 @@ It is also important to note that going in the *opposite* direction is also high
 
 Consider this DirectX Graphics Infrastructure Interface (DXGI) function on `IDXGIFactory6`:
 
-```
+```cpp
 HRESULT EnumAdapterByGpuPreference(
 	UINT Adapter, 
 	DXGI_GPU_PREFERENCE GpuPreference, 
@@ -372,7 +373,7 @@ HRESULT EnumAdapterByGpuPreference(
 
 Using `out_ptr`, it becomes trivial to interface with it using an exemplary `std::unique_ptr<IDXGIAdapter, ComDeleter> adapter`:
 
-```
+```cpp
 HRESULT result = dxgi_factory.
 EnumAdapterByGpuPreference(0, 
 	DXGI_GPU_PREFERENCE_MINIMUM_POWER, 
@@ -391,7 +392,7 @@ This idiom is also useful for the `QueryInterface` base function for COM's `IUnk
 
 Note that the implicit `void**` conversion is important for more than just easy interaction with Windows or COM APIs: it is commonplace to store a pointer to a base class rather than a derived one. For example:
 
-```
+```cpp
 std::unique_ptr<ID3D11Device, COMDeleter> g_d11_device;
 
 int main () {
@@ -412,7 +413,7 @@ int main () {
 
 The above code is actually wrong. `IUnknown` cast to `void*`, then passed as `void**` to the function, creates a bad pointer because the `void**` inside of the function call is cast directly to `IDXGIDevice**` and dereferenced. This is incorrect because the original pointer is `IUnknown`, and so member variables and the object's virtual table will be completely skewed and out of place. The correct way is to write use `QueryInterface` as so:
 
-```
+```cpp
 std::unique_ptr<ID3D11Device> g_d11_device;
 
 int main () {
@@ -442,7 +443,7 @@ For example, one technique detailed by a graphics develop helped them make an ag
 
 It is imperative that the user be allowed to specify a casting parameter that the `out_ptr_t`/`inout_ptr_t`, and that is done by simply adding a type when calling the desired function. Consider a specialized `std::unique_ptr<int, fd_deleter>` where `::pointer` is a typedef to a special `fd` type:
 
-```
+```cpp
 struct fd {
 	int handle;
 
@@ -474,7 +475,7 @@ struct fd_deleter {
 
 Casting in this case is cumbersome and often error-prone to do properly when interfacing with C or C++ standard library facilities. It becomes trivial with `std::out_ptr`:
 
-```
+```cpp
 std::unique_ptr<int, fd_deleter> my_unique_fd;
 auto err = fopen_s( std::out_ptr<FILE*>(my_unique_fd), "prod.csv", "rb" );
 // check err, then work with raw fd
@@ -790,7 +791,7 @@ Add to §17.3.2 Header `<version>` [**version.syn**]'s **Table 35** an additiona
 
 <blockquote>
 <ins>
-```
+```cpp
 #define __cpp_lib_out_ptr /* EDITOR-CHOSEN VALUE HERE */ // also in <memory>
 ```
 </ins>
@@ -821,7 +822,7 @@ Add to §20.10.2 Header `<memory>` synopsis [**memory.syn**] the `out_ptr`, `ino
 
 <blockquote>
 <ins>
-```
+```cpp
 // 20.11.9, out_ptr_t
 template <class Smart, class Pointer, class... Args>
 	class out_ptr_t;
@@ -851,7 +852,7 @@ Insert §20.11.9 [**out_ptr.class**]:
 <p><ins><sup>2</sup> [ <i>Example:</i></ins></p>
 
 <ins>
-```
+```cpp
 #include <memory>
 #include <cstdio>
 
@@ -879,7 +880,7 @@ int main(int, char*[]) {
 <ins>`unique_ptr` can be used with `out_ptr` to be passed into an output pointer-style function, without needing to hold onto an intermediate pointer value and manually delete it on error or failure. — <i>end example</i> ].</ins>
 
 <ins>
-```
+```cpp
 namespace std {
 
 	template <class Smart, class Pointer, class... Args>
@@ -911,7 +912,7 @@ namespace std {
 <p><ins>20.11.9.1 Constructors [**out_ptr.class.ctor**]</ins></p>
 
 <ins>
-```
+```cpp
 explicit out_ptr_t(Smart& smart, Args... args);
 ```
 </ins>
@@ -923,7 +924,7 @@ explicit out_ptr_t(Smart& smart, Args... args);
 <p><ins>20.11.9.3 Destructors [**out_ptr.class.dtor**]</ins></p>
 
 <ins>
-```
+```cpp
 ~out_ptr_t();
 ```
 </ins>
@@ -943,7 +944,7 @@ explicit out_ptr_t(Smart& smart, Args... args);
 <p><ins><sup>1</sup> Evaluations of the functions in this subclause on the same object may conflict (<a href="http://eel.is/c++draft/intro.races">[intro.races]</a>).</ins></p>
 
 <ins>
-```
+```cpp
 operator Pointer*() const noexcept;
 ```
 </ins>
@@ -953,7 +954,7 @@ operator Pointer*() const noexcept;
 <p><ins><sup>3</sup> Returns: `addressof(const_cast<Pointer&>(p))`.</ins></p>
 
 <ins>
-```
+```cpp
 operator void**() const noexcept;
 ```
 </ins>
@@ -983,7 +984,7 @@ Insert §20.11.10 [**out_ptr**]:
 <p><ins>20.11.10 **Function Template** `out_ptr` [**out_ptr**]</ins></p>
 
 <ins>
-```
+```cpp
 template <class Pointer = void, class Smart, class... Args>
   auto out_ptr(Smart& s, Args&&... args);
 ```
@@ -1005,7 +1006,7 @@ Insert §20.11.11 [**inout_ptr.class**]:
 <p><ins><sup>2</sup> [ <i>Example:</i></ins></p>
 
 <ins>
-```
+```cpp
 #include <memory>
 
 struct StarFish* starfish_alloc();
@@ -1030,7 +1031,7 @@ int main(int, char*[]) {
 <ins>A `unique_ptr` can be used with `inout_ptr` to be passed into an output pointer-style function. The original value will be properly deleted according to the function it is used with and a new value reset in its place. — <i>end example</i> ].</ins>
 
 <ins>
-```
+```cpp
 namespace std {
 
 	template <class Smart, class Pointer, class... Args>
@@ -1064,7 +1065,7 @@ namespace std {
 <p><ins>20.11.11.1 Constructors [**inout_ptr.class.ctor**]</ins></p>
 
 <ins>
-```
+```cpp
 explicit inout_ptr_t(Smart& smart, Args... args);
 ```
 </ins>
@@ -1083,7 +1084,7 @@ explicit inout_ptr_t(Smart& smart, Args... args);
 <p><ins>20.11.11.2 Destructors [**inout_ptr.class.dtor**]</ins></p>
 
 <ins>
-```
+```cpp
 ~inout_ptr_t();
 ```
 </ins>
@@ -1106,7 +1107,7 @@ explicit inout_ptr_t(Smart& smart, Args... args);
 <p><ins><sup>1</sup> Evaluations of the functions in this subclause on the same object may conflict (<a href="http://eel.is/c++draft/intro.races">[intro.races]</a>).</ins></p>
 
 <ins>
-```
+```cpp
 operator Pointer*() const noexcept;
 ```
 </ins>
@@ -1115,7 +1116,7 @@ operator Pointer*() const noexcept;
 <p><ins><sup>3</sup> Returns: `addressof(const_cast<Pointer&>(p))`.</ins></p>
 
 <ins>
-```
+```cpp
 operator void**() const noexcept;
 ```
 </ins>
@@ -1145,7 +1146,7 @@ Insert §20.11.12 [**inout_ptr**]:
 <p><ins>20.11.12 **Function Template** `inout_ptr` [**inout_ptr**]</ins></p>
 
 <ins>
-```
+```cpp
 template <class Pointer = void, class Smart, class... Args>
 	auto inout_ptr(Smart& s, Args&&... args);
 ```
