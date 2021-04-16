@@ -1,6 +1,6 @@
 ---
 title: _Imaginary_I and _Complex_I Qualifiers | r0
-date: February 26th, 2021
+date: April 19th, 2021
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
 layout: paper
