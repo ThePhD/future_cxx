@@ -1,5 +1,5 @@
 ---
-title: Consistent Initialization with {} | r0
+title: Consistent, Warningless, and Intuitive Initialization with {} | r0
 date: April 12th, 2021
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
@@ -12,7 +12,7 @@ _**Previous Revisions**_: None
 _**Audience**_: WG14  
 _**Proposal Category**_: Change Request, Feature Request  
 _**Target Audience**_: General Developers, Library Developers  
-_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20Consistent%20Initialization.html](https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20Consistent%20Initialization.html)
+_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20Consistent,%20Warningless,%20and%20Intuitive%20Initialization%20with%20%7B%7D.html](https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20Consistent,%20Warningless,%20and%20Intuitive%20Initialization%20with%20%7B%7D.html)
 
 <div class="text-center">
 <h6>Abstract:</h6>
