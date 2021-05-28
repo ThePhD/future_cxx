@@ -213,8 +213,7 @@ The following wording is relative to [N2596](http://www.open-std.org/jtc1/sc22/w
 </blockquote>
 
 
-
-**Add a keyword to the §6.4.1 Keywords:**
+### Add a keyword to the §6.4.1 Keywords:
 
 <blockquote>
 <p>
