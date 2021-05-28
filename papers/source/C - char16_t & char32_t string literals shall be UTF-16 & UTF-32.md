@@ -1,18 +1,18 @@
 ---
 title: char16_t & char32_t string literals shall be UTF-16 & UTF-32 | r0
-date: March 21st, 2021
+date: May 15th, 2021
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
 layout: paper
 hide: true
 ---
 
-_**Document**_: n26XX  
+_**Document**_: n2728  
 _**Previous Revisions**_: None  
 _**Audience**_: WG14  
 _**Proposal Category**_: Change Request  
 _**Target Audience**_: General Developers, Library Developers  
-_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20char16_t%20&%20char32_t%20string%20literals%20shall%20be%20UTF-16%20&%20UTF-32.html](https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20char16_t%20&%20char32_t%20string%20literals%20shall%20be%20UTF-16%20&%20UTF-32.html)
+_**Latest Revision**_: [https://thephd.dev/_vendor/future_cxx/papers/C%20-%20char16_t%20&%20char32_t%20string%20literals%20shall%20be%20UTF-16%20&%20UTF-32.html](https://thephd.dev/_vendor/future_cxx/papers/C%20-%20char16_t%20&%20char32_t%20string%20literals%20shall%20be%20UTF-16%20&%20UTF-32.html)
 
 <div class="text-center">
 <h6>Abstract:</h6>
@@ -22,6 +22,17 @@ This paper closes a as-yet unused degree of freedom in string literal representa
 </div>
 
 <div class="pagebreak"></div>
+
+
+
+
+# Changelog
+
+
+
+## Revision 0
+
+- Initial release! 🎉
 
 
 
@@ -42,7 +53,7 @@ Narrow/multibyte strings and literals have uncountably many applied encodings at
 
 ## "What, exactly, is in my String Literal?"
 
-The side-effect of the existing practice is that almost no existing implementation can or has been matching a potentially valid reading of §6.4.5 String literals, paragraph 6. According to the standard, each string literal matches the `mbrtoc16/32` or `mbstowcs` functions; this would imply that there is a translation-time encoding used, or that string literals are tied to an execution-time property. It is unclear whether there exists any implementation that, after compilation, inserts code that reacts to `setlocale` and transcodes all existing string literals to the new locale of the program. There does not seem to exists any interpreters that behave in this manner either.
+The side-effect of the existing practice is that almost no existing implementation can or has been matching a potentially valid reading of §6.4.5 String literals, paragraph 6. According to the standard, each string literal matches the `mbrtoc16/32` or `mbstowcs` functions; this would imply that there is a translation-time encoding used, or that string literals are tied to an execution-time property. It is unclear whether there exists any implementation that, after compilation, inserts code that reacts to `setlocale` and transcodes all existing string literals to the new locale of the program. There does not seem to exist any interpreters that behave in this manner, either.
 
 The alternative explanation is that the encoding of the string is only determined at the point of creation, and that strings later in the program translation can be affected if they are created after a call to `setlocale`. This interpretation, while granting clemency to any vendor that has created strings with a fixed encoding even in an interpreter-like implementation, still presents the incredibly awkward problem that strings become a property of the translation of the program, and brings up very interesting consequences if an implementation allows for someone to set the encoding of their string literals in the middle of their program. This still runs the risk of not being identical to what `mbstowcs` or `mbrtoc16/32` do at program runtime, even if the program never calls `setlocale`.
 
@@ -69,10 +80,10 @@ We settle on this solution because it is existing practice. A survey of implemen
 
 To achieve our goal, we state this in the front-matter for "string literals". We then provide wording in other relevant places for `char16_t` and `char32_t` functions that state the desired encoding (UTF-16 and UTF-32 respectively). Finally, we disentangle the compile-time encoding of string literals and the locale-based functions.
 
-Note that the disentanglement does not reduce implementer freedom. The encoding for string literals and `wchar_t` string literals is still implementation-defined; it is just explicitly defined as such now and no longer makes any forward mention of `mbtowc`, `mbstowcs`, `mbrtoc16` or `mbrtoc32`. The translation from the translation time execution character set to the *literal* and *wide literal encoding* is *still** completely implementation-defined; that means implementations can continue to:
+Note that the disentanglement does not reduce implementer freedom. The encoding for string literals and `wchar_t` string literals is still implementation-defined; it is just explicitly defined as such now and no longer makes any forward mention of `mbtowc`, `mbstowcs`, `mbrtoc16` or `mbrtoc32`. The conversion from the translation time execution character set to the *literal* and *wide literal encoding* is **still** completely implementation-defined; that means implementations can continue to:
 
 - call `mbtowc`/`mbstowcs` and friends on their Host platform (a very literal interpretation) to encode/decode string literals from the execution character set (older compilers relying directly on the packaged C library)
-- ignore those completely and do whatever `-fexec-charset=owo` + `-fexec-charset=owo`, or `/execution-charset:uwu`, are supposed to accomplish (GCC, MSVC, and many others)
+- ignore those completely and do whatever `-fexec-charset=owo` + `-fwide-exec-charset=òwó`, or `/execution-charset:uwu`, are supposed to accomplish (GCC, MSVC, and many others)
 - take the flag `-fexec-charset=owo` and completely ignore it (Clang)
 - and more!
 
@@ -121,7 +132,7 @@ The following wording is relative to [N2596](http://www.open-std.org/jtc1/sc22/w
 
 <h6><b>Semantics</b></h6>
 
-<p><sup>11</sup>An integer character constant has type `int`. The value of an integer character constant containing a single character that maps to a <del>single-byte execution character</del><ins>single value in the literal encoding</ins> is the numerical value of the representation of the mapped character <ins>in the literal encoding</ins> interpreted as an integer. The value of an integer character constant containing more than one character (e.g., `'ab'`), or containing a character or escape sequence that does not map to <del>a single-byte execution character</del><ins>a single value in the literal encoding</ins>, is implementation-defined.
+<p><sup>11</sup>An integer character constant has type `int`. The value of an integer character constant containing a single character that maps to a <del>single-byte execution character</del><ins>single value in the literal encoding</ins> is the numerical value of the representation of the mapped character <ins>in the literal encoding</ins> interpreted as an integer. The value of an integer character constant containing more than one character (e.g., `'ab'`), or containing a character or escape sequence that does not map to <del>a single-byte execution character</del><ins>a single value in the literal encoding</ins>, is implementation-defined.</p>
 </blockquote>
 
 
@@ -131,7 +142,7 @@ The following wording is relative to [N2596](http://www.open-std.org/jtc1/sc22/w
 <blockquote>
 <p><sup>12</sup> <del>A UTF–8 character constant has type `unsigned char` which is an unsigned integer types defined in the `<uchar.h>` header. The value of a UTF–8 character constant is equal to its ISO/IEC 10646 code point value, provided that the code point value can be encoded as a single UTF–8 code unit.</del><ins>A UTF–8 character constant has type `unsigned char`. If the UTF-8 character constant is not produced through a hexadecimal or octal escape sequence, the value of a UTF–8 character constant is equal to its ISO/IEC 10646 code point value, provided that the code point value can be encoded as a single UTF–8 code unit. Otherwise, the value of the UTF-8 character constant is the numeric value specified in the hexadecimal or octal escape sequence.</ins></p>
 
-<p><ins><sup>13</sup>A UTF–16 character constant has type `char16_t` which is an unsigned integer types defined in the `<uchar.h>` header. If the UTF-16 character constant is not produced through a hexadecimal or octal escape sequence, the value of a UTF–16 character constant is equal to its ISO/IEC 10646 code point value, provided that the code point value can be encoded as a single UTF–16 code unit. Otherwise, the value of the UTF-16 character constant is the numeric value specified  in the hexadecimal or octal escape sequence.</ins></p>
+<p><ins><sup>13</sup>A UTF–16 character constant has type `char16_t` which is an unsigned integer types defined in the `<uchar.h>` header. If the UTF-16 character constant is not produced through a hexadecimal or octal escape sequence, the value of a UTF–16 character constant is equal to its ISO/IEC 10646 code point value, provided that the code point value can be encoded as a single UTF–16 code unit. Otherwise, the value of the UTF-16 character constant is the numeric value specified in the hexadecimal or octal escape sequence.</ins></p>
 
 <p><ins><sup>14</sup>A UTF–32 character constant has type `char32_t` which is an unsigned integer types defined in the `<uchar.h>` header. If the UTF-32 character constant is not produced through a hexadecimal or octal escape sequence, the value of a UTF–32 character constant is equal to its ISO/IEC 10646 code point value, provided that the code point value can be encoded as a single UTF–32 code unit. Otherwise, the value of the UTF-32 character constant is the numeric value specified in the hexadecimal or octal escape sequence.</ins></p>
 

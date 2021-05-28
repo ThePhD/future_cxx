@@ -1,6 +1,6 @@
 ---
 title: Not-So-Magic - typeof(...) in C | r3
-date: March 11th, 2021
+date: May 15th, 2021
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
   - Shepherd (Shepherd's Oasis) \<<shepherd@soasis.org>\>
@@ -11,12 +11,12 @@ redirect_from:
 hide: true
 ---
 
-_**Document**_: n26XX  
+_**Document**_: n2724  
 _**Previous Revisions**_: None  
 _**Audience**_: WG14  
 _**Proposal Category**_: New Features  
 _**Target Audience**_: General Developers, Compiler/Tooling Developers  
-_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20typeof.html](https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20typeof.html)
+_**Latest Revision**_: [https://thephd.dev/_vendor/future_cxx/papers/C%20-%20typeof.html](https://thephd.dev/_vendor/future_cxx/papers/C%20-%20typeof.html)
 
 <div class="text-center">
 <h6>Abstract:</h6>
@@ -34,7 +34,7 @@ Getting the type of an expression in Standard C code.
 
 
 
-## Revision 3 - March 29th, 2021
+## Revision 3 - May 15th, 2021
 
 - Make sure we mention the old C99 Rationale and Nick Stoughton's previous evaluation of `typeof` in the Appendix.
 - Added final direction based on the March 2021 Virtual Standard Meeting's Vote. The numbers listed are in the form `Yes/No/Abstain` to the given question / option.
@@ -111,7 +111,7 @@ Any implementation that can process `sizeof("foo")` is already doing `sizeof(typ
 
 ## Corner cases: Variably-Modified Types and VLAs
 
-[Putting a normal or VLA-type computation results in an idempotent](https://godbolt.org/z/3hqr6x) type computation that simply yields that type in most implementations that support the feature. If the compiler supports Variable Length Arrays, then `__typeof` -- if it is similar to GCC, Clang, tcc, and others -- then it is already supported with these semantics. These semantics also match how `sizeof` would behave (computing the expression or having an internal placeholder "VLA" type), so we propagate that same ability in an identical manner.
+[Putting a normal or VLA-type computation results in an idempotent](https://godbolt.org/z/3hqr6x) type computation that simply yields that type in most implementations that support the feature. If the compiler supports Variable Length Arrays, then `__typeof` -- if it is similar to GCC, Clang, tcc, and others -- it is already supported with these semantics. These semantics also match how `sizeof` would behave (computing the expression or having an internal placeholder "VLA" type), so we propagate that same ability in an identical manner.
 
 Notably, this is how current implementations evaluate the semantics as well. Note that the standard claims that whether or not any computation done for Variably Modified Types -- with side effects -- is actually unspecified behavior, so there's no additional guarantees about the evaluation for such types.
 
@@ -331,7 +331,7 @@ The following wording is relative to [N2596](http://www.open-std.org/jtc1/sc22/w
 </div>
 
 <div class="wording-numbered">
-<p>All qualifiers (6.7.3) on the type from the result of a <code class="c-kw">remove_quals</code> operation are removed, including <code class="c-kw">_Atomic</code>. Otherwise, for <code class="c-kw">typeof</code> operations, all qualifiers are preserved.</p>
+<p>All qualifiers (6.7.3) on the type from the result of a <code class="c-kw">remove_quals</code> operation are removed, including the <code class="c-kw">_Atomic</code> qualifier. <code class="c-kw">_Atomic ( type-name )</code>, with parentheses, is not a qualifier, and remains unaffected by <code class="c-kw">remove_quals</code>. Otherwise, for <code class="c-kw">typeof</code> operations, all qualifiers are preserved.</p>
 </div>
 
 <p><sup>11�0)</sup><sub> When applied to a parameter declared to have array or function type, the <code class="c-kw">typeof</code> operator yields the adjusted (pointer) type (see 6.9.1).</sub></p>

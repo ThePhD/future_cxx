@@ -1,18 +1,18 @@
 ---
 title: _Imaginary_I and _Complex_I Qualifiers | r0
-date: April 19th, 2021
+date: May 15th, 2021
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
 layout: paper
 hide: true
 ---
 
-_**Document**_: n26XX  
+_**Document**_: n2726  
 _**Previous Revisions**_: None  
 _**Audience**_: WG14  
 _**Proposal Category**_: Change Request  
 _**Target Audience**_: General Developers, Library Developers  
-_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20_Imaginary_I%20and%20_Complex_I%20Qualifiers.html](https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20_Imaginary_I%20and%20_Complex_I%20Qualifiers.html)
+_**Latest Revision**_: [https://thephd.dev/_vendor/future_cxx/papers/C%20-%20_Imaginary_I%20and%20_Complex_I%20Qualifiers.html](https://thephd.dev/_vendor/future_cxx/papers/C%20-%20_Imaginary_I%20and%20_Complex_I%20Qualifiers.html)
 
 <div class="text-center">
 <h6>Abstract:</h6>
@@ -22,6 +22,17 @@ This paper fixes some strange qualifiers on imaginary and complex macro expressi
 </div>
 
 <div class="pagebreak"></div>
+
+
+
+
+# Changelog
+
+
+
+## Revision 0
+
+- Initial release! 🎉
 
 
 

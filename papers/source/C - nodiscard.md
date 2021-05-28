@@ -16,7 +16,7 @@ _**Previous Revisions**_: n2430
 _**Audience**_: WG14  
 _**Proposal Category**_: New Features  
 _**Target Audience**_: General Developers, Compiler/Tooling Developers  
-_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20nodiscard.html](https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20nodiscard.html)
+_**Latest Revision**_: [https://thephd.dev/_vendor/future_cxx/papers/C%20-%20nodiscard.html](https://thephd.dev/_vendor/future_cxx/papers/C%20-%20nodiscard.html)
 
 <div class="text-center">
 <h6>Abstract:</h6>

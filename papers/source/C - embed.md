@@ -1,18 +1,19 @@
 ---
 title: Preprocessor embed - Binary Resource Inclusion | r4
-date: December 1st, 2020
+date: May 28th, 2021
 author:
   - JeanHeyd Meneide \<<phdofthehouse@gmail.com>\>
+  - Shepherd's Oasis, LLC \<<shepherd@soasis.org>\>
 layout: paper
 hide: true
 ---
 
-_**Document**_: WG14 n26XX | WG21 p1967r4  
+_**Document**_: WG14 n2725 | WG21 p1967r4  
 _**Previous Revisions**_: WG14 n2470, n2499, n2592 | WG21 p1967r0, p1967r1, p1967r2, p1967r3  
 _**Audience**_: WG14, WG21  
 _**Proposal Category**_: New Features  
 _**Target Audience**_: General Developers, Application Developers, Compiler/Tooling Developers  
-_**Latest Revision**_: [https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20embed.html](https://thephd.github.io/_vendor/future_cxx/papers/C%20-%20embed.html)
+_**Latest Revision**_: [https://thephd.dev/_vendor/future_cxx/papers/C%20-%20embed.html](https://thephd.dev/_vendor/future_cxx/papers/C%20-%20embed.html)
 
 <div class="pagebreak"></div>
 
@@ -35,11 +36,13 @@ This proposal provides a flexible preprocessor directive for making this data av
 
 
 
-## Revision 4 - April 15th, 2021
+## Revision 4 - April 15th, 2021 (C++), May 15th, 2021 (C)
 
 - Added post C meeting fixes to prepare for hopeful success next meeting.
 - Added 2 more examples to C and C++ wording.
 - Vastly improved wording and reduced ambiguities in syntax and semantics.
+- Fixed various wording issues.
+
 
 
 ## Revision 3 - October 25th, 2020
@@ -280,6 +283,15 @@ This prevents locking compilers in an infinite loop of reading from potentially 
 
 
 
+## Constant Expressions
+
+Both C and C++ compilers have rich constant folding capabilities. While C compilers only acknowledge a fraction of what is possible by larger implementations like MSVC, Clang, and GCC, C++ has an entire built-in compile-time programming bit, called `constexpr`. Most typical solutions cannot be used as constant expressions because they are hidden behind run-time or link-time mechanisms (`objcopy`, or the resource compiler `rc.exe` on Windows, or the static library archiving tools). This means that many algorithms and data components which could strongly benefit from having direct access to the values of the integer constants do not because the compiler cannot "see" the data, or because Whole Program Optimization cannot be aggressive enough to do anything with those values at that point in the compilation (i.e., during the final linking stage).
+
+This makes `#embed` especially powerful, since it guarantees these values are available as-if it was written by as a sequence of integers whose values fit within an `unsigned char`.
+
+
+
+
 # Implementation Experience
 
 An implementation of this functionality is available in branches of both GCC and Clang, accessible right now with an internet connection through the online utility Compiler Explorer. The Clang compiler with this functionality is called ["x86-64 clang (std::embed)"](https://godbolt.org/z/h2aRa9) and the GCC compiler is called ["x86-64 gcc (std::embed)"](https://godbolt.org/z/yJPtKT) in the Compiler Explorer UI.
@@ -361,7 +373,7 @@ Note: The � is a stand-in character to be replaced by the editor.
 
 <p>with the identical contained <i>q-char-sequence</i> (including &gt; characters, if any) from the original directive.</p>
 
-<p><sup>4</sup> Either form of the <b><code>&num;embed</code></b> directive specified previously behave as if it were expanded to a comma separated list. Specifically, each element of the comma separated list behaves as if the characters from the resource were read and mapped in an implementation-defined manner to a sequence of bits. The sequence of bits is used to produce integer constant expressions whose values are of <i>EMBED-WIDTH</i> width bits and between <code>0</code> and <i>EMBED-MAX</i>, inclusive.<sup>18���)</sup> The behavior is unspecified if the implementation-defined values of <i>EMBED-WIDTH</i> and <i>EMBED-MAX</i> are not equivalent to the width and max values for <code>unsigned char</code> (5.2.4.2.1).</p>
+<p><sup>4</sup> Either form of the <b><code>&num;embed</code></b> directive specified previously behave as if it were expanded to a comma separated list. Specifically, each element of the comma separated list behaves as if the characters from the resource were read and mapped in an implementation-defined manner to a sequence of bits. The sequence of bits is used to produce integer constant expressions for each element of the comma separated list, with values of <i>EMBED-WIDTH</i> width bits and values between <code>0</code> and <i>EMBED-MAX</i>, inclusive.<sup>18���)</sup> The behavior is unspecified if the implementation-defined values of <i>EMBED-WIDTH</i> and <i>EMBED-MAX</i> are not equivalent to the width and max values for <code>unsigned char</code> (5.2.4.2.1).</p>
 
 <p><sup>5</sup> If a <i>constant-expression</i> is specified, it shall be suitable for use in an <code><b>&num;</b>if</code> preprocessing directive and interpreted as specified in Conditional Inclusion (6.10.1). It shall result in a integer value that is greater than or equal to zero. The mapping from the contents of the resource to the elements of the comma separated list shall contain up to <i>constant-expression</i> elements according to the above. If the implementation-defined bit size is less than the <i>constant-expression</i> multiplied by the <i>EMBED-WIDTH</i>, the implementation-defined bit size shall be a multiple of the <i>EMBED-WIDTH</i> or 0.</p>
 
@@ -377,7 +389,7 @@ Note: The � is a stand-in character to be replaced by the editor.
 
 <p><sup>18��)</sup><sub> Note that adjacent string literals are not concatenated into a single string literal (see the translation phases in 5.1.1.2); thus, an expansion that results in two string literals is an invalid directive.</sub></p>
 
-<p><sup>18���)</sup><sub> It is implementation-defined how <i>EMBED-WIDTH</i> and <i>EMBED-MAX</i> are obtained. For example, an implementation may read &lt;limits.h&gt; to check <code>UCHAR_WIDTH</code> and <code>UCHAR_MAX</code>, or use implementation configuration, to determine their value.</sub></p>
+<p><sup>18���)</sup><sub> It is implementation-defined how <i>EMBED-WIDTH</i> and <i>EMBED-MAX</i> are obtained. For example, an implementation may read &lt;limits.h&gt; to check <code>UCHAR_WIDTH</code> and <code>UCHAR_MAX</code>, or use implementation parameters, to determine their value.</sub></p>
 
 </ins>
 </blockquote>
@@ -607,7 +619,7 @@ Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]:
 
 <p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&lt;</code> and <code>&gt;</code> or the <code>&quot;</code> and <code>&quot;</code> delimiters. How the places are specified or the resource identified is implementation-defined.</p>
 
-<p><sup>3</sup> Let <i>EMBED-MAX</i> and <i>EMBED-WIDTH</i> be the implementation-defined maximum integer value and the implementation-defined width of a given integer value. Either form of the <b><code>&num;embed</code></b> directive specified previously behave as if it were expanded to a comma separated list. Specifically, each element of the comma separated list behaves as if the characters from the resource were read and mapped in an implementation-defined manner to a sequence of bits. The sequence of bits is used to produce integral constants of <i>EMBED-WIDTH</i> width and values between <code>0</code> and <i>EMBED-MAX</i>, inclusive. [ <i>Note</i>: It is implementation-defined how <i>EMBED-WIDTH</i> and <i>EMBED-MAX</i> are obtained. For example, an implementation may read &lt;climits&gt; to check <code>UCHAR_WIDTH</code> and <code>UCHAR_MAX</code>, or use implementation configuration, to determine their value. The behavior is unspecified if the values are not equivalent to the width and max values for <code>unsigned char</code> ([<a href="http://eel.is/c++draft/basic.fundamental">basic.fundamental</a>]). — <i>end note</i> ]</p>
+<p><sup>3</sup> Let <i>EMBED-MAX</i> and <i>EMBED-WIDTH</i> be the implementation-defined maximum integer value and the implementation-defined width of a given integer value. Either form of the <b><code>&num;embed</code></b> directive specified previously behave as if it were expanded to a comma separated list. Specifically, each element of the comma separated list behaves as if the characters from the resource were read and mapped in an implementation-defined manner to a sequence of bits. The sequence of bits is used to produce integral constants for each element of the comma separated list, with values of <i>EMBED-WIDTH</i> width and values between <code>0</code> and <i>EMBED-MAX</i>, inclusive. [ <i>Note</i>: It is implementation-defined how <i>EMBED-WIDTH</i> and <i>EMBED-MAX</i> are obtained. For example, an implementation may read &lt;climits&gt; to check <code>UCHAR_WIDTH</code> and <code>UCHAR_MAX</code>, or use implementation configuration, to determine their value. The behavior is unspecified if the values are not equivalent to the width and max values for <code>unsigned char</code> ([<a href="http://eel.is/c++draft/basic.fundamental">basic.fundamental</a>]). — <i>end note</i> ]</p>
 
 <p><sup>4</sup> If a <i>constant-expression</i> is specified, it will be evaluated as specified by conditional inclusion ([<a href="http://eel.is/c++draft/cpp.cond">cpp.cond</a>]). It shall result in a positive integer constant. The mapping from the contents of the resource to the elements of the comma separated list shall contain up to <i>constant-expression</i> elements. If the implementation-defined bit size is not a multiple of the <i>EMBED-WIDTH</i>, and the implementation-defined bit size is less than the <i>constant-expression</i> multiplied by the <i>EMBED-WIDTH</i>, then the program is ill-formed. It is well-formed if the implementation-defined bit size is greater than or equal to the <i>constant-expression</i> multiplied by the <i>EMBED-WIDTH</i>.</p>
 
