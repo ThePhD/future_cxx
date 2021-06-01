@@ -133,7 +133,7 @@ src: url(data:font/woff2;base64,d09GMgABAAAABOEoABIAAAAL5xQABOCvAAEAAAAAAAAAAAAA
 <li><a href="#inspiration-existing-practice"><span class="toc-section-number">3.2</span> Inspiration: Existing Practice</a></li>
 <li><a href="#why-not-an-attribute"><span class="toc-section-number">3.3</span> Why not an <code>[[attribute]]</code>?</a></li>
 <li><a href="#backwards-compatibility-with-vanilla-c-standard-libraries"><span class="toc-section-number">3.4</span> Backwards-Compatibility with “Vanilla” C Standard Libraries</a></li>
-<li><a href="#the-using-a-b-syntax"><span class="toc-section-number">3.5</span> The <code>using a = b</code> syntax</a></li>
+<li><a href="#the-_alias-a-b-syntax"><span class="toc-section-number">3.5</span> The <code>_Alias a = b</code> syntax</a></li>
 </ul></li>
 <li><a href="#wording"><span class="toc-section-number">4</span> Wording</a>
 <ul>
@@ -181,7 +181,7 @@ This proposal provides a simple, no-cost way to indirect a function’s identifi
 <h2 data-number="2.2" id="liaison-issue---stopping-c-improvements"><span class="header-section-number">2.2</span> Liaison Issue - Stopping C++ Improvements</h2>
 <p>This is both a C Standard Library issue and a C++ Standard Library issue. Not only is it impossible to change the C Standard Library, but because of these restrictions and because the C Standard Library is included by-reference into C++, we cannot make any of the necessary changes to solve this problem in C++. This elevates the level of this problem to a <strong>liaison issue</strong> that must be fixed if we are to make forward progress in both C and C++.</p>
 <h2 data-number="2.3" id="standardizing-existing-practice"><span class="header-section-number">2.3</span> Standardizing Existing Practice</h2>
-<p>While the C Standard Committee struggles with this issue, many other libraries that have binary interfaces communicated through shared or dynamically linked libraries have solved this problem. MSVC uses a complex versioning and symbol resolution scheme with its DLLs, which we will not be (and cannot) properly standardize. But, other implementations have been using implementation-defined aliasing techniques that effectively change the symbol used in the final binary that is different from the “normal” symbol that would be produced by a given function declaration.</p>
+<p>While the C Standard Committee struggles with this issue, many other libraries that have binary interfaces communicated through shared or dynamically linked libraries have solved this problem. MSVC uses a complex versioning and symbol resolution scheme with its DLLs, which we will not be (and could not) properly standardize. But, other implementations have been using implementation-defined aliasing techniques that effectively change the symbol used in the final binary that is different from the “normal” symbol that would be produced by a given function declaration.</p>
 <p>These techniques, expanded upon in the design section as to why we chose the syntax we did for this proposal, have existed for at least 15 years in the forms discussed before, and longer with linker-specific hacks.</p>
 <h2 data-number="2.4" id="c-issue---prevented-evolution"><span class="header-section-number">2.4</span> C Issue - Prevented Evolution</h2>
 <p>Not fixing this issue also comes with a grave problem without considering C++ at all. We have no way of seamlessly upgrading our libraries without forcing end-users to consider ABI breakage inherit in changes type definitions or having library authors jump through implementation-specific and fraught hoops for creating (transparent) layers of indirection between a function call and the final binary. This means large swaths of C’s standard library, due to §7.1.4, are entirely static and non-upgradeable, even if we write functions that use type definitions that can change.</p>
@@ -190,7 +190,7 @@ This proposal provides a simple, no-cost way to indirect a function’s identifi
 <p>I am unreasonably angry about this, because the <code>intmax_t</code> situation has kept me from enabling completely-working first-class <code>int128</code> support out of clang for a decade. In that decade, I personally would have used 128b literals more times in personal and professional projects than the entire world has used intmax_t to beneficial effect, ever, in total.</p>
 <p>— <a href="https://twitter.com/stephentyrone/status/1329796144193556482">Steve Canon, Mathematician &amp; Clang Developer</a></p>
 </blockquote>
-<p>At the surface of this issue and as illustrated by the many failed — and one successful — papers for <code>intmax_t</code> is that we need a better way of type definitions that get used for interfaces in the C standard. Underlying it is a growing, tumescent cancer that has begun to metastasize in the presence of not having a reason to invent wildly new architectures that necessitate fundamentally recompiling the world. Our inability to present a stable interface for users in a separable and Standards-Compliant way from the binary representation of a function that we cherish so deeply is becoming a deepening liability. If every function (the fundamental unit of doing work) essentially becomes impossible to change in any way, shape, or form, then what we are curating is not a living and extensible programming language but a dying system that is unequivocally doomed to general failure and eventual replacement.</p>
+<p>At the surface of this issue and as illustrated by the many failed — and one successful — papers for <code>intmax_t</code> is that we need a better way of type definitions that get used for interfaces in the C standard. Underlying it is a wound that has begun to fester in the presence of not having a reason to invent wildly new architectures that necessitate fundamentally recompiling the world. Our inability to present a stable interface for users in a separable and Standards-Compliant way from the binary representation of a function that we cherish so deeply is becoming a deepening liability. If every function (the fundamental unit of doing work) essentially becomes impossible to change in any way, shape, or form, then what we are curating is not a living and extensible programming language but a dying system that is unequivocally doomed to general failure and eventual replacement.</p>
 <h1 data-number="3" id="design"><span class="header-section-number">3</span> Design</h1>
 <p>Our goal with this feature is to create a no-cost, zero-overhead function abstraction layer that prevents a type definition or other structure from leaking into a binary. From the motivation and analysis above, we need the following properties:</p>
 <ul>
@@ -206,9 +206,9 @@ This proposal provides a simple, no-cost way to indirect a function’s identifi
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="co">/* ... */</span></span>
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="pp">#if __GNU_LIBC &lt;= 228</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> imaxabs = __glibc_imaxabs228; <span class="co">// !!</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    _Alias imaxabs = __glibc_imaxabs228; <span class="co">// !!</span></span>
 <span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="pp">#else</span></span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">using</span> imaxabs = __glibc_imaxabs229; <span class="co">// !!</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    _Alias imaxabs = __glibc_imaxabs229; <span class="co">// !!</span></span>
 <span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="pp">#endif</span></span>
 <span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="co">/* ... */</span></span>
@@ -217,7 +217,7 @@ This proposal provides a simple, no-cost way to indirect a function’s identifi
 <span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">intmax_t</span> x = imaxabs(-<span class="dv">50</span>);</span>
 <span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> (<span class="dt">int</span>)x;</span>
 <span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
-<p>It is composed of the <code>using</code> keyword, followed by an <em>identifier</em>, the <code>equal</code>s token, and then another <em>identifier</em>. The identifier on the right hand side must be either a previously declared <em>transparent-function-alias</em> or name a function declaration. Below, we explore the merits of this design and its origins.</p>
+<p>It is composed of the <code>_Alias</code> keyword, followed by an <em>identifier</em>, the <code>equal</code>s token, and then another <em>identifier</em>. The identifier on the right hand side must be either a previously declared <em>transparent-function-alias</em> or name a function declaration. Below, we explore the merits of this design and its origins.</p>
 <h2 data-number="3.1" id="transparency---type-definitions-but-for-functions"><span class="header-section-number">3.1</span> Transparency - “Type Definitions, but for Functions”</h2>
 <p>We call this <strong>transparent</strong> because it is, effectively, unobservable from the position of a library consumer, that this mechanism has been deployed. The following code snippet illustrates the properties associated with Transparent Function Aliases:</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;assert.h&gt;</span></span>
@@ -230,7 +230,7 @@ This proposal provides a simple, no-cost way to indirect a function’s identifi
 <span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> (<span class="dt">int</span>)(d + i);</span>
 <span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>}</span>
 <span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="kw">using</span> alias_func = real_func;</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>_Alias alias_func = real_func;</span>
 <span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="co">// No Constraint Violation</span></span>
 <span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>_Static_assert(&amp;alias_func == &amp;real_func);</span>
 <span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a></span>
@@ -241,12 +241,12 @@ This proposal provides a simple, no-cost way to indirect a function’s identifi
 <span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a><span class="co">/* No Constraint Violation: redeclaration of an alias pointing</span></span>
 <span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a><span class="co">/* to the same declaration is fine. */</span></span>
-<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a><span class="kw">using</span> alias_func = real_func;</span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>_Alias alias_func = real_func;</span>
 <span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a><span class="co">/* Constraint Violation: redeclaration of an alias pointing */</span></span>
 <span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a><span class="co">/* to a different declaration than the first one is not */</span></span>
 <span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a><span class="co">/* allowed. */</span></span>
-<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a><span class="co">//using alias_func = other_func;</span></span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a><span class="co">//_Alias alias_func = other_func;</span></span>
 <span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> main ([[<span class="at">maybe_unused</span>]] <span class="dt">int</span> argc, [[<span class="at">maybe_unused</span>]] <span class="dt">char</span>* argv[]) {</span>
 <span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>    <span class="kw">typedef</span> <span class="dt">int</span>(<span class="dt">real_func_t</span>)(<span class="dt">double</span>, <span class="dt">int</span>);</span>
@@ -314,12 +314,12 @@ This proposal provides a simple, no-cost way to indirect a function’s identifi
 </blockquote>
 <p>There are many compilers which implement exactly this behavior with exactly this GCC-extension syntax such as Oracle’s C Compiler, the Intel C Compiler, the Tiny C Compiler, and Clang.<a href="#fn8" class="footnote-ref" id="fnref8" role="doc-noteref"><sup>8</sup></a> <a href="#fn9" class="footnote-ref" id="fnref9" role="doc-noteref"><sup>9</sup></a>. Clang also features its own <code>asm</code>-style attribute, where the function’s name is “mangled” without needing to provide an initial <a href="#fn10" class="footnote-ref" id="fnref10" role="doc-noteref"><sup>10</sup></a>. Microsoft Visual C uses a (slightly more complex) stateful pragma mechanisms and external compiler markup<a href="#fn11" class="footnote-ref" id="fnref11" role="doc-noteref"><sup>11</sup></a>.</p>
 <h3 data-number="3.2.1" id="other-existing-practice-asm...-and-pragma"><span class="header-section-number">3.2.1</span> Other Existing Practice: <code>asm(...)</code> and <code>#pragma</code></h3>
-<p>There are 2 other proofs of practice in the industry today. One was an MSVC-like <code>#pragma</code> behavior/<code>EXPORT</code>-file specification. The other was a Clang-like <code>asm()</code>-attribute that rename behavior. When evaluated as potential alternatives to the syntaxes chosen here, there were a number of deficiencies for providing backwards compatibility. Notably, there are 2 chief concerns at play:</p>
+<p>There are 3 other proofs of practice in the industry today. One was an MSVC-like <code>#pragma</code> behavior/<code>EXPORT</code>-file specification. Another was a Clang-like <code>asm()</code>-attribute that rename behavior. The third was a <code>#pragma</code> that simply made the linker do a find-and-replace symbol swap. When evaluated as potential alternatives to the syntaxes chosen here, there were a number of deficiencies for providing backwards compatibility. Notably, there are 2 chief concerns at play:</p>
 <ul>
 <li>the function entity/entities the end-user must interact with from a given library; and,</li>
-<li>valid interpretations of the directive in a non-binary world.</li>
+<li>valid interpretations of the directive in a world where the implementation does not produce binary artefacts.</li>
 </ul>
-<p>Clang’s <code>asm(...)</code> and MSVC’s <code>#pragma</code>-based approach are harder to standardize because each mechanism relies too heavily on the linker and the details of binary artefacts. Whereas the GCC-style attribute is tied to a front-end entity and, therefore, abstracts away binary changes as a means left to the implementation, Clang and MSVC’s approaches are not tied to any entity that exists in the program in general. Export <code>#pragma</code>s and <code>asm(...)</code> attributes can be used to reference any symbol, by unchecked string, that can be resolved at any later stage of compilation (possibly during linking and code generation). There is no good way to standardize such behavior because there are no meaningful semantic constraints that can be placed on their designs that are enforceable within the boundaries of the Abstract Machine.</p>
+<p>Clang’s <code>asm(...)</code>, MSVC’s <code>#pragma</code>-based approach, and Oracle’s <code>#pragma redefine_extname</code><a href="#fn12" class="footnote-ref" id="fnref12" role="doc-noteref"><sup>12</sup></a> are harder to standardize because each mechanism relies too heavily on the linker and the details of binary artefacts. Whereas the GCC-style attribute is tied to a front-end entity and, therefore, abstracts away binary changes as a means left to the implementation, Clang and MSVC’s approaches are not tied to any entity that exists in the program in general. Export <code>#pragma</code>s and <code>asm(...)</code> attributes can be used to reference any symbol, by unchecked string, that can be resolved at any later stage of compilation (possibly during linking and code generation). There is no good way to standardize such behavior because there are no meaningful semantic constraints that can be placed on their designs that are enforceable within the boundaries of the Abstract Machine.</p>
 <p>Contrast this to GCC’s attribute. It <strong>requires</strong> that a previous, in-language declaration exists. If that declaration does not exist, the program has a constraint violation:</p>
 <div class="sourceCode" id="cb6"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#if 0</span></span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="co">extern inline int foo () { return 1; }</span></span>
@@ -364,21 +364,38 @@ This proposal provides a simple, no-cost way to indirect a function’s identifi
 <span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="at">extern</span> <span class="dt">intmax_t</span> __imaxabs_vanilla_v2(<span class="dt">intmax_t</span>);</span>
 <span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="kw">using</span> imaxabs = __imaxabs_vanilla_v2;</span></code></pre></div>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>_Alias imaxabs = __imaxabs_vanilla_v2;</span></code></pre></div>
 <p>As long as <code>inttypes_compatibility.c</code> is linked with the final binary artefact <code>vanilla.so</code>, the presumed mangled symbol <code>_imaxabs</code> will always be there. Meanwhile, the “standard” <code>inttypes.h</code> will have the normal <code>imaxabs</code> symbol that is tied in a transparent way to the “Version 2” of the vanilla implementation, <code>__imaxabs_vanilla_v2</code>. This produces a perfectly backwards compatible interface for the previous users of <code>vanilla.so</code>. It allows typedefs to be seamlessly upgraded, without breaking already-compiled end user code. Newly compiled code will directly reference the v2 functions with no performance loss or startup switching, getting an upgraded <code>intmax_t</code>. Older programs compiled with the old <code>intmax_t</code> continue to reference old symbols left by compatibility translation units in the code.</p>
 <p>This means that both C Standard Libraries will have a language-capable medium of upgrading their code in a systemic and useful fashion.</p>
-<h2 data-number="3.5" id="the-using-a-b-syntax"><span class="header-section-number">3.5</span> The <code>using a = b</code> syntax</h2>
-<p>We use the word <code>using</code> as there was very little option to create a keyword that more appropriately mirrors “<code>typedef</code> but for functions”. <code>funcdef</code> is already a prominent identifier in C codebases, and reusing <code>typedef</code> is not a very good idea for something that does not declare a type.</p>
-<p>C++ took the keywording <code>using</code>, and so far it seems to have made most C and C++ developers stay away from the keyword altogether. Nevertheless, the wording uses a stand-in <code>USING-TOKEN</code> here, and we eagerly await for community suggestions. At the moment, the only suggestion we have for the token is:</p>
+<h2 data-number="3.5" id="the-_alias-a-b-syntax"><span class="header-section-number">3.5</span> The <code>_Alias a = b</code> syntax</h2>
+<p><code>_Alias</code> is the safe choice. Originally, we used the word <code>using</code> as there was very little option to create a keyword that more appropriately mirrors “<code>typedef</code> but for functions”. <code>funcdef</code> is already a prominent identifier in C codebases, and reusing <code>typedef</code> is not a very good idea for something that does not declare a type.</p>
+<p>C++ took the keyword <code>using</code>, and so far it seems to have made most C and C++ developers stay away from the keyword altogether. Nevertheless, the wording uses a stand-in <code>USING-TOKEN</code> here. The suggestions we have for the token are as follows, based on not being findable in publicly available codebase sets (either on (isocpp.org)[https://isocpp.org]’s codesearch of package manager code for Linux Distributions, GitHub’s dataset for code, and similar sources):</p>
 <ul>
-<li><code>using</code></li>
+<li><code>using</code> (made safer by C++ using it as a keyword)</li>
+<li><code>using_alternate</code> (long, pretty good name)</li>
+<li><code>alternate_alias</code> (long, pretty good name)</li>
+<li><code>_Alias</code>, with a <code>&lt;stdalias.h&gt;</code> header and a <code>#define alias _Alias</code> in it (trying to avoid the underscore-capital keywords since some folk do not appreciate it)</li>
+<li><code>sameysameynamename</code> (long enough it conflicts with no developers, <a href="https://twitter.com/mattgodbolt/status/1398652784212385797">recommended by Godbolt himself</a>)</li>
+</ul>
+<p>Various names were also thought of and unfortunately discarded because they exist as macro names and identifier names in publicly available code today:</p>
+<ul>
+<li><code>using_name</code></li>
+<li><code>decl_alias</code>/<code>declalias</code></li>
+<li><code>alias_decl</code>/<code>aliasdecl</code></li>
+<li><code>alias_def</code>/<code>aliasdef</code></li>
+<li><code>name_decl</code>/<code>namedecl</code></li>
+<li><code>name_def</code>/<code>namedef</code></li>
+<li><code>name_alias</code>/<code>namealias</code></li>
+<li><code>function_alias</code></li>
+<li><code>func_def</code>/<code>funcdef</code></li>
+<li><code>func_decl</code>/<code>funcdecl</code></li>
 </ul>
 <h1 data-number="4" id="wording"><span class="header-section-number">4</span> Wording</h1>
 <p>The following wording is registered against <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2596.pdf">N2596</a>.</p>
 <h2 data-number="4.1" id="add-a-new-keyword-to-6.4.1-keywords-syntax-paragraph-1"><span class="header-section-number">4.1</span> Add a new keyword to “§6.4.1 Keywords”, Syntax, paragraph 1</h2>
 <blockquote>
 <div class="wording-numbered wording-numbered-1">
-<em>keyword</em>: one of<br />
+<i>keyword</i>: one of<br />
 <p>
 …
 </p>
@@ -395,13 +412,13 @@ USING-TOKEN
 <div class="wording-numbered wording-numbered-1">
 <dl>
 <dt>
-<em>declaration:</em>
+<i>declaration</i>:
 </dt>
 <dd>
 …
 </dd>
 <dd>
-<emsp></emsp><ins><em>function-alias</em> <strong>;</strong></ins>
+<emsp></emsp><ins><i>function-alias</i> <b>;</b></ins>
 </dd>
 </dl>
 </div>
@@ -409,16 +426,22 @@ USING-TOKEN
 <h3 data-number="4.2.2" id="constraints-paragraphs-2-and-3"><span class="header-section-number">4.2.2</span> Constraints, paragraphs 2 and 3</h3>
 <blockquote>
 <div class="wording-numbered wording-numbered-2">
-<p>A declaration other than a static_assert or attribute declaration shall declare at least a declarator (other than the parameters of a function or the members of a structure or union), a tag<ins>, a function alias</ins>, or the members of an enumeration.</p>
+<p>A declaration other than a <i>static_assert</i> or <i>attribute</i> declaration shall declare at least a declarator (other than the parameters of a function or the members of a structure or union), a tag<ins>, a function alias</ins>, or the members of an enumeration.</p>
 </div>
 <div class="wording-numbered">
 <p>If an identifier has no linkage, there shall be no more than one declaration of the identifier (in a declarator or type specifier) with the same scope and in the same name space, except that:</p>
 <ul>
-<li>a typedef name may be redefined to denote the same type as it currently does, provided that type is not a variably modified type;</li>
-<li><ins>
+<li>
+a typedef name may be redefined to denote the same type as it currently does, provided that type is not a variably modified type;
+</li>
+<li>
+<ins>
 a function alias name may be redeclared as defined in 6.7.12; and
-</ins></li>
-<li>tags may be redeclared as specified in 6.7.2.3.</li>
+</ins>
+</li>
+<li>
+tags may be redeclared as specified in 6.7.2.3.
+</li>
 </ul>
 </div>
 </blockquote>
@@ -451,10 +474,10 @@ Syntax
 <div class="wording-numbered wording-numbered-1">
 <dl>
 <dt>
-<em>function-alias:</em>
+<i>function-alias:</i>
 </dt>
 <dd>
-<emsp></emsp><strong>USING-TOKEN</strong> <em>identifier</em> <strong>=</strong> <em>identifier</em>
+<emsp></emsp><b>USING-TOKEN</b> <i>identifier</i> <b>=</b> <i>identifier</i>
 </dd>
 </dl>
 </div>
@@ -464,7 +487,7 @@ Syntax
 <h6>
 Constraints
 </h6>
-<div class="wording-numbered">
+<div class="wording-numbered ins">
 <p>A function alias target must refer to a preceding function alias or a preceding function declaration. A function alias being redeclared shall refer to the same function declaration<sup>1⭐⭐</sup>.</p>
 </div>
 <h6>
@@ -576,11 +599,12 @@ Recommended Practice
 <li id="fn4" role="doc-endnote"><p>Krause, Philipp Klaus. “Remove the <code>fromfp</code>, <code>ufromfp</code>, <code>fromfpx</code>, <code>ufromfpx</code>, and other intmax_t functions”. ISO/IEC JTC1 SC22 WG14 - Programming Languages C. <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2525.htm">http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2525.htm</a><a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn5" role="doc-endnote"><p>Seacord, Robert. “Specific-width length modifier”. ISO/IEC JTC1 SC22 WG14 - Programming Languages C. <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2680.pdf">http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2680.pdf</a>.<a href="#fnref5" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn6" role="doc-endnote"><p>GNU Compiler Collection. “Function attributes: alias”. GNU Compiler Collection Maintainers, Free Software Foundation. <a href="https://clang.llvm.org/docs/AttributeReference.html#asm">https://clang.llvm.org/docs/AttributeReference.html#asm</a><a href="#fnref6" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
-<li id="fn7" role="doc-endnote"><p>armcc Compiler. “<code>__attribute__((alias))</code> function attribute”. Keil. <a href="https://www.keil.com/support/man/docs/armcc/armcc_chr1359124973698.htm">https://www.keil.com/support/man/docs/armcc/armcc_chr1359124973698.htm</a><a href="#fnref7" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn7" role="doc-endnote"><p>armcc Compiler. “<code>1__attribute__((alias))</code> function attribute”. Keil. <a href="https://www.keil.com/support/man/docs/armcc/armcc_chr1359124973698.htm">https://www.keil.com/support/man/docs/armcc/armcc_chr1359124973698.htm</a><a href="#fnref7" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn8" role="doc-endnote"><p>Oracle Solaris Studio. “2.9 Supported Attributes”. Oracle. <a href="https://docs.oracle.com/cd/E24457_01/html/E21990/gjzke.html#scrolltoc">https://docs.oracle.com/cd/E24457_01/html/E21990/gjzke.html#scrolltoc</a><a href="#fnref8" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn9" role="doc-endnote"><p>Intel Compiler Collection. “Documentation: attribute”. Intel. <a href="https://software.intel.com/content/www/us/en/develop/articles/download-documentation-intel-compiler-current-and-previous.html">https://software.intel.com/content/www/us/en/develop/articles/download-documentation-intel-compiler-current-and-previous.html</a><a href="#fnref9" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn10" role="doc-endnote"><p>Clang. “Attributes: <code>asm</code>”. LLVM Foundation. <a href="https://clang.llvm.org/docs/AttributeReference.html#asm">https://clang.llvm.org/docs/AttributeReference.html#asm</a><a href="#fnref10" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn11" role="doc-endnote"><p>Microsoft Visual C++. “EXPORTS | Microsoft Docs”. Microsoft. <a href="https://docs.microsoft.com/en-us/cpp/build/reference/exports">https://docs.microsoft.com/en-us/cpp/build/reference/exports</a><a href="#fnref11" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn12" role="doc-endnote"><p>Oracle Solaris Studio. “2.12.22 redefine_extname”. Oracle. <a href="https://docs.oracle.com/cd/E77782_01/html/E77788/bjaby.html#OSSCGbjacu">https://docs.oracle.com/cd/E77782_01/html/E77788/bjaby.html#OSSCGbjacu</a><a href="#fnref12" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
 </section>
 </body>
