@@ -36,6 +36,12 @@ Getting the type of an expression in Standard C code.
 
 ## Revision 3 - May 15th, 2021
 
+- Normalize the handing of both forms of `_Atomic type-name` and `_Atomic (type-name)` (there should be no difference between qualifiers vs. type-name, even if the Standard makes a slight distinction in the syntactical handling).
+
+
+
+## Revision 3 - May 15th, 2021
+
 - Make sure we mention the old C99 Rationale and Nick Stoughton's previous evaluation of `typeof` in the Appendix.
 - Added final direction based on the March 2021 Virtual Standard Meeting's Vote. The numbers listed are in the form `Yes/No/Abstain` to the given question / option.
 
@@ -330,7 +336,7 @@ The following wording is relative to [N2596](http://www.open-std.org/jtc1/sc22/w
 </div>
 
 <div class="wording-numbered">
-<p>All qualifiers (6.7.3) on the type from the result of a <code class="c-kw">remove_quals</code> operation are removed, including the <code class="c-kw">_Atomic</code> qualifier. <code class="c-kw">_Atomic ( type-name )</code>, with parentheses, is not a qualifier, and remains unaffected by <code class="c-kw">remove_quals</code>. Otherwise, for <code class="c-kw">typeof</code> operations, all qualifiers are preserved.</p>
+<p>All qualifiers (6.7.3) on the type from the result of a <code class="c-kw">remove_quals</code> operation are removed, including the <code class="c-kw">_Atomic</code> qualifier. <code class="c-kw">_Atomic ( type-name )</code>, with parentheses, is not a qualifier, but is still stripped by <code class="c-kw">remove_quals</code>. Otherwise, for <code class="c-kw">typeof</code> operations, all qualifiers are preserved.</p>
 </div>
 
 <p><sup>11�0)</sup><sub> When applied to a parameter declared to have array or function type, the <code class="c-kw">typeof</code> operator yields the adjusted (pointer) type (see 6.9.1).</sub></p>

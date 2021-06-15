@@ -1,0 +1,1045 @@
+<pre class='metadata'>
+Title: #embed - a scannable, tooling-friendly binary resource inclusion mechanism
+H1: <code>#embed</code> - a scannable, tooling-friendly binary resource inclusion mechanism
+Shortname: D1967
+Revision: 5
+Status: D
+Date: 2021-06-15
+Group: WG21
+Audience: EWG
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: Shepherd's Oasis LLC, shepherd@soasis.org
+URL: https://thephd.dev/_vendor/future_cxx/papers/d1967.html
+!Implementation: <a href="https://github.com/ThePhD/embed">GitHub</a>
+!Source: <a href="https://github.com/ThePhD/future_cxx/blob/main/papers/source/d1967.bs">GitHub</a>
+Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
+Metadata Order: Author, This Version, Source, Issue Tracking, Project, Audience
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+Abstract: Pulling binary data into a program often involves external tools and build system coordination. Many programs need binary data such as images, encoded text, icons and other data in a specific format. Current state of the art for working with such static data in C includes creating files which contain solely string literals, directly invoking the linker to create data blobs to access through carefully named extern variables, or generating large brace-delimited lists of integers to place into arrays. As binary data has grown larger, these approaches have begun to have drawbacks and issues scaling. From parsing 5 megabytes worth of integer literal expressions into AST nodes to arbitrary string literal length limits in compilers, portably putting binary data in a C program has become an arduous task that taxes build infrastructure and compilation memory and time. This proposal provides a flexible preprocessor directive for making this data available to the user in a straightforward manner.
+</pre>
+
+<pre class=include>
+path: resources/css/wording.bs
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-color-fix.html
+</pre>
+
+<div class="pagebreak"></div>
+
+
+
+
+# Changelog # {#changelog}
+
+
+
+## Revision - June 15th, 2021 5 ## {#changelog-revision-5}
+
+- Vastly improve C++ wording after June 3rd discussion.
+- Change syntax after comments from implementers of scanners / dependency trackers, and comments from implementers that were supported by users.
+
+
+
+## Revision 4 - April 15th, 2021 (WG21), May 15th, 2021 (WG14) ## {#changelog-revision-4}
+
+- Added post C meeting fixes to prepare for hopeful success next meeting.
+- Added 2 more examples to C and C++ wording.
+- Vastly improved wording and reduced ambiguities in syntax and semantics.
+- Fixed various wording issues.
+
+
+
+## Revision 3 - October 25th, 2020 ## {#changelog-revision-3}
+
+- Added post C++ meeting notes and discussion.
+- Removed type or bit specifications from the `#embed` directive.
+- Moved "Type Flexibility" section and related notes to the Appendix as they are now unpursued.
+
+
+
+## Revision 2 - April 10th, 2020 ## {#changelog-revision-2}
+
+- Added post C meeting notes and discussion.
+- Added discussion of potential endianness.
+
+
+
+## Revision 1 - March 5th, 2020 ## {#changelog-revision-1}
+
+- Improved wording section at the end to be more detailed in handling preprocessor (which does not understand types).
+
+
+
+## Revision 0 - January 5th, 2020 ## {#changelog-revision-0}
+
+- Initial release.
+
+
+
+
+# Polls & Votes # {#polls}
+
+The votes for the C++ Committee are as follows:
+
+- SF: Strongly in Favor
+- F: In Favor
+- N: Neutral
+- A: Against
+- SA: Strongly Against
+
+The votes for the C Committee are as follows:
+
+- Y: Ye
+- N: Nay
+- A: Abstain
+
+
+
+## December 2020 Virtual C Meeting ## {#polls-december_2020_c}
+
+"Do we want to allow #embed to appear in any context that is different from an initialization of a character array?"
+
+<table>
+<thead>
+  <tr>
+    <th>Y</th>
+    <th>N</th>
+    <th>A</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td>5</td>
+    <td>8</td>
+    <td>6</td>
+  </tr>
+</tbody>
+</table>
+
+"Leaning in the direction of no but not clear." The paper author after consideration chose to keep this as-is right now. Discussion of the feature meant that trying to ban this from different contexts meant that a naïve, separated-preprocessor implementation would be banned and it would require special compiler magic to diagnose. Others pointed out that just trying to leave it "unspecified whether it works outside of the initialization of an array or not" is very dangerous to portably. The author agrees with this assessment and therefore will leave it as-is. The goal of this feature is to enable implementers to use the magic if they so choose, as an implementation detail and a Quality of Implementation selling point. Vendors who provide a simple expansion may not see improvements to throughput and speed of translation but that is their choice as an implementer. Therefore, we cannot do anything which would require them or any preprocessor implementation to traffic in magic directives unless they want to.
+
+
+
+## September 2020 Virtual C++ EWG Meeting ## {#polls-september_2020_cpp}
+
+"We want `#embed [optional limit] header-name` (no type name, no other specification) as a feature."
+
+<table>
+<thead>
+  <tr>
+    <th>SF</th>
+    <th>F</th>
+    <th>N</th>
+    <th>A</th>
+    <th>SA</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td>2</td>
+    <td>16</td>
+    <td>3</td>
+    <td>0</td>
+    <td>1</td>
+  </tr>
+</tbody>
+</table>
+
+This vote gained the most consensus in the Committee. While there were some individuals who wanted to be able to specify a type, there was stronger interest in not specifying a type at all and always producing a list of integer literals suitable to be used anywhere an `comma-separated list` was valid.
+
+"We want to explore allowing an optional sequence of tokens to specify a type to `#embed`."
+
+<table>
+<thead>
+  <tr>
+    <th>SF</th>
+    <th>F</th>
+    <th>N</th>
+    <th>A</th>
+    <th>SA</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td>1</td>
+    <td>9</td>
+    <td>4</td>
+    <td>4</td>
+    <td>3</td>
+  </tr>
+</tbody>
+</table>
+
+Further need was also expressed for `constexpr` of different types of variables, so we would rather focus that ability into a sister feature, [`std::embed`](/_vendor/future_cxx). There was also an expression to augment `std::bitcast<...>(...)` to handle arrays of data, which would be a follow-on proposal. There was a great amount of interest in the `std::bitcast` direction, which means a paper should be written to follow up on it.
+
+
+
+## April 2020 Virtual C Meeting ## {#polls-april_2020_c}
+
+"We want to have a proper preprocessor `#embed ...` over a `#pragma _STDC embed ...`-based directive."
+
+This had UNANIMOUS CONSENT to pursue a proper preprocessor directive and NOT use the `#pragma` syntax. It is noted that the author deems this to be the best decision!
+
+
+**The following poll was later superceded in the C and C++ Committees.**
+
+"We want to specify embed as using `#embed [bits-per-element] header-name` rather than `#embed [pp-tokens-for-type] header-name`." (2-way poll.)
+
+<table>
+<thead>
+  <tr>
+    <th>Y</th>
+    <th>N</th>
+    <th>A</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td>10</td>
+    <td>2</td>
+    <td>3</td>
+  </tr>
+</tbody>
+</table>
+
+- Y: 10 bits-per-element (Ye)
+- N: 2 type-based (Nay)
+- A: 4 Abstain (Abstain)
+
+This poll will be a bit harder to accommodate properly. Using a <i>`constant-expression`</i> that produces a numeric constant means that the max-length specifier is now ambiguous. The syntax of the directive may need to change to accommodate further exploration.
+
+
+
+
+# Introduction # {#intro}
+
+For well over 40 years, people have been trying to plant data into executables for varying reasons. Whether it is to provide a base image with which to flash hardware in a hard reset, icons that get packaged with an application, or scripts that are intrinsically tied to the program at compilation time, there has always been a strong need to couple and ship binary data with an application.
+
+C does not make this easy for users to do, resulting in many individuals reaching for utilities such as `xxd`, writing python scripts, or engaging in highly platform-specific linker calls to set up `extern` variables pointing at their data. Each of these approaches come with benefits and drawbacks. For example, while working with the linker directly allows injection of vary large amounts of data (5 MB and upwards), it does not allow accessing that data at any other point except runtime. Conversely, doing all of these things portably across systems and additionally maintaining the dependencies of all these resources and files in build systems both like and unlike `make` is a tedious task.
+
+Thusly, we propose a new preprocessor directive whose sole purpose is to be `#include`, but for binary data: `#embed`.
+
+
+
+## Motivation ## {#intro-motivation}
+
+The reason this needs a new language feature is simple: current source-level encodings of "producing binary" to the compiler are incredibly inefficient both ergonomically and mechanically. Creating a brace-delimited list of numerics in C comes with baggage in the form of how numbers and lists are formatted. C's preprocessor and the forcing of tokenization also forces an unavoidable cost to lexer and parser handling of values.
+
+Therefore, using arrays with specific initialized values of any significant size becomes borderline impossible. One would [think this old problem](https://groups.google.com/forum/#!topic/comp.std.c/zWFEXDvyTwM) would be work-around-able in a succinct manner. Given how old this desire is (that comp.std.c thread is not even the oldest recorded feature request), proper solutions would have arisen. Unfortunately, that could not be farther from the truth. Even the compilers themselves suffer build time and memory usage degradation, as contributors to the LLVM compiler ran the gamut of [the biggest problems that motivate this proposal](http://lists.llvm.org/pipermail/llvm-dev/2020-January/138225.html) in a matter of a week or two earlier this very year. Luke is not alone in his frustrations: developers all over suffer from the inability to include binary in their program quickly and perform [exceptional gymnastics](https://twitter.com/oe1cxw/status/1008361214018244608) to get around the compiler's inability to handle these cases.
+
+C developer progress is impeded regarding the [inability to handle this use case](https://twitter.com/pcwalton/status/1233521726262300672), and it leaves both old and new programmers wanting.
+
+
+## But *How* Expensive Is This? ## {#design-efficiency-metrics}
+
+Many different options as opposed to this proposal were seriously evaluated. Implementations were attempted in at least 2 production-use compilers, and more in private. To give an idea of usage and size, here are results for various compilers on a machine with the following specification:
+
+- Intel Core i7 @ 2.60 GHz
+- 24.0 GB RAM
+- Debian Sid or Windows 10
+- Method: Execute command hundreds of times, stare extremely hard at `htop`/Task Manager
+
+While `time` and `Measure-Command` work well for getting accurate timing information and can be run several times in a loop to produce a good average value, tracking memory consumption without intrusive efforts was much harder and thusly relied on OS reporting with fixed-interval probes. Memory usage is therefore approximate and may not represent the actual maximum of consumed memory. All of these are using the latest compiler built from source if available, or the latest technology preview if available. Optimizations at `-O2` (GCC & Clang style)/`/O2 /Ob2` (MSVC style) or equivalent were employed to generate the final executable.
+
+
+### Speed Size ### {#intro-metrics-speed}
+
+<table>
+<thead>
+  <tr>
+    <th>Strategy</th>
+    <th>40 kilobytes</th>
+    <th>400 kilobytes</th>
+    <th>4 megabytes</th>
+    <th>40 megabytes</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td>`#embed` GCC</td>
+    <td>0.236 s</td>
+    <td>0.231 s</td>
+    <td>0.300 s</td>
+    <td>1.069 s</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated GCC</td>
+    <td>0.406 s</td>
+    <td>2.135 s</td>
+    <td>23.567 s</td>
+    <td>225.290 s</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated Clang</td>
+    <td>0.366 s</td>
+    <td>1.063 s</td>
+    <td>8.309 s</td>
+    <td>83.250 s</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated MSVC</td>
+    <td>0.552 s</td>
+    <td>3.806 s</td>
+    <td>52.397 s</td>
+    <td>Out of Memory</td>
+  </tr>
+</tbody>
+</table>
+
+
+### Memory Size ### {#intro-metrics-space}
+
+<table>
+<thead>
+  <tr>
+    <th>Strategy</th>
+    <th>40 kilobytes</th>
+    <th>400 kilobytes</th>
+    <th>4 megabytes</th>
+    <th>40 megabytes</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td>`#embed` GCC</td>
+    <td>17.26 MB</td>
+    <td>17.96 MB</td>
+    <td>53.42 MB</td>
+    <td>341.72 MB</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated GCC</td>
+    <td>24.85 MB</td>
+    <td>134.34 MB</td>
+    <td>1,347.00 MB</td>
+    <td>12,622.00 MB</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated Clang</td>
+    <td>41.83 MB</td>
+    <td>103.76 MB</td>
+    <td>718.00 MB</td>
+    <td>7,116.00 MB</td>
+  </tr>
+  <tr>
+    <td>`xxd`-generated MSVC</td>
+    <td>~48.60 MB</td>
+    <td>~477.30 MB</td>
+    <td>~5,280.00 MB</td>
+    <td>Out of Memory</td>
+  </tr>
+</tbody>
+</table>
+
+
+### Analysis ### {#intro-metrics-analysis}
+
+The numbers here are not reassuring that compiler developers can reduce the memory and compilation time burdens with regard to large initializer lists. Furthermore, privately owned compilers and other static analysis tools perform almost exponentially worse here, taking vastly more memory and thrashing CPUs to 100% for several minutes (to sometimes several hours if e.g. the Swap is engaged due to lack of main memory). Every compiler must always consume a certain amount of memory in a relationship directly linear to the number of tokens produced. After that, it is largely implementation-dependent what happens to the data.
+
+The GNU Compiler Collection (GCC) uses a tree representation and has many places where it spawns extra "garbage", as its called in the various bug reports and work items from implementers. There has been a 16+ year effort on the part of GCC to reduce its memory usage and speed up initializers ([C Bug Report](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=12245) and [C++ Bug Report](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=14179)). Significant improvements have been made and there is plenty of room for GCC to improve here with respect to compiler and memory size. Somewhat unfortunately, one of the current changes in flight for GCC is the removal of all location information beyond the 256th initializer of large arrays in order to save on space. This technique is not viable for static analysis compilers that promise to recreate source code exactly as was written, and therefore discarding location or token information for large initializers is not a viable cross-implementation strategy.
+
+LLVM's Clang, on the other hand, is much more optimized. They maintain a much better scaling and ratio but still suffer the pain of their token overhead and Abstract Syntax Tree representation, though to a much lesser degree than GCC. A bug report was filed but talk from two prominent LLVM/Clang developers made it clear that optimizing things any further would [require an extremely large refactor and functionality add of parser internals](https://bugs.llvm.org/show_bug.cgi?id=44399), with potentially dubious gains. As part of this proposal, the implementation provided does attempt to do some of these optimizations, and follows some of the work done in [this post](https://cor3ntin.github.io/posts/arrays/) to try and prove memory and file size savings. (The savings in trying to optimize parsing large array literals were "around 10%", compared to the order-of-magnitude gains from `#embed` and similar techniques).
+
+Microsoft Visual C (MSVC) scales the worst of all the compilers, even when given the benefit of being on its native operating system. Both Clang and GCC outperform MSVC on Windows 10 or WINE as of the time of writing.
+
+Linker tricks on all platforms perform better with time (though slower than `#embed` implementation), but force the data to be optimizer-opaque (even on the most aggressive "Link Time Optimization" or "Whole Program Optimization" modes compilers had). Linker tricks are also exceptionally non-portable: whether it is the `incbin` assembly command supported by certain compilers, specific invocations of `rc.exe`/`objcopy` or others, non-portability plagues their usefulness in writing Cross-Platform C (see Appendix for listing of techniques). This makes C decidedly unlike the "portable assembler" advertised by its proponents (and my Professors and co-workers).
+
+
+
+
+# Design # {#design}
+
+There are two design goals at play here, sculpted to specifically cover industry standard practices with build systems and C programs.
+
+The first is to enable developers to get binary content quickly and easily into their applications. This can be icons/images, scripts, tiny sound effects, hardcoded firmware binaries, and more. In order to support this use case, this feature was designed for simplicity and builds upon widespread existing practice.
+
+The second is extensibility. We recognize that talking to arbitrary places on either the file system, network, or similar has different requirements. After feedback from an implementer about syntax for extensions, we reached out to various users of the beta builds or custom builds using `#embed`-like things. It turns out many of them have needs that, since they are the ones building and in some cases patching over/maintaining their compiler, have needs for extensible attributes that can be passed to `#embed` directives. Therefore, we structured the syntax in a way that is favorable to "simple" scanning tools but powerful enough to handle arbitrary directives and future extension points.
+
+
+
+## Goal: Simplicity and Familiarity ## {#design-familiar}
+
+Providing a directive that mirrors `#include` makes it natural and easy to understand and use this new directive. It accepts both chevron-delimited (`<>`) and quote-delimited (`""`) strings like `#include` does. This matches the way people have been generating files to `#include` in their programs, libraries and applications: matching the semantics here preserves the same mental model. This makes it easy to teach and use, since it follows the same principles:
+
+```cpp
+/* default is unsigned char */
+const unsigned char icon_display_data[] = {
+    #embed "art.png"
+};
+
+/* specify any type which can be initialized form integer constant expressions will do */
+const char reset_blob[] = {
+    #embed "data.bin"
+};
+```
+
+Because of its design, it also lends itself to being usable in a wide variety of contexts and with a wide variety of vendor extensions. For example:
+
+```cpp
+/* attributes work just as well */
+const signed char aligned_data_str[] __attribute__ ((aligned (8))) = {
+    #embed "attributes.xml"
+};
+```
+
+The above code obeys the alignment requirements for an implementation that understands GCC directives, without needing to add special support in the `#embed` directive for it: it is just another array initializer, like everything else.
+
+
+### Existing Practice - Search Paths ### {#design-familiar-paths}
+
+It follows the same implementation experience guidelines as `#include` by leaving the search paths implementation defined, with the understanding that implementations are not monsters and will generally provide `-fembed-path`/`-fembed-path=` and other related flags as their users require for their systems. This gives implementers the space they need to serve the needs of their constituency.
+
+
+### Existing Practice - Discoverable and Distributable ### {#design-familiar-distributed}
+
+Build systems today understand the make dependency format, typically through use of the compiler flags `-(M)MD` and friends. This sees widespread support, from CMake, Meson and Bazel to ninja and make. Even VC++ has a version of this flag -- `/showIncludes` -- that gets parsed by build systems.
+
+This preprocessor directive fits perfectly into existing build architecture by being discoverable in the same way with the same tooling formats. It also blends perfectly with existing distributed build systems which preprocess their files with `-frewrite-includes` before sending it up to the build farm, as `distcc` and `icecc` do.
+
+
+
+
+## Syntax ## {#design-syntax}
+
+The syntax for this feature is for an extensible preprocessor directive. The general form is:
+
+`# embed <header-name>|"header-name" attribute...`
+
+where `attribute` refers to the syntax of `no_arg`/`with_arg(values, ...)`/`vendor::no_arg`/`vendor::with_arg(values, ...)` that is already part of the grammar. The attributes here do not have the typical double-bracket delimiters here, and simply function as a way to provide named parameters to the `#embed` directive.
+
+This syntax keeps the header-name, enclosed in angle brackets or quotation marks, first to allow a "simple" preprocessing tool to quickly scan for all the necessary dependency names without having to parse any of the names or parameters that come after. Both standard names and vendor/implementation-specific names can also be accommodated in the list of naked attributes, allowing for specific vendor extensions in a consistent manner while the standard can take the normal `foo` names.
+
+
+### Parameters ### {#design-syntax-parameters}
+
+One of the things that's critical about `#embed` is that, because it works with binary resources, those resources have characteristics very much different from source and header files present in a typical filesystem. There may be need for authentication (possibly networked), permission, access, additional processing (new-line normalization), and more that can be somewhat similarly specified through the implementation-defined parameters already available through the C and C++ Standards' "`fopen`" function.
+
+However, adding a "mode" string similar to `fopen`, while extensible, is archaic and hard to check. Therefore, the syntax allows for multiple "named expressions", encapsulated in parentheses, and marked with `::` as a form of "namespacing" identifiers similar to `[[vendor::attr]]` attribute-style syntax. However, parameters do not have the balanced square bracket `[[]]` delimiters, and just use the `vendor::attr` form with an optional parentheses-enclosed list of arguments.
+
+Some example attributes including interpreting the binary data as "text" rather than a bitstream with `clang::text`, providing authenticated access with `fs::auth("username", "password")`, `yosys::type(hardware_entry)` to change the element of each entry produced, and more. These are all things vendors have indicated they might support for their use cases.
+
+
+#### Limit Parameter #### {#design-syntax-parameters-limit}
+
+The earliest adopters and testers of the implementation reported problems when trying to access POSIX-style `char` devices and pseudo-files that do not have a logical limitation. These "infinity files" served as the motivation for introducing the "limit" parameter; there are a number of resources which are logically infinite and thusly having a compiler read all of the data would result an Out of Memory error, much like with `#include` if someone did `#include "/dev/urandom"`.
+
+The limit parameter is specified before the resource name in `#embed`, like so:
+
+```cpp
+const int please_dont_oom_kill_me[] = {
+    #embed "/dev/urandom" limit(512)
+};
+```
+
+This prevents locking compilers in an infinite loop of reading from potentially limitless resources. Note the parameter is a hard upper bound, and not an exact requirement. A resource may expand to 16 elements, which is fine, and not the maximum of 512.
+
+
+#### Non-Empty Prefix and Suffix #### {#design-syntax-parameters-non_empty}
+
+Something pointed out by others using this preprocessor directive is a problem similar to `__VA_ARGS__`: when placing this parameter with other tokens before or after the `#embed` directive, it sometimes made it hard to properly anticipate whether a file was empty or not.
+
+The `#embed` proposal includes a prefix and suffix entry that applies if and only if the resource is non-empty:
+
+```cpp
+const unsigned char null_terminated_file_data[] = {
+	#embed "might_be_empty.txt" \
+		prefix(0xEF, 0xBB, 0xBF, ) /* UTF-8 BOM */ \
+		suffix(,)
+	0 // always null-terminated
+};
+```
+
+The reason the `prefix` and `suffix` only work if the `#embed` resource is not empty is due to the fact that, normally, if a user wants a prefix or suffix they can simply just type the characters before and after. 
+
+
+
+## Constant Expressions ## {#design-constexpr}
+
+Both C and C++ compilers have rich constant folding capabilities. While C compilers only acknowledge a fraction of what is possible by larger implementations like MSVC, Clang, and GCC, C++ has an entire built-in compile-time programming bit, called `constexpr`. Most typical solutions cannot be used as constant expressions because they are hidden behind run-time or link-time mechanisms (`objcopy`, or the resource compiler `rc.exe` on Windows, or the static library archiving tools). This means that many algorithms and data components which could strongly benefit from having direct access to the values of the integer constants do not because the compiler cannot "see" the data, or because Whole Program Optimization cannot be aggressive enough to do anything with those values at that point in the compilation (i.e., during the final linking stage).
+
+This makes `#embed` especially powerful, since it guarantees these values are available as-if it was written by as a sequence of integers whose values fit within an `unsigned char`.
+
+
+
+## `unsigned char` values, exactly ## {#design-uchar}
+
+The specification requires that each value is first casted to `unsigned char`, by means of a `static_cast<unsigned char>(generated_value)` in C++, or a `(unsigned char)generated_value` in C. The reason for this is to prevent each value from being interpreted as a signed `int` value instead, which can result in out-of-bound errors when e.g. a `signed char` or an implementation-defined-to-be-signed `char` is initialized with the values in the comma-delimited list.s
+
+
+
+## `__has_embed` ## {#design-__has_embed}
+
+C and C++ are both working on (or already support) as `__has_include` directive. It makes sense to have an analogous `__has_embed` identifier. It can take a `__has_embed( "header-name", ... )` or `__has_embed (<header-name>, ... )` resource name identifier, as well as additional arguments to let vendors pass in any additional arguments they need to properly access the file. However, this one will produce an integral constant expression that separates between the 3 different cases rather than 2 as `__has_include` does. `__has_embed` is replaced with:
+
+- `0` if the resource cannot be found;
+- `1` if the resource is found and it is not empty; and,
+- `2` if the resource is found but it is empty.
+
+This is more or less about maximizing the amount of available information from the `__has_embed` specifier. It also still works in the traditional usage: presence of the file (but not emptiness) can be detected with `#if __has_embed(<libicons/cute.png>)`, while specific checks can be done with `#if __has_embed(<libtext/jis_data.txt>) == 2` can check specifically if the file is empty. This may raise questions of "TOCTTOU" (Time of Check to Time of Use) problems, but we already have these problems between `__has_include` and `#include`. For example, the Clang compiler uses a `FileManager` and `SourceManager` abstractions which cache files. GCC's "libcpp" will cache already-opened files (up to a limit). Any TOCTTOU problems have already been managed and provided for using the current `#include` infrastructure of these compilers, and if any compiler wants a more streamlined and consistent experience they should deploy whatever Quality of Implementation they see fit to achieve that goal.
+
+
+
+# Implementation Experience # {#implementation}
+
+An implementation of this functionality is available in branches of both GCC and Clang, accessible right now with an internet connection through the online utility Compiler Explorer. The Clang compiler with this functionality is called ["x86-64 clang (std::embed)"](https://godbolt.org/z/h2aRa9) in the Compiler Explorer UI.
+
+<div class="pagebreak"></div>
+
+
+
+
+# Alternative Syntax # {#alternative}
+
+There were previous concerns about the syntax using pragma-like syntax and more. WG14 voted to keep the syntax as a plain `#embed` preprocessor directive, unanimously.
+
+Previously, different syntax was used to specify the limit and other kinds of parameters. These have been normalized to be a suffix of attribute-like parameters.
+
+
+
+
+# Wording # {#wording}
+
+This wording is relative to C++'s latest working draft.
+
+
+
+## Intent ## {#wording-intent}
+
+The intent of the wording is to provide a preprocessing directive that:
+
+- takes a quote or chevron delimited header-name -- potentially from the expansion of a macro -- and uses it to find a unique resource in an implementation-defined manner;
+- behaves as if it produces a list of values suitable for the initialization of an array as well as initializes each `unsigned char` element according to the specific environment limits found in an implementation-defined manner;
+- errors if the size of the resource does not have enough bits to fully and properly initialize all the values generated by the directive;
+- allows a limit parameter limiting the number of elements to be specified (but allowing less than the limit);
+- produces a core constant expression that can be used to initialize `constexpr` arrays;
+- and, present such contents as if it is a list of values, such that it can be used to initialize arrays of known and unknown bound even if additional elements of the whole initialization list come before or after the directive.
+
+
+
+## Proposed Feature Test Macro## {#wording-feature_test}
+
+The proposed feature test macro is `__cpp_pp_embed` for the preprocessor functionality.
+
+
+
+## Proposed Language Wording ## {#wording-specification}
+
+
+### Append to §14.8.1 Predefined macro names [**cpp.predefined**]'s **Table 21** with an additional entry: ### {#wording-specification-cpp.predefined}
+
+<blockquote>
+<div class="wording-section">
+<table>
+<tr>
+	<th>Macro name</th>
+	<th>Value</th>
+</tr>
+<tr>
+	<td><ins>__cpp_pp_embed</ins></td>
+	<td><ins>????</ins></td>
+</tr>
+</table>
+</div>
+</blockquote>
+
+
+### Add to the _control-line_ production in §15.1 Preamble [**cpp.pre**] a new grammar production: ### {#wording-specification-cpp.pre}
+
+<blockquote>
+<div class="wording-section">
+<p>
+<i>control-line</i>:<br/>
+&emsp; &emsp; ...<br/>
+&emsp; &emsp; <ins><code># embed</code> <i>pp-tokens</i> <i>new-line</i></ins><br/>
+</p>
+</div>
+</blockquote>
+
+
+### Add a new sub-clause §15.4 Resource inclusion [**cpp.res**]: ### {#wording-specification-cpp.res}
+
+<blockquote>
+<div class="wording-section">
+<ins>
+<p><b>15.4 Resource inclusion</b> [<b>cpp.res</b>]</p>
+
+<div class="wording-numbered"> An <code>&num;embed</code> directive shall identify a resource file that can be processed into a comma-delimited list of integer constant expressions.</div>
+
+<div class="wording-numbered"><p>A preprocessing directive of the form</p>
+
+<p>
+&emsp; &emsp; <code>&num; embed</code> <code>&lt;</code> <i>h-char-sequence</i> <code>&gt;</code> <code>[</code><sub>opt</sub><i>primary-expression<sub>opt</sub></i> <code>]</code><sub>opt</sub> <i>new-line</i>
+</p>
+
+<p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&lt;</code> and <code>&gt;</code> delimiters, and causes the replacement of that directive by a comma-delimited list of integer constant expressions as specified below. How the places are specified or the header identified is implementation-defined.</p>
+</div>
+
+<div class="wording-numbered"><p>A preprocessing directive of the form</p>
+
+<p>
+&emsp; &emsp; <code>&num; embed</code> <code>&quot;</code> <i>q-char-sequence</i> <code>&quot;</code> <i>primary-expression<sub>opt</sub></i> <i>new-line</i>
+</p>
+
+<p>searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the <code>&lt;</code> and <code>&gt;</code> or the <code>&quot;</code> and <code>&quot;</code> delimiters. How the places are specified or the resource identified is implementation-defined. [ Note: a mechanism similar to, but perhaps distinct from, the implementation-defined search paths used for ([<a href="http://eel.is/c++draft/cpp.include">cpp.include</a>]) — end Note ]</p></div>
+
+<div class="wording-numbered">Either form of the <code>&num; embed</code> directive expands produces a comma-separate list of integer literals; if that list is used to initialize an array of unsigned char, the contents of the array is as-if fread of the resource on the target.</div>
+
+<div class="wording-numbered"><p>A preprocessing directive of the form</p>
+
+<p><dl><dd><b>&num;</b> <b>embed</b> <i>pp-tokens</i> <i>new-line</i></dd></dl></p>
+
+<p>(that does not match one of the two previous forms) is permitted. The preprocessing tokens after <b>embed</b> in the directive are processed just as in normal text. (Each identifier currently defined as a macro name is replaced by its replacement list of preprocessing tokens.) The directive resulting after all replacements shall match one of the two previous forms [ Note: Adjacent string literals are not concatenated into a single string literal; thus, an expansion that results in two string literals is an invalid directive. — end Note ]. The method by which a sequence of preprocessing tokens between a <code>&lt;</code> and a <code>&gt;</code> preprocessing token pair or a pair of <code>&quot;</code> characters is combined into a single resource name preprocessing token is implementation-defined.</p>
+</div>
+</ins>
+</div>
+</blockquote>
+
+> <p><ins>[ Example:</ins></p>
+> 
+> ```cpp 
+> #include <cstddef>
+> 
+> void have_you_any_wool(const unsigned char*, std::size_t);
+> 
+> int main (int, char*[]) {
+> 	constexpr const unsigned char baa_baa[] = {
+> #embed "in.ico"
+> 	};
+> 
+> 	have_you_any_wool(baa_baa, sizeof(baa_baa));
+> 
+> 	return 0;
+> }
+> ```
+> 
+> <p><ins>– end Example ]</ins></p>
+> 
+> <p><ins>[ Example:</ins></p>
+> 
+> ```cpp
+> #include <cassert>
+> 
+> int main (int, char*[]) {
+> 	constexpr const char sound_signature[] = {
+> #embed (2+2) <sdk/jump.wav>
+> 	};
+> 
+> 	// verify PCM WAV resource
+> 	assert(sound_signature[0] == 'R');
+> 	assert(sound_signature[1] == 'I');
+> 	assert(sound_signature[2] == 'F');
+> 	assert(sound_signature[3] == 'F');
+> 	assert(sizeof(sound_signature) == 4);
+> 
+> 	return 0;
+> }
+> ```
+> <p><ins>– end Example ]</ins></p>
+> 
+> <p><ins>[ Example:</ins></p>
+> 
+> ```cpp
+> int main (int, char*[]) {
+> 	const unsigned char coefficients[] = {
+> // may produce diagnostic: 16 bits (i.e., implementation-defined bit size)
+> // is not enough for an unsigned long long (e.g. ULLONG_WIDTH)
+> #embed "only_3_bits.bin"
+> 	};
+> 
+> 	const unsigned char byte_factors[] = {
+> // may produce diagnostic: 12 bits % EMBED-WIDTH may not be 0
+> // on a system where the resource with an implementation-defined
+> // bit size of 12 bits
+> #embed "12_bits.bin"
+> 	};
+> 
+> 	const unsigned char scalar[] = {
+> // if the bit size of unsigned char is less than
+> // an implementation-defined bit size of 24,
+> // then this does not produce a diagnostic.
+> #embed 1 "24_bits.bin"
+> 	};
+> 
+> 	return 0;
+> }
+> ```
+> <p><ins>– end Example ]</ins></p>
+> 
+> <p><ins>[ Example:</ins></p>
+> 
+> ```cpp
+> #include <algorithm>
+> #include <iterator>
+> 
+> #ifndef SHADER_TARGET
+> #define SHADER_TARGET "dom-pandza-brdf.glsl"
+> #endif
+> 
+> extern char* null_term_shader_data;
+> 
+> void init_data () {
+> 	constexpr const char internal_data[] = {
+> #embed SHADER_TARGET
+> 	, 0 }; // additional element to null terminate content
+> 	
+> 	std::copy_n(internal_data, std::size(internal_data),
+> 		null_term_shader_data);
+> }
+> ```
+> <p><ins>– end Example ]</ins></p>
+> 
+> <p><ins>[ Example:</ins></p>
+> 
+> ```cpp
+> int main () {
+> 	int i = {
+> #embed "i.dat"
+> 	}; // well-formed if i.dat produces 1 value, i value is [0, EMBED-MAX]
+> 	struct s {
+> 		double a, b, c;
+> 		struct { double e, f, g; };
+> 		double h, i, j;
+> 	};
+> 	s x = {
+> 	// well-formed, initializes each element in
+> 	// order according to initialization rules with
+> 	// brace-delimited, comma-separated list
+> #embed "s.dat"
+> 	};
+> 	return 0;
+> }
+> ```
+> <p><ins>– end Example ]</ins></p>
+> 
+> <p><ins>[ Example:</ins></p>
+> 
+> ```cpp
+> #include <cstring>
+> #include <cstddef>
+> #include <fstream>
+> 
+> int main() {
+> 	const unsigned char embed_data[] = {
+> #embed <data.dat>
+> 	};
+> 	const std::vector<unsigned char> embed_data_vec = {
+> #embed <data.dat>
+> 	};
+> 
+> 	constexpr std::size_t ifstream_size = sizeof(embed_data);
+> 	unsigned char ifstream_data[ifstream_size];
+> 	std::ifstream f_source("data.dat");
+> 	char* ifstream_ptr = reinterpret_cast<char*>(ifstream_data);
+> 	if (!f_source.read(ifstream_ptr, ifstream_size));
+> 		return 1;
+> 
+> 	int is_same = std::memcmp(&embed_data[0], ifstream_ptr, ifstream_size);
+> 	// if both operations refer to the same resource/file at
+> 	// execution time and translation time, "is_same" should be 0
+> 	return is_same == 0 ? 0 : 1;
+> }
+> ```
+> <p><ins>– end Example ]</ins></p>
+
+
+
+# Acknowledgements # {#acknowledgements}
+
+Thank you to Alex Gilding for bolstering this proposal with additional ideas and motivation. Thank you to Aaron Ballman, David Keaton, and Rajan Bhakta for early feedback on this proposal. Thank you to the [#include<C++>](https://www.includecpp.org/) for bouncing lots of ideas off the idea in their Discord.
+
+Thank you to the Lounge&lt;C++&gt; for their continued support, and to rmf for the valuable early implementation feedback.
+
+<div class="pagebreak"></div>
+
+
+
+
+# Appendix  # {#appendix}
+
+
+
+## Existing Tools ## {#appendix-existing}
+
+This section categorizes some of the platform-specific techniques used to work with C++ and some of the challenges they face. Other techniques used include pre-processing data, link-time based tooling, and assembly-time runtime loading. They are detailed below, for a complete picture of today's landscape of options. They include both C and C++ options.
+
+
+### Pre-Processing Tools ### {#appendix-existing-pre_processing_tools}
+
+1. Run the tool over the data (`xxd -i xxd_data.bin > xxd_data.h`) to obtain the generated file (`xxd_data.h`) and add a null terminator if necessary:
+
+```cpp
+unsigned char xxd_data_bin[] = {
+  0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x2c, 0x20, 0x57, 0x6f, 0x72, 0x6c, 0x64,
+  0x0a, 0x00
+};
+unsigned int xxd_data_bin_len = 13;
+```
+
+2. Compile `main.c`:
+
+```cpp
+#include <stdlib.h>
+#include <stdio.h>
+
+// prefix as const,
+// even if it generates some warnings in g++/clang++
+const
+#include "xxd_data.h"
+
+int main() {
+    const char* data = reinterpret_cast<const char*>(xxd_data_bin);
+    puts(data); // Hello, World!
+    return 0;
+}
+```
+
+Others still use python or other small scripting languages as part of their build process, outputting data in the exact C++ format that they require.
+
+There are problems with the `xxd -i` or similar tool-based approach. Tokenization and Parsing data-as-source-code adds an enormous overhead to actually reading and making that data available.
+
+Binary data as C(++) arrays provide the overhead of having to comma-delimit every single byte present, it also requires that the compiler verify every entry in that array is a valid literal or entry according to the C++ language.
+
+This scales poorly with larger files, and build times suffer for any non-trivial binary file, especially when it scales into Megabytes in size (e.g., firmware and similar).
+
+
+### `python` ### {#appendix-existing-python}
+
+Other companies are forced to create their own ad-hoc tools to embed data and files into their C++ code. MongoDB uses a [custom python script](https://github.com/mongodb/mongo/blob/master/site_scons/site_tools/jstoh.py), just to format their data for compiler consumption:
+
+```python
+import os
+import sys
+
+def jsToHeader(target, source):
+    outFile = target
+    h = [
+        '#include "mongo/base/string_data.h"',
+        '#include "mongo/scripting/engine.h"',
+        'namespace mongo {',
+        'namespace JSFiles{',
+    ]
+    def lineToChars(s):
+        return ','.join(str(ord(c)) for c in (s.rstrip() + '\n')) + ','
+    for s in source:
+        filename = str(s)
+        objname = os.path.split(filename)[1].split('.')[0]
+        stringname = '_jscode_raw_' + objname
+
+        h.append('constexpr char ' + stringname + "[] = {")
+
+        with open(filename, 'r') as f:
+            for line in f:
+                h.append(lineToChars(line))
+
+        h.append("0};")
+        # symbols aren't exported w/o this
+        h.append('extern const JSFile %s;' % objname)
+        h.append('const JSFile %s = { "%s", StringData(%s, sizeof(%s) - 1) };' %
+                 (objname, filename.replace('\\', '/'), stringname, stringname))
+
+    h.append("} // namespace JSFiles")
+    h.append("} // namespace mongo")
+    h.append("")
+
+    text = '\n'.join(h)
+
+    with open(outFile, 'wb') as out:
+        try:
+            out.write(text)
+        finally:
+            out.close()
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 3:
+        print "Must specify [target] [source] "
+        sys.exit(1)
+    jsToHeader(sys.argv[1], sys.argv[2:])
+```
+
+MongoDB were brave enough to share their code with me and make public the things they have to do: other companies have shared many similar concerns, but do not have the same bravery. We thank MongoDB for sharing.
+
+
+### `ld` ### {#appendix-existing-ld}
+
+A complete example (does not compile on Visual C++):
+
+1. Have a file ld_data.bin with the contents `Hello, World!`.
+
+2. Run `ld -r binary -o ld_data.o ld_data.bin`.
+
+3. Compile the following `main.cpp` with `gcc -std=c++17 ld_data.o main.cpp`:
+
+```cpp
+#include <stdlib.h>
+#include <stdio.h>
+
+#define STRINGIZE_(x) #x
+#define STRINGIZE(x) STRINGIZE_(x)
+
+#ifdef __APPLE__
+#include <mach-o/getsect.h>
+
+#define DECLARE_LD_(LNAME) extern const unsigned char _section$__DATA__##LNAME[];
+#define LD_NAME_(LNAME) _section$__DATA__##LNAME
+#define LD_SIZE_(LNAME) (getsectbyLNAME("__DATA", "__" STRINGIZE(LNAME))->size)
+#define DECLARE_LD(LNAME) DECLARE_LD_(LNAME)
+#define LD_NAME(LNAME) LD_NAME_(LNAME)
+#define LD_SIZE(LNAME) LD_SIZE_(LNAME)
+
+#elif (defined __MINGW32__) /* mingw */
+
+#define DECLARE_LD(LNAME)                                 \
+  extern const unsigned char binary_##LNAME##_start[];    \
+  extern const unsigned char binary_##LNAME##_end[];
+#define LD_NAME(LNAME) binary_##LNAME##_start
+#define LD_SIZE(LNAME) ((binary_##LNAME##_end) - (binary_##LNAME##_start))
+#define DECLARE_LD(LNAME) DECLARE_LD_(LNAME)
+#define LD_NAME(LNAME) LD_NAME_(LNAME)
+#define LD_SIZE(LNAME) LD_SIZE_(LNAME)
+
+#else /* gnu/linux ld */
+
+#define DECLARE_LD_(LNAME)                                  \
+  extern const unsigned char _binary_##LNAME##_start[];     \
+  extern const unsigned char _binary_##LNAME##_end[];
+#define LD_NAME_(LNAME) _binary_##LNAME##_start
+#define LD_SIZE_(LNAME) ((_binary_##LNAME##_end) - (_binary_##LNAME##_start))
+#define DECLARE_LD(LNAME) DECLARE_LD_(LNAME)
+#define LD_NAME(LNAME) LD_NAME_(LNAME)
+#define LD_SIZE(LNAME) LD_SIZE_(LNAME)
+#endif
+
+DECLARE_LD(ld_data_bin);
+
+int main() {
+	const char* p_data = reinterpret_cast<const char*>(LD_NAME(ld_data_bin));
+	// impossible, not null-terminated
+	//puts(p_data);
+	// must copy instead
+	return 0;
+}
+```
+
+This scales a little bit better in terms of raw compilation time but is shockingly OS, vendor and platform specific in ways that novice developers would not be able to handle fully. The macros are required to erase differences, lest subtle differences in name will destroy one's ability to use these macros effectively. We omitted the code for handling VC++ resource files because it is excessively verbose than what is present here.
+
+N.B.: Because these declarations are `extern`, the values in the array cannot be accessed at compilation/translation-time.
+
+
+### `incbin`### {#appendix-existing-incbin}
+
+There is a tool called [`incbin`](https://github.com/graphitemaster/incbin) which is a 3rd party attempt at pulling files in at "assembly time". Its approach is incredibly similar to `ld`, with the caveat that files must be shipped with their binary. It unfortunately falls prey to the same problems of cross-platform woes when dealing with Visual C, requiring additional pre-processing to work out in full.
+
+
+
+## Type Flexibility ## {#appendix-existing-type_flexibility}
+
+**Note:** As per the vote in the September C++ Evolution Working Group Meeting, Type Flexibility is not being pursued in the preprocessor for various implementation and support splitting concerns.
+
+A type can be specified after the `#embed` to view the data in a very specific manner. This allows data to initialized as exactly that type.
+
+Type flexibility was not pursued for various implementation concerns. Chief among them was single-purpose preprocessors that did not have access to frontend information. This meant it was very hard to make a system that was both preprocessor conformant but did not require e.g. `sizeof(...)` information at the point of preprocessor invocation. Therefore, the type flexibility feature was pulled from `#embed` and will be conglomerated in other additions such as `std::bitcast` or `std::embed`.
+
+```cpp
+/* specify a type-name to change array type */
+const int shorten_flac[] = {
+    #embed int "stripped_music.flac"
+};
+```
+
+The contents of the resource are mapped in an implementation-defined manner to the data, such that it will use `sizeof(type-name) * CHAR_BIT` bits for each element. If the file does not have enough bits to fill out a multiple of `sizeof(type-name) * CHAR_BIT` bits, then a diagnostic is required. Furthermore, we require that the type passed to `#embed` that must one of the following fundamental types, signed or unsigned, spelled exactly in this manner:
+
+- `char`, `unsigned char`, `signed char`
+- `short`, `unsigned short`, `signed short`
+- `int`, `unsigned int`, `signed int`
+- `long`, `unsigned long`, `signed long`
+- `long long`, `unsigned long long`, `signed long long`
+
+More types can be supported by the implementation if the implementation so chooses (both the GCC and Clang prototypes described below support more than this). The reason exactly these types are required is because these are the only types for which there is a suitable way to obtain their size at pre-processor time. Quoting from §5.2.4.2.1, paragraph 1:
+
+> The values given below shall be replaced by constant expressions suitable for use in `#if` preprocessing directives.
+
+This means that the types above have a specific size that can be properly initialized by a preprocessor entirely independent of a proper C frontend, without needing to know more than how to be a preprocessor. Originally, the proposal required that every use of `#embed` is accompanied by a `#include <limits.h>` (or, in the case of C++, `#include <climits>`). Instead, the proposal now let's the implementation "figure it out" on an implementation-by-implementation basis.
+
+
+### Endianness ### {#appendix-existing-endianness}
+
+> what would happen if you did fread into an int?
+> that's my answer 🙂  
+> – The Cursed Bruja of the Great Sages, Isabella Muerte
+
+**Note: Endianness is not an issue for single bytes. This section is kept for historical reasons.**
+
+It's a simple answer. A compiler-magic based implementation like the ones provided below have no endianness issues, but an implementation which writes out integer literals may need to be careful of host vs. target endianness to make sure it serializes correctly to the final binary. As a litmus test, the following code -- given a suitable sized `"foo.bin"` resource -- must pass:
+
+```cpp
+#include <limit.h>
+#include <string.h>
+#include <assert.h>
+
+int main() {
+	const unsigned char foo0[] = {
+#embed "foo.bin"
+	};
+	const int foo1[] = {
+#embed int "foo.bin"
+	};
+	const unsigned int foo2[] = {
+#embed unsigned int "foo.bin"
+	};
+	// additionally, if the implementation supports
+	// extended types (see the "Type Flexibility" section)
+	const float foo3[] = {
+#embed float "foo.bin"
+	};
+
+	assert(memcmp(&foo0[0], &foo1[0], sizeof(foo0)) == 0);
+	assert(memcmp(&foo1[0], &foo2[0], sizeof(foo0)) == 0);
+	assert(memcmp(&foo0[0], &foo2[0], sizeof(foo0)) == 0);
+	// additionally, if the implementation supports
+	// extended types (see the "Type Flexibility" section)
+	assert(memcmp(&foo0[0], &foo3[0], sizeof(foo0)) == 0);
+
+	return 0;
+}
+```
+
+This implies that the bits are always overlaid into the elements properly. Note that this does not imply the following must pass:
+
+```cpp
+#include <limit.h>
+#include <string.h>
+#include <assert.h>
+
+int main() {
+	const unsigned char foo0[] = {
+#embed int "foo.bin"
+	};
+	const int foo1[] = {
+#embed unsigned char "foo.bin"
+	};
+	const unsigned long long foo2[] = {
+#embed int "foo.bin"
+	};
+	// additionally, if the implementation supports
+	// extended types (see the "Type Flexibility" section)
+	const int foo2[] = {
+#embed float "foo.bin"
+	};
+
+	// NONE of these are guaranteed!
+	assert(memcmp(&foo0[0], &foo1[0], sizeof(foo0)) == 0);
+	assert(memcmp(&foo1[0], &foo2[0], sizeof(foo0)) == 0);
+	assert(memcmp(&foo0[0], &foo2[0], sizeof(foo0)) == 0);
+	// additionally, if the implementation supports
+	// extended types (see the "Type Flexibility" section)
+	assert(memcmp(&foo0[0], &foo3[0], sizeof(foo0)) == 0);
+
+	return 0;
+}
+```
+
+This may truncate elements (the initialization of `foo0`), put the integer value into a larger type (the initialization of `foo1`), underflow the target representation (the initialization of `foo2`), or simply fail to compile (the implementation-defined `foo2` can reject initializing `int`s from `float`s). We see this as okay: the user has deliberately not matched the type being initialized with the type being viewed with the directive.

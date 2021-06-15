@@ -1,7 +1,7 @@
 <pre class='metadata'>
 Title: reconstructible_range - a concept for putting ranges back together
 Shortname: P1664
-Revision: 3
+Revision: 4
 Audience: LEWG
 Status: P
 Group: WG21
@@ -11,7 +11,7 @@ URL:
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Hannes Hauswedell, h2@fsfe.org
-Date: 2021-04-15
+Date: 2021-06-15
 Markup Shorthands: markdown yes, biblio yes, markup yes
 Abstract: This paper proposes new concepts to the Standard Library for ranges called Reconstructible Ranges for the purpose of ensuring a range/view broken down into its two iterators can be "glued" back together using an ADL-found function taking a tag, the range's iterator, and the range's sentinel.
 </pre>
@@ -31,7 +31,14 @@ path: resources/css/bikeshed-color-fix.html
 
 
 
-## Revision 3 - April 15th, 2021 ## {#changelog-r4}
+## Revision 4 - June 15th, 2021 ## {#changelog-r4}
+
+	- Rewrite most of the wording.
+	- Fix up the design section to always use an ADL Customization Point, all the time. The `is_class_v` and `is_enum_v` protects against most bad cases.
+
+
+
+## Revision 3 - April 15th, 2021 ## {#changelog-r3}
 
 	- Vastly improve examples.
 	- Re-target motivation.
@@ -67,7 +74,7 @@ path: resources/css/bikeshed-color-fix.html
 
 <table>
 	<tr>
-		<th>C++ 20</th>
+		<th>C++20</th>
 		<th>With Proposal</th>
 	</tr>
 	<tr>
@@ -131,7 +138,7 @@ auto v = s | views::drop(1) | views::take(10)
 std::u8string name = "𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷";
 char16_t conversion_buffer[432];
 
-std::u8string_view name_view(name);
+std::u8string_view input(name);
 std::span<char16_t> output(conversion_buffer, 432);
 
 auto encoding_result = ztd::text::transcode(input, output);
@@ -147,7 +154,7 @@ std::span<char16_t> unconsumed_output
 std::u8string name = "𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷";
 char16_t conversion_buffer[432];
 
-std::u8string_view name_view(name);
+std::u8string_view input(name);
 std::span<char16_t> output(conversion_buffer, 432);
 
 auto encoding_result = ztd::text::transcode(input, output);
@@ -163,7 +170,7 @@ auto unconsumed_output = encoding_result.output;
 std::u8string name = "𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷";
 char16_t conversion_buffer[432];
 
-std::u8string_view name_view(name);
+std::u8string_view input(name);
 std::span<char16_t> output(conversion_buffer, 432);
 
 auto encoding_result = ztd::text::transcode(input, output);
@@ -221,7 +228,8 @@ auto operate_on_and_return_updated_range (Range&& range) {
 
 int main () {
 	std::string_view meow_view = "나는 유리를 먹을 수 있어요. 그래도 아프지 않아요";
-	// this line will error
+	// this line will error in C++17, or in compatibility
+	// libraries
 	std::string_view sub_view
 		= operate_on_and_return_updated_range(meow_view);
 	return 0;
@@ -295,41 +303,69 @@ Therefore, this paper formalizes that concept and provides an **opt-in, user-ove
 
 # Design # {#design}
 
-The design is given in 2 concepts added to the standard:
+The design is given in 3 concepts added to the standard:
 
 ```cpp
+template <class It, class Sen = It>
+concept iterator_reconstructible_range =
+(std::is_class_v<It> || std::is_class_v<Sen> || std::is_enum_v<It> || std::is_enum_v<Sen>)
+&& requires (It first, Sen last) {
+	reconstruct(
+		std::foward<It>(first),
+		std::forward<Sen>(last)
+	);
+};
+
 template <class R,
 	class It = ranges::iterator_t<remove_reference_t<R>>,
 	class Sen = ranges::sentinel_t<remove_reference_t<R>>>
-concept pair_reconstructible_range =
-	ranges::range<R> &&
-	ranges::borrowed_range<remove_reference_t<R>> &&
-	requires (It first, Sen last) {
-		reconstruct(
-			in_place_type<remove_cvref_t<R>>,
-			std::move(first),
-			std::move(last)
-		);
-	};
-
-template <class R,
-	class Range = remove_reference_t<R>>
 concept reconstructible_range =
-	ranges::range<R> &&
-	ranges::borrowed_range<remove_reference_t<R>> &&
-	requires (Range first_last) {
-		reconstruct(
-			in_place_type<remove_cvref_t<R>>,
-			std::move(first_last)
-		);
-	};
+std::ranges::range<R>
+&& requires (It first, Sen last) {
+	reconstruct(
+		in_place_type<remove_cvref_t<R>>,
+		std::move(first),
+		std::move(last)
+	);
+};
+
+template <class R, class Tag = remove_cvref_t<R>,
+	class It = ranges::iterator_t<remove_reference_t<R>>,
+	class Sen = ranges::sentinel_t<remove_reference_t<R>>>
+concept range_reconstructible_range =
+std::ranges::range<R>
+&& requires (R range, It first, Sen last) {
+	reconstruct(
+		in_place_type<Tag>,
+		std::forward<R>(range),
+		std::forward<It>(first),
+		std::forward<Sen>last)
+	);
+};
 ```
 
-It is the formalization that a range can be reconstructed from its begin iterator and end iterator/sentinel. It also provides a concept for allowing a range to be put back together from another range, which may be useful for some types of ranges where more than the iterator and sentinel are required. This allows a developer to propagate the input type's properties after modifying its iterators for some underlying work, algorithm or other effect. This concept is also the basis of the idea behind [[p1739r4]], which was accepted in a lesser form for C++20 with the intent of this paper following up on it.
+It is the formalization that a range can be reconstructed from its necessary components. The concepts are a means of implementing the desired Customization Point Object (CPO) which will be called `std::ranges::reconstruct`. The 3 forms allow for 3 levels of construction, here each one defers to the next version by removing one layer of "information" until finally following back to the "default" form:
 
-Both concepts require that the type with any references removed model the concept `borrowed_range`. This ensures that the validity of the iterators is in fact independent of the lifetime of the range they originate from and that a "reconstructed" range does not depend on the original. We remove reference before performing this check, because all reference types that model `Range` also model `borrowed_range` and the intent of the proposed changes is narrower: (re)construction is assumed to be in constant time (this typically implies that `R` also models `View`, but it is sufficient to check `borrowed_range<remove_reference_t<R>>`).
+- the desired type to reconstruct ("tag"), the range, the iterator, and the sentinel;
+- the desired type to reconstruct ("tag"), the iterator, and the sentinel, after stripping out the range if the previous `reconstruct` did not find anything;
+- the iterator and the sentinel, after dropping the tag if the previous `reconstruct` attempt did not work and making sure at least one of `std::is_class_v<iterator>`, `std::is_class_v<sentinal>`, `std::is_enum_v<iterator>`, or `std::is_enum_v<sentinel>` is true; and finally,
+- `std::ranges::subrange<decltype(iterator), decltype(sentinel)>` if nothing else matches.
 
-Note that this explicitly excludes types like `std::vector<int> const &` from being reconstructible.
+This allows a developer to put a range back together at various levels of fidelity from its parts and pieces, giving us the ability to propagate the input type's properties after modifying its iterators for some underlying work, algorithm or other effect. This concept is also the basis of the idea behind [[p1739r4]], which was accepted in a lesser form for C++20 with the intent of this paper following up on it.
+
+
+
+## Range? Why not "Borrowed Range"? ## {#design-borrowed}
+
+Previously, we required that the ranges being reconstructed modeled `borrowed_range`, since that was an accurate indicator that the iterators and sentinel could potentially outlive the range itself. This was to prevent some issues in a previous design that used constructors. Since that is no longer based on constructors and with no chance of false positives, we no longer need to include that limitation. `borrowed_range` is also too restrictive, as there are some cases where the resulting range is non-borrowed, but could be successfully reconstructed from some of its pieces. The concept is opt-in now by way of declaring an ADL-found `reconstruct` function, any type can effectively decide for itself whether it could reconstruct properly. Note that this opens up usages for things that, if we had used `borrowed_range`, would not have been reconstructible. Consider the following expression:
+
+```cpp
+std::vector<int> vec{1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+std::span<int> some_span(vec);
+some_span | views::transform(f) | views::take(5)
+```
+
+This particular case is reconstructible as `span<T>` is reconstructible (and `span<T>` is reconstructible because it is already a properly borrowed type). The original transformation view can be reconstructed here without the need to keep the `take_view` intermediate wrapped around the two previous transformations, as the transform can be ignored on the first five elements by advancing the given `some_span`'s `begin()` by 5 elements. A smart `reconstruct` call for `take_view` could conceivably do this.
 
 
 
@@ -349,7 +385,7 @@ class c_string_view {
 	// no guarantee it's null terminated: decay to string_view
 	friend constexpr std::string_view reconstruct (
 		std::in_place_type_t<c_string_view>,
-		const char* first, const char* last) {
+		const char* first, const char* last) noexcept {
 		return std::string_view(first, last);
 	}
 
@@ -357,43 +393,26 @@ class c_string_view {
 	// static guarantee by type: return a c_string_view
 	friend constexpr c_string_view reconstruct (
 		std::in_place_type_t<c_string_view>,
-		const char* first, c_string_sentinel) {
+		const char* first, c_string_sentinel) noexcept {
 		return c_string_view(first);
 	}
 };
 ```
 
-This is a level of flexibility that is better than the Revision 0 design, and can aid in providing better static guarantees while decaying gracefully in other situations.
+This is a level of flexibility that is better than the Revision 0 constructor-based design, and can aid in providing better static guarantees while decaying gracefully in other situations.
 
 
 
-## Should this apply to all Ranges? ## {#design-all}
+## Opt-in? ## {#design-all}
 
 Not all ranges can meet this requirement. Some ranges contain state which cannot be trivially propagated into the iterators, or state that cannot be reconstructed from the iterator/sentinel pair itself. However, most of the common ranges representing unbounded views, empty views, iterations viewing some section of non-owned storage, or similar can all be reconstructed from their iterator/iterator or iterator/sentinel pair.
 
-For example `std::ranges::single_view` contains a [exposition *semiregular-box* template type (ranges.semi.wrap)](http://eel.is/c++draft/range.semi.wrap) which holds a value to iterate over. It would not be possible to reconstruct the exact same range (e.g., iterators pointing to the exact same object) with the semi-regular wrapper.
+For example `std::ranges::single_view` contains a [exposition *semiregular-box* template type (ranges.semi.wrap)](http://eel.is/c++draft/range.semi.wrap) which holds a value to iterate over. It would not be possible to reconstruct the exact same range (e.g., iterators pointing to the exact same object) with the semi-regular wrapper. Ranges should have the ability to select this syntax without having it happen to their type implicitly, or as for more information.
 
-Finally, there are ranges which could be reconstructible by just the definition of a constructor that takes iterators or a `subrange`. While this was a benefit in that the majority of conforming ranges were reconstructible, it made a situation where someone could write a strange range. For example, consider this alternative implementation of `rng | views::drop(1)`:
+This is why there are 3 levels to opt-in to support. If a user defines the 4-argument form which takes a `(tag, range, iterator, sentinel)` quadruplet, than they can use as much information may be available in the range, iterator, and sentinel to reproduce the original range. If they do not need that much information, they can opt-in to the 3-argument version which only takes the `(tag, iterator, sentinel)` triplet. And, finally, the most brief and sophisticated form is the `(iterator, sentinel)` form, which can reconstruct a range using information from only the iterator, only the sentinel, or both.
 
-```cpp
-class pop_front_view {
-private:
-	int *begin_, *end_;
+If the range opts-in to nothing, then there will always be a default return: `std::ranges::subrange<Iterator, Sentinel>`. This is effectively what any algorithm today already returns (sometimes it uses a hand-made pair type, likely because some iterator-pair usages may require the size to be stored and neither the iterator nor the sentinel can provide the size).
 
-public:
-	pop_front_view() = default;
-
-	pop_front_view(int* begin, int* end)
-		: begin_(begin==end?begin:begin+1), end_(end)
-	{}
-
-	int* begin() const { return begin_; }
-
-	int* end() const { return end_; }
-};
-```
-
-Reconstructing this range using the constructors is a surefire way to have a developer scratching at their head, wondering what is going on. Therefore, rather than require reconstruction through the constructor, we rely instead on an Customization Point Object design instead.
 
 
 
@@ -415,33 +434,21 @@ Note that these changes will greatly aid other algorithm writers who want to pre
 
 
 
-## Two Concepts ## {#design-dual}
-
-By giving these ranges `Iterator, Sentinel`, and/or `Range` reconstruction functions, we can enable a greater degree of interface fidelity without having to resort to `std::ranges::subrange` for all generic algorithms or similar input/output iterator holders as we have in much of the current `ranges` `<algorithms>` library.
-
-`reconstruct(std::inplace_type<R>, Iterator, Sentinel)` reconstruction is important for building `llvm::StringRef`, `llfio::span`, `kokos::mdspan`, and other types that go into algorithms.
-
-because one-argument functions can have extremely overloaded meanings. It also produces less compiler boilerplate to achieve the same result of reconstructing the range when one does not have to go through `std::ranges::subrange<I, S, K>`. However, it is important to attempt to move away from the iterator, sentinel model being deployed all the time: `std::ranges::subrange` offers a single type that can accurately represent the intent and can be fairly easy to constrain overload sets on (most of the time) due to being a single family of types (anyone can check for a the type being a specialization of `ranges::subrange`, whereas iterators span multiple different families of types).
-
-This paper includes two concepts that cover both reconstructible methods.
-
-
-
 
 # Deployment Experience # {#experience}
 
-This change was motivated by Hannes Hauswedell's [[p1739r4]] and became very important for the ranges work done with text encoding. There is a C++17 implementation [at the soasis/text repository here](https://github.com/soasis/text/blob/main/include/ztd/text/detail/reconstruct.hpp), which is mimicking the interface needed for [[p1629r1]].
+This change was motivated by Hannes Hauswedell's [[p1739r4]] and became very important for the ranges work done with text encoding. There is a C++17 implementation [at the soasis/text repository here](https://github.com/soasis/text/blob/main/include/ztd/text/detail/reconstruct.hpp), which is mimicking the interface needed for [[p1629r1]]. It is meant to solve the deployment issues with P1739's merging into the Standard.
 
 
 
 
 # Impact # {#impact}
 
-As a feature that is opt-in thanks to the `ranges::reconstruct` Customization Point Design, no currently created range or previously made range is permanently affected.
+As a feature that is opt-in thanks to the `ranges::reconstruct` Customization Point Object design, no currently created range or previously made range is affected.
 
-Furthermore, this is a new and separate concept. It is not to be added to the base `Range` concept, or added to any other concept. It is to be applied separately to the types which can reasonably support it for the benefit of algorithms and code which can enhance the quality of their implementation.
+Furthermore, this is a new and separate set of concepts. It is not to be added to the base `Range` concept, or added to any other concept. It is to be applied separately to the types which can reasonably support it for the benefit of algorithms and code which can enhance the quality of their implementation.
 
-Finally, Hannes Hauswedell's [[p1739r4]] with the explicit intention to mark certain ranges as reconstructible by hardcoding their behavior into the standard and come back with an opt-in fix during the C++23 cycle. This paper completes that promise.
+Finally, Hannes Hauswedell's [[p1739r4]] with the explicit intention to mark certain ranges as reconstructible by hardcoding their behavior into the standard and come back with an opt-in fix during the C++23 cycle. This paper completes that promise.s
 
 
 
@@ -463,20 +470,19 @@ This paper results in a concept to help guide the further development of standar
 The intent of this wording is to provide greater generic coding guarantees and optimizations by allowing for a class of ranges and views that model the new exposition-only definitions of a reconstructible range:
 
 - add a new feature test macro for reconstructible ranges to cover constructor changes;
-- add a new customization point object for `ranges::reconstruct`,
+- add a new customization point object for `ranges::reconstruct`;
+- add the customization point to many different ranges that can be reconstructed;
 - and, add two new concepts to [[range.req](http://eel.is/c++draft/range.req)].
 
-If *borrowed_range* is changed to the `borrowed_range` concept name, then this entire proposal will rename all its uses of *borrowed_range*.
-
-For ease of reading, the necessary portions of other proposal's wording is duplicated here, with the changes necessary for the application of reconstructible range concepts. Such sections are clearly marked.
 
 
+## Proposed Library Wording ## {#wording-specification}
 
-## Proposed Library Wording ## {#wording-library}
 
-Add a feature test macro `__cpp_lib_reconstructible_range`.
+### Add a feature test macro `__cpp_lib_reconstructible_range`. ### {#wording-specification-feature_test}
 
-Insert into §24.2 Header `<ranges>` Synopsis [[ranges.syn](http://eel.is/c++draft/ranges.syn)] a new customization point object in the inline namespace:
+
+### Insert into §24.2 Header `<ranges>` Synopsis [[ranges.syn](http://eel.is/c++draft/ranges.syn)] a new customization point object in the inline namespace: ### {#wording-specification-reconstruct_cpo_synopsis}
 
 <blockquote>
 <code>
@@ -493,19 +499,29 @@ namespace std::ranges {<br/>
 </code>
 </blockquote>
 
-Insert into §24.4.2 Ranges [[range.range](http://eel.is/c++draft/range.req#range.range)]'s after paragraph 7, one additional paragraph:
+### Insert into §24.4.2 Ranges [[range.range](http://eel.is/c++draft/range.req#range.range)]'s after paragraph 7, one additional paragraph: ### {#wording-specification-concepts}
 
 <blockquote>
-<ins><sup>8</sup> The concepts `pair_reconstructible_range` and `reconstructible_range` concepts describe the requirements on ranges that are efficiently constructible from values of their iterator and sentinel types.
+<ins><sup>8</sup> The concepts `iterator_reconstructible_range`, `reconstructible_range` and `range_reconstructible_range` concepts describe the requirements on ranges that are efficiently constructible from certain iterator and sentinel types, alongside possible additional information from the range itself.
 
 ```cpp
+template <class It, class Sen = It>
+	concept iterator_reconstructible_range =
+	(std::is_class_v<It> || std::is_class_v<Sen>
+		|| std::is_enum_v<It> || std::is_enum_v<Sen>)
+	&& requires (It first, Sen last) {
+		reconstruct(
+			std::foward<It>(first),
+			std::forward<Sen>(last)
+		);
+	};
+
 template <class R,
 	class It = ranges::iterator_t<remove_reference_t<R>>,
 	class Sen = ranges::sentinel_t<remove_reference_t<R>>>
-concept pair_reconstructible_range =
-	ranges::range<R> &&
-	ranges::borrowed_range<remove_reference_t<R>> &&
-	requires (It first, Sen last) {
+	concept reconstructible_range =
+	std::ranges::range<R>
+	&& requires (It first, Sen last) {
 		reconstruct(
 			in_place_type<remove_cvref_t<R>>,
 			std::move(first),
@@ -513,38 +529,46 @@ concept pair_reconstructible_range =
 		);
 	};
 
-template <class R, class Range = remove_reference_t<R>>
-concept reconstructible_range =
-	ranges::range<R> &&
-	ranges::borrowed_range<remove_reference_t<R>> &&
-	requires (Range first_last) {
+template <class R, class Tag = remove_cvref_t<R>,
+	class It = ranges::iterator_t<remove_reference_t<R>>,
+	class Sen = ranges::sentinel_t<remove_reference_t<R>>>
+	concept range_reconstructible_range =
+	std::ranges::range<R>
+	&& requires (R range, It first, Sen last) {
 		reconstruct(
-			in_place_type<remove_cvref_t<R>>,
-			std::move(first_last)
+			in_place_type<Tag>,
+			std::forward<R>(range),
+			std::forward<It>(first),
+			std::forward<Sen>last)
 		);
 	};
 ```
 
-<sup>9</sup> Let `r` be a range with type `R`.
+<sup>9</sup> Let `r` be a range with type `R` and `T` be some type.
 <dl>
-	<dd><sup>9.1</sup> — Let `re` be the result of `ranges::reconstruct(in_place_type<remove_cvref_t<R>>, ranges::begin(r), ranges::end(r))` if such an expression is well-formed. `r` models `ranges::pair_reconstructible_range` if
+	<dd><sup>9.1</sup> — Let `it_sen_re_range` be the result of `ranges::reconstruct(ranges::begin(r), ranges::end(r))` if such an expression is well-formed. `r` models `ranges::iterator_reconstructible_range` if
 		<dl>
-			<dd>— `ranges::begin(r) == ranges::begin(re)` is true, and</dd>
-			<dd>— `ranges::end(r) == ranges::end(re)` is true.</dd>
+			<dd>— `ranges::begin(r) == ranges::begin(it_sen_re_range)` is true, and</dd>
+			<dd>— `ranges::end(r) == ranges::end(it_sen_re_range)` is true.</dd>
 		</dl>
 	</dd>
-	<dd><sup>9.2</sup> — Let `sub_re` be the result of `ranges::reconstruct(in_place_type<remove_cvref_t<R>>, std::move(r))`, if such an expression is well-formed. Then
-	`sub_re` models `ranges::reconstructible_range` if
+	<dd><sup>9.2</sup> — Let `re_range` be the result of `ranges::reconstruct(in_place_type<remove_cvref_t<T>>, ranges::begin(r), ranges::end(r))` if such an expression is well-formed. `r` models `ranges::reconstructible_range` if
 		<dl>
-			<dd>— `ranges::begin(r) == ranges::begin(sub_re)` is true, and</dd>
-			<dd>— `ranges::end(r) == ranges::end(sub_re)` is true.</dd>
+			<dd>— `ranges::begin(r) == ranges::begin(re_range)` is true, and</dd>
+			<dd>— `ranges::end(r) == ranges::end(re_range)` is true.</dd>
+		</dl>
+	</dd>
+	<dd><sup>9.3</sup> — Let `range_re_range` be the result of `ranges::reconstruct(in_place_type<remove_cvref_t<T>>, r, ranges::begin(r), ranges::end(r))`, if such an expression is well-formed. Then `range_re_range` models `ranges::range_reconstructible_range` if
+		<dl>
+			<dd>— `ranges::begin(r) == ranges::begin(range_re_range)` is true, and</dd>
+			<dd>— `ranges::end(r) == ranges::end(range_re_range)` is true.</dd>
 		</dl>
 	</dd>
 </dl>
 </ins>
 </blockquote>
 
-Insert a new sub-clause "§24.3.13 `ranges::reconstruct` [**range.prim.recons**]", after "§24.3.12 `ranges::cdata` [<a href="https://eel.is/c++draft/range.prim.cdata"><b>range.prim.cdata</b></a>]":
+### Insert a new sub-clause "§24.3.13 `ranges::reconstruct` [**range.prim.recons**]", after "§24.3.12 `ranges::cdata` [<a href="https://eel.is/c++draft/range.prim.cdata"><b>range.prim.cdata</b></a>]": ### {#wording-specification-reconstruct_cpo}
 
 <blockquote>
 <ins>
@@ -552,26 +576,33 @@ Insert a new sub-clause "§24.3.13 `ranges::reconstruct` [**range.prim.recons**]
 
 <p><sup>1</sup> The name `reconstruct` denotes a [customization point object](https://eel.is/c++draft/customization.point.object).</p>
 
-<p><sup>2</sup> The expression `ranges​::reconstruct(in_place_type<R>, I, S)` for some type `R` and some sub-expressions `I` and `S` is expression-equivalent to:
+<p><sup>2</sup> The expression `ranges​::reconstruct(I, S)` for some sub-expressions `I` and `S` is expression-equivalent to:
 	<dl>
-		<dd><sup>(2.1)</sup> `reconstruct(in_place_type<R>, std::move(I), std::move(S))` if it is a valid expression and `R`, `decltype(I)`, and `decltype(S)` model `pair_reconstructible_range`.</dd>
-		<dd><sup>(2.2)</sup> Otherwise, `reconstruct(in_place_type<R>, ranges::subrange<remove_cvref_t<decltype(I)>, remove_cvref_t<decltype(S)>>(std::move(I), std::move(S)))` if it is a valid expression and `R`, `decltype(I)`, and `decltype(S)` model `reconstructible_range`.</dd>
-		<dd><sup>(2.3)</sup> `ranges::subrange<remove_cvref_t<decltype(I)>, remove_cvref_t<decltype(S)>>(std::move(I), std::move(S))` if it is a valid expression.</dd>
-		<dd><sup>(2.4)</sup> Otherwise, `ranges::reconstruct(std::in_place_type<R>, I, S)` is ill-formed.</dd>
+		<dd><sup>(2.1)</sup> `reconstruct(std::forward<decltype(I)>(I), std::forward<decltype(S)>(S))` if either `remove_cvref_t<decltype(I)>` or `remove_cvref_t<decltype(S)>` are class or enumeration types, it is a valid expression, and `decltype(I)`, and `decltype(S)` model `iterator_reconstructible_range`.</dd>
+		<dd><sup>(2.2)</sup> Otherwise, `ranges::subrange<remove_cvref_t<decltype(I)>, remove_cvref_t<decltype(S)>>(std::forward<decltype(I)>(I), std::forward<decltype(S)>(S))` if it is a valid expression.</dd>
+		<dd><sup>(2.3)</sup> Otherwise, `ranges::reconstruct(I, S)` is ill-formed.</dd>
 	</dl>
 </p>
 
-<p><sup>3</sup> Let `SR` be some sub-expression. The expression `ranges​::reconstruct(in_place_type<R>, SR)` for some type `R` and sub-expression `SR` is expression-equivalent to:
+<p><sup>3</sup> The expression `ranges​::reconstruct(in_place_type<R>, I, S)` for some type `R` and some sub-expressions `I` and `S` is expression-equivalent to:
 	<dl>
-		<dd><sup>(2.1)</sup> `reconstruct(in_place_type<R>, std::move(SR))` if it is a valid expression, and `R` and `decltype(SR)` model `reconstructible_range`.</dd>
-		<dd><sup>(2.2)</sup> Otherwise, `reconstruct(in_place_type<R>, ranges::begin(std::move(SR)), ranges::end(std::move(SR)))` if it is a valid expression and `R`, `range::iterator_t<decltype(SR)>`, and `range::sentinel_t<decltype(SR)>` model `pair_reconstructible_range`.</dd>
-		<dd><sup>(2.3)</sup> Otherwise, `return SR`.</dd>
+		<dd><sup>(2.1)</sup> `reconstruct(in_place_type<R>, std::forward<decltype(I)>(I), std::forward<decltype(S)>(S))` if it is a valid expression and `R`, `decltype(I)`, and `decltype(S)` model `reconstructible_range`.</dd>
+		<dd><sup>(2.2)</sup> Otherwise, `ranges::reconstruct(std::forward<decltype(I)>(I), std::forward<decltype(S)>(S))`.</dd>
+	</dl>
+</p>
+
+<p><sup>4</sup> The expression `ranges​::reconstruct(in_place_type<R>, SR, I, S)` for some type `R`, and some sub-expressions `SR`, `I`, and `S` is expression-equivalent to:
+	<dl>
+		<dd><sup>(2.1)</sup> `reconstruct(in_place_type<R>, std::forward<decltype(SR)>(SR), std::forward<decltype(I)>(I), std::forward<decltype(S)>(S))` if it is a valid expression and `decltype(SR)`, `R`, `decltype(I)`, and `decltype(S)` model `range_reconstructible_range`.</dd>
+		<dd><sup>(2.2)</sup> Otherwise, `ranges::reconstruct(in_place_type<R>, std::forward<decltype(I)>(I), std::forward<decltype(S)>(S))`.</dd>
 	</dl>
 </p>
 </ins>
 </blockquote>
 
-Add to "§21.4.3.1 `General`" [<a href="eel.is/c++draft/string.view#template.general">string.view.template.general</a>] a `friend` function ADL extension point for `basic_string_view`:
+
+
+### Add to "§21.4.3.1 `General`" [<a href="eel.is/c++draft/string.view#template.general">string.view.template.general</a>] a `friend` function ADL extension point for `basic_string_view`: ### {#wording-specification-string_view_synopsis}
 
 <blockquote>
 <ins>
@@ -584,7 +615,7 @@ Add to "§21.4.3.1 `General`" [<a href="eel.is/c++draft/string.view#template.gen
 </ins>
 </blockquote>
 
-Add a new subclause "§21.4.��� `Range Reconstruction`" [string.view.reconstruct] in §21.4:
+### Add a new subclause "§21.4.��� `Range Reconstruction`" [string.view.reconstruct] in §21.4: ### {#wording-specification-string_view}
 
 <blockquote>
 <ins>
@@ -592,14 +623,15 @@ Add a new subclause "§21.4.��� `Range Reconstruction`" [string.view.recon
 
 ```cpp
 	friend constexpr basic_string_view
-	reconstruct(const_iterator first, const_iterator last) noexcept;
+	reconstruct(in_place_type_t<basic_string_view>, const_iterator first, const_iterator last) noexcept;
 ```
 
 <p><sup>1</sup> Returns: `basic_string(std::move(first), std::move(last))`.</p>
 </ins>
 </blockquote>
 
-Add to "§22.7.3.1 `Overview`" [<a href="http://eel.is/c++draft/span.overview">span.overview</a>] a `friend` function ADL extension point for `span`:
+
+### Add to "§22.7.3.1 `Overview`" [<a href="http://eel.is/c++draft/span.overview">span.overview</a>] a `friend` function ADL extension point for `span`: ### {#wording-specification-span_synopsis}
 
 <blockquote>
 <ins>
@@ -608,12 +640,13 @@ Add to "§22.7.3.1 `Overview`" [<a href="http://eel.is/c++draft/span.overview">s
 	// [span.reconstruct]
 	template <class It, class End>
 		friend constexpr auto
-		reconstruct(It first, End last) noexcept;
+		reconstruct(in_place_type_t<span>, It first, End last) noexcept;
 ```
 </ins>
 </blockquote>
 
-Add a new subclause "§22.7.3.���� `Range Reconstruction`" [span.reconstruct] in §22.7.3:
+
+### Add a new subclause "§22.7.3.���� `Range Reconstruction`" [span.reconstruct] in §22.7.3: ### {#wording-specification-span}
 
 <blockquote>
 <ins>
@@ -622,7 +655,7 @@ Add a new subclause "§22.7.3.���� `Range Reconstruction`" [span.reconst
 ```cpp
 	template <class It, class End>
 		friend constexpr auto
-		reconstruct(const_iterator first, const_iterator last) noexcept;
+		reconstruct(in_place_type_t<span>, It first, End last) noexcept;
 ```
 
 <p><sup>1</sup> Constraints: Let `U` be `remove_­reference_­t<iter_­reference_­t<It>>`.
@@ -638,24 +671,25 @@ Add a new subclause "§22.7.3.���� `Range Reconstruction`" [span.reconst
 
 <p><sup>3</sup> Returns: `span<ElementType, MaybeExtent>(std::move(first), std::move(last))`.</p>
 
-<p><sup>4</sup> Remarks: the return type can be promoted to a `span` with a static extent if the implementation is capable of deriving such information from the given iterator and sentinel.</p>
+<p><sup>4</sup> Remarks: the return type may be promoted to a `span` with a static extent if the implementation is capable of deriving such information from the given iterator and sentinel.</p>
 </ins>
 </blockquote>
 
-Add to "§24.5.4.1 `General`" [<a href="http://eel.is/c++draft/range.subrange.general">range.subrange.general</a>] a `friend` function ADL extension point for `subrange`:
+
+### Add to "§24.5.4.1 `General`" [<a href="http://eel.is/c++draft/range.subrange.general">range.subrange.general</a>] a `friend` function ADL extension point for `subrange`: ### {#wording-specification-subrange_synopsis}
 
 <blockquote>
 <ins>
 
 ```cpp
-	template <class It, class End>
-		friend constexpr auto
-		reconstruct(It first, End last) noexcept;
+	friend constexpr auto
+	reconstruct(in_place_type_t<subrange>, I first, E last) noexcept;
 ```
 </ins>
 </blockquote>
 
-Add a new subclause "§24.5.4.���� `Range Reconstruction`" [range.subrange.reconstruct] in §24.5.4:
+
+### Add a new subclause "§24.5.4.���� `Range Reconstruction`" [range.subrange.reconstruct] in §24.5.4: ### {#wording-specification-subrange}
 
 <blockquote>
 <ins>
@@ -663,15 +697,18 @@ Add a new subclause "§24.5.4.���� `Range Reconstruction`" [range.subran
 
 ```cpp
 	friend constexpr subrange
-	reconstruct(I first, S last) noexcept;
+	reconstruct(in_place_type_t<subrange>, I first, S last) noexcept(see-below);
 ```
 
 <p><sup>1</sup> Returns: `subrange(std::move(first), std::move(last))`.</p>
 
+<p><sup>2</sup> Throws: Anything from evaluating the <i>Returns</i>. Otherwise, nothing.</p>
+
 </ins>
 </blockquote>
 
-Add to "§24.6.4.2 Class template `iota_view`" [<a href="http://eel.is/c++draft/range.iota">range.iota</a>] a `friend` function ADL extension point for `iota_view`:
+
+### Add to "§24.6.4.2 Class template `iota_view`" [<a href="http://eel.is/c++draft/range.iota">range.iota</a>] a `friend` function ADL extension point for `iota_view`: ### {#wording-specification-iota_view_synopsis}
 
 <blockquote>
 <ins>
@@ -683,10 +720,12 @@ Add to "§24.6.4.2 Class template `iota_view`" [<a href="http://eel.is/c++draft/
 </ins>
 </blockquote>
 
-Add one new paragraph to "§24.6.4.2 Class template `iota_view`" [<a href="http://eel.is/c++draft/range.iota">range.iota</a>]:
+
+### Add one new paragraph to "§24.6.4.2 Class template `iota_view`" [<a href="http://eel.is/c++draft/range.iota">range.iota</a>]: ### {##wording-specification-iota_view}
 
 <blockquote>
 <ins>
+
 ```cpp
 	friend constexpr iota_view
 	reconstruct(iterator first, sentinel last) noexcept;
@@ -697,7 +736,8 @@ Add one new paragraph to "§24.6.4.2 Class template `iota_view`" [<a href="http:
 </ins>
 </blockquote>
 
-Add to "§24.6.2.2 Class template `empty_view`" [<a href="http://eel.is/c++draft/range.iota">range.empty.view</a>] a `friend` function ADL extension point for `empty_view`:
+
+### Add to "§24.6.2.2 Class template `empty_view`" [<a href="http://eel.is/c++draft/range.iota">range.empty.view</a>] a `friend` function ADL extension point for `empty_view`: ### {#wording-specification-empty_view_synopsis}
 
 <blockquote>
 <ins>
@@ -711,7 +751,53 @@ Add to "§24.6.2.2 Class template `empty_view`" [<a href="http://eel.is/c++draft
 </ins>
 </blockquote>
 
-Modify "§24.7.7.1 Overview " [<a href="http://eel.is/c++draft/range.take.overview">range.take.overview</a>] for `views::take`'s paragraph 2:
+
+### Add to "§24.7.6.2 Class template `transform_view`" [<a href="http://eel.is/c++draft/range.transform.view">range.transform.view</a>] a `friend` function ADL extension point for `transform_view`: ### {#wording-specification-transform_view_synopsis}
+
+<blockquote>
+<ins>
+
+```cpp
+	friend constexpr transform_view
+	reconstruct(iterator, sentinel) noexcept(see-below);
+```
+</ins>
+</blockquote>
+
+### Add new paragraphs to "§24.6.4.2 Class template `transform_view`" [<a href="http://eel.is/c++draft/range.transform">range.transform</a>]: ### {##wording-specification-transform_view}
+
+<blockquote>
+<ins>
+
+```cpp
+	friend constexpr transform_view
+	reconstruct(iterator first, sentinel last) noexcept(see-below);
+```
+
+<p><sup>��</sup> Constraints: `V` models `reconstructible_range`.</p>
+
+<p><sup>��</sup> Returns: `transform_view(ranges::reconstruct(std::move(first).current, std::move(last).end), *first.parent->fun_)`.</p>
+
+<p><sup>���</sup> Throws: Anything from evaluating the <i>Returns</i>. Otherwise, nothing.</p>
+
+
+```cpp
+	friend constexpr transform_view
+	reconstruct(in_place_type_t<transform_view>, transform_view original,
+		iterator first, sentinel last) noexcept(see-below);
+```
+
+<p><sup>��</sup> Constraints: `V` models `reconstructible_range`.</p>
+
+<p><sup>��</sup> Returns: `transform_view(ranges::reconstruct(std::move(first).current, std::move(last).end), std::move(*original.fun_))`.</p>
+
+<p><sup>���</sup> Throws: Anything from evaluating the <i>Returns</i>. Otherwise, nothing.</p>
+
+</ins>
+</blockquote>
+
+
+### Modify "§24.7.7.1 Overview " [<a href="http://eel.is/c++draft/range.take.overview">range.take.overview</a>] for `views::take`'s paragraph 2: ### {#wording-specification-views_take}
 
 <blockquote>
 
@@ -738,7 +824,13 @@ Modify "§24.7.7.1 Overview " [<a href="http://eel.is/c++draft/range.take.overvi
 <p>
 <dl>
 	<dd><sup>(2.1)</sup> — If `T` is a specialization of `ranges​::​empty_­view` ([range.empty.view]), then `((void) F, decay-copy(E))`.</dd>
-	<dd><sup>(2.2)</sup> — Otherwise, if `T` models `random_­access_­range`, `sized_­range`, and `reconstructible_range`, then `T{ranges​::​begin(E), ranges​::​begin(E) + min<D>(ranges​::​size(E), F)}`, except that `E` is evaluated only once.</dd>
+	<dd><sup>(2.2)</sup> — Otherwise, if `T` models both `random_­access_­range` and `sized_­range`, and `T`:
+	<dl>
+		<dd><sup>(2.2.1)</sup> — models `range_reconstructble_range`, or</dd>
+		<dd><sup>(2.2.2)</sup> — models `reconstructble_range`, or</dd>
+		<dd><sup>(2.2.3)</sup> — has an `iterator_t<T>` and a `sentinel_t<T>` that models `iterator_reconstructible_range`,</dd>
+	</dl>
+	then `ranges::reconstruct(in_place_type<T>, E, ranges​::​begin(E), ranges​::​begin(E) + min<D>(ranges​::​size(E), F))`, except that `E` is evaluated only once.</dd>
 	<dd><sup>(2.3)</sup> — Otherwise, `ranges​::​take_­view{E, F}`.</dd>
 </dl>
 </p>
@@ -747,7 +839,7 @@ Modify "§24.7.7.1 Overview " [<a href="http://eel.is/c++draft/range.take.overvi
 </p>
 </blockquote>
 
-Modify "§24.7.9.1 Overview " [<a href="http://eel.is/c++draft/range.drop.overview">range.take.overview</a>] for `views::drop`'s paragraph 2:
+### Modify "§24.7.9.1 Overview " [<a href="http://eel.is/c++draft/range.drop.overview">range.drop.overview</a>] for `views::drop`'s paragraph 2: ### {#wording-specification-views_drop}
 
 <blockquote>
 
@@ -775,7 +867,13 @@ Otherwise, the expression `views​::​drop(E, F)` is expression-equivalent to:
 <p>
 <dl>
 	<dd><sup>(2.1)</sup> — If `T` is a specialization of `ranges​::​empty_­view` ([range.empty.view]), then `((void) F, decay-copy(E))`.</dd>
-	<dd><sup>(2.2)</sup> — Otherwise, if `T` models `random_­access_­range`, `sized_­range`, and `reconstructible_range`, then `T{ranges​::​begin(E) + min<D>(ranges​::​size(E), F), ranges​::​end(E)}`, except that `E` is evaluated only once.</dd>
+	<dd><sup>(2.2)</sup> — Otherwise, if `T` models both `random_­access_­range` and `sized_­range`, and `T`:
+	<dl>
+		<dd><sup>(2.2.1)</sup> — models `range_reconstructble_range`, or</dd>
+		<dd><sup>(2.2.2)</sup> — models `reconstructble_range`, or</dd>
+		<dd><sup>(2.2.3)</sup> — has an `iterator_t<T>` and a `sentinel_t<T>` that models `iterator_reconstructible_range`,</dd>
+	</dl>
+	then `ranges::reconstruct(in_place_type<T>, E, ranges​::​begin(E) + min<D>(ranges​::​size(E), F), ranges​::​end(E))`, except that `E` is evaluated only once.</dd>
 	<dd><sup>(2.3)</sup> — Otherwise, `ranges​::drop_­view{E, F}`.</dd>
 </dl>
 </p>
@@ -808,3 +906,7 @@ Thank you to Oktal, Anointed of ADL, Blessed Among Us, and Morwenn, the ever-wat
 	}
 }
 </pre>
+
+
+https://cplusplus.github.io/LWG/issue3407
+

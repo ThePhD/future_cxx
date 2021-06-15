@@ -36,6 +36,12 @@ This proposal provides a simple, no-cost way to indirect a function's identifier
 
 
 
+## Revision 1 - October 15th, 2021
+
+- Adjust motivation / explanation of `__attribute__((alias()))` and how it relates to this proposal.
+
+
+
 ## Revision 0 - May 15th, 2021
 
 - Initial release. ✨
@@ -53,9 +59,9 @@ Thankfully, progress is being made. With Robert Seacord's "Specific-width length
 
 ## Remaining Core Problem - Typedefs, ABI, and Macros
 
-Library functions in a "very vanilla" implementation of a C Standard Library (e.g., simply a sequence of function declarations/definitions of the exact form given in the C Standard) have a strong tie between the name of the function (e.g., `imaxabs`) and the symbol present in the final binary (e.g., `_imaxabs`). This symbol is tied to a specific numeric type (e.g., `typedef long long intmax_t`), and upgrading that type breaks old binaries that still call the old symbol (`_imaxabs` being handed a `__int128_t` instead of a `long long` in a world where things are upgraded can result in the wrong registers being used, or worse). Thusly, because the Standard Library is bound by these rules and because implementations rely on functions with `typedef`-based types in them to resolve to a very specific symbol, we cannot upgrade any of the `typedef`s (e.g., what `intmax_t` is) or change anything about the functions (e.g., change `imaxabs`'s declaration in any way non-inconsequential way).
+Library functions in a "very vanilla" implementation of a C Standard Library (e.g., simply a sequence of function declarations/definitions of the exact form given in the C Standard) have a strong tie between the name of the function (e.g., `imaxabs`) and the symbol present in the final, compiled binary (e.g., `_imaxabs`). This symbol is tied to a specific numeric type (e.g., `typedef long long intmax_t`), which creates a strong relationship between the way the function is called (register usage, etc.) and more. Upgrading that type breaks old binaries that still call the old symbol; for example, `_imaxabs` being handed a `__int128_t` instead of a `long long` as an old application anticipates can result in the wrong registers being used, or worse. Thusly, because the Standard Library is bound by these rules and because implementations rely on functions with `typedef`-based types in them to resolve to a very specific symbol, we cannot upgrade any of the `typedef`s (e.g., what `intmax_t` is) or change anything about the functions (e.g., change `imaxabs`'s declaration in any way consequential fashion).
 
-Furthermore, macros cannot be used to "smooth" over the "real function call" because §7.1.4 specifically states that a user of the standard library has the right to deploy macro-suppressing techniques (e.g., `(imaxabs)(24)`) to call a library function (unless the call is designed to be a macro). This also includes preventing their existence as a whole with `#undef imaxabs`: every call after that `#undef` directive to `imaxabs(...)` must work and compile according to the Standard. While this guarantees users that they can always get a function pointer or a "real function name" from a given C Standard library function name, it also refuses implementations the ability to provide backwards compatibility shims using the only Standards-applicable tool in C++.
+Furthermore, macros cannot be used to "smooth" over the "real function call" because §7.1.4 specifically states that a user of the standard library has the right to deploy macro-suppressing techniques (e.g., `(imaxabs)(24)`) to call a library function (unless the call is designated to be a macro). This also includes preventing their existence as a whole with `#undef imaxabs`: every call after that `#undef` directive to `imaxabs(...)` must work and compile according to the Standard. While this guarantees users that they can always get a function pointer or a "real function name" from a given C Standard library function name, it also refuses implementations the ability to provide backwards compatibility shims using the only Standards-applicable tool in C++.
 
 
 
@@ -75,22 +81,22 @@ These techniques, expanded upon in the design section as to why we chose the syn
 
 ## C Issue - Prevented Evolution
 
-Not fixing this issue also comes with a grave problem without considering C++ at all. We have no way of seamlessly upgrading our libraries without forcing end-users to consider ABI breakage inherit in changes type definitions or having library authors jump through implementation-specific and fraught hoops for creating (transparent) layers of indirection between a function call and the final binary. This means large swaths of C's standard library, due to §7.1.4, are entirely static and non-upgradeable, even if we write functions that use type definitions that can change.
+Not fixing this issue also comes with a grave problem without considering C++ at all. We have no way of seamlessly upgrading our libraries without forcing end-users to consider ABI breakage inherit in changes type definitions or having library authors jump through implementation-specific and frightening hoops for creating (transparent) layers of indirection between a function call and the final binary. This means large swaths of C's standard library, due to §7.1.4, are entirely static and non-upgradeable, even if we write functions that use type definitions that can change.
 
-This is, by itself, a completely untenable situation that hampers the growth of C. If we cannot even change type definitions due to constraints such as linkage names from old code without needing a computer-splitting architectural change (e.g., the change from `i686` "32-bit" architectures to `x86_64` "64-bit" architectures that allowed for `size_t` to change), with what hope could be possibly have in having C evolve to meet current hardware specifications and software needs? Users have been raging on about the lack of an `int128_t` in C, or a maximum integer type, and some implementers and platform users have stated:
+This is, by itself, a completely untenable situation that hampers the growth of C. If we cannot even change type definitions due to constraints such as linkage names from old code without needing a computer-splitting architectural change (e.g., the change from `i686` "32-bit" architectures to `x86_64` "64-bit" architectures that allowed for `size_t` to change), with what hope could be possibly have in getting C to evolve? How can we have it meet current hardware specifications and software needs? Users have been raging on about the lack of an `int128_t` in C, or a maximum integer type, and some implementers and platform users have stated:
 
 > I am unreasonably angry about this, because the `intmax_t` situation has kept me from enabling completely-working first-class `int128` support out of clang for a decade. In that decade, I personally would have used 128b literals more times in personal and professional projects than the entire world has used intmax_t to beneficial effect, ever, in total.
 >
 > — [Steve Canon, Mathematician & Clang Developer](https://twitter.com/stephentyrone/status/1329796144193556482)
 
-At the surface of this issue and as illustrated by the many failed — and one successful — papers for `intmax_t` is that we need a better way of type definitions that get used for interfaces in the C standard. Underlying it is a wound that has begun to fester in the presence of not having a reason to invent wildly new architectures that necessitate fundamentally recompiling the world. Our inability to present a stable interface for users in a separable and Standards-Compliant way from the binary representation of a function that we cherish so deeply is becoming a deepening liability. If every function (the fundamental unit of doing work) essentially becomes impossible to change in any way, shape, or form, then what we are curating is not a living and extensible programming language but a dying system that is unequivocally doomed to general failure and eventual replacement.
+At the surface of this issue and as illustrated by the many failed — and one successful — papers for `intmax_t` is that we need a better way for type definitions to be used for interfaces in the C standard. Underlying it is a wound that has begun to fester in the presence of not having a reason to invent wildly new architectures that necessitate fundamentally recompiling the world. Our inability to present a stable interface for users in a separable and Standards-Compliant way from the binary representation of a function that we cherish so deeply is becoming an increasing liability. If every function (the fundamental unit of doing work) essentially becomes impossible to change in any way, shape, or form, then what we are curating is not a living and extensible programming language but a dying system that is unequivocally doomed to general failure and eventual replacement.
 
 
 
 
 # Design
 
-Our goal with this feature is to create a no-cost, zero-overhead function abstraction layer that prevents a type definition or other structure from leaking into a binary. From the motivation and analysis above, we need the following properties:
+Our goal with this feature is to create a no-cost, zero-overhead function abstraction layer that prevents a type definition or other structure from leaking into a binary in a permanent and non-upgradable fashion. From the motivation and analysis above, we need the following properties:
 
 - It must be a concrete name, not a macro.
 - It must be able to decay to a function pointer when referenced by name, like a normal function declaration, and that value must be consistent and usable in constant expressions.
@@ -185,7 +191,7 @@ The notable properties are:
 
 In short, `alias_func` works like any other function declaration would, but is not allowed to have its own function definition. It is simply an "alias" to an existing function at the language level. Given these properties, no implementation would need to emit a whole new function address for the given type; any binary-producing implementation would produce the same code whether the function was called through `alias_func` or `real_func`. It gets around the requirement of not being able to define C functions as macros, while maintaining all the desirable properties of a real C function declaration.
 
-It also serves as a layer of indirection to the "real function".
+It also serves as a layer of indirection to the "real function", which means function alias definitions and type definitions can be upgraded with one another while improving backwards compatibility.
 
 
 
@@ -193,14 +199,14 @@ It also serves as a layer of indirection to the "real function".
 
 It is not a coincidence in the initial example that we are using `__glibc` prefixes for the 2 `imaxabs` function calls. Tying a function to a name it does not normally "mangle" to in the linker is a common implementation technique among more advanced C Standard Library Implementations, such as musl-libc and glibc. It is also a common technique deployed in many allocators to override symbols found in downstream binary artefacts, albeit this proposal does not cover the "weak symbol" portion of the alias techniques deployed by these libraries since that is sometimes limited to specific link-time configurations, binary artefact distributions, and platform architecture.
 
-Particularly, this library is focusing on the existing GCC-style attribute and a Clang-style attribute. The GCC attribute[^gcc-attribute] follows this proposal most closely, by effectively allowing for an existing function declaration to have its final output symbol "renamed":
+Particularly, this proposal is focusing on the existing GCC-style attribute and a Clang-style attribute. The GCC attribute[^gcc-attribute] follows this proposal most closely in its requirements, by effectively allowing for an existing function declaration to have its address made identical to the fnction it is aliasing:
 
 ```cpp
 void __real_function (void) { /* real work here... */; }
 void function_decl(void) __attribute__ ((alias ("__real_function")));
 ```
 
-This code will set up `function_decl` to emit only the symbol `__real_function` when it is used or has its address taken. It is common implementation practice amongst compilers that are GCC-compatible and that focus on binary size reduction and macro-less, transparent, zero-cost indirection. For example, here is documentation from the Keil's armcc compiler[^keil-attribute]:
+This code will set up `function_decl` to match the address of `__real_function`. It is common implementation practice amongst compilers that are GCC-compatible and that focus on binary size reduction and macro-less, transparent, zero-cost indirection. It has the small caveat that it requires the target of the attribute to be fully defined before this happens, so it can definitively insert the address. For example, here is documentation from the Keil's armcc compiler[^keil-attribute]:
 
 > ```cpp
 > static int oldname(int x, int y) {
@@ -238,7 +244,7 @@ This code will set up `function_decl` to emit only the symbol `__real_function` 
 >      ENDP
 > ```
 
-There are many compilers which implement exactly this behavior with exactly this GCC-extension syntax such as Oracle's C Compiler, the Intel C Compiler, the Tiny C Compiler, and Clang.[^oracle-attribute] [^intel-attribute]. Clang also features its own `asm`-style attribute, where the function's name is "mangled" without needing to provide an initial [^clang-attribute]. Microsoft Visual C uses a (slightly more complex) stateful pragma mechanisms and external compiler markup[^msvc-attribute].
+There are many compilers which implement exactly this behavior with exactly this GCC-extension syntax such as Oracle's C Compiler, the Intel C Compiler, the Tiny C Compiler, and Clang.[^oracle-attribute] [^intel-attribute]. Clang also features its own `asm`-style attribute, where the function's name is "mangled" to exactly the name given[^clang-attribute]. Microsoft Visual C uses a (slightly more complex) stateful pragma mechanisms and external compiler markup[^msvc-attribute].
 
 
 
@@ -251,7 +257,7 @@ There are 3 other proofs of practice in the industry today. One was an MSVC-like
 
 Clang's `asm(...)`, MSVC's `#pragma`-based approach, and Oracle's `#pragma redefine_extname`[^oracle-pragma] are harder to standardize because each mechanism relies too heavily on the linker and the details of binary artefacts. Whereas the GCC-style attribute is tied to a front-end entity and, therefore, abstracts away binary changes as a means left to the implementation, Clang and MSVC's approaches are not tied to any entity that exists in the program in general. Export `#pragma`s and `asm(...)` attributes can be used to reference any symbol, by unchecked string, that can be resolved at any later stage of compilation (possibly during linking and code generation). There is no good way to standardize such behavior because there are no meaningful semantic constraints that can be placed on their designs that are enforceable within the boundaries of the Abstract Machine.
 
-Contrast this to GCC's attribute. It **requires** that a previous, in-language declaration exists. If that declaration does not exist, the program has a constraint violation:
+Contrast this to GCC's attribute. It **requires** that a previous, in-language definition exists. If that definition does not exist, the program has a constraint violation:
 
 ```cpp
 #if 0
@@ -287,15 +293,15 @@ The cycle continues and will continue ad nauseum until Standard C provides a com
 
 ### There is no such thing as "mangled name" or "symbol name" in the Standard.
 
-Any attempt at producing normative text for such a construct is incredibly fraught with peril and danger. Vendors deserve to have implementation freedom with respect to their what their implementation produces (or not). Solving this problem must be done without needing to draft specification for what a "binary artefact" or similar may be and how an attribute or attribute-like construct could affect it. If this feature relies primarily on non-normative encouragement or notes to provide ABI protection, then it is not fit for purpose.
+Any attempt at producing normative text for a "symbol name" construct is incredibly fraught with peril and danger. Vendors deserve to have implementation freedom with respect to their what their implementation produces (or not). Solving this problem must be done without needing to draft specification for what a "binary artefact" or similar may be and how an attribute or attribute-like construct could affect it. If this feature relies primarily on non-normative encouragement or notes to provide ABI protection, then it is not fit for purpose.
 
-Therefore, we realize that the best way to achieve this is to effectively allow for a transparent aliasing technique for functions, similar to type definitions. It must be in the language and it must be Standard, otherwise we can never upgrade any of our type definitions without waiting for an enormous architectural break (like 32-bit to 64-bit).
+Therefore, we realize that the best way to achieve this is to effectively allow for a transparent aliasing technique for functions, similar to type definitions. It must be in the language and it must be Standard, otherwise we can never upgrade any of our type definitions without waiting for an enormous architectural break (like the 32-bit to 64-bit transition).
 
 
 
 ## Backwards-Compatibility with "Vanilla" C Standard Libraries
 
-One of the driving goals behind this proposal is the ability to allow "vanilla" C Standard Library Implementations to use Standards-only techniques to provide the functions for their end-user. Let us consider an implementation — named `vanilla`, that maybe produces a `vanilla.so` binary — that, up until today, has been shipping a `extern intmax_t imaxabs(intmax_t value);` function declaration for the last 2 decades. Using this feature, we can provide an _entirely backwards compatible_, binary-preserving upgraded implementation of `vanilla.so` that decides to change it's `imaxabs` function declarations. For example, it can use 2 translation units `inttypes_compatibility.c` and `inttypes.c` and one header, `inttypes.h`, to produce a conforming Standard Library implementation that also provides a backwards-compatible:
+One of the driving goals behind this proposal is the ability to allow "vanilla" C Standard Library Implementations to use Standards-only techniques to provide the functions for their end-user. Let us consider an implementation — named `vanilla`, that maybe produces a `vanilla.so` binary — that, up until today, has been shipping a `extern intmax_t imaxabs(intmax_t value);` function declaration for the last 2 decades. Using this feature, we can provide an _entirely backwards compatible_, binary-preserving upgraded implementation of `vanilla.so` that decides to change it's `imaxabs` function declarations. For example, it can use 2 translation units `inttypes_compatibility.c` and `inttypes.c` and one header, `inttypes.h`, to produce a conforming Standard Library implementation that is also backwards-compatible with binaries that continue to link against `vanilla.so`:
 
 
 **`inttypes.c`**:
@@ -330,7 +336,7 @@ _Alias imaxabs = __imaxabs_vanilla_v2;
 
 As long as `inttypes_compatibility.c` is linked with the final binary artefact `vanilla.so`, the presumed mangled symbol `_imaxabs` will always be there. Meanwhile, the "standard" `inttypes.h` will have the normal `imaxabs` symbol that is tied in a transparent way to the "Version 2" of the vanilla implementation, `__imaxabs_vanilla_v2`. This produces a perfectly backwards compatible interface for the previous users of `vanilla.so`. It allows typedefs to be seamlessly upgraded, without breaking already-compiled end user code. Newly compiled code will directly reference the v2 functions with no performance loss or startup switching, getting an upgraded `intmax_t`. Older programs compiled with the old `intmax_t` continue to reference old symbols left by compatibility translation units in the code.
 
-This means that both C Standard Libraries will have a language-capable medium of upgrading their code in a systemic and useful fashion.
+This means that C Standard Libraries will have a language-capable medium of upgrading their code in a systemic and useful fashion.
 
 
 
@@ -352,7 +358,7 @@ This gave the "function" and "redeclaration" feeling to `a`, but it required tha
 
 `_Alias` is the safe choice. Originally, we used the word `using` as there was very little option to create a keyword that more appropriately mirrors "`typedef` but for functions". `funcdef` is already a prominent identifier in C codebases, and reusing `typedef` is not a very good idea for something that does not declare a type.
 
-C++ took the keyword `using`, and so far it seems to have made most C and C++ developers stay away from the keyword altogether. Nevertheless, the wording uses a stand-in `USING-TOKEN` here. The suggestions we have for the token are as follows, based on not being findable in publicly available codebase sets (either on (isocpp.org)[https://isocpp.org]'s code search of package manager code for Linux Distributions, GitHub's dataset for code, and similar sources):
+C++ took the keyword `using`, and so far it seems to have made most C and C++ developers stay away from the keyword altogether. Nevertheless, the wording uses a stand-in `ALIAS-TOKEN`. The suggestions we have for the token are as follows, based on not being findable in publicly available codebase sets (either on [isocpp.org](https://isocpp.org)'s code search of package manager code for Linux Distributions, GitHub's dataset for code, and similar sources):
 
 - `using` (made safer by C++ using it as a keyword)
 - `using_alternate` (long, pretty good name)
@@ -373,6 +379,8 @@ Various names were also thought of and unfortunately discarded because they exis
 - `func_def`/`funcdef`
 - `func_decl`/`funcdecl`
 
+While we use the word `_Alias` right now as a stand-in, we would appreciate feedback on what name to pick.
+
 
 
 
@@ -382,14 +390,24 @@ The following wording is registered against [N2596](http://www.open-std.org/jtc1
 
 
 
+## Add function aliases to "§6.2.1 Scopes", paragraph 1
+
+<blockquote>
+<div class="wording-numbered wording-numbered-1">
+An identifier can denote an object; a function; a tag or a member of a structure, union, or enumeration; a typedef name; <ins>a function alias name;</ins> a label name; a macro name; or a macro parameter.
+</div>
+</blockquote>
+
+
+
+
 ## Add a new keyword to "§6.4.1 Keywords", Syntax, paragraph 1
 
 <blockquote>
-
 <div class="wording-numbered wording-numbered-1">
 <i>keyword</i>: one of<br/>
 <p>…</p>
-<p><ins>USING-TOKEN</ins></p>
+<p><ins>ALIAS-TOKEN</ins></p>
 </div>
 </blockquote>
 
@@ -457,7 +475,7 @@ A declaration specifies the interpretation and properties of a set of identifier
 <div class="wording-numbered wording-numbered-1">
 <dl>
 	<dt><i>function-alias:</i></dt>
-	<dd><emsp/><b>USING-TOKEN</b> <i>identifier</i> <b>=</b> <i>identifier</i></dd>
+	<dd><emsp/><b>ALIAS-TOKEN</b> <i>identifier</i> <b>=</b> <i>identifier</i></dd>
 </dl>
 </div>
 <div class="wording-numbered">
@@ -485,10 +503,10 @@ A function alias is a function designator (6.3.2.1). If its address is taken wit
 > void do_work(void);
 > void take_nap(void);
 > 
-> USING-TOKEN work_alias = do_work;
-> USING-TOKEN nap_alias = take_nap;
-> USING-TOKEN alias_of_work_alias = work_alias;
-> USING-TOKEN alias_of_nap_alias = nap_alias;
+> ALIAS-TOKEN work_alias = do_work;
+> ALIAS-TOKEN nap_alias = take_nap;
+> ALIAS-TOKEN alias_of_work_alias = work_alias;
+> ALIAS-TOKEN alias_of_nap_alias = nap_alias;
 > 
 > int main () {
 > 	_Static_assert(&do_work == &work_alias);
@@ -502,7 +520,7 @@ A function alias is a function designator (6.3.2.1). If its address is taken wit
 > 	_Static_assert(&take_nap != &work_alias);
 > 	_Static_assert(&do_work != &alias_of_nap_alias);
 > 
-> 	USING-TOKEN local_work_alias = alias_of_work_alias;
+> 	ALIAS-TOKEN local_work_alias = alias_of_work_alias;
 > 	_Static_assert(&local_work_alias == &alias_of_work_alias);
 > 
 > 	do_work();
@@ -526,10 +544,10 @@ A function alias is a function designator (6.3.2.1). If its address is taken wit
 > ```cpp
 > int zzz(int requested_sleep_time);
 > 
-> USING-TOKEN sleep_alias = zzz;
-> USING-TOKEN sleep_alias = sleep_alias;
-> USING-TOKEN sleep_alias_alias = zzz;
-> USING-TOKEN sleep_alias = sleep_alias_alias;
+> ALIAS-TOKEN sleep_alias = zzz;
+> ALIAS-TOKEN sleep_alias = sleep_alias;
+> ALIAS-TOKEN sleep_alias_alias = zzz;
+> ALIAS-TOKEN sleep_alias = sleep_alias_alias;
 > ```
 </div>
 
@@ -540,14 +558,14 @@ A function alias is a function designator (6.3.2.1). If its address is taken wit
 > int zzz(int requested_sleep_time);
 > int truncated_zzz(int requested_sleep_time);
 > 
-> USING-TOKEN sleep_alias = sleep_alias; // constraint violation: alias does
+> ALIAS-TOKEN sleep_alias = sleep_alias; // constraint violation: alias does
 >                                  // not exist
-> USING-TOKEN zzz = truncated_zzz; // constraint violation: cannot hide
+> ALIAS-TOKEN zzz = truncated_zzz; // constraint violation: cannot hide
 >                            // existing declaration
-> USING-TOKEN truncated_zzz = truncated_zzz; // constraint violation: cannot change function declaration
+> ALIAS-TOKEN truncated_zzz = truncated_zzz; // constraint violation: cannot change function declaration
 >                                      // to function alias
 > 
-> USING-TOKEN valid_sleep_alias = zzz;
+> ALIAS-TOKEN valid_sleep_alias = zzz;
 > int valid_sleep_alias(int requested_sleep_time); // constraint violation: redeclaring
 >                                                  // function alias
 > ```
@@ -572,7 +590,7 @@ Implementations and programs may use this feature as a way to produce stability 
 > extern intmax_t __imaxabs_128ish(__int128 value);
 > 
 > typedef __int128_t intmax_t;
-> USING-TOKEN imaxabs = __imaxabs_128ish;
+> ALIAS-TOKEN imaxabs = __imaxabs_128ish;
 > ```
 
 </div>
