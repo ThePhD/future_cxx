@@ -137,7 +137,7 @@ The following wording is relative to N2596[^N2596].
 
 ## Modify §6.9.2 paragraph 2.
 
-<p>… If a translation unit contains one or more tentative definitions for an identifier, and the translation unit contains no external definition for that identifier, then the behavior is exactly as if the translation unit contains a file scope declaration of that identifier, with the composite type as of the end of the translation unit, with an initializer equal to <code>{ 0 }</code><ins> or <code>{ }</code></ins>.</p>
+<p>… If a translation unit contains one or more tentative definitions for an identifier, and the translation unit contains no external definition for that identifier, then the behavior is exactly as if the translation unit contains a file scope declaration of that identifier, with the composite type as of the end of the translation unit, with an initializer equal to <del><code>{ 0 }</code></del><ins><code>{ }</code></ins>.</p>
 
 
 

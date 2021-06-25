@@ -1560,7 +1560,7 @@ Possible extra rowspan handling
   <meta content="Bikeshed version b94c7e755, updated Fri Feb 19 16:28:59 2021 -0800" name="generator">
   <link href="https://thephd.dev/_vendor/future_cxx/papers/d1967.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="cf335d032fbc2f630c422b4f9c6642a7e9ff3064" name="document-revision">
+  <meta content="9a275b49c44830a8b3cd0f4d647feee0a4bf70fd" name="document-revision">
 <style>
 
 :root {
@@ -2488,6 +2488,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
          <ol class="toc">
           <li><a href="#design-syntax-parameters-limit"><span class="secno">4.2.1.1</span> <span class="content">Limit Parameter</span></a>
           <li><a href="#design-syntax-parameters-non_empty"><span class="secno">4.2.1.2</span> <span class="content">Non-Empty Prefix and Suffix</span></a>
+          <li><a href="#design-syntax-parameters-empty"><span class="secno">4.2.1.3</span> <span class="content">Empty Signifier</span></a>
          </ol>
        </ol>
       <li><a href="#design-constexpr"><span class="secno">4.3</span> <span class="content">Constant Expressions</span></a>
@@ -2827,6 +2828,8 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 <c- p>};</c->
 </pre>
    <p><code class="highlight"><c- n>prefix</c-></code> and <code class="highlight"><c- n>suffix</c-></code> only work if the <code class="highlight"><c- cp>#embed</c-></code> resource is not empty. If a user wants a prefix or suffix that appears unconditionally, they can simply just type the tokens they want before and after: there is nothing to be gained from adding a standards-mandated prefix and suffix that works in both the empty and non-empty case.</p>
+   <h5 class="heading settled" data-level="4.2.1.3" id="design-syntax-parameters-empty"><span class="secno">4.2.1.3. </span><span class="content">Empty Signifier</span><a class="self-link" href="#design-syntax-parameters-empty"></a></h5>
+   <p>This is for the case when the given resource exists, but it is empty. This allows a user to have a sequence of tokens between the parentheses passed to the <code class="highlight"><c- cp>#embed "blah" empty(SPECIAL_EMPTY_MARKER)</c-></code> <code class="highlight"><c- n>empty</c-></code> parameter here behave differently.</p>
    <h3 class="heading settled" data-level="4.3" id="design-constexpr"><span class="secno">4.3. </span><span class="content">Constant Expressions</span><a class="self-link" href="#design-constexpr"></a></h3>
    <p>Both C and C++ compilers have rich constant folding capabilities. While C compilers only acknowledge a fraction of what is possible by larger implementations like MSVC, Clang, and GCC, C++ has an entire built-in compile-time programming bit, called <code class="highlight"><c- k>constexpr</c-></code>. Most typical solutions cannot be used as constant expressions because they are hidden behind run-time or link-time mechanisms (<code class="highlight"><c- n>objcopy</c-></code>, or the resource compiler <code class="highlight"><c- n>rc</c-><c- p>.</c-><c- n>exe</c-></code> on Windows, or the static library archiving tools). This means that many algorithms and data components which could strongly benefit from having direct access to the values of the integer constants do not because the compiler cannot "see" the data, or because Whole Program Optimization cannot be aggressive enough to do anything with those values at that point in the compilation (i.e., during the final linking stage).</p>
    <p>This makes <code class="highlight"><c- cp>#embed</c-></code> especially powerful, since it guarantees these values are available as-if it was written by as a sequence of integers whose values fit within an <code class="highlight"><c- b>unsigned</c-> <c- b>char</c-></code>.</p>
@@ -2836,11 +2839,31 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    <p>C and C++ are both working on (or already support) as <code class="highlight"><c- n>__has_include</c-></code> directive. It makes sense to have an analogous <code class="highlight"><c- n>__has_embed</c-></code> identifier. It can take a <code class="highlight"><c- n>__has_embed</c-><c- p>(</c-> <c- s>"header-name"</c-> <c- p>...</c-> <c- p>)</c-></code> or <code class="highlight"><c- n>__has_embed</c-> <c- p>(</c-><c- o>&lt;</c-><c- n>header</c-><c- o>-</c-><c- n>name</c-><c- o>></c-> <c- p>...</c-> <c- p>)</c-></code> resource name identifier, as well as additional arguments to let vendors pass in any additional arguments they need to properly access the file (following the same attribute-like parameters passed to the directive). <code class="highlight"><c- n>__has_embed</c-></code> evaluates to:</p>
    <ul>
     <li data-md>
-     <p><code class="highlight"><c- mi>0</c-></code> if the resource cannot be found;</p>
+     <p><code class="highlight"><c- mi>1</c-></code> if the resource is found and it the <code class="highlight"><c- n>embed</c-><c- o>-</c-><c- n>parameters</c-></code> (including the vendor-specific ones) are supported; or,</p>
     <li data-md>
-     <p><code class="highlight"><c- mi>1</c-></code> if the resource is found and it is not empty;</p>
+     <p><code class="highlight"><c- mi>0</c-></code> in every other case.</p>
    </ul>
    <p>This may raise questions of "TOCTTOU" (Time of Check to Time of Use) problems, but we already have these problems between <code class="highlight"><c- n>__has_include</c-></code> and <code class="highlight"><c- cp>#include</c-></code>. For example, the Clang compiler uses a <code class="highlight"><c- n>FileManager</c-></code> and <code class="highlight"><c- n>SourceManager</c-></code> abstractions which cache files. GCC’s "libcpp" will cache already-opened files (up to a limit). Any TOCTTOU problems have already been managed and provided for using the current <code class="highlight"><c- cp>#include</c-></code> infrastructure of these compilers, and if any compiler wants a more streamlined and consistent experience they should deploy whatever Quality of Implementation they see fit to achieve that goal.</p>
+   <p>Finally, note that this directive DOES expand to <code class="highlight"><c- mi>0</c-></code> if a given <code class="highlight"><c- n>embed</c-><c- o>-</c-><c- n>parameter</c-></code> is not supported. This makes it easier to determine if a given vendor-specific embed directive is supported. In fact, support can be checked in most cases by using a combination of <code class="highlight"><c- n>__FILE__</c-></code> and <code class="highlight"><c- n>__has_embed</c-></code>:</p>
+<pre class="language-cpp highlight"><c- b>int</c-> <c- nf>main</c-> <c- p>()</c-> <c- p>{</c->
+<c- cp>#if __has_embed (__FILE__ clang::element_type(short))</c->
+	<c- c1>// load "short" values directly from memory</c->
+	<c- b>short</c-> <c- n>meow</c-><c- p>[]</c-> <c- o>=</c-> <c- p>{</c->
+<c- cp>#embed "bits.bin" clang::element_type(short)</c->
+	<c- p>};</c->
+<c- cp>#else</c->
+	<c- c1>// no support for clang::element_type parameter</c->
+	<c- b>unsigned</c-> <c- b>char</c-> <c- n>meow_bytes</c-><c- p>[]</c-> <c- o>=</c-> <c- p>{</c->
+<c- cp>#embed "bits.bin"</c->
+	<c- p>};</c->
+	<c- b>unsigned</c-> <c- b>short</c-> <c- n>meow</c-><c- p>[]</c-> <c- o>=</c-> <c- p>{</c->
+		<c- d>/* parse meow_bytes into short values</c->
+<c- d>		   by-hand! */</c->
+	<c- p>};</c->
+<c- cp>#endif</c->
+	<c- k>return</c-> <c- mi>0</c-><c- p>;</c->
+<c- p>}</c->
+</pre>
    <h3 class="heading settled" data-level="4.6" id="design-endianness"><span class="secno">4.6. </span><span class="content">Bit Blasting: Endianness</span><a class="self-link" href="#design-endianness"></a></h3>
    <blockquote>
     <p>what would happen if you did fread into an int?

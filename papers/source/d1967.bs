@@ -451,6 +451,11 @@ const unsigned char null_terminated_file_data[] = {
 `prefix` and `suffix` only work if the `#embed` resource is not empty. If a user wants a prefix or suffix that appears unconditionally, they can simply just type the tokens they want before and after: there is nothing to be gained from adding a standards-mandated prefix and suffix that works in both the empty and non-empty case.
 
 
+#### Empty Signifier #### {#design-syntax-parameters-empty}
+
+This is for the case when the given resource exists, but it is empty. This allows a user to have a sequence of tokens between the parentheses passed to the `#embed "blah" empty(SPECIAL_EMPTY_MARKER)` `empty` parameter here behave differently.
+
+
 
 ## Constant Expressions ## {#design-constexpr}
 
@@ -470,10 +475,33 @@ The specification requires that each value is first cast to `unsigned char`, by 
 
 C and C++ are both working on (or already support) as `__has_include` directive. It makes sense to have an analogous `__has_embed` identifier. It can take a `__has_embed( "header-name" ... )` or `__has_embed (<header-name> ... )` resource name identifier, as well as additional arguments to let vendors pass in any additional arguments they need to properly access the file (following the same attribute-like parameters passed to the directive). `__has_embed` evaluates to:
 
-- `0` if the resource cannot be found;
-- `1` if the resource is found and it is not empty;
+- `1` if the resource is found and it the `embed-parameters` (including the vendor-specific ones) are supported; or,
+- `0` in every other case.
 
 This may raise questions of "TOCTTOU" (Time of Check to Time of Use) problems, but we already have these problems between `__has_include` and `#include`. For example, the Clang compiler uses a `FileManager` and `SourceManager` abstractions which cache files. GCC's "libcpp" will cache already-opened files (up to a limit). Any TOCTTOU problems have already been managed and provided for using the current `#include` infrastructure of these compilers, and if any compiler wants a more streamlined and consistent experience they should deploy whatever Quality of Implementation they see fit to achieve that goal.
+
+Finally, note that this directive DOES expand to `0` if a given `embed-parameter` is not supported. This makes it easier to determine if a given vendor-specific embed directive is supported. In fact, support can be checked in most cases by using a combination of `__FILE__` and `__has_embed`:
+
+```cpp
+int main () {
+#if __has_embed (__FILE__ clang::element_type(short))
+	// load "short" values directly from memory
+	short meow[] = {
+#embed "bits.bin" clang::element_type(short)
+	};
+#else
+	// no support for clang::element_type parameter
+	unsigned char meow_bytes[] = {
+#embed "bits.bin"
+	};
+	unsigned short meow[] = {
+		/* parse meow_bytes into short values
+		   by-hand! */
+	};
+#endif
+	return 0;
+}
+```
 
 
 ## Bit Blasting: Endianness ## {#design-endianness}
