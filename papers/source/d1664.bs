@@ -11,7 +11,7 @@ URL:
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Hannes Hauswedell, h2@fsfe.org
-Date: 2021-06-15
+Date: 2021-08-15
 Markup Shorthands: markdown yes, biblio yes, markup yes
 Abstract: This paper proposes new concepts to the Standard Library for ranges called Reconstructible Ranges for the purpose of ensuring a range/view broken down into its two iterators can be "glued" back together using an ADL-found function taking a tag, the range's iterator, and the range's sentinel.
 </pre>
@@ -35,7 +35,7 @@ path: resources/css/bikeshed-color-fix.html
 
 	- Vastly improve wording and address e-mail feedback (thanks, Hannes Hauswedell and Barry Revzin).
 	- Use the `is_enum_v` and `is_class_v` guards to prevent all bad catch-alls (thanks, Christopher Di Bella).
-	- At the moment, we cannot have the _`iterator`_ and _`sentinel`_ types for things like `iota_view` in the standard-mandated, exposition-only italics, so this little note up here will have to do.
+	- At the moment, we cannot have the <i>`iterator`</i> and <i>`sentinel`</i> types for things like `iota_view` in the standard-mandated, exposition-only italics, so this little note up here will have to do.
 	- Ensure that the concepts are properly specified.
 
 
@@ -212,7 +212,9 @@ Currently in C++, there is no Generic ("with a capital G") way to take a range a
 ```cpp
 template <typename Range>
 auto operate_on_and_return_updated_range (Range&& range) {
-	using uRange = std::remove_cvref_t<Range>;
+	using I = std::ranges::iterator_t<Range>;
+	using S = std::ranges::sentinel_t<Range>;
+	using Result = std::ranges::subrange<I, S>;
 	if (std::ranges::empty(range)) {
 		// ⛔!
 		// ... the below errors
@@ -237,7 +239,7 @@ auto operate_on_and_return_updated_range (Range&& range) {
 
 int main () {
 	std::string_view meow_view = "나는 유리를 먹을 수 있어요. 그래도 아프지 않아요";
-	// this line will error in C++17, or in compatibility
+	// this line will error in C++17 and C++20, or in compatibility
 	// libraries
 	std::string_view sub_view
 		= operate_on_and_return_updated_range(meow_view);
@@ -250,9 +252,8 @@ The current fix is to employ `std::ranges::subrange<I, S, K>` to return a generi
 ```cpp
 template <typename Range>
 auto operate_on_and_return_updated_range (Range&& range) {
-	using uRange = std::remove_cvref_t<Range>;
-	using I = std::Iterator<uRange>;
-	using S = std::Sentinel<uRange>;
+	using I = std::iterator_t<Range>;
+	using S = std::sentinel_t<Range>;
 	using Result = std::ranges::subrange<I, S>;
 	if (std::ranges::empty(range)) {
 		return Result(std::forward<Range>(range));
@@ -339,7 +340,7 @@ std::ranges::range<R>
 };
 
 template <class R, class Tag = remove_cvref_t<R>,
-	class It = ranges::iterator_t<R>>,
+	class It = ranges::iterator_t<R>,
 	class Sen = ranges::sentinel_t<R>>
 concept range_iterator_reconstructible_range =
 std::ranges::range<R>
@@ -613,7 +614,7 @@ template <class R, class Tag = remove_cvref_t<R>>
 
 <p><sup>2</sup> The expression `ranges​::reconstruct(I, S)` for some sub-expressions `I` and `S` is expression-equivalent to:
 	<dl>
-		<dd><sup>(2.1)</sup> `reconstruct(std::forward<decltype(I)>(I), std::forward<decltype(S)>(S))` if either `remove_cvref_t<decltype(I)>` or `remove_cvref_t<decltype(S)>` are class or enumeration types, it is a valid expression, and `decltype(I)`, and `decltype(S)` model `iterator_reconstructible_range`.</dd>
+		<dd><sup>(2.1)</sup> `reconstruct(std::forward<decltype(I)>(I), std::forward<decltype(S)>(S))` if either `remove_cvref_t<decltype(I)>` or `remove_cvref_t<decltype(S)>` are class or enumeration types, it is a valid expression, and both `decltype(I)` and `decltype(S)` model `iterator_reconstructible_range`.</dd>
 		<dd><sup>(2.2)</sup> Otherwise, `ranges::subrange<remove_cvref_t<decltype(I)>, remove_cvref_t<decltype(S)>>(std::forward<decltype(I)>(I), std::forward<decltype(S)>(S))` if it is a valid expression.</dd>
 		<dd><sup>(2.3)</sup> Otherwise, `ranges::reconstruct(I, S)` is ill-formed.</dd>
 	</dl>
@@ -645,7 +646,8 @@ template <class R, class Tag = remove_cvref_t<R>>
 ```cpp
 	// [string.view.reconstruct]
 	friend constexpr basic_string_view
-	reconstruct(const_iterator first, const_iterator last) noexcept;
+	reconstruct(std::in_place_type_t<basic_string_view>
+		const_iterator first, const_iterator last) noexcept;
 ```
 </ins>
 </blockquote>
@@ -658,7 +660,8 @@ template <class R, class Tag = remove_cvref_t<R>>
 
 ```cpp
 	friend constexpr basic_string_view
-	reconstruct(in_place_type_t<basic_string_view>, const_iterator first, const_iterator last) noexcept;
+	reconstruct(in_place_type_t<basic_string_view>,
+		const_iterator first, const_iterator last) noexcept;
 ```
 
 <p><sup>1</sup> Returns: `basic_string(std::move(first), std::move(last))`.</p>
@@ -693,7 +696,7 @@ template <class R, class Tag = remove_cvref_t<R>>
 		reconstruct(in_place_type_t<span>, It first, End last) noexcept;
 ```
 
-<p><sup>1</sup> Constraints: Let `U` be `remove_­reference_­t<iter_­reference_­t<It>>`.
+<p><sup>1</sup> <i>Constraints:</i> Let `U` be `remove_­reference_­t<iter_­reference_­t<It>>`.
 	<dl>
 		<dd><sup>(1.1)</sup> — `is_­convertible_­v<U(*)[], element_­type(*)[]>` is `true`. [<i>Note</i>: The intent is to allow only qualification conversions of the iterator reference type to element_­type. — <i>end note</i>]</dd>
 		<dd><sup>(1.2)</sup> — `It` satisfies `contiguous_­iterator`.</dd>
@@ -702,11 +705,14 @@ template <class R, class Tag = remove_cvref_t<R>>
 	</dl>
 </p>
 
-<p><sup>2</sup> Let `MaybeExtent` be an implementation-defined constant expression of type `size_t`. If it is not equal to `dynamic_extent`, then `MaybeExtent` shall be a value equal to `distance(first, last)`.</p>
+<p><sup>2</sup> Let `MaybeExtent` be an implementation-defined constant expression of type `size_t`. If it is not equal to `dynamic_extent`, then `MaybeExtent` shall have a value equal to `distance(first, last)`.</p>
 
 <p><sup>3</sup> Returns: `span<ElementType, MaybeExtent>(std::move(first), std::move(last))`.</p>
 
-<p><sup>4</sup> Remarks: the return type may be promoted to a `span` with a static extent if the implementation is capable of deriving such information from the given iterator and sentinel.</p>
+<p><sup>4</sup> Remarks: the return type may be promoted to a `span` with a static extent if the implementation is capable of deriving such information from the given iterator and sentinel.
+
+<p>[<i>Note 1</i>: some iterator types are implementation-defined, and may carry additional information which allow determining a non-`dynamic_extent` value for `MaybeExtent`. — </i>end note</i>]</p>
+</p>
 </ins>
 </blockquote>
 
@@ -740,16 +746,7 @@ template <class R, class Tag = remove_cvref_t<R>>
 
 <p><sup>1</sup> Returns: `subrange(std::move(first), std::move(last))`.</p>
 
-<p><sup>2</sup> Throws: Anything from evaluating the <i>Returns</i>. Otherwise, nothing.</p>
-
-```cpp
-	friend constexpr subrange
-	reconstruct(in_place_type_t<subrange>, subrange r, I first, S last) noexcept(see-below);
-```
-
-<p><sup>3</sup> Returns: if <i>`StoreSize`</i> is `false`, `subrange(std::move(first), std::move(last))`. Otherwise, `subrange(std::move(first), std::move(last), std::move(r).size())`.</p>
-
-<p><sup>4</sup> Throws: Anything from evaluating the <i>Returns</i>. Otherwise, nothing.</p>
+<p><sup>2</sup> <i>Throws:</i> Anything from evaluating the <i>Returns</i>. Otherwise, nothing.</p>
 
 </ins>
 </blockquote>
@@ -761,8 +758,9 @@ template <class R, class Tag = remove_cvref_t<R>>
 <ins>
 
 ```cpp
+	template <typename S>
 	friend constexpr iota_view
-	reconstruct(iterator first, sentinel last) noexcept;
+	reconstruct(iterator first, S last) noexcept(see-below);
 ```
 </ins>
 </blockquote>
@@ -774,11 +772,27 @@ template <class R, class Tag = remove_cvref_t<R>>
 <ins>
 
 ```cpp
-	friend constexpr iota_view
-	reconstruct(iterator first, sentinel last) noexcept;
+	template <typename S>
+	friend constexpr auto
+	reconstruct(iterator first, S last) noexcept(see-below);
 ```
 
-<p><sup>��</sup> Returns: `iota_view(std::move(first), std::move(last))`.</p>
+<p><sup>��1</sup> <i>Constraints:</i> `S` is <i>`iterator`</i> or `S` is <i>`sentinel`</i>.</p>
+
+<p><sup>��2</sup> <i>Effects:</i> Equivalent to:
+
+```cpp
+if constexpr (same_as<iterator, S>) {
+	return iota_view<decltype(*std::move(first)), decltype(*std::move(last))>(
+		std::move(first), *std::move(last)
+	);
+}
+else {
+	return iota_view(std::move(first), std::move(last));
+}
+```
+</p>
+<p><sup>��3</sup> <i>Throws:</i> Anything from evaluating the <i>Effects</i>. Otherwise, nothing.</p>
 
 </ins>
 </blockquote>
@@ -822,8 +836,8 @@ template <class R, class Tag = remove_cvref_t<R>>
 ```cpp
 	template <bool iterator_condition, bool sentinel_condition>
 	friend constexpr auto
-	reconstruct(iterator<iterator_condition>,
-		sentinel<sentinel_condition>) noexcept(see-below);
+	reconstruct(iterator<iterator_condition> first,
+		sentinel<sentinel_condition> last) noexcept(see-below);
 ```
 </ins>
 </blockquote>
@@ -836,30 +850,30 @@ template <class R, class Tag = remove_cvref_t<R>>
 ```cpp
 	template <bool iterator_condition, bool sentinel_condition>
 	friend constexpr auto
-	reconstruct(iterator<iterator_condition>,
-		sentinel<sentinel_condition>) noexcept(see-below);
+	reconstruct(iterator<iterator_condition> first,
+		sentinel<sentinel_condition> last) noexcept(see-below);
 ```
 
-<p><sup>��</sup> Constraints: `V` models `reconstructible_range` and `F` models `copy_constructible`.</p>
+<p><sup>��1</sup> <i>Constraints:</i> `V` models `reconstructible_range` and `F` models `copy_constructible`.</p>
 
-<p><sup>��</sup> Returns: `transform_view(ranges::reconstruct(std::in_place_type<V>, std::move(first).current, std::move(last).end), *first.parent->fun_)`.</p>
+<p><sup>��2</sup> Returns: `transform_view(ranges::reconstruct(std::in_place_type<V>, std::move(first).current, std::move(last).end), *first.parent->fun_)`.</p>
 
-<p><sup>���</sup> Throws: Anything from evaluating the <i>Returns</i>. Otherwise, nothing.</p>
+<p><sup>��3</sup> <i>Throws:</i> Anything from evaluating the <i>Returns</i>. Otherwise, nothing.</p>
 
 
 ```cpp
 	template <bool iterator_condition, bool sentinel_condition>
 	friend constexpr auto
 	reconstruct(in_place_type_t<transform_view>, transform_view original,
-		iterator<iterator_condition>,
-		sentinel<sentinel_condition>) noexcept(see-below);
+		iterator<iterator_condition> first,
+		sentinel<sentinel_condition> last) noexcept(see-below);
 ```
 
-<p><sup>��</sup> Constraints: `V` models `reconstructible_range`.</p>
+<p><sup>��4</sup> <i>Constraints:</i> `V` models `reconstructible_range`.</p>
 
-<p><sup>��</sup> Returns: `transform_view(ranges::reconstruct(std::in_place_type<V>, std::move(first).current, std::move(last).end), std::move(*original.fun_))`.</p>
+<p><sup>��5</sup> Returns: `transform_view(ranges::reconstruct(std::in_place_type<V>, std::move(first).current, std::move(last).end), std::move(*original.fun_))`.</p>
 
-<p><sup>���</sup> Throws: Anything from evaluating the <i>Returns</i>. Otherwise, nothing.</p>
+<p><sup>��6</sup> <i>Throws:</i> Anything from evaluating the <i>Returns</i>. Otherwise, nothing.</p>
 
 </ins>
 </blockquote>
@@ -892,11 +906,11 @@ template <class R, class Tag = remove_cvref_t<R>>
 <p>
 <dl>
 	<dd><sup>(2.1)</sup> — If `T` is a specialization of `ranges​::​empty_­view` ([range.empty.view]), then `((void) F, decay-copy(E))`.</dd>
-	<dd><sup>(2.2)</sup> — Otherwise, if `T` models both `random_­access_­range` and `sized_­range`, and `T`:
+	<dd><sup>(2.2)</sup> — Otherwise, if `T` models both `random_­access_­range` and `sized_­range`, and:
 	<dl>
-		<dd><sup>(2.2.1)</sup> — models `range_iterator_reconstructble_range<T, ranges::iterator_t<T>, ranges::iterator_t<T>>`, or</dd>
-		<dd><sup>(2.2.2)</sup> — models `reconstructble_range<T, ranges::iterator_t<T>, ranges::iterator_t<T>>`, or</dd>
-		<dd><sup>(2.2.3)</sup> — models `iterator_reconstructible_range<iterator_t<T>>`,</dd>
+		<dd><sup>(2.2.1)</sup> — `T`, `remove_cvref_t<T>`, `ranges::iterator_t<T>`, and `ranges::iterator_t<T>` model `range_iterator_reconstructible_range`, or</dd>
+		<dd><sup>(2.2.2)</sup> — `T`, `ranges::iterator_t<T>`, and `ranges::iterator_t<T>` model `reconstructble_range`, or</dd>
+		<dd><sup>(2.2.3)</sup> — `ranges::iterator_t<T>` models `iterator_reconstructible_range`,</dd>
 	</dl>
 	then `ranges::reconstruct(in_place_type<T>, E, ranges​::​begin(E), ranges​::​begin(E) + min<D>(ranges​::​size(E), F))`, except that `E` is evaluated only once.</dd>
 	<dd><sup>(2.3)</sup> — Otherwise, `ranges​::​take_­view{E, F}`.</dd>
@@ -937,9 +951,9 @@ Otherwise, the expression `views​::​drop(E, F)` is expression-equivalent to:
 	<dd><sup>(2.1)</sup> — If `T` is a specialization of `ranges​::​empty_­view` ([range.empty.view]), then `((void) F, decay-copy(E))`.</dd>
 	<dd><sup>(2.2)</sup> — Otherwise, if `T` models both `random_­access_­range` and `sized_­range`, and `T`:
 	<dl>
-		<dd><sup>(2.2.1)</sup> — models `range_iterator_reconstructble_range<T, ranges::iterator_t<T>, ranges::iterator_t<T>>`, or</dd>
-		<dd><sup>(2.2.2)</sup> — models `reconstructble_range<T, ranges::iterator_t<T>, ranges::iterator_t<T>>`, or</dd>
-		<dd><sup>(2.2.3)</sup> — models `iterator_reconstructible_range<ranges::iterator_t<T>>`,</dd>
+		<dd><sup>(2.2.1)</sup> — `T`, `remove_cvref_t<T>`, `ranges::iterator_t<T>`, and `ranges::sentinel_t<T>` model `range_iterator_reconstructible_range`, or</dd>
+		<dd><sup>(2.2.2)</sup> — `T`, `ranges::iterator_t<T>`, and `ranges::sentinel_t<T>` model `reconstructble_range`, or</dd>
+		<dd><sup>(2.2.3)</sup> — `ranges::iterator_t<T>` and `ranges::sentinel_t<T>` model `iterator_reconstructible_range`,</dd>
 	</dl>
 	then `ranges::reconstruct(in_place_type<T>, E, ranges​::​begin(E) + min<D>(ranges​::​size(E), F), ranges​::​end(E))`, except that `E` is evaluated only once.</dd>
 	<dd><sup>(2.3)</sup> — Otherwise, `ranges​::drop_­view{E, F}`.</dd>
