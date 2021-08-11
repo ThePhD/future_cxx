@@ -175,6 +175,7 @@ auto unconsumed_output = encoding_result.output;
 `ranges::subrange<std::span<char16_t, std::dynamic_extent>::iterator, std::span<char16_t, std::dynamic_extent>::iterator>`
 		</td>
 		<td>
+
 ```cpp
 std::u8string name = "𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷";
 char16_t conversion_buffer[432];
@@ -364,8 +365,9 @@ std::ranges::range<R>
 };
 ```
 
-It is the formalization that a range can be reconstructed from its necessary components. The concepts are a means of implementing the desired Customization Point Object (CPO) which will be called `std::ranges::reconstruct`. The 3 forms allow for 3 levels of construction, here each one defers to the next version by removing one layer of "information" until finally following back to the "default" form:
+It is the formalization that a range can be reconstructed from its necessary components. The concepts are a means of implementing the desired Customization Point Object (CPO) which will be called `std::ranges::reconstruct`. The 4 forms allow for 4 levels of construction, where each one defers to the next version by removing one layer of "information" until finally following back to the most basic form:
 
+- the desired type to reconstruct ("tag"), the just the range;
 - the desired type to reconstruct ("tag"), the range, the iterator, and the sentinel;
 - the desired type to reconstruct ("tag"), the iterator, and the sentinel, after stripping out the range if the previous `reconstruct` did not find anything;
 - the iterator and the sentinel, after dropping the tag if the previous `reconstruct` attempt did not work and making sure at least one of `std::is_class_v<iterator>`, `std::is_class_v<sentinal>`, `std::is_enum_v<iterator>`, or `std::is_enum_v<sentinel>` is true; and finally,
@@ -385,8 +387,7 @@ std::span<int> some_span(vec);
 some_span | views::transform(f) | views::take(5)
 ```
 
-This particular case is reconstructible as `span<T>` is reconstructible (and `span<T>` is reconstructible because it is already a properly borrowed type). The original transformation view can be reconstructed here without the need to keep the `take_view` intermediate wrapped around the two previous transformations, as the transform can be ignored on the first five elements by advancing the given `some_span`'s `begin()` by 5 elements. A smart `reconstruct` call for `take_view` could conceivably do this.
-
+This particular case is reconstructible as `span<T>` is reconstructible. The original transformation view can be reconstructed here without the need to keep the `take_view` intermediate wrapped around the two previous transformations, as the transform can be ignored on the first five elements by advancing the given `some_span`'s `begin()` by 5 elements. A smart `reconstruct` call for `take_view` does this (and is present in [[#wording-specification]]).
 
 
 ## Multiple, Safe Reconstruction Points ## {#design-multiple}
@@ -664,7 +665,7 @@ template <class R, class Tag = remove_cvref_t<R>>
 		const_iterator first, const_iterator last) noexcept;
 ```
 
-<p><sup>1</sup> Returns: `basic_string_view(std::move(first), std::move(last))`.</p>
+<p><sup>1</sup> <i>Returns:</i> `basic_string_view(std::move(first), std::move(last))`.</p>
 </ins>
 </blockquote>
 
@@ -707,7 +708,7 @@ template <class R, class Tag = remove_cvref_t<R>>
 
 <p><sup>2</sup> Let `MaybeExtent` be an implementation-defined constant expression of type `size_t`. If it is not equal to `dynamic_extent`, then `MaybeExtent` shall have a value equal to `distance(first, last)`.</p>
 
-<p><sup>3</sup> Returns: `span<ElementType, MaybeExtent>(std::move(first), std::move(last))`.</p>
+<p><sup>3</sup> <i>Returns:</i> `span<ElementType, MaybeExtent>(std::move(first), std::move(last))`.</p>
 
 <p><sup>4</sup> Remarks: the return type may be promoted to a `span` with a static extent if the implementation is capable of deriving such information from the given iterator and sentinel.
 
@@ -723,8 +724,11 @@ template <class R, class Tag = remove_cvref_t<R>>
 <ins>
 
 ```cpp
+	friend constexpr subrange
+	reconstruct(in_place_type_t<subrange>, I first, S last) noexcept(see-below);
+
 	friend constexpr auto
-	reconstruct(in_place_type_t<subrange>, I first, S last) noexcept;
+	reconstruct(in_place_type_t<subrange>, I first, S last) noexcept(see-below);
 ```
 </ins>
 </blockquote>
@@ -741,9 +745,18 @@ template <class R, class Tag = remove_cvref_t<R>>
 	reconstruct(in_place_type_t<subrange>, I first, S last) noexcept(see-below);
 ```
 
-<p><sup>1</sup> Returns: `subrange(std::move(first), std::move(last))`.</p>
+<p><sup>1</sup> <i>Returns:</i> `subrange(std::move(first), std::move(last))`.</p>
 
 <p><sup>2</sup> <i>Throws:</i> Anything from evaluating the <i>Returns</i>. Otherwise, nothing.</p>
+
+```cpp
+	friend constexpr auto
+	reconstruct(in_place_type_t<subrange>, I first, I last) noexcept(see-below);
+```
+
+<p><sup>3</sup> <i>Returns:</i> `subrange<I>(std::move(first), std::move(last))`.</p>
+
+<p><sup>4</sup> <i>Throws:</i> Anything from evaluating the <i>Returns</i>. Otherwise, nothing.</p>
 
 </ins>
 </blockquote>
@@ -853,7 +866,7 @@ else {
 
 <p><sup>��1</sup> <i>Constraints:</i> `V` models `reconstructible_range` and `F` models `copy_constructible`.</p>
 
-<p><sup>��2</sup> Returns: `transform_view(ranges::reconstruct(std::in_place_type<V>, std::move(first).current, std::move(last).end), *first.parent->fun_)`.</p>
+<p><sup>��2</sup> <i>Returns:</i> `transform_view(ranges::reconstruct(std::in_place_type<V>, std::move(first).current, std::move(last).end), *first.parent->fun_)`.</p>
 
 <p><sup>��3</sup> <i>Throws:</i> Anything from evaluating the <i>Returns</i>. Otherwise, nothing.</p>
 
@@ -868,7 +881,7 @@ else {
 
 <p><sup>��4</sup> <i>Constraints:</i> `V` models `reconstructible_range`.</p>
 
-<p><sup>��5</sup> Returns: `transform_view(ranges::reconstruct(std::in_place_type<V>, std::move(first).current, std::move(last).end), std::move(*original.fun_))`.</p>
+<p><sup>��5</sup> <i>Returns:</i> `transform_view(ranges::reconstruct(std::in_place_type<V>, std::move(first).current, std::move(last).end), std::move(*original.fun_))`.</p>
 
 <p><sup>��6</sup> <i>Throws:</i> Anything from evaluating the <i>Returns</i>. Otherwise, nothing.</p>
 
