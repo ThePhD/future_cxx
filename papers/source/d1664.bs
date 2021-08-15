@@ -371,7 +371,7 @@ It is the formalization that a range can be reconstructed from its necessary com
 - the desired type to reconstruct ("tag"), the just the range;
 - the desired type to reconstruct ("tag"), the range, the iterator, and the sentinel;
 - the desired type to reconstruct ("tag"), the iterator, and the sentinel, after stripping out the range if the previous `reconstruct` did not find anything;
-- the iterator and the sentinel, after dropping the tag if the previous `reconstruct` attempt did not work and making sure at least one of `std::is_class_v<iterator>`, `std::is_class_v<sentinal>`, `std::is_enum_v<iterator>`, or `std::is_enum_v<sentinel>` is true; and finally,
+- the iterator and the sentinel, after dropping the tag if the previous `reconstruct` attempt did not work and making sure at least one of `std::is_class_v<iterator>`, `std::is_class_v<sentinal>`, `std::is_enum_v<iterator>`, or `std::is_enum_v<sentinel>` is `true`; and finally,
 - `std::ranges::subrange<decltype(iterator), decltype(sentinel)>` if nothing else matches.
 
 This allows a developer to put a range back together at various levels of fidelity from its parts and pieces, giving us the ability to propagate the input type's properties after modifying its iterators for some underlying work, algorithm or other effect. This concept is also the basis of the idea behind [[p1739r4]], which was accepted in a lesser form for C++20 with the intent of this paper following up on it.
@@ -431,7 +431,7 @@ Not all ranges can meet this requirement. Some ranges contain state which cannot
 
 For example `std::ranges::single_view` contains a [exposition *semiregular-box* template type (ranges.semi.wrap)](http://eel.is/c++draft/range.semi.wrap) which holds a value to iterate over. It would not be possible to reconstruct the exact same range (e.g., iterators pointing to the exact same object) with the semi-regular wrapper. Ranges should have the ability to select this syntax without having it happen to their type implicitly, or as for more information.
 
-This is why there are 3 levels to opt-in to support. If a user defines the 4-argument form which takes a `(tag, range, iterator, sentinel)` quadruplet, than they can use as much information may be available in the range, iterator, and sentinel to reproduce the original range. If they do not need that much information, they can opt-in to the 3-argument version which only takes the `(tag, iterator, sentinel)` triplet. And, finally, the most brief and sophisticated form is the `(iterator, sentinel)` form, which can reconstruct a range using information from only the iterator, only the sentinel, or both.
+This is why there are 4 levels to opt-in to support. If a user defines the 4-argument form which takes a `(tag, range, iterator, sentinel)` quadruplet, than they can use as much information may be available in the range, iterator, and sentinel to reproduce the original range. If they do not need that much information, they can opt-in to the 3-argument version which only takes the `(tag, iterator, sentinel)` triplet. If they want to only deal with the original range and the tag (as an optimization, to save on `reconstruct` potentially calling `ranges::begin(r)` and `ranges::end(r)` on the range and calling the `(tag, range, iterator, sentinel)` version), they can define `reconstruct` for just `(tag, range)`. And, finally, the most brief and sophisticated form is the `(iterator, sentinel)` form, which can reconstruct a range using information from only the iterator and/or sentinel.
 
 If the range opts-in to nothing, then there will always be a default return: `std::ranges::subrange<Iterator, Sentinel>`. This is effectively what any algorithm today already returns (sometimes it uses a hand-made pair type, likely because some iterator-pair usages may require the size to be stored and neither the iterator nor the sentinel can provide the size).
 
@@ -678,30 +678,30 @@ template <class R, class Tag = remove_cvref_t<R>>
 	};
 ```
 
-<sup>9</sup> Let `r` be a range with type `R` and `T` be some type.
+<sup>9</sup> Let `r` be a range with type `R`, `T` be some type, `i` be an iterator of type `I` and `s` be a sentinel of type `S`.
 <dl>
-	<dd><sup>9.1</sup> — Let `it_sen_re_range` be the result of `ranges::reconstruct(ranges::begin(r), ranges::end(r))` if such an expression is well-formed. `r` models `ranges::iterator_reconstructible_range` if
+	<dd><sup>9.1</sup> — Let `it_sen_re_range` be the result of `ranges::reconstruct(i, s)` if `I` and `S` satisfy `ranges::iterator_reconstructible_range`. `r` models `ranges::iterator_reconstructible_range` if
 		<dl>
-			<dd>— `ranges::begin(r) == ranges::begin(it_sen_re_range)` is true, and</dd>
-			<dd>— `ranges::end(r) == ranges::end(it_sen_re_range)` is true.</dd>
+			<dd>— `i == ranges::begin(it_sen_re_range)` is `true`, and</dd>
+			<dd>— `s == ranges::end(it_sen_re_range)` is `true`.</dd>
 		</dl>
 	</dd>
-	<dd><sup>9.2</sup> — Let `re_range` be the result of `ranges::reconstruct(in_place_type<remove_cvref_t<T>>, ranges::begin(r), ranges::end(r))` if such an expression is well-formed. `r` models `ranges::reconstructible_range` if
+	<dd><sup>9.2</sup> — Let `re_range` be the result of `ranges::reconstruct(in_place_type<remove_cvref_t<T>>, i, s)` if `remove_cvref_t<T>`, `I`, and `S` satisfy `ranges::iterator_reconstructible_range`. `r` models `ranges::reconstructible_range` if
 		<dl>
-			<dd>— `ranges::begin(r) == ranges::begin(re_range)` is true, and</dd>
-			<dd>— `ranges::end(r) == ranges::end(re_range)` is true.</dd>
+			<dd>— `i == ranges::begin(re_range)` is `true`, and</dd>
+			<dd>— `s == ranges::end(re_range)` is `true`.</dd>
 		</dl>
 	</dd>
-	<dd><sup>9.3</sup> — Let `range_it_re_range` be the result of `ranges::reconstruct(in_place_type<remove_cvref_t<T>>, r, ranges::begin(r), ranges::end(r))`, if such an expression is well-formed. Then `range_it_re_range` models `ranges::range_iterator_reconstructible_range` if
+	<dd><sup>9.3</sup> — Let `range_it_re_range` be the result of `ranges::reconstruct(in_place_type<remove_cvref_t<T>>, r, i, s)`, if `R`, `remove_cvref_t<T>`, `I`, and `S` satisfy `ranges::range_iterator_reconstructible_range`. Then `range_it_re_range` models `ranges::range_iterator_reconstructible_range` if
 		<dl>
-			<dd>— `ranges::begin(r) == ranges::begin(range_it_re_range)` is true, and</dd>
-			<dd>— `ranges::end(r) == ranges::end(range_it_re_range)` is true.</dd>
+			<dd>— `i == ranges::begin(range_it_re_range)` is `true`, and</dd>
+			<dd>— `s == ranges::end(range_it_re_range)` is `true`.</dd>
 		</dl>
 	</dd>
-	<dd><sup>9.4</sup> — Let `range_re_range` be the result of `ranges::reconstruct(in_place_type<remove_cvref_t<T>>, r)`, if such an expression is well-formed. Then `range_re_range` models `ranges::range_reconstructible_range` if
+	<dd><sup>9.4</sup> — Let `range_re_range` be the result of `ranges::reconstruct(in_place_type<remove_cvref_t<T>>, r)`, if `in_place_type<remove_cvref_t<T>>` and `R` satisfy `ranges::range_reconstructible_range`. Then `range_re_range` models `ranges::range_reconstructible_range` if
 		<dl>
-			<dd>— `ranges::begin(r) == ranges::begin(range_re_range)` is true, and</dd>
-			<dd>— `ranges::end(r) == ranges::end(range_re_range)` is true.</dd>
+			<dd>— `ranges::begin(r) == ranges::begin(range_re_range)` is `true`, and</dd>
+			<dd>— `ranges::end(r) == ranges::end(range_re_range)` is `true`.</dd>
 		</dl>
 	</dd>
 </dl>
