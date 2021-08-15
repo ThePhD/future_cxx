@@ -37,6 +37,7 @@ path: resources/css/bikeshed-color-fix.html
 	- Use the `is_enum_v` and `is_class_v` guards to prevent all bad catch-alls (thanks, Christopher Di Bella).
 	- At the moment, we cannot have the <i>`iterator`</i> and <i>`sentinel`</i> types for things like `iota_view` in the standard-mandated, exposition-only italics, so this little note up here will have to do.
 	- Ensure that the concepts are properly specified.
+	- Add lots more motivation to the design, particularly [[#design-overloads]].
 
 
 
@@ -456,9 +457,111 @@ Note that these changes will greatly aid other algorithm writers who want to pre
 
 
 
+## Why The Overloads? ## {#design-overloads} 
+
+It has been questioned why there are four different potential extension points for `ranges::reconstruct`. Indeed, most individuals observe that all of the necessary information required is the range and (possibly) any outstanding iterators. Their version of this paper — termed the "Alternative Design" — looks like this:
+
+```cpp
+template <typename Range, typename Iterator, typename Sentinel>
+auto reconstruct(Range&& range, Iterator&& iterator, Sentinel&& sentinel);
+```
+
+It takes only the range, iterator, and sentinel. There are no tag types. There are no overloads which take: only an iterator and a sentinel; a tag, range, iterator and sentinel; a tag, iterator, and sentinel; or, a tag and a range.
+
+While the user only has to override one in this paper's design, the design above provides **only** one customization point with no room for more or less information. However, many APIs which necessitate various forms of `reconstruct` due to various circumstances when either wrapping certain function / algorithms or dealing with non-generic code within generic code.
+
+
+### Unrecoverable Ranges ### {#design-overloads-unrecoverable}
+
+Let us set up the need for the various reconstruction algorithms using a use case-by-contradiction. Consider, for a moment, an algorithm which takes a range and does some work (perhaps at a later point). A function is passed which is expected to take the given range and return a (any) range. It attempts to reconstruct the result at the end, if at all possible after some additional work is done on the resulting iterators:
+
+```cpp
+template <typename Range, typename F>
+auto perform_work_with(Range&& range, F&& f) {
+	// things and stuff
+	decltype(auto) result = std::forward<F>(f)(std::forward<Range>(range));
+	auto result_first = std::ranges::begin(std::move(result));
+	auto result_last = std::ranges::end(std::move(result));
+	// other things and stuff
+	// ...
+	// return the combined range
+	return std::ranges::reconstruct(std::move(result),
+		std::move(result_first), std::move(result_last));
+}
+```
+
+If we were to create a generic lambda with a universal reference parameter that worked something like:
+
+```cpp
+auto f = [&output_buffer](auto&& r) {
+	auto x = std::ranges::copy(std::forward<decltype(r)>(r), output_buffer.begin());
+	return std::ranges::subrange(std::move(x.in1), std::move(x.in2));
+};
+```
+
+It becomes vastly unclear whether or not the returned range is what we are supposed to be working with, or the range forwarded into the function. On one hand, we get more static information about what we should reconstruct by using the range we passed into `f` for `perform_work_with`. On the other hand, if we end up with a function that is not designed like `std::ranges::copy`, then working with the return value is better. That is, a normal user function, using `perform_work_with`, can take a value directly:
+
+```cpp
+auto f2 = [&output_buffer](move_only_input_range r) { // by-value: uh uh ❗❗
+	auto x = std::ranges::copy(std::move(r), output_buffer.begin());
+	return std::ranges::subrange(std::move(x.in1), std::move(x.in2));
+};
+```
+
+The above `f2` is entirely consistent with the [[P2415|"What is a View?" paper]], which argues that specific ranges should (still) be taken by-value, while generic ranges need to be taken by (forwarding) reference so that information is not completely lost all the time.
+
+This presents significant problems for reconstructibility that requires all 3 of the `range`, `first`, and `last` to reconstruct: how do you write a reconstruction point for this? Are you supposed to add a `reconstruct` customization function that takes a `subrange` and the iterator/sentinel types? Where are you supposed to define that customization function, as an end-user? If neither the `begin` nor `end` of the range forwarded into the `copy` function have namespace-relation to your type (e.g., the iterators are 2 pointers, [as in `llvm::StringRef` from LLVM](https://llvm.org/doxygen/classllvm_1_1StringRef.html#a20d37563688a61a452fb26e317e37308) or [`TArrayView` from Unreal Engine](https://docs.unrealengine.com/4.26/en-US/API/Runtime/Core/Containers/TArrayView/begin/)), ADL will not pick up if you use `subrange` as the range type.
+
+This, at the very least, necessitates the tag type that is passed to 3 of the reconstruction points.  To make it clear, the first of these can always be found regardless of how much information is stripped by intervening algorithms, while the second may not be:
+
+```cpp
+// Alternative design:
+// Can risk not being properly found unless put
+// it disadvantageous location.
+friend constexpr
+template <typename T>
+TArrayView<T>
+reconstruct(subrange<T*>, T*, T*);
+
+// Current design:
+// can always be found using ADL with the tag type
+// always safe (tag type serves as strong type to match against)
+friend constexpr
+template <typename T, typename Range>
+TArrayView<T>
+reconstruct(std::in_place_type_t<TArrayView<T>>, T*, T*);
+```
+
+The Alternative Design is dangerous in that it can produce clashes with other `subrange<T*>, T*, T*` reconstruction points in the same space. For example, `span`, `string_view`, and `TArrayView` are all interested in this reconstruction point: and yet, only one would ever be able to match given the way `f` and `f2` are defined. Contrast to the current paper design, which has several benefits:
+
+- only the iterator/sentinel and a tag are needed to reconstruct (the tag can be taken from either the return value or from the input to the algorithm, whichever the algorithm designer thinks suits their users best);
+- information can be recovered further up the chain using purely type information, rather than values directly; and,
+- there is far less of a chance for ambiguities or lookup confusion.
+
+This may seem like is a very simplified/conjured scenario, but it has real-world implications. In the library [ztd.text](https://ztdtext.readthedocs.io/), a range-based encoding and text library, input and output ranges are taken and worked on. Eventually, these algorithms [call user-defined functions](https://github.com/soasis/text/blob/8cb532e251a0c0b56ca05a011ee992107e907593/include/ztd/text/detail/transcode_one.hpp#L121) through `encode_one` or `decode_one` functions. Ranges are returned in structures. These are not required to return the same - or even directly related - range from their function calls. They could even return `std::ranges::subrange<some_iterator>` instead of the original range, which may explicitly discard information necessary for reconstruction.
+
+[[P2415]], an end-user can take a range by-value since not all encoding objects need to be fully generic. In ztd.text, we are lucky that, in most cases, we can provide the tag, range, iterator, and sentinel. But as outlined above, we may not be able to preserve all aspects of the objects forwarded to work, and fundamental information can be lost in basic use cases.
+
+
+### Legacy Code ### {#design-overloads-legacy}
+
+As much as the authors personally hate legacy code, there are at least 20 years of `[iterator, iterator)` code floating out in the world. Many times, we lack a range or range abstraction in general. Depriving the vast majority of this code from being able to properly reconstruct their types, even if they have strongly-typed iterators that are not basic pointer types, is very hostile to the current ecosystem.
+
+
+### Minimum Viable Customization ### {#design-overloads-minimum}
+
+In proprietary codebases, we have been able to reconstruct `string_view`s, `span`s, `c_string_view`s, and various kinds of `rope_view`s and other kinds of views purely from their iterators. Most of the views in the standard can be reconstructed using their iterator and sentinel: while more ranges will come in the future which may require more and additional information, it is extraordinarily clear that the majority of ranges both users (and the standard) will be using will boil down to using `(iterator, sentinel)` or `(tag, iterator, sentinel)` information for reconstruction purposes. Most users simply do not need the range information, and so basing the design on this facet is unnecessarily hostile to generic code that has been trafficking in iterators and wants to steadily evolve to returning more information, potentially without API breaks (for example, going from returning a `Boost.Range`-style `subrange` and instead reconstructing to something better).
+
+Whether we like it or not, `[iterator, sentinel)` is still the fundamental unit of work for algorithms and ranges, NOT a single `[range)`/`[cursor)` type. Disregarding two decades of such code and always requiring a range to work is not in the C++ Committee's best interests for proliferation of range-based ideas and code.
+
+It is also important to note that requiring the Alternative Design's `(range, iterator, sentinel)` customization point means that a user may have to write an overload for every single `(range, iterator, sentinel)` triplet. To save on all of this writing, either the first parameter will become templated (which can result in overload problems for ranges which may have many accidental potential matches), or each range needs to be carefully crafted to take the proper range with an iterator and sentinel (e.g. when the iterator and sentinel may be primitive types like `T*`).
+
+
+
+
 # Deployment Experience # {#experience}
 
-This change was motivated by Hannes Hauswedell's [[p1739r4]] and became very important for the ranges work done with text encoding. There is a C++17 implementation [at the soasis/text repository here](https://github.com/soasis/text/blob/main/include/ztd/text/detail/reconstruct.hpp), which is mimicking the interface needed for [[p1629r1]]. It is meant to solve the deployment issues with P1739's merging into the Standard.
+This change was motivated by Hannes Hauswedell's [[p1739r4]] and became very important for the ranges work done with text encoding. There is a C++17 implementation [at the ztd.text repository here](https://github.com/soasis/text/blob/main/include/ztd/ranges/reconstruct.hpp), which is an implementation for the interface needed for [[p1629r1]]. It is meant to solve the deployment issues with P1739's merging into the Standard.
 
 
 
@@ -602,6 +705,7 @@ template <class R, class Tag = remove_cvref_t<R>>
 		</dl>
 	</dd>
 </dl>
+<p>[ Note: If an iterator and a sentinel is passed in that does not come directly from a `ranges::begin` or `ranges::end` expression, then the range of the reconstructed range matches the given iterator and sentinel so long as it is appropriately related. — end Note ]</p>
 </ins>
 </blockquote>
 
@@ -816,22 +920,22 @@ else {
 ```cpp
 	friend constexpr empty_view
 	reconstruct(in_place_type_t<empty_view>, T*, T*) noexcept {
-		return empty_view();
+		return empty_view{};
 	}
 
 	friend constexpr empty_view
 	reconstruct(in_place_type_t<empty_view>, nullptr_t, T*) noexcept {
-		return empty_view();
+		return empty_view{};
 	}
 
 	friend constexpr empty_view
 	reconstruct(in_place_type_t<empty_view>, T*, nullptr_t) noexcept {
-		return empty_view();
+		return empty_view{};
 	}
 
 	friend constexpr empty_view
 	reconstruct(in_place_type_t<empty_view>, nullptr_t, nullptr_t) noexcept {
-		return empty_view();
+		return empty_view{};
 	}
 ```
 </ins>
@@ -995,6 +1099,15 @@ Thank you to Oktal, Anointed of ADL, Blessed Among Us, and Morwenn, the ever-wat
 		"title": "range-v3",
 		"publisher": "Eric Niebler",
 		"date": "June 11th, 2019"
+	},
+	"P2415": {
+		"authors": [
+			"Barry Revzin",
+			"Tim Song"
+		],
+		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2415r0.html",
+		"title": "What is a View?",
+		"date": "July 13th, 2021"
 	}
 }
 </pre>
