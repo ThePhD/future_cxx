@@ -216,7 +216,7 @@ template <typename Range>
 auto operate_on_and_return_updated_range (Range&& range) {
 	using I = std::ranges::iterator_t<Range>;
 	using S = std::ranges::sentinel_t<Range>;
-	using Result = std::ranges::subrange<I, S>;
+	using uRange = std::remove_cvref_t<URange>
 	if (std::ranges::empty(range)) {
 		// ⛔!
 		// ... the below errors
@@ -480,13 +480,17 @@ template <typename Range, typename F>
 auto perform_work_with(Range&& range, F&& f) {
 	// things and stuff
 	decltype(auto) result = std::forward<F>(f)(std::forward<Range>(range));
-	auto result_first = std::ranges::begin(std::move(result));
-	auto result_last = std::ranges::end(std::move(result));
+	auto result_first = std::ranges::begin(result);
+	auto result_last = std::ranges::end(result);
+	// more work is done with result_first and result_last
+	auto pair_of_first_last
+		= third_party_code(std::move(result_first), std::move(result_last));
 	// other things and stuff
 	// ...
 	// return the combined range
 	return std::ranges::reconstruct(std::move(result),
-		std::move(result_first), std::move(result_last));
+		std::move(pair_of_first_last.first),
+		std::move(pair_of_first_last.second));
 }
 ```
 
@@ -495,57 +499,97 @@ If we were to create a generic lambda with a universal reference parameter that 
 ```cpp
 auto f = [&output_buffer](auto&& r) {
 	auto x = std::ranges::copy(std::forward<decltype(r)>(r), output_buffer.begin());
-	return std::ranges::subrange(std::move(x.in1), std::move(x.in2));
+	return std::ranges::subrange(std::move(x.in), r.end());
 };
 ```
 
-It becomes vastly unclear whether or not the returned range is what we are supposed to be working with, or the range forwarded into the function. On one hand, we get more static information about what we should reconstruct by using the range we passed into `f` for `perform_work_with`. On the other hand, if we end up with a function that is not designed like `std::ranges::copy`, then working with the return value is better. That is, a normal user function, using `perform_work_with`, can take a value directly:
+It becomes vastly unclear whether or not the returned range is what we are supposed to be working with, or the range forwarded into the function. On one hand, we get more static information about what we should reconstruct by using the range we passed into `f` for `perform_work_with`. On the other hand, if we end up with a function that is not designed like `std::ranges::copy`, then working with the return value is necessary. That is, a normal user function, using `perform_work_with`, can take a value directly rather than a reference:
 
 ```cpp
-auto f2 = [&output_buffer](move_only_input_range r) { // by-value: uh uh ❗❗
+auto f2 = [&output_buffer](move_only_input_range r) { // by-value: uh oh ❗❗
 	auto x = std::ranges::copy(std::move(r), output_buffer.begin());
-	return std::ranges::subrange(std::move(x.in1), std::move(x.in2));
+	return std::ranges::subrange(std::move(x.in), std::move(r.end()));
 };
 ```
 
-The above `f2` is entirely consistent with the [[P2415|"What is a View?" paper]], which argues that specific ranges should (still) be taken by-value, while generic ranges need to be taken by (forwarding) reference so that information is not completely lost all the time.
+The above `f2` is entirely consistent with the [[P2415|"What is a View?" paper]], which argues that specific ranges should (still) be taken by-value, while generic range algorithms need to be taken by (forwarding) reference. This means that when we do `std::forward<Range>(range)` inside of `perform_work_with`, we do not get to call `rbegin()` on the original `range` anymore. The only way to keep working is with `result`.
 
-This presents significant problems for reconstructibility that requires all 3 of the `range`, `first`, and `last` to reconstruct: how do you write a reconstruction point for this? Are you supposed to add a `reconstruct` customization function that takes a `subrange` and the iterator/sentinel types? Where are you supposed to define that customization function, as an end-user? If neither the `begin` nor `end` of the range forwarded into the `copy` function have namespace-relation to your type (e.g., the iterators are 2 pointers, [as in `llvm::StringRef` from LLVM](https://llvm.org/doxygen/classllvm_1_1StringRef.html#a20d37563688a61a452fb26e317e37308) or [`TArrayView` from Unreal Engine](https://docs.unrealengine.com/4.26/en-US/API/Runtime/Core/Containers/TArrayView/begin/)), ADL will not pick up if you use `subrange` as the range type.
+**Effectively, we have lost the original range and it's type information by the time we return from this function.** And, this, it turns out, becomes pretty important in Generic-with-a-capital-G code.
 
-This, at the very least, necessitates the tag type that is passed to 3 of the reconstruction points.  To make it clear, the first of these can always be found regardless of how much information is stripped by intervening algorithms, while the second may not be:
+#### Negotiating #### {#design-overloads-unrecoverable-negotiate}
+
+Okay, so in general we can't always work with the original range anymore. This is, in fact, something that happens pretty often. For example, in a range-based text library ztd.text, [the third-party encoding for SHIFT-JIS takes and returns `std::span`s](https://github.com/soasis/text/blob/81db6a2b0cf5bdf3ab7fbd8b2ba2744fa6ce636d/examples/shift_jis/include/shift_jis.hpp#L56). However, more often than not, users of the algorithms with these encoding objects work with and provide `std::string` or `std::string_view`-like types. If we were to directly return what the results of the third-party encoding gave us, we would be forced to always give back to the user a `std::span` (or, in the worst case, `std::subrange<T*>`), not a `std::string_view` or `std::string`-capable type.
+
+Under the Alternative Design, this results in a problem for both `f` and `f2`: it will always be called with the parameter types like so:
 
 ```cpp
-// Alternative design:
-// Can risk not being properly found unless put
-// it disadvantageous location.
-friend constexpr
-template <typename T>
-TArrayView<T>
-reconstruct(subrange<T*>, T*, T*);
+reconstruct(std::ranges::subrange<iterator, sentinel>, iterator, sentinel);
+```
 
+This presents significant problems for reconstruction that requires all 3 of the `range`, `first`, and `last` to reconstruct: how do you write a reconstruction point for this? If neither the `begin` nor `end` of the range have namespace-relation to the range type (e.g., the iterators are 2 pointers, [as in `llvm::StringRef` from LLVM](https://llvm.org/doxygen/classllvm_1_1StringRef.html#a20d37563688a61a452fb26e317e37308) or [`TArrayView` from Unreal Engine](https://docs.unrealengine.com/4.26/en-US/API/Runtime/Core/Containers/TArrayView/begin/)), ADL will not pick up if you use `subrange` as the range type. For example, the following reconstruction point — even though we technically have all the necessary information to rebuild an e.g. Unreal Engine `TArrayView<T>` — will not be called if we used it `f` and `perform_work_with`:
+
+```cpp
+template <typename T>
+TArrayView<T> reconstruct(TArrayView<T> original, T* first, T* last);
+```
+
+We can try to write another reconstruction point for subranges, using the following:
+
+```cpp
+template <typename T>
+TArrayView<T> reconstruct(subrange<T*> original, T* first, T* last);
+```
+
+But this definition would collide with a standard-provided reconstruction point:
+
+```cpp
+namespace std::ranges {
+	template <typename It, typename Sen>
+	subrange<It, Sen> reconstruct(subrange<It, Sen> original, It first, Sen last);
+}
+```
+
+which the wording below provides, regardless of the design, to meet the pre-existing uses for reconstruct-like behavior in `drop_view` and `take_view`.
+
+At this point, we've ran ourselves in a circle: all we wanted to do was provide the best possible reconstruction point, and now — due to the limitations of the Alternative Design API — we have potentially created an ADL reconstruction point that could conflict with the standard library. So we have 2 choices:
+
+- do not use the Alternative Design; or,
+- leave it so we always just return whatever the `iterator`/`sentinel` from `f` might be, as a `subrange`, after we do any additional work.
+
+At this point, we're still interested in recovering some kind of range after performing out work based on the iterators.
+
+#### Current Design: Lossless Information #### {#design-overloads-unrecoverable-lossless}
+
+The Current Design does not suffer from this issue. Even if the original range is lost (moved from, consumed by an intermediate algorithm, or otherwise), the Current Design still allows reconstruction from differently-typed ranges and iterators. This, at the very least, strongly motivates the tag type that is passed to 3 of the reconstruction customization points found today.
+
+```cpp
 // Current design:
 // can always be found using ADL with the tag type
 // always safe (tag type serves as strong type to match against)
 friend constexpr
-template <typename T, typename Range>
+template <typename T>
 TArrayView<T>
 reconstruct(std::in_place_type_t<TArrayView<T>>, T*, T*);
 ```
 
-The Alternative Design is dangerous in that it can produce clashes with other `subrange<T*>, T*, T*` reconstruction points in the same space. For example, `span`, `string_view`, and `TArrayView` are all interested in this reconstruction point: and yet, only one would ever be able to match given the way `f` and `f2` are defined. Contrast to the current paper design, which has several benefits:
+Note the benefits of this approach:
 
 - only the iterator/sentinel and a tag are needed to reconstruct (the tag can be taken from either the return value or from the input to the algorithm, whichever the algorithm designer thinks suits their users best);
 - information can be recovered further up the chain using purely type information, rather than values directly; and,
 - there is far less of a chance for ambiguities or lookup confusion.
 
-This may seem like is a very simplified/conjured scenario, but it has real-world implications. In the library [ztd.text](https://ztdtext.readthedocs.io/), a range-based encoding and text library, input and output ranges are taken and worked on. Eventually, these algorithms [call user-defined functions](https://github.com/soasis/text/blob/8cb532e251a0c0b56ca05a011ee992107e907593/include/ztd/text/detail/transcode_one.hpp#L121) through `encode_one` or `decode_one` functions. Ranges are returned in structures. These are not required to return the same - or even directly related - range from their function calls. They could even return `std::ranges::subrange<some_iterator>` instead of the original range, which may explicitly discard information necessary for reconstruction.
+This may seem like is a very simplified/conjured scenario, but it has real-world implications. In the library [ztd.text](https://ztdtext.readthedocs.io/), input and output ranges are taken and worked on. Eventually, these algorithms [call user-defined functions](https://github.com/soasis/text/blob/8cb532e251a0c0b56ca05a011ee992107e907593/include/ztd/text/detail/transcode_one.hpp#L121) through `encode_one` or `decode_one` functions. Ranges are returned in structures. These are not required to return the same - or even directly related - range from their function calls. They could even return `std::ranges::subrange<some_iterator>` instead of the original range, which may explicitly discard information necessary for reconstruction.
 
-[[P2415]], an end-user can take a range by-value since not all encoding objects need to be fully generic. In ztd.text, we are lucky that, in most cases, we can provide the tag, range, iterator, and sentinel. But as outlined above, we may not be able to preserve all aspects of the objects forwarded to work, and fundamental information can be lost in basic use cases.
+Again, as [[P2415]] indicates, an end-user can take a range by-value since not all encoding objects need to be fully generic. In these algorithms and as pointed out above, that may be a destructive operation, and from there we have to work with the returned range. The returned range may have a severely reduced amount of type information, and therefore it is in our best interests as a library author to attempt to reconstruct based on the input, and not exactly what the third-party intermediary works in.
+
+The Current Design means that we get type-safe reconstruction even in the face of such user-defined or third-party algorithms. It works in the general sense, and allows us to capture user intents and semantics better than the Alternative Design. It also does not set users up to attempt to write reconstructions for ranges that they do not fundamentally own, like `std::ranges::subrange`.
 
 
 ### Legacy Code ### {#design-overloads-legacy}
 
 As much as the authors personally hate legacy code, there are at least 20 years of `[iterator, iterator)` code floating out in the world. Many times, we lack a range or range abstraction in general. Depriving the vast majority of this code from being able to properly reconstruct their types, even if they have strongly-typed iterators that are not basic pointer types, is very hostile to the current ecosystem.
+
+For example, [[icu-chariterator||CharacterIterator from ICU]] works using an (abstract) base class design which a user can override to provide iteration semantics over their own storage types. Some information may not be perfectly recoverable after transmuting it to their format (for example, using the pre-defined class for handling an array of characters). There are many cases where third party libraries and code will require us to fundamentally transmute a pair of iterators or a range to something that cannot be recovered easily, even in generic code.
 
 
 ### Minimum Viable Customization ### {#design-overloads-minimum}
@@ -1108,6 +1152,15 @@ Thank you to Oktal, Anointed of ADL, Blessed Among Us, and Morwenn, the ever-wat
 		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2415r0.html",
 		"title": "What is a View?",
 		"date": "July 13th, 2021"
+	},
+	"icu-chariterator": {
+		"authors": [
+			"Unicode Consortium",
+			"International Components for Unicode"
+		],
+		"href": "https://unicode-org.github.io/icu/userguide/strings/characteriterator.html",
+		"title": "CharacterIterator: ICU Documentation",
+		"date": "March 22nd, 2021"
 	}
 }
 </pre>
