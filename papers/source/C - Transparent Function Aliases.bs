@@ -1,20 +1,19 @@
 <pre class='metadata'>
-Title: Consistent, Warningless, and Intuitive Initialization with {}
-H1: Consistent, Warningless, and Intuitive Initialization with <code>{}</code>
-Shortname: 27XX
+Title: Transparent Function Aliases
+Shortname: 28XX
 Revision: 1
 !Previous Revisions: <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2729.htm">N2729 (r0)</a>
 Status: P
-Date: 2021-08-12
+Date: 2021-09-15
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
-!Target General Developers, Library Developers, Long-Life Upgradable Systems Developers, ABI Opinion Havers  
+!Target: General Developers, Library Developers, Long-Life Upgradable Systems Developers, ABI Opinion Havers
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
-URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-Transparent%20Function%20Aliases.html
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Transparent%20Function%20Aliases.html
 !Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-Transparent%20Function%20Aliases.bs">GitHub</a>
 Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
-Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience
+Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
 Markup Shorthands: markdown yes
 Toggle Diffs: no
 Abstract: This proposals attempts to solve 2 intrinsic problems with Library Development in C, including its Standard Library. The first is the ability to have type definitions that are just aliases without functions that can do the same. The second is ABi issues resulting from the inability to provide a small, invisible indirection layer. Therefore, this proposal provides a simple, no-cost way to indirect a function's identifier from the actual called function, opening the door to a C Standard Library that can be implemented without fear of backwards compatibility/ABI problems. It also enables general developers to upgrade their libraries seamlessly and without interruption to stability.
@@ -31,32 +30,32 @@ path: resources/css/bikeshed-color-fix.html
 <div class="pagebreak"></div>
 
 
-# Changelog
+# Changelog # {#changelog}
 
 
 
-## Revision 1 - August 15th, 2021
+## Revision 1 - September 15th, 2021 ## {#changelog-r1}
 
 - Adjust motivation / explanation of `__attribute__((alias()))` and how it relates to this proposal.
 
 
 
-## Revision 0 - May 15th, 2021
+## Revision 0 - May 15th, 2021 ## {#changelog-r0}
 
 - Initial release. ✨
 
 
 
 
-# Introduction & Motivation
+# Introduction & Motivation # {#motivation}
 
-After at least 3 papers were burned through attempting to [solve the intmax_t problem](https://thephd.dev/intmax_t-hell-c++-c), a number of issues were unearthed with each individual solution[^N2465] [^N2498] [^N2425] [^N2525]. Whether it was having to specifically lift the ban that §7.1.4 places on macros for standard library functions, or having to break the promise that `intmax_t` can keep expanding to fit larger integer types, the Committee and the community at large had a problem providing this functionality.
+After at least 3 papers were burned through attempting to [solve the intmax_t problem](https://thephd.dev/intmax_t-hell-c++-c), a number of issues were unearthed with each individual solution([[N2465]], [[N2498]], [[N2425]], [[N2525]]). Whether it was having to specifically lift the ban that §7.1.4 places on macros for standard library functions, or having to break the promise that `intmax_t` can keep expanding to fit larger integer types, the Committee and the community at large had a problem providing this functionality.
 
-Thankfully, progress is being made. With Robert Seacord's "Specific-width length modifier" paper was approved for C23[^N2680], we solved one of the primary issues faced with `intmax_t` improvements, which was that there was no way to print out a integral expression with a width greater than `long long`. Seacord's addition to the C standard also prevented a security issue that commonly came from printing incorrectly sized integers as well: there's a direct correlation between the bits of the supported types and the bits of the given in the formatting string now, without having to worry about the type beyond a `sizeof(...)` check. This solved 1 of the 2 core problems.
+Thankfully, progress is being made. With Robert Seacord's "Specific-width length modifier" paper was approved for C23 ([[N2680]]), we solved one of the primary issues faced with `intmax_t` improvements, which was that there was no way to print out a integral expression with a width greater than `long long`. Seacord's addition to the C standard also prevented a security issue that commonly came from printing incorrectly sized integers as well: there's a direct correlation between the bits of the supported types and the bits of the given in the formatting string now, without having to worry about the type beyond a `sizeof(...)` check. This solved 1 of the 2 core problems.
 
 
 
-## Remaining Core Problem - Typedefs, ABI, and Macros
+## Remaining Core Problem - Typedefs, ABI, and Macros ## {#motivation-typedefs}
 
 Library functions in a "very vanilla" implementation of a C Standard Library (e.g., simply a sequence of function declarations/definitions of the exact form given in the C Standard) have a strong tie between the name of the function (e.g., `imaxabs`) and the symbol present in the final, compiled binary (e.g., `_imaxabs`). This symbol is tied to a specific numeric type (e.g., `typedef long long intmax_t`), which creates a strong relationship between the way the function is called (register usage, etc.) and more. Upgrading that type breaks old binaries that still call the old symbol; for example, `_imaxabs` being handed a `__int128_t` instead of a `long long` as an old application anticipates can result in the wrong registers being used, or worse. Thusly, because the Standard Library is bound by these rules and because implementations rely on functions with `typedef`-based types in them to resolve to a very specific symbol, we cannot upgrade any of the `typedef`s (e.g., what `intmax_t` is) or change anything about the functions (e.g., change `imaxabs`'s declaration in any way consequential fashion).
 
@@ -64,13 +63,13 @@ Furthermore, macros cannot be used to "smooth" over the "real function call" bec
 
 
 
-## Liaison Issue - Stopping C++ Improvements
+## Liaison Issue - Stopping C++ Improvements ## {#motivation-liaison}
 
 This is both a C Standard Library issue and a C++ Standard Library issue. Not only is it impossible to change the C Standard Library, but because of these restrictions and because the C Standard Library is included by-reference into C++, we cannot make any of the necessary changes to solve this problem in C++. This elevates the level of this problem to a **liaison issue** that must be fixed if we are to make forward progress in both C and C++.
 
 
 
-## Standardizing Existing Practice
+## Standardizing Existing Practice ## {#motivation-existing}
 
 While the C Standard Committee struggles with this issue, many other libraries that have binary interfaces communicated through shared or dynamically linked libraries have solved this problem. MSVC uses a complex versioning and symbol resolution scheme with its DLLs, which we will not be (and could not) properly standardize. But, other implementations have been using implementation-defined aliasing techniques that effectively change the symbol used in the final binary that is different from the "normal" symbol that would be produced by a given function declaration.
 
@@ -78,7 +77,7 @@ These techniques, expanded upon in the design section as to why we chose the syn
 
 
 
-## C Issue - Prevented Evolution
+## C Issue - Prevented Evolution ## {#motivation-evolution}
 
 Not fixing this issue also comes with a grave problem without considering C++ at all. We have no way of seamlessly upgrading our libraries without forcing end-users to consider ABI breakage inherit in changes type definitions or having library authors jump through implementation-specific and frightening hoops for creating (transparent) layers of indirection between a function call and the final binary. This means large swaths of C's standard library, due to §7.1.4, are entirely static and non-upgradeable, even if we write functions that use type definitions that can change.
 
@@ -93,7 +92,7 @@ At the surface of this issue and as illustrated by the many failed — and one s
 
 
 
-# Design
+# Design # {#design}
 
 Our goal with this feature is to create a no-cost, zero-overhead function abstraction layer that prevents a type definition or other structure from leaking into a binary in a permanent and non-upgradable fashion. From the motivation and analysis above, we need the following properties:
 
@@ -128,7 +127,7 @@ It is composed of the `_Alias` keyword, followed by an _identifier_, the `equal`
 
 
 
-## Transparency - "Type Definitions, but for Functions"
+## Transparency - "Type Definitions, but for Functions" ## {#design-transparent}
 
 We call this **transparent** because it is, effectively, unobservable from the position of a library consumer, that this mechanism has been deployed. The following code snippet illustrates the properties associated with Transparent Function Aliases:
 
@@ -166,8 +165,8 @@ int main ([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
 	real_func_t* real_func_ptr = alias_func; // decays to function pointer to real_func
 	real_func_t* real_func_ptr2 = &alias_func; // function pointer to real_func
 	[[maybe_unused]] int is_3 = alias_func(2.0, 1); // invokes real_func directly
-	[[maybe_unused]] int is_4 = real_func_ptr(3.0, 1); // invokes real_func through it's function pointer
-	[[maybe_unused]] int is_5 = real_func_ptr2(3.0, 2); // invokes real_func through it's function pointer
+	[[maybe_unused]] int is_4 = real_func_ptr(3.0, 1); // invokes real_func
+	[[maybe_unused]] int is_5 = real_func_ptr2(3.0, 2); // invokes real_func
 	assert(is_3 == 3); // no constraint violation
 	assert(is_4 == 4); // no constraint violation
 	assert(is_5 == 5); // no constraint violation
@@ -194,18 +193,18 @@ It also serves as a layer of indirection to the "real function", which means fun
 
 
 
-## Inspiration: Existing Practice
+## Inspiration: Existing Practice ## {#design-existing}
 
 It is not a coincidence in the initial example that we are using `__glibc` prefixes for the 2 `imaxabs` function calls. Tying a function to a name it does not normally "mangle" to in the linker is a common implementation technique among more advanced C Standard Library Implementations, such as musl-libc and glibc. It is also a common technique deployed in many allocators to override symbols found in downstream binary artefacts, albeit this proposal does not cover the "weak symbol" portion of the alias techniques deployed by these libraries since that is sometimes limited to specific link-time configurations, binary artefact distributions, and platform architecture.
 
-Particularly, this proposal is focusing on the existing GCC-style attribute and a Clang-style attribute. The GCC attribute[^gcc-attribute] follows this proposal most closely in its requirements, by effectively allowing for an existing function declaration to have its address made identical to the fnction it is aliasing:
+Particularly, this proposal is focusing on the existing GCC-style attribute and a Clang-style attribute. The GCC attribute ([[gcc-attribute]]) follows this proposal fairly closely (but not exactly) in its requirements, by effectively allowing for an existing function declaration to have its address made identical to the function it is aliasing:
 
 ```cpp
 void __real_function (void) { /* real work here... */; }
 void function_decl(void) __attribute__ ((alias ("__real_function")));
 ```
 
-This code will set up `function_decl` to match the address of `__real_function`. It is common implementation practice amongst compilers that are GCC-compatible and that focus on binary size reduction and macro-less, transparent, zero-cost indirection. It has the small caveat that it requires the target of the attribute to be fully defined before this happens, so it can definitively insert the address. For example, here is documentation from the Keil's armcc compiler[^keil-attribute]:
+This code will set up `function_decl` to match the address of `__real_function`. It is common implementation practice amongst compilers that are GCC-compatible and that focus on binary size reduction and macro-less, transparent, zero-cost indirection. It has the small caveat that it requires the target of the attribute to be fully defined before this happens, so it can definitively insert the address. For example, here is documentation from the Keil's armcc compiler ([[keil-attribute]]):
 
 > ```cpp
 > static int oldname(int x, int y) {
@@ -243,18 +242,20 @@ This code will set up `function_decl` to match the address of `__real_function`.
 >      ENDP
 > ```
 
-There are many compilers which implement exactly this behavior with exactly this GCC-extension syntax such as Oracle's C Compiler, the Intel C Compiler, the Tiny C Compiler, and Clang.[^oracle-attribute] [^intel-attribute]. Clang also features its own `asm`-style attribute, where the function's name is "mangled" to exactly the name given[^clang-attribute]. Microsoft Visual C uses a (slightly more complex) stateful pragma mechanisms and external compiler markup[^msvc-attribute].
+There are many compilers which implement exactly this behavior with exactly this GCC-extension syntax such as Oracle's C Compiler, the Intel C Compiler, the Tiny C Compiler, and Clang ([[oracle-attribute]], [[intel-attribute]]). Clang also features its own `asm`-style attribute, where the function's name is "mangled" to exactly the name given ([[clang-attribute]]). Microsoft Visual C uses a (slightly more complex) stateful pragma mechanisms and external compiler markup ([[msvc-attribute]]).
+
+Intermediate object files may still carry the name "`function_decl`", but the binary in most binary-artefact producing implementations will not and only the target name will appear. This very closely matches the desired behavior: we want to create an entity that, ultimately, has no linkage and is specified in such a way that it will almost always disappear in both intermediate objects and final artefacts, wherever possible, while still providing a level of compile-time indirection. In this way this feature departs from how `alias` in GCC's attribute syntax works, but we find this departure to be worth the effort.
 
 
 
-### Other Existing Practice: `asm(...)` and `#pragma`
+### Other Existing Practice: `asm(...)` and `#pragma` ### {#design-existing-other}
 
 There are 3 other proofs of practice in the industry today. One was an MSVC-like `#pragma` behavior/`EXPORT`-file specification. Another was a Clang-like `asm()`-attribute that rename behavior. The third was a `#pragma` that simply made the linker do a find-and-replace symbol swap. When evaluated as potential alternatives to the syntaxes chosen here, there were a number of deficiencies for providing backwards compatibility. Notably, there are 2 chief concerns at play:
 
 - the function entity/entities the end-user must interact with from a given library; and,
 - valid interpretations of the directive in a world where the implementation does not produce binary artefacts.
 
-Clang's `asm(...)`, MSVC's `#pragma`-based approach, and Oracle's `#pragma redefine_extname`[^oracle-pragma] are harder to standardize because each mechanism relies too heavily on the linker and the details of binary artefacts. Whereas the GCC-style attribute is tied to a front-end entity and, therefore, abstracts away binary changes as a means left to the implementation, Clang and MSVC's approaches are not tied to any entity that exists in the program in general. Export `#pragma`s and `asm(...)` attributes can be used to reference any symbol, by unchecked string, that can be resolved at any later stage of compilation (possibly during linking and code generation). There is no good way to standardize such behavior because there are no meaningful semantic constraints that can be placed on their designs that are enforceable within the boundaries of the Abstract Machine.
+Clang's `asm(...)`, MSVC's `#pragma`-based approach, and Oracle's `#pragma redefine_extname` ([[oracle-pragma]]) are harder to standardize because each mechanism relies too heavily on the linker and the details of binary artefacts. Whereas the GCC-style attribute is tied to a front-end entity and, therefore, abstracts away binary changes as a means left to the implementation, Clang and MSVC's approaches are not tied to any entity that exists in the program in general. Export `#pragma`s and `asm(...)` attributes can be used to reference any symbol, by unchecked string, that can be resolved at any later stage of compilation (possibly during linking and code generation). There is no good way to standardize such behavior because there are no meaningful semantic constraints that can be placed on their designs that are enforceable within the boundaries of the Abstract Machine.
 
 Contrast this to GCC's attribute. It **requires** that a previous, in-language definition exists. If that definition does not exist, the program has a constraint violation:
 
@@ -278,19 +279,19 @@ GCC's design is more suitable for Standard C, since we do not want to specify th
 
 
 
-## Why not an `[[attribute]]`?
+## Why not an `[[attribute]]`? ## {#design-attribute}
 
 At this point in time, one might wonder why we do not propose an attribute or similar for the task here. After all, almost all prior art uses an attribute-like or literal `__attribute__` syntax. Our reasons are 2-fold:
 
 
-### Standard Attributes may be ignored.
+### Standard Attributes may be ignored. ### {#design-attribute-ignored}
 
 The ability to ignore an attribute and still have a conforming program is disastrous for this feature. It reduces portability of libraries that want to defend against binary breakages. Note that this is, effectively, the situation we are in now: compilers effectively ruin any implementation-defined extension by simply refusing to support that extension or coming up with one of their own. Somewhat ironically, those same vendors will attend C Committee meetings and complain about binary breakages. We then do not change anything related to that feature area, due to the potential of binary breakages.
 
 The cycle continues and will continue ad nauseum until Standard C provides a common-ground solution.
 
 
-### There is no such thing as "mangled name" or "symbol name" in the Standard.
+### There is no such thing as "mangled name" or "symbol name" in the Standard. ### {#design-attribute-mangled}
 
 Any attempt at producing normative text for a "symbol name" construct is incredibly fraught with peril and danger. Vendors deserve to have implementation freedom with respect to their what their implementation produces (or not). Solving this problem must be done without needing to draft specification for what a "binary artefact" or similar may be and how an attribute or attribute-like construct could affect it. If this feature relies primarily on non-normative encouragement or notes to provide ABI protection, then it is not fit for purpose.
 
@@ -298,12 +299,13 @@ Therefore, we realize that the best way to achieve this is to effectively allow 
 
 
 
-## Backwards-Compatibility with "Vanilla" C Standard Libraries
+## Backwards-Compatibility with "Vanilla" C Standard Libraries ## {#design-compatibility}
 
 One of the driving goals behind this proposal is the ability to allow "vanilla" C Standard Library Implementations to use Standards-only techniques to provide the functions for their end-user. Let us consider an implementation — named `vanilla`, that maybe produces a `vanilla.so` binary — that, up until today, has been shipping a `extern intmax_t imaxabs(intmax_t value);` function declaration for the last 2 decades. Using this feature, we can provide an _entirely backwards compatible_, binary-preserving upgraded implementation of `vanilla.so` that decides to change it's `imaxabs` function declarations. For example, it can use 2 translation units `inttypes_compatibility.c` and `inttypes.c` and one header, `inttypes.h`, to produce a conforming Standard Library implementation that is also backwards-compatible with binaries that continue to link against `vanilla.so`:
 
 
-**`inttypes.c`**:
+`inttypes.c`:
+
 ```cpp
 #include <inttypes.h>
 
@@ -314,7 +316,7 @@ __int128_t __imaxabs_vanilla_v2(__int128_t __value) {
 }
 ```
 
-**`inttypes_compatibility.c`**:
+`inttypes_compatibility.c`:
 ```cpp
 extern inline long long imaxabs(long long __value) {
 	if (__value < 0)
@@ -323,7 +325,7 @@ extern inline long long imaxabs(long long __value) {
 }
 ```
 
-**`inttypes.h`**:
+`inttypes.h`:
 ```cpp
 /* upgraded from long long in v2 */
 typedef __int128_t intmax_t;
@@ -339,7 +341,7 @@ This means that C Standard Libraries will have a language-capable medium of upgr
 
 
 
-## The `_Alias a = b` syntax
+## The `_Alias a = b` syntax ## {#design-syntax}
 
 The primary reason the syntax `_Alias a = b;` is chosen here is because we want to provide an in-language construct for doing this without requiring that the end-user completely re-declare the function they want to alias. For example, an alternative syntax was considered as follows:
 
@@ -349,11 +351,11 @@ extern void b(int w, double x, struct yy* y, struct zz* z);
 void a(int w, double x, struct yy* y, struct zz* z) = b;
 ```
 
-This gave the "function" and "redeclaration" feeling to `a`, but it required that all arguments essentially be reproduced exactly. This introduces fault-intolerance, where function arguments could change and cause breakage in downstream code. This could result in a lot of unnecessary maintenance work for end-users and package maintainers alike responding to library developers and their change in type definitions or similar. It might end up tying future developer's hands not for binary stability reasons, but for source breakage reasons. While source breaks are preferred over binary breaks, we want to avoid this being a problem altogether. This is an improvement over the GCC alias attribute, where two identical function declarations, differing only in the name, were required.
+This gave the "function" and "redeclaration" feeling to `a`, but it required that all arguments essentially be reproduced exactly (or risk constraint violations). This introduces fault-intolerance, where function arguments could change and cause breakage in downstream code. This could result in a lot of unnecessary maintenance work for end-users and package maintainers alike responding to library developers and their change in type definitions or similar. It might end up tying future developer's hands not for binary stability reasons, but for source breakage reasons. While source breaks are preferred over binary breaks, we want to avoid this being a problem altogether. This is an improvement over the GCC alias attribute, where two identical function declarations, differing only in the name, were required.
 
 
 
-## The literal word `_Alias`
+## The literal word `_Alias` ## {#design-name}
 
 `_Alias` is the safe choice. Originally, we used the word `using` as there was very little option to create a keyword that more appropriately mirrors "`typedef` but for functions". `funcdef` is already a prominent identifier in C codebases, and reusing `typedef` is not a very good idea for something that does not declare a type.
 
@@ -383,13 +385,13 @@ While we use the word `_Alias` right now as a stand-in, we would appreciate feed
 
 
 
-# Wording
+# Wording # {#wording}
 
-The following wording is registered against [N2596](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2596.pdf).
+The following wording is registered against [[N2596]].
 
 
 
-## Add function aliases to "§6.2.1 Scopes", paragraph 1
+## Modify "§6.2.1 Scopes of identifiers", paragraph 1 ## {#wording-6.2.1p1}
 
 <blockquote>
 <div class="wording-numbered wording-numbered-1">
@@ -399,8 +401,46 @@ An identifier can denote an object; a function; a tag or a member of a structure
 
 
 
+## Modify "§6.2.1 Scopes of identifiers", paragraph 4 ## {#wording-6.2.1p4}
 
-## Add a new keyword to "§6.4.1 Keywords", Syntax, paragraph 1
+Change every instance of "<del>declarator or type specifier</del>" to be "<ins>declarator, function alias, or type specifier</ins>".
+
+
+
+## Modify "§6.2.1 Scopes of identifiers", paragraph 7 ## {#wording-6.2.1p7}
+
+<blockquote>
+<div class="wording-numbered wording-numbered-7">
+Structure, union, and enumeration tags have scope that begins just after the appearance of the tag in a type specifier that declares the tag. Each enumeration constant has scope that begins just after the appearance of its defining enumerator in an enumerator list.<ins>A function alias name has a scope that begins after the appearance of the function alias target.</ins> Any other identifier has scope that begins just after the completion of its declarator.
+</div>
+</blockquote>
+
+
+
+## Modify paragraph 6 "§6.2.2 Linkages of identifiers" ## {#wording-6.2.2}
+
+<blockquote>
+<div class="wording-numbered wording-numbered-8">
+The following identifiers have no linkage: an identifier declared to be anything other than an object or a function; <ins>a function alias;</ins> an identifier declared to be a function parameter; a block scope identifier for an object declared without the storage-class specifier <b>extern</b>.
+</div>
+</blockquote>
+
+
+
+## Add function aliases to "§6.2.3 Name spaces of identifiers", paragraph 1, last bullet ## {#wording-6.2.3}
+
+<blockquote>
+<div class="wording-numbered wording-numbered-1">
+…
+<ul>
+<li>— all other identifiers, called <i>ordinary identifiers</i> (declared in ordinary declarators<ins>, function aliases</ins>, or as enumeration constants).</li>
+</ul>
+</div>
+</blockquote>
+
+
+
+## Add a new keyword to "§6.4.1 Keywords", Syntax, paragraph 1 ## {#wording-6.4.1}
 
 <blockquote>
 <div class="wording-numbered wording-numbered-1">
@@ -412,11 +452,10 @@ An identifier can denote an object; a function; a tag or a member of a structure
 
 
 
+## Modify "§6.7 Declarations" as follows... ## {#wording-6.7}
 
-## Modify "§6.7 Declarations" as follows...
 
-
-### Syntax, paragraph 1, with a new "declaration" production
+### §6.7 Syntax, paragraph 1, with a new "declaration" production ### {#wording-6.7-p1}
 
 <blockquote>
 <div class="wording-numbered wording-numbered-1">
@@ -429,48 +468,66 @@ An identifier can denote an object; a function; a tag or a member of a structure
 </blockquote>
 
 
-### Constraints, paragraphs 2 and 3
+### §6.7 Constraints, paragraphs 2 and 3 ### {#wording-6.7-p2}
 
 <blockquote>
 <div class="wording-numbered wording-numbered-2">
 A declaration other than a <i>static_assert</i> or <i>attribute</i> declaration shall declare at least a declarator (other than the parameters of a function or the members of a structure or union), a tag<ins>, a function alias</ins>, or the members of an enumeration.
 </div>
+
 <div class="wording-numbered">
 If an identifier has no linkage, there shall be no more than one declaration of the identifier (in a declarator or type specifier) with the same scope and in the same name space, except that:
 
 <ul>
 	<li>a typedef name may be redefined to denote the same type as it currently does, provided that type is not a variably modified type;</li>
-	<li><ins>a function alias name may be redeclared as defined in 6.7.12; and</ins></li>
+	<li><ins>a function alias name may be redefined as specified in 6.7.12; and</ins></li>
 	<li>tags may be redeclared as specified in 6.7.2.3.</li>
 	</ul>
 </div>
 </blockquote>
 
 
-### Semantics, paragraph 5
+### §6.7 Semantics, paragraph 5 ### {#wording-6.7-p5}
 
 <blockquote>
 <div class="wording-numbered wording-numbered-5">
 A declaration specifies the interpretation and properties of a set of identifiers. A definition of an identifier is a declaration for that identifier that:
 
 - for an object, causes storage to be reserved for that object;
-- for a function, includes the function body;129)
+- for a function, includes the function body;<sup>129)</sup>
 - for an enumeration constant, is the (only) declaration of the identifier;
 - for a typedef name, is the first (or only) declaration of the identifier<del>.</del><ins>; or</ins>
 - <ins>for a function alias name, is the first (or only) declaration of the identifier.</ins>
+
 </div>
 </blockquote>
 
 
 
 
-## Add a new sub-clause "§6.7.12 Function alias"
+## Modify "§6.9 External definitions" paragraphs 3 and 5 ## {#wording-6.9}
+
+<blockquote>
+<div class="wording-numbered wording-numbered-3">
+There shall be no more than one external definition for each identifier declared with internal linkage in a translation unit. Moreover, if an identifier declared with internal linkage is used <ins>directly or indirectly (e.g., through a function alias)</ins> in an expression (other than as a part of the operand of a sizeof or _Alignof operator whose result is an integer constant), there shall be exactly one external definition for the identifier in the translation unit.
+</div>
+
+…
+
+<div class="wording-numbered wording-numbered-5">
+An external definition is an external declaration that is also a definition of a function (other than an inline definition) or an object. If an identifier declared with external linkage is used <ins>directly or indirectly (e.g., through a function alias)</ins> in an expression (other than as part of the operand of a <b>sizeof</b> or <b>_Alignof</b> operator whose result is an integer constant), somewhere in the entire program there shall be exactly one external definition for the identifier; otherwise, there shall be no more than one.<sup>176)</sup>
+</div>
+</blockquote>
+
+
+
+## Add a new sub-clause "§6.7.12 Function alias" ## {#wording-6.7.12}
 
 <blockquote>
 <ins>
-<h3><ins>6.7.12 Function alias</ins></h3>
+<b>6.7.12 Function alias</b>
 
-<h6>Syntax</h6>
+<b>Syntax</b>
 <div class="wording-numbered wording-numbered-1">
 <dl>
 	<dt><i>function-alias:</i></dt>
@@ -481,24 +538,26 @@ A declaration specifies the interpretation and properties of a set of identifier
 Let the identifier on the left hand side be the <i>function alias name</i> and the identifier on the right hand side be the <i>function alias target</i>.
 </div>
 
-<h6>Constraints</h6>
+<b>Constraints</b>
 <div class="wording-numbered ins">
-A function alias target must refer to a preceding function alias or a preceding function declaration. A function alias being redeclared shall refer to the same function declaration<sup>1⭐⭐</sup>.
+A function alias target must refer to a preceding and visible function alias or a preceding and visible function declaration. A function alias being redefined shall refer to the same function declaration<sup>1⭐⭐</sup>.
 </div>
 
-<h6>Semantics</h6>
+<b>Semantics</b>
 <div class="wording-numbered">
-A function alias refers to an existing function declaration, either directly or through another function alias. A function alias does not produce a new function declaration; it is only a synonym for the function alias target specified. A function alias name shares the same name space as other identifiers declared in ordinary declarators. If the function alias target is another function alias, it is evaluated to determine the function declaration to which the function alias target is a synonym for.
+A function alias refers to an existing function declaration, either directly or through another function alias. A function alias does not produce a new function declaration; it is only a synonym for the function alias target specified/ If the function alias target is another function alias, it is evaluated to determine the function declaration to which the function alias target is a synonym for.
 </div>
 <div class="wording-numbered">
-A function alias is a function designator (6.3.2.1). If its address is taken with the unary address operator (6.5.3.2), it yields the address of the function declaration to which its function alias target's function declaration refers. If it is called using the postfix operator for function calls (6.5.2.2), it calls the function to which its function alias target's function declaration refers.
+A function alias is a function designator (6.3.2.1). If its address is taken with the unary address operator (6.5.3.2) or used in an expression, it is converted to a pointer-to-function whose address is identical to the function declaration that the function alias target refers.
 </div>
 
 <div class="wording-numbered">
 
-**EXAMPLE 1** The following program contains no constraint violations:
+**EXAMPLE 1** The following program contains no constraint violations and does not call `abort`:
 
 > ```cpp
+> #include <assert.h>
+>
 > void do_work(void);
 > void take_nap(void);
 > 
@@ -508,19 +567,19 @@ A function alias is a function designator (6.3.2.1). If its address is taken wit
 > ALIAS-TOKEN alias_of_nap_alias = nap_alias;
 > 
 > int main () {
-> 	_Static_assert(&do_work == &work_alias);
-> 	_Static_assert(&do_work == &alias_of_work_alias);
-> 	_Static_assert(&work_alias == &alias_of_work_alias);
+> 	assert(&do_work == &work_alias);
+> 	assert(&do_work == &alias_of_work_alias);
+> 	assert(&work_alias == &alias_of_work_alias);
 > 
-> 	_Static_assert(&take_nap == &nap_alias);
-> 	_Static_assert(&take_nap == &alias_of_nap_alias);
-> 	_Static_assert(&nap_alias == &alias_of_nap_alias);
+> 	assert(&take_nap == &nap_alias);
+> 	assert(&take_nap == &alias_of_nap_alias);
+> 	assert(&nap_alias == &alias_of_nap_alias);
 > 
-> 	_Static_assert(&take_nap != &work_alias);
-> 	_Static_assert(&do_work != &alias_of_nap_alias);
+> 	assert(&take_nap != &work_alias);
+> 	assert(&do_work != &alias_of_nap_alias);
 > 
 > 	ALIAS-TOKEN local_work_alias = alias_of_work_alias;
-> 	_Static_assert(&local_work_alias == &alias_of_work_alias);
+> 	assert(&local_work_alias == &alias_of_work_alias);
 > 
 > 	do_work();
 > 	work_alias(); // calls do_work
@@ -547,6 +606,12 @@ A function alias is a function designator (6.3.2.1). If its address is taken wit
 > ALIAS-TOKEN sleep_alias = sleep_alias;
 > ALIAS-TOKEN sleep_alias_alias = zzz;
 > ALIAS-TOKEN sleep_alias = sleep_alias_alias;
+>
+> void func(void);
+> int main () {
+>	// Inner scope.
+>	_Alias func = func;
+> }
 > ```
 </div>
 
@@ -558,11 +623,12 @@ A function alias is a function designator (6.3.2.1). If its address is taken wit
 > int truncated_zzz(int requested_sleep_time);
 > 
 > ALIAS-TOKEN sleep_alias = sleep_alias; // constraint violation: alias does
->                                  // not exist
+>                                        // not exist
 > ALIAS-TOKEN zzz = truncated_zzz; // constraint violation: cannot hide
->                            // existing declaration
-> ALIAS-TOKEN truncated_zzz = truncated_zzz; // constraint violation: cannot change function declaration
->                                      // to function alias
+>                                  // existing declaration
+> ALIAS-TOKEN truncated_zzz = truncated_zzz; // constraint violation: cannot change 
+>                                            // function declaration
+>                                            // to function alias
 > 
 > ALIAS-TOKEN valid_sleep_alias = zzz;
 > int valid_sleep_alias(int requested_sleep_time); // constraint violation: redeclaring
@@ -570,18 +636,74 @@ A function alias is a function designator (6.3.2.1). If its address is taken wit
 > ```
 </div>
 
+
+
+<div class="wording-numbered">
+
+**EXAMPLE 4** Compatible and completed types through aliases:
+
+> ```cpp
+> void otter(int (*)[]);
+> _Alias water_noodle = otter;
+> void otter(int (*)[2]);
+> // water_noodle has type void (int (*)[2])
+> ```
+
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 5** Shadowing and compatible types through aliases:
+
+> ```cpp
+> void cookie(int (*)[2]);
+> 
+> int main () {
+> 	_Alias biscuit = cookie;
+> 	{
+> 		int otter; // Shadow outer declaration.
+> 		{
+> 			void cookie(int (*)[]);
+> 			// biscuit has type void (int (*)[2])
+> 			// due to shadowing
+> 		}
+> 	}
+> 	return 0;
+> }
+> ```
+
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 6** Composite and compatible types through aliases:
+
+> ```cpp
+> void otter(int (*)[], int (*)[2]);
+> int main () {
+> 	_Alias water_noodle = otter;
+> 	{
+> 		void otter(int (*)[2], int (*)[]);
+> 		// water_noodle and otter have
+> 		// composite type void (int (*)[2], int (*)[2])
+> 	}
+> }
+> ```
+
+</div>
+
 <div class="wording-footnote">
 <sup>1⭐⭐)</sup> <sub>If the function alias target points to another function alias, then the alias target is first resolved. The resolution occurs recursively until a function declaration is the alias target. Equality between two alias names determines whether or not they ultimately refer to the same function declaration. Resolution of a function alias target happens before the synonym is declared or redeclared, meaning a function alias name may refer to itself when it is being redeclared, but not when it is first declared.</sub>
 </div>
 
-<h6>Recommended Practice</h6>
+<b>Recommended Practice</b>
 <div class="wording-numbered">
-Implementations and programs may use this feature as a way to produce stability for in translation units which rely on specific function declaration names being present while aliasing a common name to a useful default. It may be particularly helpful for those which use type definitions (6.7.8) in return and parameter types.
+Implementations and programs may use this feature as a way to produce stability for translation units which rely on specific function declaration names being present while aliasing a common declaration name for an interface. It may be particularly helpful for those which use type definitions (6.7.8) in return and parameter types.
 </div>
 
 <div class="wording-numbered">
 
-**EXAMPLE 4**
+**EXAMPLE 7**
 
 > ```cpp
 > extern intmax_t __imaxabs_32ish(__int32 value);
@@ -615,20 +737,108 @@ Implementations and programs may use this feature as a way to produce stability 
 			"Robert Seacord"
 		],
 		"title": "Specific-width length modifier",
+		"publisher": "ISO/IEC JTC1 SC22 WG14 - Programming Languages C",
 		"href": "http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2680.pdf",
 		"date": "March 9th, 2021"
+	},
+	"N2465": {
+		"authors": [
+			"Robert Seacord"
+		],
+		"title": "intmax_t, a way forward",
+		"publisher": "ISO/IEC JTC1 SC22 WG14 - Programming Languages C",
+		"href": "http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2465.pdf",
+		"date": "February 10th, 2020"
+	},
+	"N2425": {
+		"authors": [
+			"Jens Gustedt"
+		],
+		"title": "intmax_t, a way out v.2",
+		"publisher": "ISO/IEC JTC1 SC22 WG14 - Programming Languages C",
+		"href": "http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2425.pdf",
+		"date": "February 10th, 2020"
+	},
+	"N2498": {
+		"authors": [
+			"Martin Uecker"
+		],
+		"title": "intmax_t, again",
+		"publisher": "ISO/IEC JTC1 SC22 WG14 - Programming Languages C",
+		"href": "http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2498.pdf",
+		"date": "February 9th, 2020"
+	},
+	"N2525": {
+		"authors": [
+			"Philipp Klaus Krause"
+		],
+		"title": "Remove the `fromfp`, `ufromfp`, `fromfpx`, `ufromfpx`, and other intmax_t functions",
+		"publisher": "ISO/IEC JTC1 SC22 WG14 - Programming Languages C",
+		"href": "http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2525.htm",
+		"date": "May 11th, 2020"
+	},
+	"gcc-attribute": {
+		"authors": [
+			"GNU Compiler Collection"
+		],
+		"title": "Function attributes: alias",
+		"publisher": "GNU Compiler Collection Maintainers, Free Software Foundation",
+		"href": "https://gcc.gnu.org/onlinedocs/gcc-4.0.2/gcc/Function-Attributes.html#Function-Attributes",
+		"date": "August 16th, 2021"
+	},
+	"clang-attribute": {
+		"authors": [
+			"LLVM Maintainers"
+		],
+		"title": "Attributes: asm",
+		"publisher": "LLVM Foundation",
+		"href": "https://clang.llvm.org/docs/AttributeReference.html#asm",
+		"date": "August 15th, 2021"
+	},
+	"intel-attribute": {
+		"authors": [
+			"Intel Compiler Collection"
+		],
+		"title": "Documentation: attribute",
+		"publisher": "Intel",
+		"href": "https://software.intel.com/content/www/us/en/develop/articles/download-documentation-intel-compiler-current-and-previous.html",
+		"date": "June 28th, 2021"
+	},
+	"oracle-pragma": {
+		"authors": [
+			"Oracle Solaris Studio"
+		],
+		"title": "2.12.22 redefine_extname",
+		"publisher": "Oracle",
+		"href": "https://docs.oracle.com/cd/E77782_01/html/E77788/bjaby.html#OSSCGbjacu",
+		"date": "July 1st, 2017"
+	},
+	"oracle-attribute": {
+		"authors": [
+			"Oracle Solaris Studio"
+		],
+		"title": "2.9 Supported Attributes",
+		"publisher": "Oracle",
+		"href": "https://docs.oracle.com/cd/E24457_01/html/E21990/gjzke.html#scrolltoc",
+		"date": "December 30th, 2012"
+	},
+	"msvc-attribute": {
+		"authors": [
+			"Microsoft Visual C++"
+		],
+		"title": "EXPORTS | Microsoft Docs",
+		"publisher": "Microsoft",
+		"href": "https://docs.microsoft.com/en-us/cpp/build/reference/exports",
+		"date": "September 7th, 2018"
+	},
+	"keil-attribute": {
+		"authors": [
+			"Keil"
+		],
+		"title": "__attribute__((alias)) function attribute",
+		"publisher": "armcc Compiler Maintainers",
+		"href": "https://www.keil.com/support/man/docs/armcc/armcc_chr1359124973698.htm",
+		"date": "December 31st, 2019"
 	}
 }
-[^]: Seacord, Robert. "". ISO/IEC JTC1 SC22 WG14 - Programming Languages C. [](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2680.pdf).  
-[^N2465]: Seacord, Robert. "intmax t, a way forward." ISO/IEC JTC1 SC22 WG14 - Programming Languages C. [http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2465.pdf](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2465.pdf)  
-[^N2425]: Gustedt, Jens. "intmax_t, a way out v.2". ISO/IEC JTC1 SC22 WG14 - Programming Languages C. [http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2498.pdf](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2498.pdf)  
-[^N2498]: Uecker, Martin. "intmax_t, again". ISO/IEC JTC1 SC22 WG14 - Programming Languages C. [http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2498.pdf](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2498.pdf)  
-[^N2525]: Krause, Philipp Klaus. "Remove the `fromfp`, `ufromfp`, `fromfpx`, `ufromfpx`, and other intmax_t functions". ISO/IEC JTC1 SC22 WG14 - Programming Languages C. [http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2525.htm](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2525.htm)
-[^gcc-attribute]: GNU Compiler Collection. "Function attributes: alias". GNU Compiler Collection Maintainers, Free Software Foundation. [https://clang.llvm.org/docs/AttributeReference.html#asm](https://clang.llvm.org/docs/AttributeReference.html#asm)
-[^clang-attribute]: Clang. "Attributes: `asm`". LLVM Foundation. [https://clang.llvm.org/docs/AttributeReference.html#asm](https://clang.llvm.org/docs/AttributeReference.html#asm)
-[^keil-attribute]: armcc Compiler. "`1__attribute__((alias))` function attribute". Keil. [https://www.keil.com/support/man/docs/armcc/armcc_chr1359124973698.htm](https://www.keil.com/support/man/docs/armcc/armcc_chr1359124973698.htm)
-[^msvc-attribute]: Microsoft Visual C++. "EXPORTS \| Microsoft Docs". Microsoft. [https://docs.microsoft.com/en-us/cpp/build/reference/exports](https://docs.microsoft.com/en-us/cpp/build/reference/exports)
-[^oracle-attribute]: Oracle Solaris Studio. "2.9 Supported Attributes". Oracle. [https://docs.oracle.com/cd/E24457_01/html/E21990/gjzke.html#scrolltoc](https://docs.oracle.com/cd/E24457_01/html/E21990/gjzke.html#scrolltoc)
-[^oracle-pragma]: Oracle Solaris Studio. "2.12.22 redefine_extname". Oracle. [https://docs.oracle.com/cd/E77782_01/html/E77788/bjaby.html#OSSCGbjacu](https://docs.oracle.com/cd/E77782_01/html/E77788/bjaby.html#OSSCGbjacu)
-[^intel-attribute]: Intel Compiler Collection. "Documentation: attribute". Intel. [https://software.intel.com/content/www/us/en/develop/articles/download-documentation-intel-compiler-current-and-previous.html](https://software.intel.com/content/www/us/en/develop/articles/download-documentation-intel-compiler-current-and-previous.html)
 </pre>
