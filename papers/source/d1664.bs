@@ -1,7 +1,7 @@
 <pre class='metadata'>
 Title: reconstructible_range - a concept for putting ranges back together
 Shortname: P1664
-Revision: 5
+Revision: 6
 Audience: LEWG
 Status: P
 Group: WG21
@@ -28,6 +28,12 @@ path: resources/css/bikeshed-color-fix.html
 
 
 # Revision History # {#changelog}
+
+
+
+## Revision 6 - September 15th, 2021 ## {#changelog-r6}
+
+	- Improve the [[#motivation]] section, including more explanation which relates to [[#motivation-split]].
 
 
 
@@ -81,6 +87,8 @@ path: resources/css/bikeshed-color-fix.html
 
 
 # Motivation # {#motivation}
+
+Below is a quick snapshot of the improvements provided by this paper:
 
 <table>
 	<tr>
@@ -145,17 +153,16 @@ auto v = s | views::drop(1) | views::take(10)
 		<td>
 
 ```cpp
-std::u8string name = "𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷";
-char16_t conversion_buffer[432];
+char16_t output_buffer[432];
+llvm::StringRef input("𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷");
+llvm::MutableArrayRef<char16_t> output(output_buffer, 432);
 
-std::u8string_view input(name);
-std::span<char16_t> output(conversion_buffer, 432);
-
-auto encoding_result = ztd::text::transcode(input, output);
-// compiler error here !!
-std::u8string_view unprocessed_code_units 
+auto encoding_result = ztd::text::transcode_into(input, output
+	ztd::text::compat_utf8, ztd::text::utf16);
+// compiler error here (C++20) !!
+llvm::StringRef unprocessed_input 
 	= encoding_result.input;
-std::span<char16_t> unconsumed_output 
+llvm::MutableArrayRef<char16_t> unconsumed_output 
 	= encoding_result.output;
 ```
 ❌ - Compilation error
@@ -163,31 +170,31 @@ std::span<char16_t> unconsumed_output
 ```cpp
 std::u8string name = "𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷";
 char16_t conversion_buffer[432];
-
 std::u8string_view input(name);
 std::span<char16_t> output(conversion_buffer, 432);
 
-auto encoding_result = ztd::text::transcode(input, output);
-auto unprocessed_code_units = encoding_result.input;
+auto encoding_result = ztd::text::transcode_into(input, output,
+	ztd::text::compat_utf8, ztd::text::utf16);
+auto unprocessed_input = encoding_result.input;
 auto unconsumed_output = encoding_result.output;
 ```
-⚠️ - Compiles, but `decltype(unprocessed_code_units)` is
+⚠️ - Compiles, but `decltype(unprocessed_input)` is
 `ranges::subrange<std::u8string_view::iterator, std::u8string_view::iterator>` and `decltype(unconsumed_output)` is
-`ranges::subrange<std::span<char16_t, std::dynamic_extent>::iterator, std::span<char16_t, std::dynamic_extent>::iterator>`
+`ranges::subrange<llvm::MutableArrayRef<char16_t>::iterator, llvm::MutableArrayRef<char16_t>::iterator>`
 		</td>
 		<td>
 
 ```cpp
-std::u8string name = "𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷";
-char16_t conversion_buffer[432];
+char16_t output_buffer[432];
+llvm::StringRef input("𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷");
+llvm::MutableArrayRef<char16_t> output(output_buffer, 432);
 
-std::u8string_view input(name);
-std::span<char16_t> output(conversion_buffer, 432);
+auto encoding_result = ztd::text::transcode_into(input, output,
+	ztd::text::utf8, ztd::text::utf16);
 
-auto encoding_result = ztd::text::transcode(input, output);
-std::u8string_view unprocessed_code_units 
+llvm::StringRef unprocessed_input 
 	= encoding_result.input;
-std::span<char16_t> unconsumed_output 
+llvm::MutableArrayRef<char16_t> unconsumed_output 
 	= encoding_result.output;
 ```
 ✔️ - Compiles and works, types match input.
@@ -195,21 +202,23 @@ std::span<char16_t> unconsumed_output
 ```cpp
 std::u8string name = "𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷";
 char16_t conversion_buffer[432];
-
-std::u8string_view name_view(name);
+std::u8string_view input(name);
 std::span<char16_t> output(conversion_buffer, 432);
 
-auto encoding_result = ztd::text::transcode(input, output);
-auto unprocessed_code_units = encoding_result.input;
+auto encoding_result = ztd::text::transcode_into(input, output,
+	ztd::text::utf8, ztd::text::utf16);
+auto unprocessed_input = encoding_result.input;
 auto unconsumed_output = encoding_result.output;
 ```
-✔️ - Compiles and works, where `decltype(unprocessed_code_units)` is `std::u8string_view` and `decltype(unconsumed_output)` is `std::span<char16_t>`.
+✔️ - Compiles and works, where `decltype(unprocessed_input)` is `std::u8string_view` and `decltype(unconsumed_output)` is `std::span<char16_t>`.
 		</td>
 	</tr>
 </table>
 
 
-Currently in C++, there is no Generic ("with a capital G") way to take a range apart with its iterators and put it back together. That is, the following code is not guaranteed to work:
+## Origin ## {#motivation-origin}
+
+This paper originally began as an attempt to handle the fact that certain views/ranges, once pulled apart into their iterator/sentinel, could not be put back together in any logically consistent manner. Currently in C++, there is no Generic ("with a capital G") way to take a range apart with its iterators and put it back together. That is, the following code is not guaranteed to work:
 
 ```cpp
 template <typename Range>
@@ -249,7 +258,7 @@ int main () {
 }
 ```
 
-The current fix is to employ `std::ranges::subrange<I, S, K>` to return a generic subrange:
+While all of the container types and a decent chunk of current-day views have constructors that take `iterator, iterator` pairs or something convertible from those, it was never actually a formal concept. It was recommended to find a better [[range-v3-1192|concept to model this property]]. In the meantime, the current fix is to employ `std::ranges::subrange<I, S, K>` to return a generic subrange:
 
 ```cpp
 template <typename Range>
@@ -296,6 +305,25 @@ This makes it work with any two pair of iterators, but quickly becomes undesirab
 Unfortunately, always using `std::ranges::subrange` decreases usability for end users. Users who have, for example a `llvm::StringRef`, would prefer to have the same type after calling an algorithm. These types have functions and code that are purpose-made for `string_view`-like code: losing that intent means needing to reconstruct that from the ground up all over again. There is little reason why the original type needs to be discarded if it supports being put back together from its iterators.
 
 The break-it-apart-and-then-generic-`subrange` approach also discards any range-specific storage optimizations and layout considerations, leaving us with the most bland kind of range similar to the "pair of iterators" model. Consider, for example, `llfio::span<T>`. The author of the Low Level File IO (LLFIO) library, Niall Douglass, has spent countless days submitting pull requests and change requests to MSVC, GCC, and Clang's standard libraries to ask them to change their structural layout to match things like the `iovec` of their platform or their asynchronous buffer span types. This optimization matters because it realizes the performance difference between having to individually transformed a container of `span`s to a more suitable type, or being able to simply `memcpy` the desired sequences of spans into the underlying asynchronous operations. If range operations were to be performed on the `llfio::span<T>` type, a `std::ranges::subrange` would hold, in most cases, two iterators rather than an iterator and a size. This completely eliminates the `memcpy` optimization. This is not the only place this happens, however: other types have different storages requirements that are not appropriately captured by their iterators in the most general sense, but may benefit from reconstruction and desired type information for the target range they should be constructed into.
+
+
+
+## Superior String Splitting ## {#motivation-split}
+
+[[p2210r2|Superior String Splitting]] is a paper for having both an eager and a lazy split view in the standard library. It argues that because we have a maximally lazy split and always present a forward-range, we should separate the always-input-range functionality of the current split into `std::ranges::lazy_split*` by renaming, and then add more-eager `std::ranges::split` that takes advantage of the forward-only semantics to upgrade the capabilities of the type and always return a `std::ranges::subrange<std::iterator_t<V>>`.
+
+One of the questions it brings up is notable:
+
+> For splitting a string, this means we get a range of `subrange<string::iterator>` where we might wish we got a `span<char const>` or a `string_view`, but `span<char const>` is already constructible from `subrange<string::iterator>` and string_view would be with the adoption of [[P1989R0]].
+>
+> We could additionally favor the char case (since, again, splitting strings is the overwhemlingly common case)…
+>
+> … But this just seems weirdly specific and not a good idea.
+>
+> — Barry Revzin, [p2210r2 "§3.1 What should the reference type be?"](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p2210r2.html#what-should-the-reference-type-of-this-be)
+
+Revzin notes that string splitting here could return something better than a `std::ranges:subrange` based on the input. However, such a proposition in the current C++20 landscape is tenuous at best because it would require adding special cases to the split requirements. The below design comes as a generic way to provide "a reconstructed or related range if possible, otherwise a `subrange`". This would meet the requirements of Superior String Splitting while allowing for better return types when an `llvm::StringRef`, `llvm::ArrayRef`, `TArrayView` from Unreal Engine, `std::wstring_view`, or `quickcpplib::span` is used as the input range.
+
 
 
 
@@ -494,6 +522,26 @@ auto perform_work_with(Range&& range, F&& f) {
 }
 ```
 
+```cpp
+template <typename Range, typename F>
+auto perform_work_with(Range&& range, F&& f) {
+	// things and stuff
+	decltype(auto) result = std::forward<F>(f)(std::forward<Range>(range));
+	auto result_first = std::ranges::begin(result);
+	auto result_last = std::ranges::end(result);
+	// more work is done with result_first and result_last
+	auto pair_of_first_last
+		= third_party_code(std::move(result_first), std::move(result_last));
+	// other things and stuff
+	// ...
+	// return the combined range
+	return std::ranges::reconstruct(std::in_place_type<Range>,
+		std::move(result),
+		std::move(pair_of_first_last.first),
+		std::move(pair_of_first_last.second));
+}
+```
+
 If we were to create a generic lambda with a universal reference parameter that worked something like:
 
 ```cpp
@@ -589,7 +637,7 @@ The Current Design means that we get type-safe reconstruction even in the face o
 
 As much as the authors personally hate legacy code, there are at least 20 years of `[iterator, iterator)` code floating out in the world. Many times, we lack a range or range abstraction in general. Depriving the vast majority of this code from being able to properly reconstruct their types, even if they have strongly-typed iterators that are not basic pointer types, is very hostile to the current ecosystem.
 
-For example, [[icu-chariterator||CharacterIterator from ICU]] works using an (abstract) base class design which a user can override to provide iteration semantics over their own storage types. Some information may not be perfectly recoverable after transmuting it to their format (for example, using the pre-defined class for handling an array of characters). There are many cases where third party libraries and code will require us to fundamentally transmute a pair of iterators or a range to something that cannot be recovered easily, even in generic code.
+For example, [[icu-chariterator|CharacterIterator from ICU]] works using an (abstract) base class design which a user can override to provide iteration semantics over their own storage types. Some information may not be perfectly recoverable after transmuting it to their format (for example, using the pre-defined class for handling an array of characters). There are many cases where third party libraries and code will require us to fundamentally transmute a pair of iterators or a range to something that cannot be recovered easily, even in generic code.
 
 
 ### Minimum Viable Customization ### {#design-overloads-minimum}
@@ -1141,6 +1189,15 @@ Thank you to Oktal, Anointed of ADL, Blessed Among Us, and Morwenn, the ever-wat
 		],
 		"href": "https://github.com/ericniebler/range-v3",
 		"title": "range-v3",
+		"publisher": "Eric Niebler",
+		"date": "June 11th, 2019"
+	},
+	"range-v3-1192": {
+		"authors": [
+			"ThePhD"
+		],
+		"href": "https://github.com/ericniebler/range-v3/issues/1192",
+		"title": "Ranges which take a sentinel should be constructable from {Iterator, Sentinel}",
 		"publisher": "Eric Niebler",
 		"date": "June 11th, 2019"
 	},
