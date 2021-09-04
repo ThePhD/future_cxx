@@ -154,7 +154,7 @@ The following wording is relative to [N2596](http://www.open-std.org/jtc1/sc22/w
 ## Modify §6.4.5 String literals, paragraph 3 and 6
 
 <blockquote>
-<p><sup>3</sup>... A <i>UTF–8 string literal</i> is the same, except prefixed by `u8`.<ins> A <i>`wchar_t` string literal</i> is the same, except prefixed by `L`. A <i>UTF–16 string literal is the same, except prefixed by `u`. A <i>UTF–32 string literal</i> is the same, except prefixed by `u8`.</ins> <del>A wide string literal</i> is the same, except prefixed by the letter `L`, `u`, or `U`.</del><ins>Collectively, `wchar_t`, UTF-16, and UTF-32 string literals are called <i>wide string literals</i>.</ins></p>
+<p><sup>3</sup>... A <i>UTF–8 string literal</i> is the same, except prefixed by `u8`.<ins> A <i>`wchar_t` string literal</i> is the same, except prefixed by `L`. A <i>UTF–16 string literal is the same, except prefixed by `u`. A <i>UTF–32 string literal</i> is the same, except prefixed by `u8`.</ins> <del><i>A wide string literal</i> is the same, except prefixed by the letter `L`, `u`, or `U`.</del><ins>Collectively, `wchar_t`, UTF-16, and UTF-32 string literals are called <i>wide string literals</i>.</ins></p>
 
 <p>...</p>
 
