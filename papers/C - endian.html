@@ -1505,7 +1505,7 @@ Possible extra rowspan handling
   <meta content="Bikeshed version 4f053d00e, updated Tue Aug 10 14:13:32 2021 -0700" name="generator">
   <link href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Endian.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="c819d7d24238c8052c9f3da57645b32f6d5fd1ef" name="document-revision">
+  <meta content="6c3797d5f247eba17b12c6ce865105843d93c0d7" name="document-revision">
 <style>
 
 :root {
@@ -2254,14 +2254,26 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
      <ol class="toc">
       <li><a href="#design-enum"><span class="secno">3.1</span> <span class="content">The Endianness Enumeration</span></a>
       <li><a href="#design-run.time"><span class="secno">3.2</span> <span class="content">Hey! Some Architectures Can Change Their Endianness at Run-time!</span></a>
+      <li>
+       <a href="#design-byteswap"><span class="secno">3.3</span> <span class="content">Generic Byte Swap and Exact-width Byte Swap</span></a>
+       <ol class="toc">
+        <li><a href="#design-byteswap-danger"><span class="secno">3.3.1</span> <span class="content">But Byte Swap Is Dangerous?</span></a>
+        <li><a href="#design-byteswap-endianness"><span class="secno">3.3.2</span> <span class="content">Selecting Endianness Functions</span></a>
+       </ol>
+     </ol>
+    <li><a href="#questions"><span class="secno">4</span> <span class="content">Committee Polls / Questions</span></a>
+    <li>
+     <a href="#wording"><span class="secno">5</span> <span class="content">Wording</span></a>
+     <ol class="toc">
+      <li><a href="#wording-4p6"><span class="secno">5.1</span> <span class="content">Add <code class="highlight"><c- o>&lt;</c-><c- n>stdendian</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code> and <code class="highlight"><c- o>&lt;</c-><c- n>stdbit</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code> to freestanding headers in §4, paragraph 6</span></a>
+      <li><a href="#wording-7.3�x"><span class="secno">5.2</span> <span class="content">Add a new §7.3�x sub-clause for "Endian" in §7</span></a>
+      <li><a href="#wording-7.3�y"><span class="secno">5.3</span> <span class="content">Add a new §7.3�y sub-clause for "Bit Utilities" in §7</span></a>
+      <li><a href="#wording-annexj.3"><span class="secno">5.4</span> <span class="content">Add three new entries for Implementation-defined behavior in Annex J.3</span></a>
      </ol>
     <li>
-     <a href="#wording"><span class="secno">4</span> <span class="content">Wording</span></a>
+     <a href="#references"><span class="secno"></span> <span class="content">References</span></a>
      <ol class="toc">
-      <li><a href="#wording-4p6"><span class="secno">4.1</span> <span class="content">Add <code class="highlight"><c- o>&lt;</c-><c- n>stdendian</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code> and <code class="highlight"><c- o>&lt;</c-><c- n>stdbit</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code> to freestanding headers in §4, paragraph 6</span></a>
-      <li><a href="#wording-7.3�x"><span class="secno">4.2</span> <span class="content">Add a new §7.3�x sub-clause for "Endian" in §7</span></a>
-      <li><a href="#wording-7.3�y"><span class="secno">4.3</span> <span class="content">Add a new §7.3�y sub-clause for "Bit Utilities" in §7</span></a>
-      <li><a href="#wording-annexj.3"><span class="secno">4.4</span> <span class="content">Add a new entry for Implementation-defined behavior in Annex J.3</span></a>
+      <li><a href="#informative"><span class="secno"></span> <span class="content">Informative References</span></a>
      </ol>
    </ol>
   </nav>
@@ -2276,13 +2288,15 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    <h2 class="heading settled" data-level="2" id="motivation"><span class="secno">2. </span><span class="content">Introduction &amp; Motivation</span><a class="self-link" href="#motivation"></a></h2>
    <p>There is a lot of proposals and work that goes into figuring out the "byte order" of integer values that occupy more than 1 octet (8 bits). This is nominally important when dealing with data that comes over network interfaces and is read from files, where the data can be laid out in various orders of octets for 2-, 3-, 4-, 6-, or 8-tuples of octets. The most well-known endian structures on existing architectures include "Big Endian", where the least significant bit comes "first" and is featured prominently in network protocols and file protocols; and, "Little Endian", where the least significant bit comes "last" and is typically the orientation of data for processor and user architectures most prevalent today.</p>
    <p>In more legacy architectures (Honeywell, PDP), there also exists other orientations called "mixed" or "middle" endian. The uses of such endianness are of dubious benefit and are vanishingly rare amongst commodity and readily available hardware today, but nevertheless still represent an applicable ordering of octets.</p>
-   <p>In other related programming interfaces, the C functions/macros <code class="highlight"><c- n>ntoh</c-></code> ("network to host") and <code class="highlight"><c- n>hton</c-></code> ("host to network") (usually suffixed with <code class="highlight"><c- n>l</c-></code> or <code class="highlight"><c- n>ul</c-></code> or others to specify which native data type it was being performed on such as <code class="highlight"><c- b>long</c-></code>) were used to change the byte order of a value and returned that value. This became such a common operation that many compilers - among them Clang and GCC - optimized the code down to use an intrinsic <code class="highlight"><c- n>__builtin_bytewap</c-><c- p>(...)</c-></code>/<code class="highlight"><c- n>__builtin_bswap</c-><c- p>(...)</c-></code> (<a href="https://docs.microsoft.com/en-us/cpp/c-runtime-library/reference/byteswap-uint64-byteswap-ulong-byteswap-ushort?view=msvc-160">for MSVC</a>, <a href="https://clang.llvm.org/docs/LanguageExtensions.html#intrinsics-support-within-constant-expressions">for Clang</a>, and <a href="https://gcc.gnu.org/onlinedocs/gcc/Other-Builtins.html">for GCC</a>). These intrinsics often compiled into binary code representing cheap, simple, and fast byte swapping instructions available on many CPUs for 16, 32, 64, and sometimes 128 bit numbers. The <code class="highlight"><c- n>bswap</c-></code>/<code class="highlight"><c- n>byteswap</c-></code> intrinsics were used as the fundamental underpinning for the <code class="highlight"><c- n>ntoh</c-></code> and <code class="highlight"><c- n>hton</c-></code> functions, where a check for the translation-time endianness of the program determined if the byte order would be flipped or not.</p>
+   <p>In other related programming interfaces, the C functions/macros <code class="highlight"><c- n>ntoh</c-></code> ("network to host") and <code class="highlight"><c- n>hton</c-></code> ("host to network") (usually suffixed with <code class="highlight"><c- n>l</c-></code> or <code class="highlight"><c- n>ul</c-></code> or others to specify which native data type it was being performed on such as <code class="highlight"><c- b>long</c-></code>) were used to change the byte order of a value and returned that value. This became such a common operation that many compilers - among them Clang and GCC - optimized the code down to use an intrinsic <code class="highlight"><c- n>__builtin_bytewap</c-><c- p>(...)</c-></code>/<code class="highlight"><c- n>__builtin_bswap</c-><c- p>(...)</c-></code> (<a data-link-type="biblio" href="#biblio-msvc-builtins">for MSVC</a>, <a data-link-type="biblio" href="#biblio-clang-builtins">for Clang</a>, and <a data-link-type="biblio" href="#biblio-gcc-builtins">for GCC</a>). These intrinsics often compiled into binary code representing cheap, simple, and fast byte swapping instructions available on many CPUs for 16, 32, 64, and sometimes 128 bit numbers. The <code class="highlight"><c- n>bswap</c-></code>/<code class="highlight"><c- n>byteswap</c-></code> intrinsics were used as the fundamental underpinning for the <code class="highlight"><c- n>ntoh</c-></code> and <code class="highlight"><c- n>hton</c-></code> functions, where a check for the translation-time endianness of the program determined if the byte order would be flipped or not.</p>
    <p>This proposal puts forth the fundamentals that make a homegrown implementation of <code class="highlight"><c- n>htonl</c-></code>, <code class="highlight"><c- n>ntoh</c-></code>, and other endianness-based functions possible in Standard C code.</p>
    <h2 class="heading settled" data-level="3" id="design"><span class="secno">3. </span><span class="content">Design</span><a class="self-link" href="#design"></a></h2>
-   <p>This is a pure library addition. It is meant to expose both macros and enumeration values that can be used for both translation-time checks and for execution-time runs. It provides a way to check if the endianness within the preprocessor, and gives definitive names that allow for knowing whether the endianness is big, little, or neither. We state big, little, or neither, because there is no settled-upon name for the legacy endianness of "middle" or "mixed", nor any agreed upon ordering for such a "middle" or "mixed" endianness between architectures. This is not the case for big endian or little endian, where one is simply the reverse of the other, always, in every case, across architectures, file protocols, and network specifications.</p>
+   <p>This is a library addition. It is meant to expose both macros and enumeration values that can be used for both translation-time checks and for execution-time runs. It provides a way to check if the endianness within the preprocessor, and gives definitive names that allow for knowing whether the endianness is big, little, or neither. We state big, little, or neither, because there is no settled-upon name for the legacy endianness of "middle" or "mixed", nor any agreed upon ordering for such a "middle" or "mixed" endianness between architectures. This is not the case for big endian or little endian, where one is simply the reverse of the other, always, in every case, across architectures, file protocols, and network specifications.</p>
    <h3 class="heading settled" data-level="3.1" id="design-enum"><span class="secno">3.1. </span><span class="content">The Endianness Enumeration</span><a class="self-link" href="#design-enum"></a></h3>
    <p>The enumeration is specified as follows:</p>
-<pre class="language-cpp highlight"><c- cp>#define __STDC_ENDIAN_LITTLE__ 1 </c-><c- d>/* some unique value */</c->
+<pre class="language-cpp highlight"><c- cp>#include</c-> &lt;stdendian.h>
+
+<c- cp>#define __STDC_ENDIAN_LITTLE__ 1 </c-><c- d>/* some unique value */</c->
 <c- cp>#define __STDC_ENDIAN_BIG__ 2 </c-><c- d>/* some other unique value */</c->
 <c- cp>#define __STDC_ENDIAN_NATIVE__ see-below</c->
 
@@ -2309,12 +2323,60 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 	<c- k>return</c-> <c- mi>0</c-><c- p>;</c->
 <c- p>}</c->
 </pre>
-   <p>If a user has a Honeywell architecture or a PDP architecture, it is up to them to figure out which flavor of "middle endian"/"mixed endian"/"bi endian" they are utilizing.</p>
+   <p>If a user has a Honeywell architecture or a PDP architecture, it is up to them to figure out which flavor of "middle endian"/"mixed endian"/"bi endian" they are utilizing. We do not give these a name in the enumeration because neither the Honeywell or PDP communities every figured out which flavor of the 32-bit byte order of <code class="highlight"><c- mi>2341</c-></code>/<code class="highlight"><c- mi>3412</c-></code>/etc. was strongly assigned to which name ("mixed" endian? "mixed-big" endian? "bi-little" endian?), and since this is not a settled matter in existing practice we do not provide a name for it in the C Standard. It is also of dubious determination what the byte order for a 3-byte, 5-byte, 6-byte, or 7-byte integer is in these mixed-endian types, whereas both big and little have dependable orderings.</p>
    <h3 class="heading settled" data-level="3.2" id="design-run.time"><span class="secno">3.2. </span><span class="content">Hey! Some Architectures Can Change Their Endianness at Run-time!</span><a class="self-link" href="#design-run.time"></a></h3>
-   <p>This is beyond the scope of this proposal. This is meant to capture the translation-time endianness. There also does not appear to be any operating system written today that can tolerate an endianness change happening arbitrarily at runtime, after a program has launched. This means that the property is effectively a translation-time property, and therefore can be exposed as a compile-time constant. A future proposal to determine the run-time byte order is more than welcome from someone who has suitable experience dealing with such architectures and programs, and this proposal does not preclude their ability to provide such a run-time function e.g. <code class="highlight"><c- n>stdc_get_endian</c-> <c- nf>get_endian</c-><c- p>(</c-><c- b>void</c-><c- p>);</c-></code>.</p>
-   <h2 class="heading settled" data-level="4" id="wording"><span class="secno">4. </span><span class="content">Wording</span><a class="self-link" href="#wording"></a></h2>
-   <p>The following wording is <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2596.pdf">relative to N2596</a>.</p>
-   <h3 class="heading settled" data-level="4.1" id="wording-4p6"><span class="secno">4.1. </span><span class="content">Add <code class="highlight"><c- o>&lt;</c-><c- n>stdendian</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code> and <code class="highlight"><c- o>&lt;</c-><c- n>stdbit</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code> to freestanding headers in §4, paragraph 6</span><a class="self-link" href="#wording-4p6"></a></h3>
+   <p>This is beyond the scope of this proposal. This is meant to capture the translation-time endianness. There also does not appear to be any operating system written today that can tolerate an endianness change happening arbitrarily at runtime, after a program has launched. This means that the property is effectively a translation-time property, and therefore can be exposed as a compile-time constant. A future proposal to determine the run-time byte order is more than welcome from someone who has suitable experience dealing with such architectures and programs, and this proposal does not preclude their ability to provide such a run-time function e.g. <code class="highlight"><c- n>stdc_endian</c-> <c- nf>get_execution_endian</c-><c- p>(</c-><c- b>void</c-><c- p>);</c-></code>.</p>
+   <h3 class="heading settled" data-level="3.3" id="design-byteswap"><span class="secno">3.3. </span><span class="content">Generic Byte Swap and Exact-width Byte Swap</span><a class="self-link" href="#design-byteswap"></a></h3>
+   <p>In order to accommodate both a wide variety of architectures but also support exact-width integer optimized intrinsics, this proposal takes from the industry 2 forms of byteswap:</p>
+   <ul>
+    <li data-md>
+     <p>one generic one which takes a pointer and the number of bytes to perform a reverse operation; and,</p>
+    <li data-md>
+     <p>a sequence of exact-width byte swapping instructions which map directly to intrinsics available in compilers and instructions in hardware.</p>
+   </ul>
+   <p>These end up inhabiting a different header - the <code class="highlight"><c- n>stdbit</c-><c- p>.</c-><c- n>h</c-></code> header - and have the following interface:</p>
+<pre class="language-cpp highlight"><c- cp>#include</c-> &lt;stdbit.h>
+
+<c- b>void</c-> <c- nf>stdc_byteswap</c-><c- p>(</c-><c- b>void</c-><c- o>*</c-> <c- n>ptr</c-><c- p>,</c-> <c- b>size_t</c-> <c- n>n</c-><c- p>);</c->
+<c- b>void</c-> <c- nf>stdc_byteswapN</c-><c- p>(</c-><c- n>uintN_t</c-> <c- n>value</c-><c- p>);</c->
+</pre>
+   <p>where <code class="highlight"><c- n>N</c-></code> is one of the exact-width integer types such as <code class="highlight"><c- mi>8</c-></code>, <code class="highlight"><c- mi>24</c-></code>, <code class="highlight"><c- mi>16</c-></code>, <code class="highlight"><c- mi>32</c-></code>, <code class="highlight"><c- mi>64</c-></code>, <code class="highlight"><c- mi>128</c-></code>, and others. This matches the the builtins (<a data-link-type="biblio" href="#biblio-msvc-builtins">MSVC</a>, <a data-link-type="biblio" href="#biblio-clang-builtins">Clang</a>, <a data-link-type="biblio" href="#biblio-gcc-builtins">GCC</a>) and the result of compiler optimizations that produce instructions for many existing architectures as shown in the README of <a data-link-type="biblio" href="#biblio-portable-endianness">this portable endianness function implementation</a>.</p>
+   <h4 class="heading settled" data-level="3.3.1" id="design-byteswap-danger"><span class="secno">3.3.1. </span><span class="content">But Byte Swap Is Dangerous?</span><a class="self-link" href="#design-byteswap-danger"></a></h4>
+   <p>Byte swapping, by itself, is absolutely dangerous in terms of code portability. Users often program strictly for their own architecture when doing serialization, and do not take into consideration that their endianness can change. This means that, while <code class="highlight"><c- n>byteswap</c-></code> functions can compile down to intrinsics, those intrinsics get employed to change "little endian" to "big endian" without performing the necessary check to see if their values are already in the proper byte order for their target serialization in relation to their current platform, resulting in an incorrect swaps.</p>
+   <p>The inclusion of the <code class="highlight"><c- o>&lt;</c-><c- n>stdendian</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code> header reduces this problem, but does not fully eliminate it. This is why many Linux and BSDs include functions which directly transcribe from one endianness to another. This is why the <a data-link-type="biblio" href="#biblio-endian-fallacy">Byte Order Fallacy</a> has spread so far in Systems Programming communities, and why many create their own versions of this both in official widespread vendor code (<a data-link-type="biblio" href="#biblio-linux-endian">[linux-endian]</a>) and in more personal code used for specific distributions (<a data-link-type="biblio" href="#biblio-portable-endianness">[portable-endianness]</a>).</p>
+   <h4 class="heading settled" data-level="3.3.2" id="design-byteswap-endianness"><span class="secno">3.3.2. </span><span class="content">Selecting Endianness Functions</span><a class="self-link" href="#design-byteswap-endianness"></a></h4>
+   <p>Functions meant to transport bytes to a specific endianness need 2 pieces of information:</p>
+   <ul>
+    <li data-md>
+     <p>the byte order of the input; and,</p>
+    <li data-md>
+     <p>the desired byte order of the output.</p>
+   </ul>
+   <p>To represent any operation that goes from/to the byte order that things like <code class="highlight"><c- b>long</c-> <c- b>long</c-></code>s are kept in, the Linux/BSD/etc. APIs use the term "host", represented by <code class="highlight"><c- n>h</c-></code>. Every other operation is represented by explicitly naming it, particularly as <code class="highlight"><c- n>be</c-></code> or <code class="highlight"><c- n>le</c-></code> for "big endian" or "little endian". Again, because of the severe confusion that comes from what the exact byte order a "mixed endian" multi byte scalar is meant to be in, there seems not to exist any widely available practice regarding what to call a PDP/Honeywell endian configuration. Therefore, mixed/bi/middle-endian is not included in this proposal. It can be added at a later date if the community ever settles on a well-defined naming convention that can be shared between codebases, standards, and industries.</p>
+   <p>The specification for the endianness functions borrows from many different sources listed above, and is as follows:</p>
+<pre class="language-cpp highlight"><c- cp>#include</c-> &lt;stdbit.h>
+
+<c- b>void</c-> <c- nf>stdc_store_leN</c-><c- p>(</c-><c- n>uintN_t</c-> <c- n>value</c-><c- p>,</c-> <c- b>void</c-><c- o>*</c-> <c- n>ptr</c-><c- p>);</c->
+<c- n>uintN_t</c-> <c- nf>stdc_load_leN</c-><c- p>(</c-><c- b>void</c-><c- o>*</c-> <c- n>ptr</c-><c- p>);</c->
+
+<c- b>void</c-> <c- nf>stdc_store_beN</c-><c- p>(</c-><c- n>uintN_t</c-> <c- n>value</c-><c- p>,</c-> <c- b>void</c-><c- o>*</c-> <c- n>ptr</c-><c- p>);</c->
+<c- n>uintN_t</c-> <c- nf>stdc_load_beN</c-><c- p>(</c-><c- b>void</c-><c- o>*</c-> <c- n>ptr</c-><c- p>);</c->
+</pre>
+   <p>Note that this specification only exists for <code class="highlight"><c- n>N</c-></code> types, similarly to the <code class="highlight"><c- n>stdc_byteswapN</c-></code> functions. This is because the endianness need only be well-defined for exact-width types that contain no padding. Every other integer type in the C Standard does not have to be the advertised size, nor does it have to have no padding bits. This is unfortunate, but the only way we can preserve portable behavior amongst programs. The ultimate goal of these functions is portable behavior across implementations. Those relying on implementation-specific magic can continue to do so; this just makes a (very large) portion of serialization and deserialization work much more accessible and standard, without the risk of forgetting to properly check endianness. These functions do, of course, take into account the execution environment’s endianness, and therefore are suitable for the task at hand. This includes serializing bytes into <code class="highlight"><c- n>ptr</c-></code> without first doing a byteswap when the endianness of <code class="highlight"><c- n>value</c-></code> and the specified <code class="highlight"><c- n>be</c-></code>/<code class="highlight"><c- n>le</c-></code> endianness match.</p>
+   <h2 class="heading settled" data-level="4" id="questions"><span class="secno">4. </span><span class="content">Committee Polls / Questions</span><a class="self-link" href="#questions"></a></h2>
+   <p>For the Committee, this proposal is, effectively, three parts:</p>
+   <ol>
+    <li data-md>
+     <p>the <code class="highlight"><c- o>&lt;</c-><c- n>stdendian</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code> header;</p>
+    <li data-md>
+     <p>the <code class="highlight"><c- o>&lt;</c-><c- n>stdbit</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code> header and the <code class="highlight"><c- n>byteswap</c-></code> functions (generic and width-specific); and,</p>
+    <li data-md>
+     <p>the <code class="highlight"><c- o>&lt;</c-><c- n>stdbit</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code> header and the <code class="highlight"><c- n>load</c-></code>/<code class="highlight"><c- n>store</c-></code>, width-specific functions.</p>
+   </ol>
+   <p>These can be polled together or separately, depending on what the Committee desires. It is the author’s recommendation that all are adopted to make serialization work with scalars much simpler and easier.</p>
+   <h2 class="heading settled" data-level="5" id="wording"><span class="secno">5. </span><span class="content">Wording</span><a class="self-link" href="#wording"></a></h2>
+   <p>The following wording is <a data-link-type="biblio" href="#biblio-n2596">relative to N2596</a>.</p>
+   <h3 class="heading settled" data-level="5.1" id="wording-4p6"><span class="secno">5.1. </span><span class="content">Add <code class="highlight"><c- o>&lt;</c-><c- n>stdendian</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code> and <code class="highlight"><c- o>&lt;</c-><c- n>stdbit</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code> to freestanding headers in §4, paragraph 6</span><a class="self-link" href="#wording-4p6"></a></h3>
    <blockquote>
     <p>
      A conforming freestanding implementation shall accept any strictly conforming program in which the use of the features specified in the library clause (Clause 7) is confined to the contents of the standard headers <code class="highlight"><c- o>&lt;</c-><c- b>float</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code>, <code class="highlight"><c- o>&lt;</c-><c- n>iso646</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code>, <code class="highlight"><c- o>&lt;</c-><c- n>limits</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code>, <code class="highlight"><c- o>&lt;</c-><c- n>stdalign</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code>, <code class="highlight"><c- o>&lt;</c-><c- n>stdarg</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code>, <code class="highlight"><c- o>&lt;</c-><c- n>stdbool</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code>, <code class="highlight"><c- o>&lt;</c-><c- n>stddef</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code>, <code class="highlight"><c- o>&lt;</c-><c- n>stdint</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code>,
@@ -2322,7 +2384,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
       and <code class="highlight"><c- o>&lt;</c-><c- n>stdnoreturn</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code>
     </p>
    </blockquote>
-   <h3 class="heading settled" data-level="4.2" id="wording-7.3�x"><span class="secno">4.2. </span><span class="content">Add a new §7.3�x sub-clause for "Endian" in §7</span><a class="self-link" href="#wording-7.3�x"></a></h3>
+   <h3 class="heading settled" data-level="5.2" id="wording-7.3�x"><span class="secno">5.2. </span><span class="content">Add a new §7.3�x sub-clause for "Endian" in §7</span><a class="self-link" href="#wording-7.3�x"></a></h3>
    <blockquote>
     <ins>
      <div class="wording-section">
@@ -2373,17 +2435,17 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 <pre class="language-cpp highlight"><c- n>stdc_endian_native</c-> <c- o>=</c-> <c- n>__STDC_ENDIAN_NATIVE__</c->
 </pre>
        </blockquote>
-       <p>which represents the method of byte order storage for the execution environment.<sup>FOOTNOTE0</sup></p>
+       <p>which represents the method of byte order storage for the execution environment.<sup>FOOTNOTE�0)</sup></p>
       </div>
-      <p><sup>FOOTNOTE0</sup><sub>Comparing the enumeration constants by <code class="highlight"><c- n>stdc_endian_native</c-> <c- o>==</c-> <c- n>stdc_endian_little</c-></code> or <code class="highlight"><c- n>stdc_endian_native</c-> <c- o>==</c-> <c- n>stdc_endian_big</c-></code> is the same as checking the macros for whether or not the execution environment is big-endian, little-endian, or neither.</sub></p>
+      <p><sup>FOOTNOTE�0)</sup><sub>Comparing the enumeration constants by <code class="highlight"><c- n>stdc_endian_native</c-> <c- o>==</c-> <c- n>stdc_endian_little</c-></code> or <code class="highlight"><c- n>stdc_endian_native</c-> <c- o>==</c-> <c- n>stdc_endian_big</c-></code> is the same as checking the macros for whether or not the execution environment is big-endian, little-endian, or neither.</sub></p>
      </div>
     </ins>
    </blockquote>
-   <h3 class="heading settled" data-level="4.3" id="wording-7.3�y"><span class="secno">4.3. </span><span class="content">Add a new §7.3�y sub-clause for "Bit Utilities" in §7</span><a class="self-link" href="#wording-7.3�y"></a></h3>
+   <h3 class="heading settled" data-level="5.3" id="wording-7.3�y"><span class="secno">5.3. </span><span class="content">Add a new §7.3�y sub-clause for "Bit Utilities" in §7</span><a class="self-link" href="#wording-7.3�y"></a></h3>
    <blockquote>
     <ins>
      <p><b>7.3�y Bit Utilities</b> </p>
-     <p><b>7.3�y.1 Byteswap</b> </p>
+     <p><b>7.3�y.1 Byte Swap</b> </p>
      <div class="wording-section">
       <p><b>Synopsis</b> </p>
       <div class="wording-numbered">
@@ -2398,7 +2460,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
        <p>The <code class="highlight"><c- n>stdc_byteswap</c-></code> function provides an interface to reverse the order of a given sequence of bytes. If <code class="highlight"><c- n>n</c-></code> is less than or equal to <code class="highlight"><c- mi>1</c-></code>, then the function has no effect. Otherwise, let <code class="highlight"><c- n>R</c-></code> represent the byte sequence represented by <code class="highlight"><c- n>ptr</c-></code> and <code class="highlight"><c- n>n</c-></code> in reverse order. Each byte’s value is exchanged with the value in its corresponding reverse position in <code class="highlight"><c- n>R</c-></code>.</p>
       </div>
      </div>
-     <p><b>7.3�y.2 Exact-width Byteswap</b> </p>
+     <p><b>7.3�y.2 Exact-width Byte Swap</b> </p>
      <div class="wording-section">
       <p><b>Synopsis</b> </p>
       <div class="wording-numbered">
@@ -2410,18 +2472,89 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
       </div>
       <p><b>Description</b> </p>
       <div class="wording-numbered">
-       <p>The <code class="highlight"><c- n>stdc_byteswap</c-><i><c- n>N</c-></i></code> functions provide an interface to swap the bytes of a corresponding <code class="highlight"><c- n>uint</c-><i><c- n>N</c-></i><c- n>_t</c-></code> object, where <i>N</i> matches an existing exact-width integer type (7.20.1.1). These functions are optional. However, if an implementation provides the corresponding <code class="highlight"><c- n>uint</c-><i><c- n>N</c-></i><c- n>_t</c-></code> typedef (7.20.1.1), it shall define the corresponding exact-width byteswap functions.</p>
+       <p>The <code class="highlight"><c- n>stdc_byteswap</c-><i><c- n>N</c-></i></code> functions provide an interface to swap the bytes of a corresponding <code class="highlight"><c- n>uint</c-><i><c- n>N</c-></i><c- n>_t</c-></code> object, where <i>N</i> matches an existing exact-width integer type (7.20.1.1). These functions are optional. However, if an implementation provides the corresponding <code class="highlight"><c- n>uint</c-><i><c- n>N</c-></i><c- n>_t</c-></code> typedef (7.20.1.1), it shall define the corresponding exact-width byte swap functions.</p>
       </div>
       <p><b>Returns</b> </p>
       <div class="wording-numbered">
-       <p>The <code class="highlight"><c- n>stdc_byteswap</c-><i><c- n>N</c-></i></code> functions provide an interface to swap the bytes of a corresponding <code class="highlight"><c- n>uint</c-><i><c- n>N</c-></i><c- n>_t</c-></code> object, where <i>N</i> matches the number of bits from an existing exact-width integer type (7.20.1.1). These functions are optional. However, if an implementation provides the corresponding <code class="highlight"><c- n>uint</c-><i><c- n>N</c-></i><c- n>_t</c-></code> typedef, it shall define the corresponding exact-width byteswap functions.</p>
+       <p>Returns a byte swapped <code class="highlight"><c- n>uint</c-><i><c- n>N</c-></i><c- n>_t</c-></code> value.</p>
       </div>
+     </div>
+     <p><b>7.3�y.2 Exact-width Endian-Aware Load</b> </p>
+     <div class="wording-section">
+      <p><b>Synopsis</b> </p>
+      <div class="wording-numbered">
+       <blockquote>
+<pre class="language-cpp highlight"><c- cp>#include</c-> &lt;stdbit.h>
+<c- n>uintN_t</c-> <c- nf>stdc_load_leN</c-><c- p>(</c-><c- b>void</c-><c- o>*</c-> <c- n>ptr</c-><c- p>);</c->
+<c- n>uintN_t</c-> <c- nf>stdc_load_beN</c-><c- p>(</c-><c- b>void</c-><c- o>*</c-> <c- n>ptr</c-><c- p>);</c->
+</pre>
+       </blockquote>
+      </div>
+      <p><b>Description</b> </p>
+      <div class="wording-numbered">
+       <p>The <code class="highlight"><c- n>stdc_load_le</c-><i><c- n>N</c-></i></code> and <code class="highlight"><c- n>stdc_load_be</c-><i><c- n>N</c-></i></code> functions return a <code class="highlight"><c- n>uint</c-><i><c- n>N</c-></i><c- n>_t</c-></code> object by loading bytes from <code class="highlight"><c- n>ptr</c-></code> in an endian-aware (7.3�x) manner, where <i>N</i> matches an existing exact-width integer type (7.20.1.1). The <code class="highlight"><c- n>le</c-></code> stands for little-endian and the <code class="highlight"><c- n>be</c-></code> stands for big-endian. These functions are optional. However, if an implementation provides the corresponding <code class="highlight"><c- n>uint</c-><i><c- n>N</c-></i><c- n>_t</c-></code> typedef (7.20.1.1), it shall define the corresponding exact-width endian-aware load functions.</p>
+      </div>
+      <p><b>Returns</b> </p>
+      <div class="wording-numbered">
+       <p>Let <code class="highlight"><c- n>B</c-></code> be the sequence of bytes in ascending memory order from <code class="highlight"><c- n>ptr</c-></code>, with a sequence length <code class="highlight"><c- n>L</c-></code> of <code class="highlight"><c- n>N</c-> <c- o>/</c-> <c- n>CHAR_BIT</c-></code>. If <code class="highlight"><c- n>stdc_endian_native</c-></code> is equivalent to <code class="highlight"><c- n>stdc_endian_little</c-></code>, then:</p>
+       <dl>
+        <dd>— if the function is <code class="highlight"><c- n>le</c-></code>, then a <code class="highlight"><c- n>uint</c-><i><c- n>N</c-><c- o>></c-></i><c- n>_t</c-></code> is returned whose bytes are identical to the sequence of <code class="highlight"><c- n>B</c-></code>; otherwise,
+        <dd>— if the function is <code class="highlight"><c- n>be</c-></code>, then a <code class="highlight"><c- n>uint</c-><i><c- n>N</c-><c- o>></c-></i><c- n>_t</c-></code> is returned whose bytes are in reverse order to the sequence of <code class="highlight"><c- n>B</c-></code>.
+       </dl>
+       <p>Otherwise, if <code class="highlight"><c- n>stdc_endian_native</c-></code> is equivalent to <code class="highlight"><c- n>stdc_endian_big</c-></code>, then:</p>
+       <dl>
+        <dd>
+        <dd>— if the function is <code class="highlight"><c- n>le</c-></code>, then a <code class="highlight"><c- n>uint</c-><i><c- n>N</c-><c- o>></c-></i><c- n>_t</c-></code> is returned whose bytes are in reverse order to the sequence of <code class="highlight"><c- n>B</c-></code>; otherwise,
+        <dd>— if the function is <code class="highlight"><c- n>be</c-></code>, then a <code class="highlight"><c- n>uint</c-><i><c- n>N</c-><c- o>></c-></i><c- n>_t</c-></code> is returned whose bytes are identical to the sequence of <code class="highlight"><c- n>B</c-></code>.
+       </dl>
+       <p>Otherwise, if <code class="highlight"><c- n>stdc_endian_native</c-></code> is equivalent to <code class="highlight"><c- n>stdc_endian_little</c-></code>, then the result is implementation-defined<sup>FOOTNOTE�1)</sup>.</p>
+      </div>
+      <p><sup>FOOTNOTE�1)</sup><sub>Using the returned value in the Endian-Aware Store function (7.3�y.3) should produce an identical byte sequence to <code class="highlight"><c- n>ptr</c-></code>.</sub></p>
+      <p><b>7.3�y.3 Exact-width Endian-Aware Store</b> </p>
+      <div class="wording-section">
+       <p><b>Synopsis</b> </p>
+       <div class="wording-numbered">
+        <blockquote>
+<pre class="language-cpp highlight"><c- cp>#include</c-> &lt;stdbit.h>
+<c- b>void</c-> <c- nf>stdc_store_leN</c-><c- p>(</c-><c- n>uintN_t</c-> <c- n>value</c-><c- p>,</c-> <c- b>void</c-><c- o>*</c-> <c- n>ptr</c-><c- p>);</c->
+<c- b>void</c-> <c- nf>stdc_store_beN</c-><c- p>(</c-><c- n>uintN_t</c-> <c- n>value</c-><c- p>,</c-> <c- b>void</c-><c- o>*</c-> <c- n>ptr</c-><c- p>);</c->
+</pre>
+        </blockquote>
+       </div>
+       <p><b>Description</b> </p>
+       <div class="wording-numbered">
+        <p>The <code class="highlight"><c- n>stdc_store_le</c-><i><c- n>N</c-></i></code> and <code class="highlight"><c- n>stdc_store_be</c-><i><c- n>N</c-></i></code> functions copy the bytes of an <code class="highlight"><c- n>uint</c-><i><c- n>N</c-></i><c- n>_t</c-></code> object to <code class="highlight"><c- n>ptr</c-></code> in an endian-aware (7.3�x) manner, where <i>N</i> matches an existing exact-width integer type (7.20.1.1). The <code class="highlight"><c- n>le</c-></code> stands for little-endian and the <code class="highlight"><c- n>be</c-></code> stands for big-endian. These functions are optional. However, if an implementation provides the corresponding <code class="highlight"><c- n>uint</c-><i><c- n>N</c-></i><c- n>_t</c-></code> typedef (7.20.1.1), it shall define the corresponding exact-width endian-aware load functions.</p>
+       </div>
+       <p><b>Returns</b> </p>
+       <div class="wording-numbered">
+        <p>Let <code class="highlight"><c- n>P</c-></code> be the sequence of bytes in ascending memory order from <code class="highlight"><c- o>&amp;</c-><c- n>value</c-></code>, with a sequence length <code class="highlight"><c- n>L</c-></code> of <code class="highlight"><c- n>N</c-> <c- o>/</c-> <c- n>CHAR_BIT</c-></code>. Let <code class="highlight"><c- n>B</c-></code> be <code class="highlight"><c- n>ptr</c-></code> with a sequence length of <code class="highlight"><c- n>L</c-></code>. If <code class="highlight"><c- n>stdc_endian_native</c-></code> is equivalent to <code class="highlight"><c- n>stdc_endian_little</c-></code>, then:</p>
+        <dl>
+         <dd>— if the function is <code class="highlight"><c- n>le</c-></code>, then exactly <code class="highlight"><c- n>L</c-></code> bytes are stored in <code class="highlight"><c- n>B</c-></code> from <code class="highlight"><c- n>P</c-></code> such that the sequences are identical; otherwise,
+         <dd>— if the function is <code class="highlight"><c- n>be</c-></code>, then exactly <code class="highlight"><c- n>L</c-></code> bytes are stored in <code class="highlight"><c- n>B</c-></code> from <code class="highlight"><c- n>P</c-></code> such that the sequences are in reverse order.
+        </dl>
+        <p>Otherwise, if <code class="highlight"><c- n>stdc_endian_native</c-></code> is equivalent to <code class="highlight"><c- n>stdc_endian_big</c-></code>, then:</p>
+        <dl>
+         <dd>— if the function is <code class="highlight"><c- n>le</c-></code>, then exactly <code class="highlight"><c- n>L</c-></code> bytes are stored in <code class="highlight"><c- n>B</c-></code> from <code class="highlight"><c- n>P</c-></code> such that the sequences are in reverse order; otherwise,
+         <dd>— if the function is <code class="highlight"><c- n>be</c-></code>, then exactly <code class="highlight"><c- n>L</c-></code> bytes are stored in <code class="highlight"><c- n>B</c-></code> from <code class="highlight"><c- n>P</c-></code> such that the sequences are identical.
+        </dl>
+        <p>Otherwise, if <code class="highlight"><c- n>stdc_endian_native</c-></code> is equivalent to <code class="highlight"><c- n>stdc_endian_little</c-></code>, then exactly <code class="highlight"><c- n>L</c-></code> bytes are stored in an implementation-defined manner such that <code class="highlight"><c- n>B</c-></code> represents a little-endian or big-endian byte order appropriate for the given exact-width integer <code class="highlight"><c- n>N</c-></code><sup>FOOTNOTE�2)</sup>.</p>
+       </div>
+      </div>
+      <p><sup>FOOTNOTE�2)</sup><sub>The effect on the byte sequence pointed to by <code class="highlight"><c- n>ptr</c-></code> should cause the Endian-Aware Load function (7.3�y.2) to produce an equivalent object to <code class="highlight"><c- n>value</c-></code> when given <code class="highlight"><c- n>ptr</c-></code> as input.</sub></p>
      </div>
     </ins>
    </blockquote>
-   <h3 class="heading settled" data-level="4.4" id="wording-annexj.3"><span class="secno">4.4. </span><span class="content">Add a new entry for Implementation-defined behavior in Annex J.3</span><a class="self-link" href="#wording-annexj.3"></a></h3>
+   <h3 class="heading settled" data-level="5.4" id="wording-annexj.3"><span class="secno">5.4. </span><span class="content">Add three new entries for Implementation-defined behavior in Annex J.3</span><a class="self-link" href="#wording-annexj.3"></a></h3>
    <blockquote>
-    <ins>— The value of <code class="highlight"><c- n>stdc_endian_native</c-></code> and <code class="highlight"><c- n>__STDC_ENDIAN_NATIVE__</c-></code> if the execution environment is not big-endian or little-endian (7.3�x).</ins>
+    <p>
+     <ins>— The value of <code class="highlight"><c- n>stdc_endian_native</c-></code> and <code class="highlight"><c- n>__STDC_ENDIAN_NATIVE__</c-></code> if the execution environment is not big-endian or little-endian (7.3�x).</ins>
+    </p>
+    <p>
+     <ins>— The return value of the Endian-Aware Load functions (7.3�y.2) if the execution environment is not big-endian or little endian (7.3�x).</ins>
+    </p>
+    <p>
+     <ins>— The value of the byte sequence stored by the Endian-Aware Store functions (7.3�y.3) if the execution environment is not big-endian or little endian (7.3�x).</ins>
+    </p>
    </blockquote>
   </main>
 <script>
@@ -2553,3 +2686,21 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 
 })();
 </script>
+  <h2 class="no-num no-ref heading settled" id="references"><span class="content">References</span><a class="self-link" href="#references"></a></h2>
+  <h3 class="no-num no-ref heading settled" id="informative"><span class="content">Informative References</span><a class="self-link" href="#informative"></a></h3>
+  <dl>
+   <dt id="biblio-clang-builtins">[CLANG-BUILTINS]
+   <dd>LLVM Foundation; Clang Contributors. <a href="https://clang.llvm.org/docs/LanguageExtensions.html#intrinsics-support-within-constant-expressions"><cite>Clang Language Extensions: Clang Documentation</cite></a>. September 1st, 2021. URL: <a href="https://clang.llvm.org/docs/LanguageExtensions.html#intrinsics-support-within-constant-expressions">https://clang.llvm.org/docs/LanguageExtensions.html#intrinsics-support-within-constant-expressions</a>
+   <dt id="biblio-endian-fallacy">[ENDIAN-FALLACY]
+   <dd>Rob Pike. <a href="https://commandcenter.blogspot.com/2012/04/byte-order-fallacy.html"><cite>The Byte Order Fallacy</cite></a>. April 3rd, 2012. URL: <a href="https://commandcenter.blogspot.com/2012/04/byte-order-fallacy.html">https://commandcenter.blogspot.com/2012/04/byte-order-fallacy.html</a>
+   <dt id="biblio-gcc-builtins">[GCC-BUILTINS]
+   <dd>GCC Contributors. <a href="https://gcc.gnu.org/onlinedocs/gcc/Other-Builtins.html"><cite>Other Built-in Functions Provided by GCC</cite></a>. September 1st, 2021. URL: <a href="https://gcc.gnu.org/onlinedocs/gcc/Other-Builtins.html">https://gcc.gnu.org/onlinedocs/gcc/Other-Builtins.html</a>
+   <dt id="biblio-linux-endian">[LINUX-ENDIAN]
+   <dd>Linux; BSD. <a href="https://linux.die.net/man/3/endian"><cite>endian(3)</cite></a>. September 1st, 2021. URL: <a href="https://linux.die.net/man/3/endian">https://linux.die.net/man/3/endian</a>
+   <dt id="biblio-msvc-builtins">[MSVC-BUILTINS]
+   <dd>Microsoft. <a href="https://docs.microsoft.com/en-us/cpp/c-runtime-library/reference/byteswap-uint64-byteswap-ulong-byteswap-ushort?view=msvc-160"><cite>_byteswap_uint64, _byteswap_ulong, _byteswap_ushort</cite></a>. November 4th, 2016. URL: <a href="https://docs.microsoft.com/en-us/cpp/c-runtime-library/reference/byteswap-uint64-byteswap-ulong-byteswap-ushort?view=msvc-160">https://docs.microsoft.com/en-us/cpp/c-runtime-library/reference/byteswap-uint64-byteswap-ulong-byteswap-ushort?view=msvc-160</a>
+   <dt id="biblio-n2596">[N2596]
+   <dd>ISO/IEC JTC1 SC22 WG14 - Programming Languages, C; JeanHeyd Meneide; Freek Wiedijk. <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2596.pdf"><cite>N2596: ISO/IEC 9899:202x - Programming Languages, C</cite></a>. December 11th, 2020. URL: <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2596.pdf">http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2596.pdf</a>
+   <dt id="biblio-portable-endianness">[PORTABLE-ENDIANNESS]
+   <dd>David Seifert. <a href="https://github.com/SoapGentoo/portable-endianness"><cite>portable-endianness</cite></a>. May 16th, 2021. URL: <a href="https://github.com/SoapGentoo/portable-endianness">https://github.com/SoapGentoo/portable-endianness</a>
+  </dl>
