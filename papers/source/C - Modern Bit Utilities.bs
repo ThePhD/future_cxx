@@ -44,7 +44,7 @@ In more legacy architectures (Honeywell, PDP), there also exists other orientati
 
 In other related programming interfaces, the C functions/macros `ntoh` ("network to host") and `hton` ("host to network") (usually suffixed with `l` or `ul` or others to specify which native data type it was being performed on such as `long`) were used to change the byte order of a value and returned that value ([[ntohl]]). This became such a common operation that many compilers - among them Clang and GCC - optimized the code down to use an intrinsic `__builtin_bytewap(...)`/`__builtin_bswap(...)` ([[msvc-builtins|for MSVC]], [[clang-builtins|for Clang]], and [[gcc-builtins|for GCC]]). These intrinsics often compiled into binary code representing cheap, simple, and fast byte swapping instructions available on many CPUs for 16, 32, 64, and sometimes 128 bit numbers. The `bswap`/`byteswap` intrinsics were used as the fundamental underpinning for the `ntoh` and `hton` functions, where a check for the translation-time endianness of the program determined if the byte order would be flipped or not.
 
-This proposal puts forth the fundamentals that make a homegrown implementation of `htonl`, `ntoh`, and other endianness-based functions possible in Standard C code. It also addresses many of the compiler-based
+This proposal puts forth the fundamentals that make a homegrown implementation of `htonl`, `ntoh`, and other endianness-based functions possible in Standard C code. It also addresses many of the compiler-based intrinsics found to generate efficient machine code, with a few simpler utilities layered on top of it.
 
 
 
@@ -71,12 +71,12 @@ The enumeration is specified as follows:
 
 #define __STDC_ENDIAN_LITTLE__ 1 /* some unique value */
 #define __STDC_ENDIAN_BIG__ 2 /* some other unique value */
-#define __STDC_ENDIAN_NATIVE__ see-below
+#define __STDC_ENDIAN_NATIVE__ /* see below! */
 
 typedef enum stdc_endian {
-	stdc_endian_little = STDC_ENDIAN_LITTLE,
-	stdc_endian_big = STDC_ENDIAN_BIG,
-	stdc_endian_native = STDC_ENDIAN_NATIVE
+	stdc_endian_little = __STDC_ENDIAN_LITTLE__,
+	stdc_endian_big = __STDC_ENDIAN_BIG__,
+	stdc_endian_native = __STDC_ENDIAN_NATIVE__
 } stdc_endian;
 ```
 
@@ -203,7 +203,7 @@ Additionally to this, upon first pre_review of the paper there was a strong supp
   <tr><td>`leading_zero`</td>   <td>BSR, LZCNT</td><td>CLZ</td>      <td>cntlzd</td></tr>
   <tr><td>`leading_one`</td>   <td>-</td>         <td>CLS</td>      <td>-</td></tr>
   <tr><td>`trailing_zero`</td>   <td>BSF, TZCNT</td><td>-</td>        <td>-</td></tr>
-  <tr><td>`leading_one`</td>   <td>-</td>         <td>-</td>        <td>-</td></tr>
+  <tr><td>`trailing_one`</td>   <td>-</td>         <td>-</td>        <td>-</td></tr>
 </table>
 
 Many of the below bit functions are defined below to ease portability to these architectures. For places where specific compiler idioms and automatic detection are not possible, similar assembly tricks or optimized implementations can be provided by C. Further bit functions were also merged into C++, resulting in the current state of the [C++ `<bit>` header](https://en.cppreference.com/w/cpp/header/bit). We try to take the most useful subset of these functions that most closely represent functionality on both old and new CPU architectures as well as common, necessary operations that have been around in the last 25 years for various industries.
@@ -394,7 +394,7 @@ A conforming freestanding implementation shall accept any strictly conforming pr
 
 <p><b>7.3�x Bit and Byte Utilities `<stdbit.h>`</b/</p>
 <div class="wording-numbered">
-The header `<stdbit.h>` defines the following macros and enumeration constants, as well as declares the following types and functions, to work with the byte and bit representation of many types, typically integer types.
+The header `<stdbit.h>` defines the following macros and enumeration constants, as well as declares the following types and functions, to work with the byte and bit representation of many types, typically integer types. This header makes available the `size_t` type name (7.19) and any <code>uint<i>N</i>_t</code> type names defined by the implementation (7.20).
 </div>
 </div>
 </ins>
@@ -445,7 +445,7 @@ The enumeration type is
 > stdc_endian
 > ```
 
-whose corresponding enumeration constants are listed below.
+which is both a typedef name and a tag name, whose corresponding enumeration constants are listed below.
 </div>
 
 <div class="wording-numbered">
@@ -489,7 +489,6 @@ which represents the method of byte order storage for the execution environment.
 
 > ```cpp
 > #include <stdbit.h>
-> #include <stddef.h>
 >
 > void stdc_mem_byteswap(size_t n, unsigned char ptr[static n]);
 > ```
@@ -510,7 +509,6 @@ The `stdc_mem_byteswap` function provides an interface to reverse the order of a
 
 > ```cpp
 > #include <stdbit.h>
-> #include <stdint.h>
 >
 > uintN_t stdc_byteswapuN(uintN_t value);
 > ```
@@ -544,7 +542,6 @@ Returns a byte swapped <code>uint<i>N</i>_t</code> value.
 
 > ```cpp
 > #include <stdbit.h>
-> #include <stdint.h>
 >
 > uintN_t stdc_load_leuN(unsigned char const ptr[static sizeof(uintN_t)]);
 > uintN_t stdc_load_beuN(unsigned char const ptr[static sizeof(uintN_t)]);
@@ -570,7 +567,6 @@ The <code>stdc_load_le<i>N</i></code> and <code>stdc_load_be<i>N</i></code> func
 
 > ```cpp
 > #include <stdbit.h>
-> #include <stdint.h>
 >
 > void stdc_store_leuN(uintN_t value, unsigned char ptr[static sizeof(uintN_t)]);
 > void stdc_store_beuN(uintN_t value, unsigned char ptr[static sizeof(uintN_t)]);
@@ -904,6 +900,14 @@ The `stdc_bit_ceil` functions return the smallest integral power of 2 that is no
 
 <blockquote>
 <p><ins>— The value of `stdc_endian_native` and `__STDC_ENDIAN_NATIVE__` if the execution environment is not big-endian or little-endian (7.3�x.1).</ins></p>
+</blockquote>
+
+
+
+## Add a new bullet point at the top for globally-reserved macro and library names to §7.1.3 "Reserved Identifiers, paragraph 1. ## {#wording-7.1.3p1}
+
+<blockquote>
+<p><ins>— All identifiers beginning with `__STDC_` and all functions starting with `stdc_` are reserved for future use.</ins></p>
 </blockquote>
 
 
