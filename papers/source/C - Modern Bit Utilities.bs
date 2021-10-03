@@ -42,7 +42,7 @@ There is a lot of proposals and work that goes into figuring out the "byte order
 
 In more legacy architectures (Honeywell, PDP), there also exists other orientations called "mixed" or "middle" endian. The uses of such endianness are of dubious benefit and are vanishingly rare amongst commodity and readily available hardware today, but nevertheless still represent an applicable ordering of octets.
 
-In other related programming interfaces, the C functions/macros `ntoh` ("network to host") and `hton` ("host to network") (usually suffixed with `l` or `ul` or others to specify which native data type it was being performed on such as `long`) were used to change the byte order of a value and returned that value ([[ntohl]]). This became such a common operation that many compilers - among them Clang and GCC - optimized the code down to use an intrinsic `__builtin_bytewap(...)`/`__builtin_bswap(...)` ([[msvc-builtins|for MSVC]], [[clang-builtins|for Clang]], and [[gcc-builtins|for GCC]]). These intrinsics often compiled into binary code representing cheap, simple, and fast byte swapping instructions available on many CPUs for 16, 32, 64, and sometimes 128 bit numbers. The `bswap`/`byteswap` intrinsics were used as the fundamental underpinning for the `ntoh` and `hton` functions, where a check for the translation-time endianness of the program determined if the byte order would be flipped or not.
+In other related programming interfaces, the C functions/macros `ntoh` ("network to host") and `hton` ("host to network") (usually suffixed with `l` or `ul` or others to specify which native data type it was being performed on such as `long`) were used to change the byte order of a value ([[ntohl]]). This became such a common operation that many compilers - among them Clang and GCC - optimized the code down to use an intrinsic `__builtin_bytewap(...)`/`__builtin_bswap(...)` ([[msvc-builtins|for MSVC]], [[clang-builtins|for Clang]], and [[gcc-builtins|for GCC]]). These intrinsics often compiled into binary code representing cheap, simple, and fast byte swapping instructions available on many CPUs for 16, 32, 64, and sometimes 128 bit numbers. The `bswap`/`byteswap` intrinsics were used as the fundamental underpinning for the `ntoh` and `hton` functions, where a check for the translation-time endianness of the program determined if the byte order would be flipped or not.
 
 This proposal puts forth the fundamentals that make a homegrown implementation of `htonl`, `ntoh`, and other endianness-based functions possible in Standard C code. It also addresses many of the compiler-based intrinsics found to generate efficient machine code, with a few simpler utilities layered on top of it.
 
@@ -51,14 +51,14 @@ This proposal puts forth the fundamentals that make a homegrown implementation o
 
 # Design # {#design}
 
-This is a library addition. It is meant to expose both macros and enumeration values that can be used for both translation-time checks and for execution-time runs. It provides a way to check if the endianness within the preprocessor, and gives definitive names that allow for knowing whether the endianness is big, little, or neither. We state big, little, or neither, because there is no settled-upon name for the legacy endianness of "middle" or "mixed", nor any agreed upon ordering for such a "middle" or "mixed" endianness between architectures. This is not the case for big endian or little endian, where one is simply the reverse of the other, always, in every case, across architectures, file protocols, and network specifications.
+This is a library addition. It is meant to expose both macros and enumeration values that can be used for both translation-time checks and for execution-time argument for endianness. It provides a way to check the endianness within the preprocessor, and gives definitive names that allow for knowing whether the endianness is big, little, or neither. We state big, little, or neither, because there is no settled-upon name for the legacy endianness of "middle" or "mixed", nor any agreed upon ordering for such a "middle" or "mixed" endianness between architectures. This is not the case for big endian or little endian, where one is simply the reverse of the other, always, in every case, across architectures, file protocols, and network specifications.
 
-This design also provides a small but essential suite of utilities, all within the `#include <stdbit.h>` header.
+This design also provides a small but essential suite of bit utilities, all within the `#include <stdbit.h>` header.
 
 
 ## Preliminary: Why the `stdc_` prefix? ## {#design-stdc}
 
-We use the `stdc_` prefix for these functions so that we do not have to struggle with taking common words away from the end user. Because we now have 31 bytes of linker name significance, we can afford to have some sort of prefix rather than spend all of our time carving out reserved words or header-specific extensions. This will let us have good names that very clearly map to industry practice, without completely replacing or forcing compatible with existing code that already has taken the name with sometimes-conflict argument conventions.
+We use the `stdc_` prefix for these functions so that we do not have to struggle with taking common words away from the end user. Because we now have 31 bytes of linker name significance, we can afford to have some sort of prefix rather than spend all of our time carving out reserved words or header-specific extensions. This will let us have good names that very clearly map to industry practice, without replacing industry code or being forced to be compatible with existing code that already has taken the name with sometimes-conflicting argument conventions.
 
 
 
@@ -69,8 +69,8 @@ The enumeration is specified as follows:
 ```cpp
 #include <stdbit.h>
 
-#define __STDC_ENDIAN_LITTLE__ 1 /* some unique value */
-#define __STDC_ENDIAN_BIG__ 2 /* some other unique value */
+#define __STDC_ENDIAN_LITTLE__ /* some unique value */
+#define __STDC_ENDIAN_BIG__ /* some other unique value */
 #define __STDC_ENDIAN_NATIVE__ /* see below! */
 
 typedef enum stdc_endian {
@@ -103,7 +103,7 @@ int main () {
 
 If a user has a Honeywell architecture or a PDP architecture, it is up to them to figure out which flavor of "middle endian"/"mixed endian"/"bi endian" they are utilizing. We do not give these a name in the enumeration because neither the Honeywell or PDP communities ever figured out which flavor of the 32-bit byte order of `2341`/`3412`/`2143`/etc. was strongly assigned to which name ("mixed" endian? "mixed-big" endian? "bi-little" endian?), and since this is not a settled matter in existing practice we do not provide a name for it in the C Standard. It is also of dubious determination what the byte order for a 3-byte, 5-byte, 6-byte, or 7-byte integer is in these mixed-endian types, whereas both big and little have dependable orderings.
 
-These same enumerations come from the (accepted) C++20 paper and idioms found in [[p0463]], which also went into a `<bit>` header.
+These same enumerations come from the (accepted) C++20 paper and idioms found in [[p0463]], which also went into a `<bit>` header. Similar ideas are also present in libraries such as [[libcork-byte-order]], which are hybrid C and C++ libraries that give definitions similar to the ones here. Compilers also define macros such as `__BYTE_ORDER__` (Clang/GCC family), or are well-defined to be a certain endianness (Windows is always little-endian).
 
 
 
@@ -111,13 +111,15 @@ These same enumerations come from the (accepted) C++20 paper and idioms found in
 
 This is beyond the scope of this proposal. This is meant to capture the translation-time endianness. There also does not appear to be any operating system written today that can tolerate an endianness change happening arbitrarily at runtime, after a program has launched. This means that the property is effectively a translation-time property, and therefore can be exposed as a compile-time constant. A future proposal to determine the run-time byte order is more than welcome from someone who has suitable experience dealing with such architectures and programs, and this proposal does not preclude their ability to provide such a run-time function e.g. `stdc_endian get_execution_endian(void);`.
 
+Certain instruction sets have ways to set the endianness of registers, to change how data is accessed ([[arm-setend]]). This functionality is covered by byte swapping, and byteswaps can be implemented using the `SETEND` instruction plus an access. (The compiler would have to remember to unwind the endian state back to its original value, however, or risk contaminating the entire program and breaking things.)
+
 
 
 ## Floating Point has a Byte Order, Too. ## {#design-floating}
 
 For the design of this paper, we strictly consider the design space for (unsigned) integers, only. Floating point numbers already have an implementation-defined byte order, and none of these functions are meant to interact with the floating point types. While the `stdc_memreverse` function can work on any memory region, which includes any structure, scalar, or similar type with or without padding bits, the function just swaps bytes. Nothing needs to be said about padding bits in this case, since the operation is well-defined in all cases.
 
-The `stdc_store_*` and `stdc_load_*` functions are strictly for exact-width unsigned integers, which already have blanket-wording which states that these types have no padding bits. Therefore, we do not have to address the idea that certain built-in integer types may have padding bits that do not participate in the value representation. To emphasize this, the functions have a trailing `u` before the *`N`* bit count for the exact-width integer functions. In the future, if implementations settle on how bytes can be swapped and stores can be done for floating point numbers or other non-padded structures, a separate proposal can help move that along.
+The `stdc_store_*` and `stdc_load_*` functions are strictly for exact-width unsigned integers, which already have blanket-wording which states that these types have no padding bits. Therefore, we do not have to address the idea that certain built-in integer types may have padding bits that do not participate in the value representation. To emphasize this, the functions have a trailing `u` before the *`N`* bit count for the exact-width integer functions. In the future, if implementations settle on how bytes can be swapped and stores can be done for floating point numbers or other padded structures, a separate proposal can help move that along.
 
 It shall be noted that for C++, since C++20, it's endian enumeration applies to all scalar types:
 
@@ -181,10 +183,10 @@ The specification for the endianness functions borrows from many different sourc
 ```cpp
 #include <stdbit.h>
 
-void stdc_store_leN(uintN_t value, unsigned char ptr[static sizeof(value)]);
-uintN_t stdc_load_leN(const unsigned char ptr[static sizeof(value)]);
+void stdc_store_leuN(uintN_t value, unsigned char ptr[static sizeof(value)]);
+uintN_t stdc_load_leuN(const unsigned char ptr[static sizeof(value)]);
 void stdc_store_beN(uintN_t value, unsigned char ptr[static sizeof(value)]);
-uintN_t stdc_load_beN(const unsigned char ptr[static sizeof(value)]);
+uintN_t stdc_load_beuN(const unsigned char ptr[static sizeof(value)]);
 ```
 
 Note that this specification only exists for `N` types, similarly to the `stdc_byteswapN` functions. This is because the endianness need only be well-defined for exact-width types that contain no padding. Every other integer type in the C Standard does not have to be the advertised size, nor does it have to have no padding bits. This is unfortunate, but the only way we can preserve portable behavior amongst programs. The ultimate goal of these functions is portable behavior across implementations. Those relying on implementation-specific magic can continue to do so; this just makes a (very large) portion of serialization and deserialization work much more accessible and standard, without the risk of forgetting to properly check endianness. These functions do, of course, take into account the execution environment's endianness, and therefore are suitable for the task at hand. This includes serializing bytes into `ptr` without first doing a byteswap when the endianness of `value` and the specified `be`/`le` endianness match.
@@ -243,24 +245,26 @@ It covers all of the built-in unsigned integer types. The type-generic macro sup
 ```cpp
 #include <stdbit.h>
 
-unsigned char stdc_rotate_leftuc(unsigned char value, int count);
-unsigned short stdc_rotate_leftus(unsigned short value, int count);
-unsigned int stdc_rotate_leftui(unsigned int value, int count);
-unsigned long stdc_rotate_leftul(unsigned long value, int count);
-unsigned long long stdc_rotate_leftull(unsigned long long value, int count);
+unsigned char stdc_rotate_leftuc(unsigned char value, unsigned int count);
+unsigned short stdc_rotate_leftus(unsigned short value, unsigned int count);
+unsigned int stdc_rotate_leftui(unsigned int value, unsigned int count);
+unsigned long stdc_rotate_leftul(unsigned long value, unsigned int count);
+unsigned long long stdc_rotate_leftull(unsigned long long value, unsigned int count);
 
-unsigned char stdc_rotate_rightuc(unsigned char value, int count);
-unsigned short stdc_rotate_rightus(unsigned short value, int count);
-unsigned int stdc_rotate_rightui(unsigned int value, int count);
-unsigned long stdc_rotate_rightul(unsigned long value, int count);
-unsigned long long stdc_rotate_rightull(unsigned long long value, int count);
+unsigned char stdc_rotate_rightuc(unsigned char value, unsigned int count);
+unsigned short stdc_rotate_rightus(unsigned short value, unsigned int count);
+unsigned int stdc_rotate_rightui(unsigned int value, unsigned int count);
+unsigned long stdc_rotate_rightul(unsigned long value, unsigned int count);
+unsigned long long stdc_rotate_rightull(unsigned long long value, unsigned int count);
 
 // type-generic macro
-generic_integer_type stdc_rotate_left(generic_integer_type value, int count);
-generic_integer_type stdc_rotate_right(generic_integer_type value, int count);
+generic_integer_type stdc_rotate_left(generic_integer_type value, unsigned int count);
+generic_integer_type stdc_rotate_right(generic_integer_type value, unsigned int count);
 ```
 
-They cover all of the built-in unsigned integer types. Note that `count` is a signed integer: if `stdc_rotate_leftuc(1, -1)` or `stdc_rotate_rightuc(1, -1)` is called, it will call itself again with `stdc_rotate_leftuc(value, -count)` or `stdc_rotate_rightuc(value, -count)`. This matches the behavior from C++ and avoids undefined behavior, while also avoiding too-large shift errors from signed-to-unsigned conversions.
+They cover all of the built-in unsigned integer types. Note that `count` is a signed integer! If (e.g.) `stdc_rotate_leftuc(1, -1)` is called, it will call itself again with `stdc_rotate_rightuc(value, -count)`; if (e.g.) `stdc_rotate_rightuc(1, -1)` is called, it will call itself again with `stdc_rotate_leftuc(value, -count)`. This matches the behavior from C++ and avoids undefined behavior, while also avoiding too-large shift errors from signed-to-unsigned conversions.
+
+SDCC and several other compilers optimize for left and right shifts ([[sdcc]]). Texas Instruments and a handful of other specialist architectures also have "variable shift" instructions (SSHVL), which uses the sign of the argument to shift in one direction or the other ([[ti-tms320c64x]]). Having a `rotate_left` where the a negative number produces the opposite `rotate_right` cyclic operation (and vice-versa) means that both of these architectures can optimize efficiently in the case of hardcoded constants, and still produce well-defined behavior otherwise (`SSHVL` instructions just deploy a "negated by default" for the count value or not, depending on whether the `left` or `right` variant is called, other architectures propagate the information to shift left or right.)
 
 
 ### `leading_zeroes`, `leading_ones`, `trailing_zeroes`, and `trailing_ones` ### {#design-bit-leading.trailing.zeroes.ones}
@@ -408,20 +412,20 @@ The header `<stdbit.h>` defines the following macros and enumeration constants, 
 <p><b>7.3�x.1 Endian</b/</p>
 <div class="wording-section">
 <div class="wording-numbered">
-Two common methods of byte ordering in multi-byte scalar types are <b>big-endian</b> and <b>little-endian</b>. Big-endian is a format for storage of binary data in which the most significant byte is placed first, with the rest in descending order. Little-endian is a format for storage or transmission of binary data in which the least significant byte is placed first, with the rest in ascending order. Other byte orderings are also possible. Declarations and definitions in 7.3�x, a suffix containing `le` typically represents little endian. A suffix containing `be` typically represents *big-endian*. This clause describes the endianness of the execution environment with respect to standard and extended integer types without padding bits.
+Two common methods of byte ordering in multi-byte scalar types are <b>big-endian</b> and <b>little-endian</b>. Big-endian is a format for storage of binary data in which the least significant byte is placed first, with the rest in ascending order. Little-endian is a format for storage or transmission of binary data in which the most significant byte is placed first, with the rest in descending order. Other byte orderings are also possible. Declarations and definitions in 7.3�x, a suffix containing `le` typically represents little endian. A suffix containing `be` typically represents *big-endian*. This clause describes the endianness of the execution environment with respect to standard and extended integer types without padding bits.
 </div>
 
 <div class="wording-numbered">
 The macros are:
 
 > ```cpp
-> __STDC_ENDIAN_LITTLE__ 1
+> __STDC_ENDIAN_LITTLE__
 > ```
 
 which represents a method of byte order storage least significant byte is placed first, and the rest are in ascending order is suitable for use in an `#if` preprocessing directive;
 
 > ```cpp
-> __STDC_ENDIAN_BIG__ 2
+> __STDC_ENDIAN_BIG__
 > ```
 
 which represents a method of byte order storage most significant byte is placed first, and the rest are in descending order is suitable for use in an `#if` preprocessing directive;
@@ -549,9 +553,9 @@ Returns a byte swapped <code>uint<i>N</i>_t</code> `value`, as if by invoking `s
 </div>
 
 <p><b>Description</b/</p>
-<div class="wording-numbered">
+<div class="wording-numbered>
 
-The <code>stdc_load_le<i>N</i></code> and <code>stdc_load_be<i>N</i></code> functions return a <code>uint<i>N</i>_t</code> object by loading bytes from `ptr` in an endian-aware (7.3�x.1) manner, where <i>N</i> matches an existing exact-width integer type (7.20.1.1). These functions are optional. However, if an implementation provides the corresponding <code>uint<i>N</i>_t</code> typedef (7.20.1.1), it shall define the corresponding exact-width endian-aware load functions.
+The <code>stdc_load_leu<i>N</i></code> and <code>stdc_load_beu<i>N</i></code> functions return a <code>uint<i>N</i>_t</code> object by loading bytes from `ptr` in an endian-aware (7.3�x.1) manner, where <i>N</i> matches an existing exact-width integer type (7.20.1.1). These functions are optional. However, if an implementation provides the corresponding <code>uint<i>N</i>_t</code> typedef (7.20.1.1), it shall define the corresponding exact-width endian-aware load functions.
 </div>
 
 <p><b>Returns</b/</p>
@@ -712,11 +716,10 @@ The `stdc_rotate_left` functions perform a bitwise rotate left. This operation i
 Let N be the value of the `_WIDTH` macros in `<limits.h>` (5.2.4.2.1) corresponding to the type of the input `value`. Let r be `count % N`.
 <dl>
 	<dd>— If r is 0, returns `value`;</dd>
-	<dd>— Otherwise, if r is positive, returns `(value << r) | (value >> (N - r))`;</dd>
-	<dd>— Otherwise, if r is negative, returns `stdc_rotate_left(value, -r)`.</dd>
+	<dd>— otherwise, returns `(value << r) | (value >> (N - r))`.</dd>
 </dl>
 
-The last symbol is a pseudo-symbol representing a type-generic macro which returns the above described result for a given input value so long as its type is an unsigned integer type (standard or extended).
+The last symbol is a pseudo-symbol representing a type-generic macro which returns the above described result for a given input value so long as the `generic_integer_type` is an unsigned integer type (standard or extended).
 </div>
 </div>
 
@@ -727,13 +730,13 @@ The last symbol is a pseudo-symbol representing a type-generic macro which retur
 <div class="wording-numbered">
 
 > ```cpp
-> unsigned char stdc_rotate_rightuc(unsigned char value, int count);
-> unsigned short stdc_rotate_rightus(unsigned short value, int count);
-> unsigned int stdc_rotate_rightui(unsigned int value, int count);
-> unsigned long stdc_rotate_rightul(unsigned long value, int count);
-> unsigned long long stdc_rotate_rightull(unsigned long long value, int count);
+> unsigned char stdc_rotate_rightuc(unsigned char value, unsigned int count);
+> unsigned short stdc_rotate_rightus(unsigned short value, unsigned int count);
+> unsigned int stdc_rotate_rightui(unsigned int value, unsigned int count);
+> unsigned long stdc_rotate_rightul(unsigned long value, unsigned int count);
+> unsigned long long stdc_rotate_rightull(unsigned long long value, unsigned int count);
 > 
-> generic_integer_type stdc_rotate_right(generic_integer_type value, int count);
+> generic_integer_type stdc_rotate_right(generic_integer_type value, unsigned int count);
 > ```
 </div>
 
@@ -747,11 +750,10 @@ The `stdc_rotate_right` functions perform a bitwise rotate right. This operation
 Let N be the value of the `_WIDTH` macros in `<limits.h>` (5.2.4.2.1) corresponding to the type of the input `value`. Let r be `count % N`.
 <dl>
 	<dd>— If r is 0, returns `value`;</dd>
-	<dd>— Otherwise, if r is positive, returns `(value >> r) | (value << (N - r))`;</dd>
-	<dd>— Otherwise, if r is negative, returns `stdc_rotate_right(value, -r)`.</dd>
+	<dd>— otherwise, if r is positive, returns `(value >> r) | (value << (N - r))`;</dd>
 </dl>
 
-The last symbol is a pseudo-symbol representing a type-generic macro which returns the above described result for a given input value so long as its type is an unsigned integer type (standard or extended).
+The last symbol is a pseudo-symbol representing a type-generic macro which returns the above described result for a given input value so long as the `generic_integer_type` is an unsigned integer type (standard or extended).
 </div>
 </div>
 
@@ -774,7 +776,7 @@ The last symbol is a pseudo-symbol representing a type-generic macro which retur
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-The `stdc_popcount` functions returns the total number of 1 bits within the given `value`. The last symbol is a pseudo-symbol representing a type-generic macro which returns the previously described result for a given input value so long as its type is an unsigned integer type (standard or extended).
+The `stdc_popcount` functions returns the total number of 1 bits within the given `value`. The last symbol is a pseudo-symbol representing a type-generic macro which returns the previously described result for a given input value so long as the `generic_integer_type` is an unsigned integer type (standard or extended).
 </div>
 </div>
 </ins>
@@ -804,7 +806,7 @@ The `stdc_popcount` functions returns the total number of 1 bits within the give
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-The `stdc_has_single_bit` functions returns the total number of 1 bits within the given `value`. The last symbol is a pseudo-symbol representing a type-generic macro which returns the previously described result for a given input value so long as its type is an unsigned integer type (standard or extended).
+The `stdc_has_single_bit` functions returns the total number of 1 bits within the given `value`. The last symbol is a pseudo-symbol representing a type-generic macro which returns the previously described result for a given input value so long as the `generic_integer_type` is an unsigned integer type (standard or extended).
 </div>
 </div>
 
@@ -832,7 +834,7 @@ The `stdc_bit_width` functions compute the smallest number of bits needed to sto
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-The `stdc_bit_width` functions return 0 if `value` is 0. Otherwise, they return <code>1 + ⌊log<sub>2</sub>(value)⌋</code>. The last symbol is a pseudo-symbol representing a type-generic macro which returns the previously described result for a given input value so long as its type is an unsigned integer type (standard or extended).
+The `stdc_bit_width` functions return 0 if `value` is 0. Otherwise, they return <code>1 + ⌊log<sub>2</sub>(value)⌋</code>. The last symbol is a pseudo-symbol representing a type-generic macro which returns the previously described result for a given input value so long as the `generic_integer_type` is an unsigned integer type (standard or extended).
 </div>
 </div>
 
@@ -860,7 +862,7 @@ The `stdc_bit_floor` functions compute the largest integral power of 2 that is n
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-The `stdc_bit_floor` functions return 0 if `value` is 0. Otherwise, they return the largest integral power of 2 that is not greater than `value`. The last symbol is a pseudo-symbol representing a type-generic macro which returns the previously described result for a given input value so long as its type is an unsigned integer type (standard or extended).
+The `stdc_bit_floor` functions return 0 if `value` is 0. Otherwise, they return the largest integral power of 2 that is not greater than `value`. The last symbol is a pseudo-symbol representing a type-generic macro which returns the previously described result for a given input value so long as the `generic_integer_type` is an unsigned integer type (standard or extended).
 </div>
 </div>
 
@@ -888,7 +890,7 @@ The `stdc_bit_ceil` functions compute the smallest integral power of 2 that is n
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-The `stdc_bit_ceil` functions return the smallest integral power of 2 that is not less than `value`. The last symbol is a pseudo-symbol representing a type-generic macro which returns the previously described result for a given input value so long as its type is an unsigned integer type (standard or extended).
+The `stdc_bit_ceil` functions return the smallest integral power of 2 that is not less than `value`. The last symbol is a pseudo-symbol representing a type-generic macro which returns the previously described result for a given input value so long as the `generic_integer_type` is an unsigned integer type (standard or extended).
 </div>
 </div>
 </ins>
@@ -907,7 +909,7 @@ The `stdc_bit_ceil` functions return the smallest integral power of 2 that is no
 ## Add a new bullet point at the top for globally-reserved macro and library names to §7.1.3 "Reserved Identifiers, paragraph 1. ## {#wording-7.1.3p1}
 
 <blockquote>
-<p><ins>— All identifiers beginning with `__STDC_` and all functions starting with `stdc_` are reserved for future use.</ins></p>
+<p><ins>— All identifiers starting with `stdc_` are reserved for future use.</ins></p>
 </blockquote>
 
 
@@ -1055,6 +1057,15 @@ int main () {
 		"href": "https://github.com/SoapGentoo/portable-endianness",
 		"date": "May 16th, 2021"
 	},
+	"libcork-byte-order": {
+		"authors": [
+			"Douglas Creager"
+		],
+		"title": "libcork: Byte order",
+		"publisher": "Redjack, LLV",
+		"href": "https://libcork.io/0.15.0/byte-order.html",
+		"date": "November 22nd, 2017"
+	},
 	"linux-endian": {
 		"authors": [
 			"Linux",
@@ -1091,6 +1102,33 @@ int main () {
 		"publisher": "ISO/IEC JTC1 SC22 WG21 - Programming Language, C++",
 		"href": "https://wg21.link/p0463",
 		"date": "July 13th, 2017"
+	},
+	"arm-setend": {
+		"authors": [
+			"armKEIL"
+		],
+		"title": "SETEND instruction: ARM and Thumb instructions",
+		"publisher": "armKEIL",
+		"href": "https://www.keil.com/support/man/docs/armasm/armasm_dom1361289895072.htm",
+		"date": "December 31st, 2019"
+	},
+	"ti-tms320c64x": {
+		"authors": [
+			"Texas Instruments"
+		],
+		"title": "TMS320C64x/C64x+ DSP: CPU and Instruction Set",
+		"publisher": "Texas Instruments",
+		"href": "https://www.ti.com/lit/ug/spru732j/spru732j.pdf",
+		"date": "July 31st, 2010"
+	},
+	"sdcc": {
+		"authors": [
+			"Dr. Philipp K. Krause"
+		],
+		"title": "SDCC Manual §8.1.9 - Bit Rotations",
+		"publisher": "SourceForge",
+		"href": "http://sdcc.sourceforge.net/doc/sdccman.pdf",
+		"date": "September 25th, 2021"
 	}
 }
 </pre>
