@@ -10,7 +10,7 @@ Group: WG14
 !Target: General Developers
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Moder%20Bit%20Utilities.html
-!Paper Source: <a href="https://github.com/ThePhD/future_cxx/tree/main/papers/source/C%20-%20EModern%20Bit%20Utilities.bs">GitHub</a>
+!Paper Source: <a href="https://github.com/ThePhD/future_cxx/blob/main/papers/source/C%20-%20Modern%20Bit%20Utilities.bs">GitHub</a>
 Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
 Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
 Markup Shorthands: markdown yes
@@ -115,7 +115,7 @@ This is beyond the scope of this proposal. This is meant to capture the translat
 
 ## Floating Point has a Byte Order, Too. ## {#design-floating}
 
-For the design of this paper, we strictly consider the design space for (unsigned) integers, only. Floating point numbers already have an implementation-defined byte order, and none of these functions are meant to interact with the floating point types. While the `stdc_mem_byteswap` function can work on any memory region, which includes any structure, scalar, or similar type with or without padding bits, the function just swaps bytes. Nothing needs to be said about padding bits in this case, since the operation is well-defined in all cases.
+For the design of this paper, we strictly consider the design space for (unsigned) integers, only. Floating point numbers already have an implementation-defined byte order, and none of these functions are meant to interact with the floating point types. While the `stdc_memreverse` function can work on any memory region, which includes any structure, scalar, or similar type with or without padding bits, the function just swaps bytes. Nothing needs to be said about padding bits in this case, since the operation is well-defined in all cases.
 
 The `stdc_store_*` and `stdc_load_*` functions are strictly for exact-width unsigned integers, which already have blanket-wording which states that these types have no padding bits. Therefore, we do not have to address the idea that certain built-in integer types may have padding bits that do not participate in the value representation. To emphasize this, the functions have a trailing `u` before the *`N`* bit count for the exact-width integer functions. In the future, if implementations settle on how bytes can be swapped and stores can be done for floating point numbers or other non-padded structures, a separate proposal can help move that along.
 
@@ -136,7 +136,7 @@ There are 2 choices on how to represent sized pointer arguments. The first is a 
 
 To start, we still put any `size` + `ptr` arguments in the proper "size first, pointer second" configuration so that implementation extensions which allow `void [static n]` can exist no matter what choice is made here. That part does not change. The `void*` argument convention mean that pointers to structures, or similar, can be passed to these functions without needing a cast. This represents the totality of the ease of use argument. The `unsigned char ptr[static n]` argument convention can produce both better compile-time safety and articulate requirements using purely the function declaration, without needing to look up prose from the C Standard or implementation documentation. The cost is that any use of the function will require a cast in strictly conforming code.
 
-One of the tipping arguments in favor of our choice of `unsigned char ptr[static n]` is that `void*` can be dangerous, especially since we still do not have a `nullptr` constant in the language and `0` can be used for both the size and the pointer argument. (Which is, very sadly, an actual bug that happens in existing code. Especially when users mix `memset` and `memcpy` calls and use the wrong `0` argument because of writing one and meaning the other, and copying values over a large part of their 0-pointer in their low-level driver code.) Using an `unsigned char*` (or its statically-sized array function argument form) means that usage of the functions below would require explicit casting on the part of the user. This is, in fact, the way it is presented in [[portable-endianness]]: as far as existing practice is concerned, users of the code would rather cast and preserve safety rather than easily use something like `stdc_mem_byteswap` with the guts of their structure.
+One of the tipping arguments in favor of our choice of `unsigned char ptr[static n]` is that `void*` can be dangerous, especially since we still do not have a `nullptr` constant in the language and `0` can be used for both the size and the pointer argument. (Which is, very sadly, an actual bug that happens in existing code. Especially when users mix `memset` and `memcpy` calls and use the wrong `0` argument because of writing one and meaning the other, and copying values over a large part of their 0-pointer in their low-level driver code.) Using an `unsigned char*` (or its statically-sized array function argument form) means that usage of the functions below would require explicit casting on the part of the user. This is, in fact, the way it is presented in [[portable-endianness]]: as far as existing practice is concerned, users of the code would rather cast and preserve safety rather than easily use something like `stdc_memreverse` with the guts of their structure.
 
 
 
@@ -153,7 +153,7 @@ These end up inhabiting the `stdbit.h` header and have the following interface:
 ```cpp
 #include <stdbit.h>
 
-void stdc_mem_byteswap(size_t n, unsigned char ptr[static n]);
+void stdc_memreverse(size_t n, unsigned char ptr[static n]);
 uintN_t stdc_byteswapN(uintN_t value);
 ```
 
@@ -490,14 +490,14 @@ which represents the method of byte order storage for the execution environment.
 > ```cpp
 > #include <stdbit.h>
 >
-> void stdc_mem_byteswap(size_t n, unsigned char ptr[static n]);
+> void stdc_memreverse(size_t n, unsigned char ptr[static n]);
 > ```
 </div>
 
 <p><b>Description</b/</p>
 <div class="wording-numbered">
 
-The `stdc_mem_byteswap` function provides an interface to reverse the order of a given sequence of bytes. `ptr` must be a pointer to an object of at least `n` bytes. If `n` is less than or equal to `1`, then the function has no effect. Otherwise, let `R` represent the byte sequence represented by `ptr` and `n` in reverse order. Each byte's value is exchanged with the value in its corresponding reverse position in `R`.
+The `stdc_memreverse` function provides an interface to reverse the order of a given sequence of bytes. `ptr` must be a pointer to an object of at least `n` bytes. If `n` is less than or equal to `1`, then the function has no effect. Otherwise, let `R` represent the byte sequence represented by `ptr` and `n` in reverse order. Each byte's value is exchanged with the value in its corresponding reverse position in `R`.
 </div>
 </div>
 
@@ -517,13 +517,13 @@ The `stdc_mem_byteswap` function provides an interface to reverse the order of a
 <p><b>Description</b/</p>
 <div class="wording-numbered">
 
-The <code>stdc_mem_byteswap<i>N</i></code> functions provide an interface to swap the bytes of a corresponding <code>uint<i>N</i>_t</code> object, where <i>N</i> matches an existing exact-width integer type (7.20.1.1). These functions are optional. However, if an implementation provides the corresponding <code>uint<i>N</i>_t</code> typedef (7.20.1.1), it shall define the corresponding exact-width byte swap functions.
+The <code>stdc_memreverse<i>N</i></code> functions provide an interface to swap the bytes of a corresponding <code>uint<i>N</i>_t</code> object, where <i>N</i> matches an existing exact-width integer type (7.20.1.1). These functions are optional. However, if an implementation provides the corresponding <code>uint<i>N</i>_t</code> typedef (7.20.1.1), it shall define the corresponding exact-width byte swap functions.
 </div>
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
 
-Returns a byte swapped <code>uint<i>N</i>_t</code> value.
+Returns a byte swapped <code>uint<i>N</i>_t</code> `value`, as if by invoking `stdc_memreverse(sizeof(value), (unsigned char*)&value)`.
 </div>
 </div>
 </ins>
