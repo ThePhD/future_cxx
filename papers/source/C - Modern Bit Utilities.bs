@@ -1,6 +1,6 @@
 <pre class='metadata'>
 Title: Modern Bit Utilities
-Shortname: 28XX
+Shortname: 2827
 Revision: 0
 !Previous Revisions: None
 Status: P
@@ -56,9 +56,20 @@ This is a library addition. It is meant to expose both macros and enumeration va
 This design also provides a small but essential suite of bit utilities, all within the `#include <stdbit.h>` header.
 
 
+
 ## Preliminary: Why the `stdc_` prefix? ## {#design-stdc}
 
 We use the `stdc_` prefix for these functions so that we do not have to struggle with taking common words away from the end user. Because we now have 31 bytes of linker name significance, we can afford to have some sort of prefix rather than spend all of our time carving out reserved words or header-specific extensions. This will let us have good names that very clearly map to industry practice, without replacing industry code or being forced to be compatible with existing code that already has taken the name with sometimes-conflicting argument conventions.
+
+
+
+## Charter: `unsigned char const ptr[static sizeof(uintN_t)]` and More? ## {#design-static.size}
+
+There are 2 choices on how to represent sized pointer arguments. The first is a `void* ptr` convention for functions arguments in this proposal. The second is an `unsigned char ptr[static n]`/`unsigned char ptr[sizeof(uintN_t)]` convention.
+
+To start, we still put any `size` + `ptr` arguments in the proper "size first, pointer second" configuration so that implementation extensions which allow `void [static n]` can exist no matter what choice is made here. That part does not change. The `void*` argument convention mean that pointers to structures, or similar, can be passed to these functions without needing a cast. This represents the totality of the ease of use argument. The `unsigned char ptr[static n]` argument convention can produce both better compile-time safety and articulate requirements using purely the function declaration, without needing to look up prose from the C Standard or implementation documentation. The cost is that any use of the function will require a cast in strictly conforming code.
+
+One of the tipping arguments in favor of our choice of `unsigned char ptr[static n]` is that `void*` can be dangerous, especially since we still do not have a `nullptr` constant in the language and `0` can be used for both the size and the pointer argument. (Which is, very sadly, an actual bug that happens in existing code. Especially when users mix `memset` and `memcpy` calls and use the wrong `0` argument because of writing one and meaning the other, and copying values over a large part of their 0-pointer in their low-level driver code.) Using an `unsigned char*` (or its statically-sized array function argument form) means that usage of the functions below would require explicit casting on the part of the user. This is, in fact, the way it is presented in [[portable-endianness]]: as far as existing practice is concerned, users of the code would rather cast and preserve safety rather than easily use something like `stdc_memreverse` with the guts of their structure.
 
 
 
@@ -105,21 +116,75 @@ If a user has a Honeywell architecture or a PDP architecture, it is up to them t
 
 These same enumerations come from the (accepted) C++20 paper and idioms found in [[p0463]], which also went into a `<bit>` header. Similar ideas are also present in libraries such as [[libcork-byte-order]], which are hybrid C and C++ libraries that give definitions similar to the ones here. Compilers also define macros such as `__BYTE_ORDER__` (Clang/GCC family), or are well-defined to be a certain endianness (Windows is always little-endian).
 
+The other portion of this is that providing an enumeration helps users pass this information along to functions. Users defining functions that take an endianness, without the enumeration, would define it as so:
+
+```cpp
+void my_conversion_unsafe(int endian, size_t data_size,
+	unsigned char data[static data_size]);
+```
+
+The name may specify that it is for an endian, but the range of values is not really known without looking at the documentation. It is also impossible for the compiler to diagnose problematic uses: calling `my_conversion(4595944, 4, ptr);` is legal, and compilers will not diagnose such a call as wrong. Now, consider the same with the enumeration:
+
+```cpp
+void my_conversion_safe(stdc_endian endian, size_t data_size,
+	unsigned char data[static data_size]);
+```
+
+This function call can get diagnosed in (some) implementations:
+
+```cpp
+#include <stddef.h>
+
+typedef enum stdc_endian {
+	stdc_endian_little = __ORDER_LITTLE_ENDIAN__,
+	stdc_endian_big = __ORDER_BIG_ENDIAN__,
+	stdc_endian_native = __BYTE_ORDER__,
+} stdc_endian;
+
+void my_conversion_unsafe(int endian, size_t n, unsigned char ptr[static n]) {}
+void my_conversion_safe(stdc_endian endian, size_t n, unsigned char ptr[static n]) {}
+
+int main () {
+	unsigned char arr[4];
+	my_conversion_unsafe(48558395, sizeof(arr), arr);
+	my_conversion_safe(48558395, sizeof(arr), arr);
+	//                 ^
+	// <source>:15:24: error: integer constant not in range 
+	// of enumerated type 'stdc_endian' (aka 'enum stdc_endian') [-Werror,-Wassign-enum]
+	my_conversion_unsafe((stdc_endian)48558395, sizeof(arr), arr);
+	my_conversion_safe((stdc_endian)48558395, sizeof(arr), arr);
+	return 0;
+}
+```
+
+(Current implementations do not diagnose it in the current landscape because such implicit conversions are, unfortunately, incredibly common, sometimes for good reason.)
 
 
-## Hey! Some Architectures Can Change Their Endianness at Run-time! ## {#design-run.time}
+### A (Brief) Discussion of Endianness ### {#design-enum-horrors}
+
+There is a LOT of design space and deployed existing practice in the endianness space of both architectures and their instruction sets. A non-exhaustive list of behaviors is as follows:
+
+- Instruction set, OS, and register conventions are in-sync (Windows, Apple, and most *Nix Distributions).
+- Instruction set has variability that can be toggled (ARM with the `SETEND` instruction).
+- Instruction set has no variability, but data can be stored in unconventional endianness (RISC-V, mainframe architectures, and similar).
+- Instruction set has no variability, but it changes endianness between types/sizes (FORTRAN-implemented floating point units used Big Endian, PDP-11 compatibility with those machines required 32-bit big-endian instructions on a little-endian machine (hilarity/shenanigans ensued)).
+- Instruction set has no variability, but historical weight forces certain choices (PDP-11 had 16-bit little-endian integers. Some folk interpreted two of them next to each other as a single 32-bit integer, resulting in the `2143` byte order).
+
+Suffice to say, there exists a lot of deployed practice. Note that this list effectively has these concerns in priority order. The first is the most conventional software; as the list goes down, each occurrence becomes more rare and less interesting. Therefore, we try not to spend too much time focusing on what are effectively the edge cases of software and hardware. Some of the past choices in endianness and similar were simply due "going with the flow" (PDP's "2143" order) or severe historical baggage (early FORTRAN dealing in big endian floating point numbers, and those algorithms and serialization methods being given to PDP machines without thinking about the ordering). With much of the industry moving away from such modes in both newer mainframes and architectures and towards newer implementations and architectures, it does not seem prudent to try to standardize the multitude of their behaviors.
+
+This proposal constraints its definition of endianness to integer types without padding, strictly because trying to capture the vast berth of existing architectures and their practices can quickly devolve down a slope that deeply convolutes this proposal's core mission: endian and bit utilities.
+
+
+### Hey! Some Architectures Can Change Their Endianness at Run-time! ### {#design-enum-run.time}
 
 This is beyond the scope of this proposal. This is meant to capture the translation-time endianness. There also does not appear to be any operating system written today that can tolerate an endianness change happening arbitrarily at runtime, after a program has launched. This means that the property is effectively a translation-time property, and therefore can be exposed as a compile-time constant. A future proposal to determine the run-time byte order is more than welcome from someone who has suitable experience dealing with such architectures and programs, and this proposal does not preclude their ability to provide such a run-time function e.g. `stdc_endian get_execution_endian(void);`.
 
-Certain instruction sets have ways to set the endianness of registers, to change how data is accessed ([[arm-setend]]). This functionality is covered by byte swapping, and byteswaps can be implemented using the `SETEND` instruction plus an access. (The compiler would have to remember to unwind the endian state back to its original value, however, or risk contaminating the entire program and breaking things.)
+Certain instruction sets have ways to set the endianness of registers, to change how data is accessed ([[arm-setend]]). This functionality is covered by byte swapping, and byte swaps can be implemented using the `SETEND` instruction plus an access. (The compiler would have to remember to unwind the endian state back to its original value, however, or risk contaminating the entire program and breaking things.)
 
 
-
-## Floating Point has a Byte Order, Too. ## {#design-floating}
+### Floating Point has a Byte Order, Too. ### {#design-enum-floating}
 
 For the design of this paper, we strictly consider the design space for (unsigned) integers, only. Floating point numbers already have an implementation-defined byte order, and none of these functions are meant to interact with the floating point types. While the `stdc_memreverse` function can work on any memory region, which includes any structure, scalar, or similar type with or without padding bits, the function just swaps bytes. Nothing needs to be said about padding bits in this case, since the operation is well-defined in all cases.
-
-The `stdc_store_*` and `stdc_load_*` functions are strictly for exact-width unsigned integers, which already have blanket-wording which states that these types have no padding bits. Therefore, we do not have to address the idea that certain built-in integer types may have padding bits that do not participate in the value representation. To emphasize this, the functions have a trailing `u` before the *`N`* bit count for the exact-width integer functions. In the future, if implementations settle on how bytes can be swapped and stores can be done for floating point numbers or other padded structures, a separate proposal can help move that along.
 
 It shall be noted that for C++, since C++20, it's endian enumeration applies to all scalar types:
 
@@ -127,28 +192,18 @@ It shall be noted that for C++, since C++20, it's endian enumeration applies to 
 >
 > — C++ Standard Working Draft, [bit.endian/p1](http://eel.is/c++draft/bit.endian#1)
 
-It does not specify what this means for padding bits or similar; nor, I think, does it have to. Byte order means very little for padding bits until serialization comes into play. C++ does not define any functions which do byte-order aware serialization. So, it does not have to write any specification governing what may or may not happen.
+It does not specify what this means for padding bits or similar; nor, I think, does it have to. Byte order means very little for padding bits until serialization comes into play. C++ does not define any functions which do byte-order aware serialization. So, it does not have to write any specification governing what may or may not happen and the left is rest undefined / unspecified.
 
 For this proposal, we focus purely on integer types and, more specifically, on integer types which do not have padding when we are defining the actual functions. While it is acknowledged that floating point types and pointers have byte orders too, we do not want to interact directly with these types when it comes to endianness load and store functions. Byte swaps, (bit) population counts, and other bit operations can be performed on floating point types after they have been copied or type-punned (with implementation checking/blessing) into equivalent unsigned integer objects to do the necessary work.
-
-
-### Charter: `unsigned char const ptr[static sizeof(uintN_t)]` and More? ### {#design-byteswap-static.size}
-
-There are 2 choices on how to represent sized pointer arguments. The first is a `void* ptr` convention for functions arguments in this proposal. The second is an `unsigned char ptr[static n]`/`unsigned char ptr[sizeof(uintN_t)]` convention.
-
-To start, we still put any `size` + `ptr` arguments in the proper "size first, pointer second" configuration so that implementation extensions which allow `void [static n]` can exist no matter what choice is made here. That part does not change. The `void*` argument convention mean that pointers to structures, or similar, can be passed to these functions without needing a cast. This represents the totality of the ease of use argument. The `unsigned char ptr[static n]` argument convention can produce both better compile-time safety and articulate requirements using purely the function declaration, without needing to look up prose from the C Standard or implementation documentation. The cost is that any use of the function will require a cast in strictly conforming code.
-
-One of the tipping arguments in favor of our choice of `unsigned char ptr[static n]` is that `void*` can be dangerous, especially since we still do not have a `nullptr` constant in the language and `0` can be used for both the size and the pointer argument. (Which is, very sadly, an actual bug that happens in existing code. Especially when users mix `memset` and `memcpy` calls and use the wrong `0` argument because of writing one and meaning the other, and copying values over a large part of their 0-pointer in their low-level driver code.) Using an `unsigned char*` (or its statically-sized array function argument form) means that usage of the functions below would require explicit casting on the part of the user. This is, in fact, the way it is presented in [[portable-endianness]]: as far as existing practice is concerned, users of the code would rather cast and preserve safety rather than easily use something like `stdc_memreverse` with the guts of their structure.
-
 
 
 
 ## Generic Byte Swap and Exact-width Byte Swap ## {#design-byteswap}
 
-In order to accommodate both a wide variety of architectures but also support exact-width integer optimized intrinsics, this proposal takes from the industry 2 forms of byteswap:
+In order to accommodate both a wide variety of architectures but also support minimum-width integer optimized intrinsics, this proposal takes from the industry 2 forms of byteswap:
 
 - one generic `mem_` version which takes a pointer and the number of bytes to perform a reverse operation; and,
-- a sequence of exact-width byte swapping instructions which map directly to intrinsics available in compilers and instructions in hardware.
+- a sequence of minimum-width byte swapping instructions which (typically) map directly to intrinsics available in compilers and instructions in hardware.
 
 These end up inhabiting the `stdbit.h` header and have the following interface:
 
@@ -156,10 +211,10 @@ These end up inhabiting the `stdbit.h` header and have the following interface:
 #include <stdbit.h>
 
 void stdc_memreverse(size_t n, unsigned char ptr[static n]);
-uintN_t stdc_byteswapN(uintN_t value);
+uintN_t stdc_byteswapuN(uintN_t value);
 ```
 
-where `N` is one of the exact-width integer types such as `8`, `24`, `16`, `32`, `64`, `128`, and others. This matches the builtins ([[msvc-builtins|MSVC]], [[clang-builtins|Clang]], [[gcc-builtins|GCC]]) and the result of compiler optimizations that produce instructions for many existing architectures as shown in the README of [[portable-endianness|this portable endianness function implementation]].
+where `N` is one of the minimum-width integer types such as `8`, `24`, `16`, `32`, `64`, `128`, and others. On most architectures, this matches the builtins ([[msvc-builtins|MSVC]], [[clang-builtins|Clang]], [[gcc-builtins|GCC]]) and the result of compiler optimizations that produce instructions for many existing architectures as shown in the README of [[portable-endianness|this portable endianness function implementation]]. In the case where the least functions are not equivalent to the exact-width integer types, the specification requires that it only works with `N` bits of the `uintN_t` type, so as to proscribe portable behavior in the face of vastly fluctuating architectures. However, for the case where `uintN_t` is not exactly `N` bits, it is implementation-defined WHICH bits are untouched/unused in the `uintN_t`,
 
 
 ### But Byte Swap Is Dangerous? ### {#design-byteswap-danger}
@@ -183,13 +238,13 @@ The specification for the endianness functions borrows from many different sourc
 ```cpp
 #include <stdbit.h>
 
-void stdc_store_leuN(uintN_t value, unsigned char ptr[static sizeof(value)]);
-uintN_t stdc_load_leuN(const unsigned char ptr[static sizeof(value)]);
-void stdc_store_beN(uintN_t value, unsigned char ptr[static sizeof(value)]);
-uintN_t stdc_load_beuN(const unsigned char ptr[static sizeof(value)]);
+void stdc_store_leuN(uint_leastN_t value, unsigned char ptr[static sizeof(value)]);
+void stdc_store_beN(uint_leastN_t value, unsigned char ptr[static sizeof(value)]);
+uint_leastN_t stdc_load_leuN(const unsigned char ptr[static sizeof(value)]);
+uint_leastN_t stdc_load_beuN(const unsigned char ptr[static sizeof(value)]);
 ```
 
-Note that this specification only exists for `N` types, similarly to the `stdc_byteswapN` functions. This is because the endianness need only be well-defined for exact-width types that contain no padding. Every other integer type in the C Standard does not have to be the advertised size, nor does it have to have no padding bits. This is unfortunate, but the only way we can preserve portable behavior amongst programs. The ultimate goal of these functions is portable behavior across implementations. Those relying on implementation-specific magic can continue to do so; this just makes a (very large) portion of serialization and deserialization work much more accessible and standard, without the risk of forgetting to properly check endianness. These functions do, of course, take into account the execution environment's endianness, and therefore are suitable for the task at hand. This includes serializing bytes into `ptr` without first doing a byteswap when the endianness of `value` and the specified `be`/`le` endianness match.
+This specification is marginally more complicated than the `stdc_byteswapuN` functions because they operate on `uint_leastN_t`, where `N` is the minimum-width bit value. These functions, on most normal implementations, will just fill in the exact number of 8, 16, 32, 64, etc. bits. But for Digital Signal Processors (DSPs), select embedded architectures, and many freestanding implementations, it is impossible to offer a `CHAR_BIT == 8` guarantee. For example, some Digital Signal Processors have `CHAR_BIT == 32`, and all of `uint_least8_t`, `uint_least16_t`, `uint_least24_t`, and `uint_least32_t` are all aliased to the same fundamental type. This function, therefore, specifies it works on 8 bit groupings, and uses masks/shifts and similar ability to work properly. This should produce consistent results across implementations. Finally, the final value of the `uint_leastN_t` in cases where the width of the type has padding beyond the `N` bits, is implementation-defined as the padding bits are initialized to 0 and the skipped / shifted bits are different.
 
 
 
@@ -208,7 +263,7 @@ Additionally to this, upon first pre_review of the paper there was a strong supp
   <tr><td>`trailing_one`</td>   <td>-</td>         <td>-</td>        <td>-</td></tr>
 </table>
 
-Many of the below bit functions are defined below to ease portability to these architectures. For places where specific compiler idioms and automatic detection are not possible, similar assembly tricks or optimized implementations can be provided by C. Further bit functions were also merged into C++, resulting in the current state of the [C++ `<bit>` header](https://en.cppreference.com/w/cpp/header/bit). We try to take the most useful subset of these functions that most closely represent functionality on both old and new CPU architectures as well as common, necessary operations that have been around in the last 25 years for various industries.
+Many of the below bit functions are defined below to ease portability to these architectures. For places where specific compiler idioms and automatic detection are not possible, similar assembly tricks or optimized implementations can be provided by C. Further bit functions were also merged into C++, resulting in the current state of the [C++ bit header](https://en.cppreference.com/w/cpp/header/bit). We try to take the most useful subset of these functions that most closely represent functionality on both old and new CPU architectures as well as common, necessary operations that have been around in the last 25 years for various industries.
 
 
 ### "Why not only generic interfaces or `(u)intmax_t` interfaces? ### {#design-arguments}
@@ -358,6 +413,9 @@ generic_integer_type stdc_bit_ceil(generic_integer_type value);
 generic_integer_type stdc_bit_width(generic_integer_type value);
 ```
 
+Notably, `bit_width` requires that the number is big enough to fit the representation. Conceivably, it might be beneficial to synchronize these return types and just return `int`. But, in the case of something like an implementation for `_BitInt(N)`, `N` can be so catastrophically enormous that we could not count it in a (presumably 16 or 32-bit) `int` or `unsigned int` type. C++ always returns the type `T` that was put in, and we follow that here since any type is large enough to hold its own width in bits. However, in anticipation of a potentially enormous `N` in `_BitWidth(N)` — and not wanting to return an e.g. 4 GB `_BitInt` to represent a `_BitWidth` that has an `N` of 4 billion — we allow the return type for the generic functions to be a "suitably large unsigned integer type".
+
+
 
 
 # Committee Polls / Questions # {#questions}
@@ -409,10 +467,15 @@ The header `<stdbit.h>` defines the following macros and enumeration constants, 
 
 <blockquote>
 <ins>
-<p><b>7.3�x.1 Endian</b/</p>
 <div class="wording-section">
+
+<p><b>7.3�x.1 Endian</b/</p>
 <div class="wording-numbered">
 Two common methods of byte ordering in multi-byte scalar types are <b>big-endian</b> and <b>little-endian</b>. Big-endian is a format for storage of binary data in which the least significant byte is placed first, with the rest in ascending order. Little-endian is a format for storage or transmission of binary data in which the most significant byte is placed first, with the rest in descending order. Other byte orderings are also possible. Declarations and definitions in 7.3�x, a suffix containing `le` typically represents little endian. A suffix containing `be` typically represents *big-endian*. This clause describes the endianness of the execution environment with respect to standard and extended integer types without padding bits.
+</div>
+
+<div class="wording-numbered">
+It is unspecified whether any generic function declared in <stdbit.h> is a macro or an identifier declared with external linkage. If a macro definition is suppressed in order to access an actual function, or a program defines an external identifier with the name of a generic function, the behavior is undefined.
 </div>
 
 <div class="wording-numbered">
@@ -514,14 +577,14 @@ The `stdc_memreverse` function provides an interface to reverse the order of a g
 > ```cpp
 > #include <stdbit.h>
 >
-> uintN_t stdc_byteswapuN(uintN_t value);
+> uint_t stdc_byteswapuN(uint_t value);
 > ```
 </div>
 
 <p><b>Description</b/</p>
 <div class="wording-numbered">
 
-The <code>stdc_byteswap<i>N</i></code> functions provide an interface to swap the bytes of a corresponding <code>uint<i>N</i>_t</code> object, where <i>N</i> matches an existing exact-width integer type (7.20.1.1). These functions are optional. However, if an implementation provides the corresponding <code>uint<i>N</i>_t</code> typedef (7.20.1.1), it shall define the corresponding exact-width byte swap functions.
+The <code>stdc_byteswapu<i>N</i></code> functions provide an interface to swap the bytes of a corresponding <code>uint<i>N</i>_t</code> object, where <i>N</i> matches one of the exact-width integer types (7.20.1.1). If an implementation provides the corresponding <code>uint<i>N</i>_t</code> typedef, it shall define the corresponding byte swap function for that given <code><i>N</i></code>.
 </div>
 
 <p><b>Returns</b/</p>
@@ -538,7 +601,7 @@ Returns a byte swapped <code>uint<i>N</i>_t</code> `value`, as if by invoking `s
 
 <blockquote>
 <ins>
-<p><b>7.3�x.4 Exact-width Endian-Aware Load</b/</p>
+<p><b>7.3�x.4 Endian-Aware Load</b/</p>
 <div class="wording-section">
 
 <p><b>Synopsis</b/</p>
@@ -547,23 +610,30 @@ Returns a byte swapped <code>uint<i>N</i>_t</code> `value`, as if by invoking `s
 > ```cpp
 > #include <stdbit.h>
 >
-> uintN_t stdc_load_leuN(unsigned char const ptr[static sizeof(uintN_t)]);
-> uintN_t stdc_load_beuN(unsigned char const ptr[static sizeof(uintN_t)]);
+> uint_leastN_t stdc_load_leuN(unsigned char const ptr[static sizeof(uint_leastN_t)]);
+> uint_leastN_t stdc_load_beuN(unsigned char const ptr[static sizeof(uint_leastN_t)]);
 > ```
 </div>
 
 <p><b>Description</b/</p>
-<div class="wording-numbered>
+<div class="wording-numbered">
 
-The <code>stdc_load_leu<i>N</i></code> and <code>stdc_load_beu<i>N</i></code> functions return a <code>uint<i>N</i>_t</code> object by loading bytes from `ptr` in an endian-aware (7.3�x.1) manner, where <i>N</i> matches an existing exact-width integer type (7.20.1.1). These functions are optional. However, if an implementation provides the corresponding <code>uint<i>N</i>_t</code> typedef (7.20.1.1), it shall define the corresponding exact-width endian-aware load functions.
+The <code>stdc_load_leu<i>N</i></code> and <code>stdc_load_beu<i>N</i></code> functions return a <code>uint<i>N</i>_t</code> object by loading the bits from `ptr` in an endian-aware (7.3�x.1) manner, where <i>N</i> matches an existing minimum-width integer type (7.20.1.2). If an implementation provides the corresponding <code>uint_least<i>N</i>_t</code> typedef, it shall define the corresponding endian-aware load functions.
 </div>
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-
+For each 8-bit grouping in `ptr` up to <code><i>N</i></code> bits:
+<dl>
+	<dd>— let `L` be <code><i>N</i> / 8</code></dd>
+	<dd>— let `index` an integer in the range [0, `L`);</dd>
+	<dd>— let `b` be the 8-bit value of that grouping;</dd>
+	<dd>— and, let `S` be `index * 8` for `le` functions and `((N - 8) - (index * 8))` for `be` functions.
+</dl>
+Returns the summation of `b << S` for each `index` in the range [0, `L`). Any bits not written to in the summation are set to 0.
 </div>
 
-<p><b>7.3�x.5 Exact-width Endian-Aware Store</b/</p>
+<p><b>7.3�x.5 Endian-Aware Store</b/</p>
 <div class="wording-section">
 
 <p><b>Synopsis</b/</p>
@@ -572,20 +642,29 @@ The <code>stdc_load_leu<i>N</i></code> and <code>stdc_load_beu<i>N</i></code> fu
 > ```cpp
 > #include <stdbit.h>
 >
-> void stdc_store_leuN(uintN_t value, unsigned char ptr[static sizeof(uintN_t)]);
-> void stdc_store_beuN(uintN_t value, unsigned char ptr[static sizeof(uintN_t)]);
+> void stdc_store_leuN(uint_leastN_t value,
+>                      unsigned char ptr[static sizeof(uint_leastN_t)]);
+> void stdc_store_beuN(uint_leastN_t value,
+>                      unsigned char ptr[static sizeof(uint_leastN_t)]);
 > ```
 </div>
 
 <p><b>Description</b/</p>
 <div class="wording-numbered">
 
-The <code>stdc_store_leu<i>N</i></code> and <code>stdc_store_beu<i>N</i></code> functions copy the bytes of an <code>uint<i>N</i>_t</code> object to `ptr` in an endian-aware (7.3�x) manner, where <i>N</i> matches an existing exact-width integer type (7.20.1.1). The `le` stands for little-endian and the `be` stands for big-endian. These functions are optional. However, if an implementation provides the corresponding <code>uint<i>N</i>_t</code> typedef, it shall define the corresponding exact-width endian-aware load functions.
+The <code>stdc_store_leu<i>N</i></code> and <code>stdc_store_beu<i>N</i></code> functions copy the bytes of an <code>uint<i>N</i>_t</code> object to `ptr` in an endian-aware (7.3�x) manner, where <i>N</i> matches an existing minimum-width integer type (7.20.1.2). The `le` stands for little-endian and the `be` stands for big-endian.
 </div>
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-For each byte in `ptr` at `index` from 0 to <code>sizeof(uint<i>N</i>_t)</code>, let S be `index * CHAR_BIT` for `le` functions and `((N - CHAR_BIT) - (index * CHAR_BIT))` for `be` functions. Stores `value >> S` into `ptr[index]`.
+For each 8-bit grouping up to <code><i>N</i></code> bits in `ptr` and `value`:
+<dl>
+	<dd>— let `L` be <code><i>N</i> / 8</code></dd>
+	<dd>— let `index` an integer in the range [0, `L`);</dd>
+	<dd>— let `pb` be the 8-bit value within the grouping in `ptr` at a bit offset of `index * 8`;</dd>
+	<dd>— and, let `vb` be the 8-bit value within the grouping of `value` at a bit offset of `index * 8` for `le` functions and `((N - 8) - (index * 8))` for `be` functions.</dd>
+</dl>
+Performs `pb = vb` for each `index` in the range [0, `L`). Any bits not written to in `ptr` retain the value its original value before the function was executed.
 </div>
 </div>
 </ins>
@@ -615,7 +694,15 @@ For each byte in `ptr` at `index` from 0 to <code>sizeof(uint<i>N</i>_t)</code>,
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-Returns the number of consecutive 1 bits in `value`, starting from the most significant bit. The last function is a type-generic function that returns the appropriate value based on the type of the input value, so long as it is an unsigned integer type (standard or extended).
+Returns the number of consecutive 0 bits in `value`, starting from the most significant bit.
+</div>
+<div class="wording-numbered">
+The type-generic function (marked by its `generic_integer_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
+<dl>
+	<dd>— standard unsigned integer type;</dd>
+	<dd>— extended unsigned integer type;</dd>
+	<dd>— or, bit-precise unsigned integer type whose size matches a standard or extended integer type.</dd>
+</dl>
 </div>
 </div>
 
@@ -638,7 +725,15 @@ Returns the number of consecutive 1 bits in `value`, starting from the most sign
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-Returns the number of consecutive 0 bits in `value`, starting from the most significant bit. The last function is a type-generic function that returns the appropriate value based on the type of the input value, so long as it is an unsigned integer type (standard or extended).
+Returns the number of consecutive 1 bits in `value`, starting from the most significant bit.
+</div>
+<div class="wording-numbered">
+The type-generic function (marked by its `generic_integer_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
+<dl>
+	<dd>— standard unsigned integer type;</dd>
+	<dd>— extended unsigned integer type;</dd>
+	<dd>— or, bit-precise unsigned integer type whose size matches a standard or extended integer type.</dd>
+</dl>
 </div>
 </div>
 
@@ -661,7 +756,15 @@ Returns the number of consecutive 0 bits in `value`, starting from the most sign
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-Returns the number of consecutive 1 bits in `value`, starting from the least significant bit. The last function is a type-generic function that returns the appropriate value based on the type of the input value, so long as it is an unsigned integer type (standard or extended).
+Returns the number of consecutive 0 bits in `value`, starting from the least significant bit.
+</div>
+<div class="wording-numbered">
+The type-generic function (marked by its `generic_integer_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
+<dl>
+	<dd>— standard unsigned integer type;</dd>
+	<dd>— extended unsigned integer type;</dd>
+	<dd>— or, bit-precise unsigned integer type whose size matches a standard or extended integer type.</dd>
+</dl>
 </div>
 </div>
 
@@ -684,7 +787,15 @@ Returns the number of consecutive 1 bits in `value`, starting from the least sig
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-Returns the number of consecutive 0 bits in `value`, starting from the least significant bit. The last function is a type-generic function that returns the appropriate value based on the type of the input value, so long as it is an unsigned integer type (standard or extended).
+Returns the number of consecutive 1 bits in `value`, starting from the least significant bit.
+</div>
+<div class="wording-numbered">
+The type-generic function (marked by its `generic_integer_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
+<dl>
+	<dd>— standard unsigned integer type;</dd>
+	<dd>— extended unsigned integer type;</dd>
+	<dd>— or, bit-precise unsigned integer type whose size matches a standard or extended integer type.</dd>
+</dl>
 </div>
 </div>
 
@@ -713,13 +824,19 @@ The `stdc_rotate_left` functions perform a bitwise rotate left. This operation i
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-Let N be the value of the `_WIDTH` macros in `<limits.h>` (5.2.4.2.1) corresponding to the type of the input `value`. Let r be `count % N`.
+Let N be the width corresponding to the type of the input `value`. Let r be `count % N`.
 <dl>
 	<dd>— If r is 0, returns `value`;</dd>
 	<dd>— otherwise, returns `(value << r) | (value >> (N - r))`.</dd>
 </dl>
-
-The last symbol is a pseudo-symbol representing a type-generic macro which returns the above described result for a given input value so long as the `generic_integer_type` is an unsigned integer type (standard or extended).
+</div>
+<div class="wording-numbered">
+The type-generic function (marked by its `generic_integer_type` argument) returns the above described result for a given input value so long as the `generic_integer_type` is an
+<dl>
+	<dd>— standard unsigned integer type;</dd>
+	<dd>— extended unsigned integer type;</dd>
+	<dd>— or, bit-precise unsigned integer type whose size matches a standard or extended integer type.</dd>
+</dl>
 </div>
 </div>
 
@@ -747,13 +864,19 @@ The `stdc_rotate_right` functions perform a bitwise rotate right. This operation
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-Let N be the value of the `_WIDTH` macros in `<limits.h>` (5.2.4.2.1) corresponding to the type of the input `value`. Let r be `count % N`.
+Let N be the width corresponding to the type of the input `value`.. Let r be `count % N`.
 <dl>
 	<dd>— If r is 0, returns `value`;</dd>
 	<dd>— otherwise, if r is positive, returns `(value >> r) | (value << (N - r))`;</dd>
 </dl>
-
-The last symbol is a pseudo-symbol representing a type-generic macro which returns the above described result for a given input value so long as the `generic_integer_type` is an unsigned integer type (standard or extended).
+</div>
+<div class="wording-numbered">
+The type-generic function (marked by its `generic_integer_type` argument) returns the above described result for a given input value so long as the `generic_integer_type` is an
+<dl>
+	<dd>— standard unsigned integer type;</dd>
+	<dd>— extended unsigned integer type;</dd>
+	<dd>— or, bit-precise unsigned integer type whose size matches a standard or extended integer type.</dd>
+</dl>
 </div>
 </div>
 
@@ -776,7 +899,15 @@ The last symbol is a pseudo-symbol representing a type-generic macro which retur
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-The `stdc_popcount` functions returns the total number of 1 bits within the given `value`. The last symbol is a pseudo-symbol representing a type-generic macro which returns the previously described result for a given input value so long as the `generic_integer_type` is an unsigned integer type (standard or extended).
+The `stdc_popcount` functions returns the total number of 1 bits within the given `value`.
+</div>
+<div class="wording-numbered">
+The type-generic function (marked by its `generic_integer_type` argument) returns the previously described result for a given input value so long as the `generic_integer_type` is an
+<dl>
+	<dd>— standard unsigned integer type;</dd>
+	<dd>— extended unsigned integer type;</dd>
+	<dd>— or, bit-precise unsigned integer type whose size matches a standard or extended integer type.</dd>
+</dl>
 </div>
 </div>
 </ins>
@@ -806,7 +937,15 @@ The `stdc_popcount` functions returns the total number of 1 bits within the give
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-The `stdc_has_single_bit` functions returns the total number of 1 bits within the given `value`. The last symbol is a pseudo-symbol representing a type-generic macro which returns the previously described result for a given input value so long as the `generic_integer_type` is an unsigned integer type (standard or extended).
+The `stdc_has_single_bit` functions returns true if and only if there is a single 1 bit in `value`.
+</div>
+<div class="wording-numbered">
+The type-generic function (marked by its `generic_integer_type` argument) returns the previously described result for a given input value so long as the `generic_integer_type` is an 
+<dl>
+	<dd>— standard unsigned integer type;</dd>
+	<dd>— extended unsigned integer type;</dd>
+	<dd>— or, bit-precise unsigned integer type whose size matches a standard or extended integer type.</dd>
+</dl>
 </div>
 </div>
 
@@ -817,13 +956,13 @@ The `stdc_has_single_bit` functions returns the total number of 1 bits within th
 <div class="wording-numbered">
 
 > ```cpp
-> unsigned char stdc_bit_widthuc(unsigned char value);
-> unsigned short stdc_bit_widthus(unsigned short value);
-> unsigned int stdc_bit_widthui(unsigned int value);
-> unsigned long stdc_bit_widthul(unsigned long value);
-> unsigned long long stdc_bit_widthull(unsigned long long value);
+> size_t stdc_bit_widthuc(unsigned char value);
+> size_t stdc_bit_widthus(unsigned short value);
+> size_t stdc_bit_widthui(unsigned int value);
+> size_t stdc_bit_widthul(unsigned long value);
+> size_t stdc_bit_widthull(unsigned long long value);
 > 
-> generic_integer_type stdc_bit_width(generic_integer_type value);
+> size_t stdc_bit_width(generic_integer_type value);
 > ```
 </div>
 
@@ -834,7 +973,15 @@ The `stdc_bit_width` functions compute the smallest number of bits needed to sto
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-The `stdc_bit_width` functions return 0 if `value` is 0. Otherwise, they return <code>1 + ⌊log<sub>2</sub>(value)⌋</code>. The last symbol is a pseudo-symbol representing a type-generic macro which returns the previously described result for a given input value so long as the `generic_integer_type` is an unsigned integer type (standard or extended).
+The `stdc_bit_width` functions return 0 if `value` is 0. Otherwise, they return <code>1 + ⌊log<sub>2</sub>(value)⌋</code>.
+</div>
+<div class="wording-numbered">
+The type-generic function (marked by its `generic_integer_type` argument) returns the previously described result for a given input value so long as the `generic_integer_type` is an
+<dl>
+	<dd>— standard unsigned integer type;</dd>
+	<dd>— extended unsigned integer type;</dd>
+	<dd>— or, bit-precise unsigned integer type whose size matches a standard or extended integer type.</dd>
+</dl>
 </div>
 </div>
 
@@ -862,7 +1009,15 @@ The `stdc_bit_floor` functions compute the largest integral power of 2 that is n
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-The `stdc_bit_floor` functions return 0 if `value` is 0. Otherwise, they return the largest integral power of 2 that is not greater than `value`. The last symbol is a pseudo-symbol representing a type-generic macro which returns the previously described result for a given input value so long as the `generic_integer_type` is an unsigned integer type (standard or extended).
+The `stdc_bit_floor` functions return 0 if `value` is 0. Otherwise, they return the largest integral power of 2 that is not greater than `value`.
+</div>
+<div class="wording-numbered">
+The type-generic function (marked by its `generic_integer_type` argument) returns the previously described result for a given input value so long as the `generic_integer_type` is an
+<dl>
+	<dd>— standard unsigned integer type;</dd>
+	<dd>— extended unsigned integer type;</dd>
+	<dd>— or, bit-precise unsigned integer type whose size matches a standard or extended integer type.</dd>
+</dl>
 </div>
 </div>
 
@@ -890,7 +1045,15 @@ The `stdc_bit_ceil` functions compute the smallest integral power of 2 that is n
 
 <p><b>Returns</b/</p>
 <div class="wording-numbered">
-The `stdc_bit_ceil` functions return the smallest integral power of 2 that is not less than `value`. The last symbol is a pseudo-symbol representing a type-generic macro which returns the previously described result for a given input value so long as the `generic_integer_type` is an unsigned integer type (standard or extended).
+The `stdc_bit_ceil` functions return the smallest integral power of 2 that is not less than `value`.
+</div>
+<div class="wording-numbered">
+The type-generic function (marked by its `generic_integer_type` argument) returns the previously described result for a given input value so long as the `generic_integer_type` is an
+<dl>
+	<dd>— standard unsigned integer type;</dd>
+	<dd>— extended unsigned integer type;</dd>
+	<dd>— or, bit-precise unsigned integer type whose size matches a standard or extended integer type.</dd>
+</dl>
 </div>
 </div>
 </ins>
@@ -923,21 +1086,21 @@ A collection of miscellaneous and helpful bits of information and implementation
 
 ## Implementation of Generic `popcount` ## {#appendix-popcount}
 
-Sample implementation on [Godbolt (clang/gcc specific builtins)](https://godbolt.org/z/411qsrhPG):
+Sample implementation on [Godbolt (clang/gcc specific builtins)](https://godbolt.org/z/16d9xE78r):
 
 ```cpp
 #define stdc_popcount(...) \
-    _Generic((__VA_ARGS__), \
-        char: __builtin_popcount, \
-        unsigned char: __builtin_popcount, \
-        unsigned short: __builtin_popcount, \
-        unsigned int: __builtin_popcount, \
-        unsigned long: __builtin_popcountl, \
-        unsigned long long: __builtin_popcountll \
-    )(__VA_ARGS__)
+	_Generic((__VA_ARGS__), \
+		char: __builtin_popcount, \
+		unsigned char: __builtin_popcount, \
+		unsigned short: __builtin_popcount, \
+		unsigned int: __builtin_popcount, \
+		unsigned long: __builtin_popcountl, \
+		unsigned long long: __builtin_popcountll \
+	)(__VA_ARGS__)
 
 int main () {
-    return stdc_popcount((unsigned char)'0') + stdc_popcount(13ull);
+	return stdc_popcount((unsigned char)'0') + stdc_popcount(13ull);
 }
 ```
 
@@ -951,49 +1114,49 @@ Sample implementation on [Godbolt (clang/gcc specific builtins)](https://godbolt
 #include <limits.h>
 
 #define stdc_leading_zeroes(...) \
-    (_Generic((__VA_ARGS__), \
-        char: __builtin_clz((__VA_ARGS__)) - ((sizeof(unsigned) - sizeof(char)) * CHAR_BIT), \
-        unsigned char: __builtin_clz((__VA_ARGS__)) - ((sizeof(unsigned) - sizeof(unsigned char)) * CHAR_BIT), \
-        unsigned short: __builtin_clz((__VA_ARGS__)) - ((sizeof(unsigned) - sizeof(unsigned short)) * CHAR_BIT), \
-        unsigned int: __builtin_clz((__VA_ARGS__)), \
-        unsigned long: __builtin_clzl((__VA_ARGS__)), \
-        unsigned long long: __builtin_clzll((__VA_ARGS__)) \
-    ))
+	(_Generic((__VA_ARGS__), \
+		char: __builtin_clz((__VA_ARGS__)) - ((sizeof(unsigned) - sizeof(char)) * CHAR_BIT), \
+		unsigned char: __builtin_clz((__VA_ARGS__)) - ((sizeof(unsigned) - sizeof(unsigned char)) * CHAR_BIT), \
+		unsigned short: __builtin_clz((__VA_ARGS__)) - ((sizeof(unsigned) - sizeof(unsigned short)) * CHAR_BIT), \
+		unsigned int: __builtin_clz((__VA_ARGS__)), \
+		unsigned long: __builtin_clzl((__VA_ARGS__)), \
+		unsigned long long: __builtin_clzll((__VA_ARGS__)) \
+	))
 
 #define stdc_bit_width(...) \
-    _Generic((__VA_ARGS__), \
-        char: (CHAR_BIT - stdc_leading_zeroes((__VA_ARGS__))), \
-        unsigned char: (UCHAR_WIDTH - stdc_leading_zeroes((__VA_ARGS__))), \
-        unsigned short: (USHRT_WIDTH - stdc_leading_zeroes((__VA_ARGS__))), \
-        unsigned int: (UINT_WIDTH - stdc_leading_zeroes((__VA_ARGS__))), \
-        unsigned long: (ULONG_WIDTH - stdc_leading_zeroes((__VA_ARGS__))), \
-        unsigned long long: (ULLONG_WIDTH - stdc_leading_zeroes((__VA_ARGS__))) \
-    )
+	_Generic((__VA_ARGS__), \
+		char: (CHAR_BIT - stdc_leading_zeroes((__VA_ARGS__))), \
+		unsigned char: (UCHAR_WIDTH - stdc_leading_zeroes((__VA_ARGS__))), \
+		unsigned short: (USHRT_WIDTH - stdc_leading_zeroes((__VA_ARGS__))), \
+		unsigned int: (UINT_WIDTH - stdc_leading_zeroes((__VA_ARGS__))), \
+		unsigned long: (ULONG_WIDTH - stdc_leading_zeroes((__VA_ARGS__))), \
+		unsigned long long: (ULLONG_WIDTH - stdc_leading_zeroes((__VA_ARGS__))) \
+	)
 
 // integer promotion rules means we need to
 // precisely calculate the value here ~_~
 #define __stdc_bit_ceil_promotion_protection(_Type, _Value) \
-    _Generic((_Value), \
-        char: (_Value <= (_Type)1) ? (_Type)0 : (_Type)(1u << (stdc_bit_width((_Type)(_Value - 1)) + (UINT_WIDTH - UCHAR_WIDTH)) >> (UINT_WIDTH - UCHAR_WIDTH)), \
-        unsigned char: (_Value <= (_Type)1) ? (_Type)0 : (_Type)(1u << (stdc_bit_width((_Type)(_Value - 1)) + (UINT_WIDTH - UCHAR_WIDTH)) >> (UINT_WIDTH - UCHAR_WIDTH)), \
-        unsigned short: (_Value <= (_Type)1) ? (_Type)0 : (_Type)(1u << (stdc_bit_width((_Type)(_Value - 1)) + (UINT_WIDTH - USHRT_WIDTH)) >> (UINT_WIDTH - USHRT_WIDTH)), \
-        default: (_Type)0 \
-    )
+	_Generic((_Value), \
+		char: (_Value <= (_Type)1) ? (_Type)0 : (_Type)(1u << (stdc_bit_width((_Type)(_Value - 1)) + (UINT_WIDTH - UCHAR_WIDTH)) >> (UINT_WIDTH - UCHAR_WIDTH)), \
+		unsigned char: (_Value <= (_Type)1) ? (_Type)0 : (_Type)(1u << (stdc_bit_width((_Type)(_Value - 1)) + (UINT_WIDTH - UCHAR_WIDTH)) >> (UINT_WIDTH - UCHAR_WIDTH)), \
+		unsigned short: (_Value <= (_Type)1) ? (_Type)0 : (_Type)(1u << (stdc_bit_width((_Type)(_Value - 1)) + (UINT_WIDTH - USHRT_WIDTH)) >> (UINT_WIDTH - USHRT_WIDTH)), \
+		default: (_Type)0 \
+	)
 
 #define stdc_bit_ceil(...) \
-    _Generic((__VA_ARGS__), \
-        char: __stdc_bit_ceil_promotion_protection(unsigned char, (__VA_ARGS__)), \
-        unsigned char: __stdc_bit_ceil_promotion_protection(unsigned char, (__VA_ARGS__)), \
-        unsigned short: __stdc_bit_ceil_promotion_protection(unsigned short, (__VA_ARGS__)), \
-        unsigned int: (unsigned int)(1u << stdc_bit_width((unsigned int)((__VA_ARGS__) - 1))), \
-        unsigned long: (unsigned long)(1ul << stdc_bit_width((unsigned long)((__VA_ARGS__) - 1))), \
-        unsigned long long: (unsigned long long)(1ull << stdc_bit_width((unsigned long long)((__VA_ARGS__) - 1))) \
-    )
+	_Generic((__VA_ARGS__), \
+		char: __stdc_bit_ceil_promotion_protection(unsigned char, (__VA_ARGS__)), \
+		unsigned char: __stdc_bit_ceil_promotion_protection(unsigned char, (__VA_ARGS__)), \
+		unsigned short: __stdc_bit_ceil_promotion_protection(unsigned short, (__VA_ARGS__)), \
+		unsigned int: (unsigned int)(1u << stdc_bit_width((unsigned int)((__VA_ARGS__) - 1))), \
+		unsigned long: (unsigned long)(1ul << stdc_bit_width((unsigned long)((__VA_ARGS__) - 1))), \
+		unsigned long long: (unsigned long long)(1ull << stdc_bit_width((unsigned long long)((__VA_ARGS__) - 1))) \
+	)
 
 int main () {
-    int x = stdc_bit_ceil((unsigned char)'\x13');
-    int y = stdc_bit_ceil(33u);
-    return x + y;
+	int x = stdc_bit_ceil((unsigned char)'\x13');
+	int y = stdc_bit_ceil(33u);
+	return x + y;
 }
 ```
 
@@ -1062,7 +1225,7 @@ int main () {
 			"Douglas Creager"
 		],
 		"title": "libcork: Byte order",
-		"publisher": "Redjack, LLV",
+		"publisher": "Redjack, LLC",
 		"href": "https://libcork.io/0.15.0/byte-order.html",
 		"date": "November 22nd, 2017"
 	},
