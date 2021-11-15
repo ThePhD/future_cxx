@@ -11,7 +11,7 @@ URL:
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Hannes Hauswedell, h2@fsfe.org
-Date: 2021-08-15
+Date: 2021-10-15
 Markup Shorthands: markdown yes, biblio yes, markup yes
 Abstract: This paper proposes new concepts to the Standard Library for ranges called Reconstructible Ranges for the purpose of ensuring a range/view broken down into its two iterators can be "glued" back together using an ADL-found function taking a tag, the range's iterator, and the range's sentinel.
 </pre>
@@ -31,7 +31,7 @@ path: resources/css/bikeshed-color-fix.html
 
 
 
-## Revision 6 - September 15th, 2021 ## {#changelog-r6}
+## Revision 6 - October 15th, 2021 ## {#changelog-r6}
 
 	- Improve the [[#motivation]] section, including more explanation which relates to [[#motivation-split]].
 
@@ -164,6 +164,65 @@ llvm::StringRef unprocessed_input
 	= encoding_result.input;
 llvm::MutableArrayRef<char16_t> unconsumed_output 
 	= encoding_result.output;
+```
+❌ - Compilation error
+
+```cpp
+std::u8string name = "𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷";
+char16_t conversion_buffer[432];
+std::u8string_view input(name);
+std::span<char16_t> output(conversion_buffer, 432);
+
+auto encoding_result = ztd::text::transcode_into(input, output,
+	ztd::text::compat_utf8, ztd::text::utf16);
+auto unprocessed_input = encoding_result.input;
+auto unconsumed_output = encoding_result.output;
+```
+⚠️ - Compiles, but `decltype(unprocessed_input)` is
+`ranges::subrange<std::u8string_view::iterator, std::u8string_view::iterator>` and `decltype(unconsumed_output)` is
+`ranges::subrange<llvm::MutableArrayRef<char16_t>::iterator, llvm::MutableArrayRef<char16_t>::iterator>`
+		</td>
+		<td>
+
+```cpp
+char16_t output_buffer[432];
+llvm::StringRef input("𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷");
+llvm::MutableArrayRef<char16_t> output(output_buffer, 432);
+
+auto encoding_result = ztd::text::transcode_into(input, output,
+	ztd::text::utf8, ztd::text::utf16);
+
+llvm::StringRef unprocessed_input 
+	= encoding_result.input;
+llvm::MutableArrayRef<char16_t> unconsumed_output 
+	= encoding_result.output;
+```
+✔️ - Compiles and works, types match input.
+
+```cpp
+std::u8string name = "𐌀𐌖𐌋𐌄𐌑𐌉·𐌌𐌄𐌕𐌄𐌋𐌉𐌑 𐑡𐑹𐑡 ·𐑚𐑻𐑯𐑸𐑛 ·𐑖𐑷";
+char16_t conversion_buffer[432];
+std::u8string_view input(name);
+std::span<char16_t> output(conversion_buffer, 432);
+
+auto encoding_result = ztd::text::transcode_into(input, output,
+	ztd::text::utf8, ztd::text::utf16);
+auto unprocessed_input = encoding_result.input;
+auto unconsumed_output = encoding_result.output;
+```
+✔️ - Compiles and works, where `decltype(unprocessed_input)` is `std::u8string_view` and `decltype(unconsumed_output)` is `std::span<char16_t>`.
+		</td>
+	</tr>
+
+	
+	<tr>
+		<td>
+```cpp
+char const* words = "A quick brown fox";
+for (std::span ss : zstring{words} | std::views::split(' ')) {
+    auto sv = std::string_view(ss.data(), ss.size());
+    std::cout << sv << '\n';
+}
 ```
 ❌ - Compilation error
 
