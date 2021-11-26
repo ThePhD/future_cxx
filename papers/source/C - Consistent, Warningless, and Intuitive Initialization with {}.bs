@@ -1,11 +1,11 @@
 <pre class='metadata'>
 Title: Consistent, Warningless, and Intuitive Initialization with {}
 H1: Consistent, Warningless, and Intuitive Initialization with <code>{}</code>
-Shortname: 2796
-Revision: 1
-!Previous Revisions: <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2727.htm">N2727 (r0)</a>
+Shortname: 29XX
+Revision: 2
+!Previous Revisions: <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2796.htm">N2796 (r1)</a>, <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2727.htm">N2727 (r0)</a>
 Status: P
-Date: 2021-08-14
+Date: 2021-12-15
 Group: WG14
 !Proposal Category: Change Request, Feature Request
 !Target Audience: General Developers, Library Developers
@@ -34,6 +34,17 @@ path: resources/css/bikeshed-color-fix.html
 
 
 # Changelog # {#changelog}
+
+
+
+## Revision 2 - December 15th, 2021 ## {#changelog-r2}
+
+- Use first-member-initialization behavior consistent with the August/September 2021 Virtual Meeting guidance from WG21.
+	- *Opinion Poll*: Would WG14 like to adopt something along the lines of N2727 into C23? **19-1-2** (Yes-No-Abstain). So, clear direction.
+	- Feedback: "I voted no although I'm in favor in general. I want that union case to be the first member. I also want more clarity."
+- Removed restriction on VLAs is not optional as Committee gave an opinion poll to put it in: 
+	- *Opinion Poll*: Would WG14 like something along the lines of lifting the restrictions from VLA's to be initialize-able by an empty initializer as specified in N2727? **15-0-6** (Yes-No-Abstain). So clear direction.
+	- No additional vote feedback.
 
 
 
@@ -119,14 +130,118 @@ int main () {
 We note that there are cases where this may differ. These are listed in the sub-sections below, though we note that these departures from what `= { 0 }` does are mostly beneficial and ways to guarantee even greater stability than the C Standard currently offers us.
 
 
-### Decimal Floating Point ### {#design-consistent-dfp}
+## Union Initialization ## {#design-unions}
 
-Decimal Floating Point (DFP) do not use the exact same semantics between `{ 0 }` and `{ }`. In particular, `{ }` is a "more strict" version of initialization that writes all bits to 0. In contrast, `{ 0 }` produces a "fuzzy" zero value that includes setting the nominal value to 0 along with a quantum exponent of 0 (which may not be represented perfectly by all bits 0).
+In earlier versions of this proposal, unions had an exception placed into its `{}` initialization that stated it would do static initialization for its largest member. This drew a lot of concern from WG14 during the August/September 2021 Virtual Meeting. This leaves two potential options to match Clang behavior ([[#appendix-clang|written about in the Appendix]]):
 
-This is taken care of with additional wording that highlights the proper behavior for scalars types (which DFP types are considered) for `{ }`, which makes it clear it is initialized properly to a `0` value.
+- specify that the largest member undergoes zero-initialization, and then the first member is statically initialized;
+- or, specify that the first member is statically initialized and the rest of the values are left in an unspecified manner, as is consistent with `= { 0 }` initialization.
+
+Clang's extension behavior works with both of these syntaxes, since "unspecified" is a strict superset of "zero-initialize the largest member". Padding bits (bits that exist outside the representation of any members in the union) are still zero-initialized as normal. We provide wording for both alternatives and leave it up to the Committee to choose a given behavior.
 
 
-### Compiler Extensions + Union Aliasing ### {#design-consistent-extensions}
+
+# Wording # {#wording}
+
+The following wording is relative to [[N2731]].
+
+
+
+## Modify §6.7.9 paragraph 1's grammar ## {#wording-6.7.9p1}
+
+<blockquote>
+<dl>
+	<dt>*initializer:*</dt>
+	<dd><ins>**{** **}**</ins></dd>
+	<dd>**{** _initializer-list_ **}**</dd>
+</dl>
+</blockquote>
+
+
+## Modify §6.7.9 paragraph 1 to include a new sentence ## {#wording-6.7.9p1.1}
+
+<blockquote>
+<ins>
+An empty brace pair (<code>{ }</code>) is called an <i>empty initializer</i> and is referred to as <i>empty initialization</i>.
+</ins>
+</blockquote>
+
+
+
+## Add to to §6.7.9 paragraph 3 ## {#wording-6.7.9p3}
+
+<blockquote>
+<p>The type of the entity to be initialized shall be an array of unknown size or a complete object type that is not a variable length array type. <ins>An array of unknown size shall not be initialized by an empty initializer.</ins></p>
+</blockquote>
+
+
+
+## Modify §6.7.9 paragraph 10 ## {#wording-6.7.9p10}
+
+<blockquote>
+<p>
+<ins>If an object that has automatic storage duration is initialized with an empty initializer, its value is the same as the initialization of a static storage duration object. Otherwise, if</ins><del>If</del> an object that has automatic storage duration is not initialized explicitly, its value is indeterminate. If an object that has static or thread storage duration is not initialized explicitly<ins>, or is initialized with an empty initializer,</ins>, then: …
+</p>
+</blockquote>
+
+
+
+## OPTIONAL CHANGE 2: Largest-Then-First Initialization - Modify §6.7.9 paragraph 10, last bullet point ## {#wording-6.7.9p10-extra}
+
+<blockquote>
+<p>
+…
+<dl>
+	<dd><ins>— if it is a union and the initializer is the empty initializer, the largest member is initialized (recursively) according to these rules, then the first named member is initialized (recursively) according to these rules, and any padding is initialized to zero bits;</ins></dd>
+	<dd>— if it is a union <ins>and the initializer is not an empty initializer</ins>, the first named member is initialized (recursively) according to these rules, and any padding is initialized to zero bits;</dd>
+</dl>
+…
+</p>
+</blockquote>
+
+
+
+## Modify §6.7.9 paragraph 11 ## {#wording-6.7.9p11}
+
+<blockquote>
+<p>
+<del>The initializer for a scalar shall be a single expression, optionally enclosed in braces. The</del><ins>The initializer for a scalar shall be a single expression, optionally enclosed in braces, or it shall be an empty initializer. If the initializer is the empty initializer, the initial value is the same as the initialization of a static storage duration object. Otherwise, </ins>the initial value of the object is that of the expression (after conversion); …
+</p>
+</blockquote>
+
+
+## Lift Empty-Initializer for VLAs Restriction ## {#wording-vlas}
+
+### Modify §6.7.9 paragraph 3 ### {#wording-vlas-6.7.8p3}
+
+<blockquote>
+<p>The type of the entity to be initialized shall be an array of unknown size or a complete object type<del>that is not a variable length array type</del>.<ins> An entity of variable length array type shall not be initialized except by an empty initializer.</ins></p>
+</blockquote>
+
+
+
+
+# Acknowledgements # {#acknowledgements}
+
+Thank you to the C community for the push to write this paper! Thank you to Joseph Myers, Hubert Tong, and Martin Uecker for wording improvements and suggestions.
+
+
+
+
+# Appendix # {#appendix}
+
+The appendix is a collection of historical references to old paper material or points that are potentially relevant but ultimately not required for understanding the full motivation and wording of the proposal.
+
+## Decimal Floating Point ## {#appendix-dfp}
+
+Originally, this section in a previous revision of the paper was concerned about Decimal Floating Point initialization. But, this was clarified as a bug / potentially wrong interaction and a paper was brought forward to fix it, which has already been voted into the C Standard. The old text is reproduced for historical reasons, just below:
+
+> Decimal Floating Point (DFP) do not use the exact same semantics between `{ 0 }` and `{ }`. In particular, `{ }` is a "more strict" version of initialization that writes all bits to 0. In contrast, `{ 0 }` produces a "fuzzy" zero value that includes setting the nominal value to 0 along with a quantum exponent of 0 (which may not be represented perfectly by all bits 0).
+> 
+> This is taken care of with additional wording that highlights the proper behavior for scalars types (which DFP types are considered) for `{ }`, which makes it clear it is initialized properly to a `0` value.
+
+
+## Compiler Extensions + Union Aliasing ## {#appendix-clang}
 
 Some compilers such as Clang have special compilation modes where they can write bits not equivalent to the "static storage duration initialization" of a type when, such as `-ftrivial-auto-var-init=pattern`. This creates a difference between what `{ 0 }` and what `{ }` do in those modes. For example, consider the following code:
 
@@ -168,93 +283,9 @@ int main(void) {
 }
 ```
 
-Using this initialization syntax, even with different `ftrivial-auto-var-init={whatever}` flags, the behavior is stable: the **entire** union is zero-written. In this case, `foo()` is never called. This proposal replicates this behavior as it has better reliability and security semantics. Note that a user can always fall back to using `= { 0 }` if leaving other non-overlapping values in a union is undesirable. This does mean that one can, technically, tell if something was initialized with either `= { 0 }` or `= { }`, which somewhat contradicts the premise of the paper (that `= { 0 }` and `= { }` are identical). But, we find this to be a worthwhile departure from `= { 0 }`'s semantics.
+Using this initialization syntax, even with different `ftrivial-auto-var-init={whatever}` flags, the behavior is stable: the **entire** union is zero-written. In this case, `foo()` is never called. This proposal's previous iterations replicated this behavior, as it was thought to provide better reliability and security semantics. Note that a user can always fall back to using `= { 0 }` if leaving other non-overlapping values in a union is undesirable. This does mean that one can, technically, tell if something was initialized with either `= { 0 }` or `= { }`, which somewhat contradicts the premise of the paper (that `= { 0 }` and `= { }` are identical).
 
-
-
-# Wording # {#wording}
-
-The following wording is relative to [[N2596]].
-
-
-
-## Modify §6.7.9 paragraph 1's grammar ## {#wording-6.7.9p1}
-
-<blockquote>
-<dl>
-	<dt>*initializer:*</dt>
-	<dd><ins>**{** **}**</ins></dd>
-	<dd>**{** _initializer-list_ **}**</dd>
-</dl>
-</blockquote>
-
-
-## Modify §6.7.9 paragraph 1 to include a new sentence ## {#wording-6.7.9p1.1}
-
-<blockquote>
-<ins>
-An empty brace pair (<code>{ }</code>) is called an <i>empty initializer</i> and is referred to as <i>empty initialization</i>.
-</ins>
-</blockquote>
-
-
-
-## Add to to §6.7.9 paragraph 3 ## {#wording-6.7.9p3}
-
-<blockquote>
-<p>The type of the entity to be initialized shall be an array of unknown size or a complete object type
-that is not a variable length array type. <ins>An array of unknown size shall not be initialized by an empty initializer.</ins></p>
-</blockquote>
-
-
-
-## Modify §6.7.9 paragraph 11 ## {#wording-6.7.9p11}
-
-<blockquote>
-<p>
-<del>The initializer for a scalar shall be a single expression, optionally enclosed in braces. The</del><ins>The initializer for a scalar shall be a single expression, optionally enclosed in braces, or it shall be an empty initializer. If the initializer is the empty initializer, the initial value is the same as the initialization of a static storage duration object. Otherwise, </ins>the initial value of the object is that of the expression (after conversion); …
-</p>
-</blockquote>
-
-
-## Modify §6.7.9 paragraph 22 ## {#wording-6.7.9p22}
-
-<blockquote>
-<p>If an array of unknown size is initialized, its size is determined by the largest indexed element with an explicit initializer. The array type is completed at the end of its initializer list.</p>
-</blockquote>
-
-
-## Add a new paragraph after §6.7.9 paragraph 13 ## {#wording-6.7.9p13.2}
-
-<blockquote>
-<p>
-<ins>If the initializer is the empty initializer, then it is initialized as follows:
-<dl>
-	<dd><ins>— if it is an aggregate type, every member is initialized (recursively) according to the rules for empty initializers, and any padding bits are initialized to zero;</ins></dd>
-	<dd><ins>— if it is a union type, then the member with the largest size is initialized (recursively) according to the rules for empty initialization, and any padding bits are initialized to zero;</ins></dd>
-</dl>
-</ins>
-</p>
-</blockquote>
-
-
-
-## Additional Change (Optional) - lift some VLAs restriction ## {#wording-vlas}
-
-
-### Modify §6.7.9 paragraph 3 ### {#wording-vlas-6.7.8p3}
-
-<blockquote>
-<p>The type of the entity to be initialized shall be an array of unknown size or a complete object type<del>that is not a variable length array type</del>.<ins> An entity of variable length array type shall not be initialized except by an empty initializer.</ins></p>
-</blockquote>
-
-
-
-
-# Acknowledgements # {#acknowledgements}
-
-Thank you to the C community for the push to write this paper! Thank you to Joseph Myers, Hubert Tong, and Martin Uecker for wording improvements and suggestions.
-
+Ultimately, the Committee was not in favor of the largest-member-initialized behavior for an empty initializer `{ }`.
 
 
 
@@ -269,15 +300,15 @@ Thank you to the C community for the push to write this paper! Thank you to Jose
 		"href": "https://github.com/ZcashFoundation/zcash_script/pull/17/commits/d8e6e1815bac91eef8134d1b79223c15241cd4ec#diff-d0d98998092552a1d3259338c2c71e118a5b8343dd4703c0c7f552ada7f9cb42R84",
 		"date": "February 18th, 2021"
 	},
-	"N2596": {
+	"N2731": {
 		"authors": [
 			"ISO/IEC JTC1 SC22 WG14 - Programming Languages, C",
 			"JeanHeyd Meneide",
 			"Freek Wiedijk"
 		],
-		"title": "N2596: ISO/IEC 9899:202x - Programming Languages, C",
-		"href": "http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2596.pdf",
-		"date": "December 11th, 2020"
+		"title": "N2731: ISO/IEC 9899:202x - Programming Languages, C",
+		"href": "http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2731.pdf",
+		"date": "October 18th, 2021"
 	}
 }
 </pre>
