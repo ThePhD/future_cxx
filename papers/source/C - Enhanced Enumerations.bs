@@ -122,7 +122,7 @@ This presents some interesting problems for end-users. Plain `enum`s cannot port
 >
 > — §6.7.2.2¶4, Enumeration Specifiers, Semantics
 
-So, the underlying type and the storage type of an enumeration may be anything from `char` to an implementation-defined `__int128_t`. But, when used, it must be an integer value. This creates a strong friction between the actual values of the enumeration and whether or not they can promote. This also creates severe problems where `unsigned short` and `int` have the same bit-width (since both are allowed to be 16 bits) on a given platform and cause integer-promotion conversion issues (unsigned-to-signed conversion resulting in negative numbers, or worse). Finally, as alluded to before, it creates issues in `_Generic` selection clauses:
+So, the underlying type and the storage type of an enumeration may be anything from `char` to an implementation-defined `__int128_t`. But, when used, it must be an integer value. This creates a strong friction between the actual values of the enumeration and what the underlying type is meant to be. It creates further problems where `unsigned short` and `int` have the same bit-width (since both are allowed to be 16 bits) on a given platform and cause integer-promotion conversion issues (unsigned-to-signed conversion resulting in negative numbers, or worse). Finally, as alluded to before, it creates issues in `_Generic` selection clauses:
 
 ```cpp
 enum e {
@@ -170,12 +170,14 @@ enum f {
 
 Then some implementations (e.g., [Clang GCC, and others](https://godbolt.org/z/csxs679Ka)) will choose `unsigned int` for both the enumerator type AND the enumeration constant. This is confusing behavior: the enumerators should be capable of reflecting the values put in, especially if their underlying type is capable of being flexible. The only way to force more standard conforming behavior and force constraint violations is to crank up warning and error reporting to maximum levels (e.g., `-Werror -Wpedantic`).
 
-In short, it is already widely existing practice to size enumerations to fit the values put in them, to the point that `FORCE_MAX = INT_MAX` and other work-around enumeration values are already present and common in some code to try and get [something of a standard behavior](https://stackoverflow.com/a/4879348). Therefore, on top of providing a way out with enumerations of a specified underlying type, we also propose to expand the allowed types for enumeration constants and the values used to initialize them. This has no effect on currently standards-conforming code, because standards-conforming code could only specify values in the range of `[INT_MIN, INT_MAX]` while many other implementations supported additional values as an extension. Implementations for older, standards-compliant enumerations will continue to work as expected, while the wording we provide allows:
+In short, it is already widely existing practice to size enumerations to fit the values put in them. Some users try to force a specific minimum width by employing an enumeration constant of the form `FORCE_MAX = INT_MAX`, as well as other work-around enumeration values. These kinds of work-arounds are already present and common in some code to try and get [something of a standard behavior](https://stackoverflow.com/a/4879348).
+
+To aid users and implementations in this endeavor for non-fixed underlying type enumerations, we also propose to expand the allowed types for enumeration constants and the values used to initialize them. This has no effect on currently standards-conforming code, because standards-conforming code could only specify values in the range of `[INT_MIN, INT_MAX]` while many other implementations supported additional values as an extension. Implementations for older, standards-compliant enumerations will continue to work as expected, while the wording we provide allows:
 
 - integer constant expressions for initialization to be of any type large enough to hold the representation; and,
 - enumeration constants to be of an implementation-defined type after they are complete.
 
-Implementations that wish to keep their implementations working have to simply make no changes to how they handle their enumerations without fixed underlying type today, and everything continues to work. For everyone else with new ABIs or compiling to platforms we own without interoperability concerns, we can achieve maximally compressed and properly typed integer constants even for our enumerators.
+Implementations that wish to keep their current behavior simply do nothing. Making no changes to how they handle their enumerations without fixed underlying type today means everything continues to work. For everyone else with new ABIs or compiling to platforms without interoperability concerns, implementations can achieve maximally compressed and properly typed integer constants, whichever is best for the end-user, without needing to worrying arbitrarily about the width of `int` and how large `INT_MAX` or how small `INT_MIN` might truly be.
 
 
 
