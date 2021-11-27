@@ -115,7 +115,7 @@ This means that even if we have a well-behaved `wchar_t` that is not sensitive t
 
 For example, it was fundamentally impossible to engage in a successful conversion from `wchar_t` strings to `char` multibyte strings on Windows using the C Standard Library. Until a very recent Windows 10 update, UTF8 could **not** be set as the active system codepage either programmatically or through an experimental, deeply-buried setting. This has changed with Windows Version 1903 (May 2019 Update), but the problems do not stop there.
 
-No dedicated UTF-8 support (the standard mandates no specific encodings or charsets) leaves developers to write the routines themselves. Sometimes worse,  roundtrip it through the locale after forcing a change to a UTF-8 locale, which may not be supported. While the non-restartable functions can save quite a bit of code size, unfortunately there are many encodings which are not as nice and require state to be processed correctly (e.g., Shift JIS and other ISO-2022 encodings). Not being able to retain that state between potential calls in a `mbstate_t` is detrimental to the ability to move forward with any encoding endeavor that wishes to bridge the gap between these disparate platform encodings and the current locale.
+No dedicated UTF-8 support (the standard mandates no specific encodings or charsets) leaves developers to write the routines themselves. Sometimes worse, roundtrip it through the locale after forcing a change to a UTF-8 locale, which may not be supported. While the non-restartable functions can save quite a bit of code size, unfortunately there are many encodings which are not as nice and require state to be processed correctly (e.g., Shift JIS and other ISO-2022 encodings). Not being able to retain that state between potential calls in a `mbstate_t` is detrimental to the ability to move forward with any encoding endeavor that wishes to bridge the gap between these disparate platform encodings and the current locale.
 
 Because other library functions can be used to change or alter the locale in some manner, it once again becomes impossible to have a portable, compliant program with deterministic behavior if just one library changes the locale of the program, let alone if the encoding or locale is unexpected by the developer because they do not know of that culture or its locale setting. This hidden state is nearly impossible to account for: the result is software systems that cannot properly handle text in a meaningful way without abandoning C's encoding facilities, relying on vendor-specific extensions/encodings/tools, or confining one's program to only the 7-bit plane of existence.
 
@@ -166,149 +166,149 @@ To understand what this paper proposes, an explanation of the current landscape 
 Here is what exists in the C Standard Library so far:
 
 <table class="feature-emoji">
-  <tr>
-    <th class="feature-emoji-cell"></th>
-    <th class="feature-emoji-cell">mb</th>
-    <th class="feature-emoji-cell">wc</th>
-    <th class="feature-emoji-cell">mbs</th>
-    <th class="feature-emoji-cell">wcs</th>
-    <th class="feature-emoji-cell">c8</th>
-    <th class="feature-emoji-cell">c16</th>
-    <th class="feature-emoji-cell">c32</th>
-    <th class="feature-emoji-cell">c8s</th>
-    <th class="feature-emoji-cell">c16s</th>
-    <th class="feature-emoji-cell">c32s</th>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">mb</td>
-    <td class="feature-emoji-cell">➖</td>
-    <td class="feature-emoji-cell">✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell"> 🇷 </td>
-    <td class="feature-emoji-cell">🇷</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">wc</td>
-    <td class="feature-emoji-cell">✔️</td>
-    <td class="feature-emoji-cell">➖</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">mbs</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">➖</td>
-    <td class="feature-emoji-cell">✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">❌</td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">wcs</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">✔️</td>
-    <td class="feature-emoji-cell">➖</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">❌</td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">c8</td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">➖</td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">c16</td>
-    <td class="feature-emoji-cell">🇷</td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">➖</td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">c32</td>
-    <td class="feature-emoji-cell">🇷</td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">➖</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">c8s</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">❌<br></td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">➖</td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">❌</td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">c16s</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">➖</td>
-    <td class="feature-emoji-cell">❌</td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">c32s</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">❌</td>
-    <td class="feature-emoji-cell">➖</td>
-  </tr>
+	<tr>
+		<th class="feature-emoji-cell"></th>
+		<th class="feature-emoji-cell">mb</th>
+		<th class="feature-emoji-cell">wc</th>
+		<th class="feature-emoji-cell">mbs</th>
+		<th class="feature-emoji-cell">wcs</th>
+		<th class="feature-emoji-cell">c8</th>
+		<th class="feature-emoji-cell">c16</th>
+		<th class="feature-emoji-cell">c32</th>
+		<th class="feature-emoji-cell">c8s</th>
+		<th class="feature-emoji-cell">c16s</th>
+		<th class="feature-emoji-cell">c32s</th>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">mb</td>
+		<td class="feature-emoji-cell">➖</td>
+		<td class="feature-emoji-cell">✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell"> 🇷 </td>
+		<td class="feature-emoji-cell">🇷</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">wc</td>
+		<td class="feature-emoji-cell">✔️</td>
+		<td class="feature-emoji-cell">➖</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">mbs</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">➖</td>
+		<td class="feature-emoji-cell">✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">❌</td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">wcs</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">✔️</td>
+		<td class="feature-emoji-cell">➖</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">❌</td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">c8</td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">➖</td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">c16</td>
+		<td class="feature-emoji-cell">🇷</td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">➖</td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">c32</td>
+		<td class="feature-emoji-cell">🇷</td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">➖</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">c8s</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">❌<br></td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">➖</td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">❌</td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">c16s</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">➖</td>
+		<td class="feature-emoji-cell">❌</td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">c32s</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">❌</td>
+		<td class="feature-emoji-cell">➖</td>
+	</tr>
 </table>
 
 There is a lot of missing functionality here in this table, and it is important to note that a large amount of this comes from both not being willing to standardize more than the bare minimum and not having a cohesive vision for improving encoding conversions in the C Standard. Notably, string-based `{prefix}s` functions are missing, leaving performance-oriented multi-unit conversions out of the standard. There are also severe API flaws in the C standard, [as discussed above](#intro-problem-standard).
@@ -372,149 +372,149 @@ Notably, both of the multibyte string's function design and the wide character s
 To facilitate this, a new header -- `<stdmchar.h>` -- is introduced. The header contains the "multi character" (`mc`) and "multi wide character" (`mwc`) conversion routines, respectively. To support getting data losslessly out of `wchar_t` and `char` strings controlled firmly by the implementation -- and back into those types if the code units in the characters are supported -- the following functionality is proposed using the new multi (wide) character (`m[w]c`) prefixes and suffixes:
 
 <table class="feature-emoji">
-  <tr>
-    <th class="feature-emoji-cell"></th>
-    <th class="feature-emoji-cell">mc</th>
-    <th class="feature-emoji-cell">mwc</th>
-    <th class="feature-emoji-cell">mcs</th>
-    <th class="feature-emoji-cell">mwcs</th>
-    <th class="feature-emoji-cell">c8</th>
-    <th class="feature-emoji-cell">c16</th>
-    <th class="feature-emoji-cell">c32</th>
-    <th class="feature-emoji-cell">c8s</th>
-    <th class="feature-emoji-cell">c16s</th>
-    <th class="feature-emoji-cell">c32s</th>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">mc</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">mwc</td>
-    <td class="feature-emoji-cell">✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">mcs</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">mwcs</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">c8</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">c16</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">c32</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">c8s</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">c16s</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-  </tr>
-  <tr>
-    <td class="feature-emoji-cell">c32s</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell"></td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-    <td class="feature-emoji-cell">🅿️✔️</td>
-  </tr>
+	<tr>
+		<th class="feature-emoji-cell"></th>
+		<th class="feature-emoji-cell">mc</th>
+		<th class="feature-emoji-cell">mwc</th>
+		<th class="feature-emoji-cell">mcs</th>
+		<th class="feature-emoji-cell">mwcs</th>
+		<th class="feature-emoji-cell">c8</th>
+		<th class="feature-emoji-cell">c16</th>
+		<th class="feature-emoji-cell">c32</th>
+		<th class="feature-emoji-cell">c8s</th>
+		<th class="feature-emoji-cell">c16s</th>
+		<th class="feature-emoji-cell">c32s</th>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">mc</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">mwc</td>
+		<td class="feature-emoji-cell">✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">mcs</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">mwcs</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">c8</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">c16</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">c32</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">c8s</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">c16s</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+	</tr>
+	<tr>
+		<td class="feature-emoji-cell">c32s</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell"></td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+		<td class="feature-emoji-cell">🅿️✔️</td>
+	</tr>
 </table>
 
 In particular, it is imperative to recognize that the implementation is the "sole proprietor" of the wide locale encodings and multibyte locale encodings for its string literals (compiler) and library functions (standard library). Therefore, the `mc` and `mwc` functions simply focus on providing a good interface for these encodings. The form of both the individual and string conversion functions are:
@@ -852,7 +852,7 @@ The intent of the wording is to provide transcoding functions that:
 _Author's Note: Any � is a stand-in character to be replaced by the editor._
 
 
-### Create a new section 7.S� Text Transcoding Utilities ### {#wording-7.S�}
+### Create a new section 7.S� Text Transcoding Utilities ### {#wording-specification-7.S�}
 
 <blockquote>
 <div class="wording-section">
