@@ -1,0 +1,689 @@
+<pre class='metadata'>
+Title: A Simple and Practical optional reference for C++
+Shortname: P1175
+Revision: 1
+Audience: LEWG
+Status: P
+Group: WG21
+URL: 
+!Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/d1175.html">https://thephd.dev/_vendor/future_cxx/papers/d1175.html</a>
+!Reply To: <a href="mailto:phdofthehouse@gmail.com">JeanHeyd Meneide</a>, <a href="https://twitter.com/thephantomderp">@thephantomderp</a>
+Repository: ThePhD/future_cxx
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Abstract: optional has seen much contention over its semantics and other points related to Regularity and Consistency, but not being able to answer these questions has delayed important advances in expected, variant, optional and other vocabulary types. This proposal demonstrates a safe and simple subset of optional that can gain consensus and still leaves the door open for when questions of consistency and regularity can be answered with confidence.
+Date: 2019-06-17
+Markup Shorthands: markdown yes, biblio yes, markup yes
+</pre>
+
+<pre class=include>
+path: resources/css/wording.bs
+</pre>
+
+
+
+
+# Revision History # {#changelog}
+
+
+
+## Revision 1 - June 17th, 2019  ## {#changelog-r1}
+
+	- This paper is dead. Please see [[#final]] for a thorough review of next steps and things that you, the reader, can do to move this area along if that is your desire.
+
+
+
+## Revision 0 - October 7th, 2018 ## {#changelog-r0}
+
+	- Initial release.
+
+
+# Final Words # {#final}
+
+This paper was discussed, but did not generate consensus. There are a few ways that this paper can be moved forward in a sensible manner. Here is a (non-exhaustive) list of alternatives with some minor preliminary discussion. None of this represents anyone's opinions but the author's.
+
+## Create a **full** `optional<T&>` ## {#final-full}
+
+This was what p1683r0 was supposed to be (now published, but not pursued). However, before submitting p1683r0 the author requested feedback from several Committee members with a lot of experience in the area. It was explained that p1683r0 would die a fiery death at the hands of the Committee and because it would stir the holy war and pick a side in said holy war, and that a gentle, simpler paper would fare much better.
+
+In perhaps a cruel twist of fate, some of the Against and Neutral votes of the final poll was because p1175 -- this paper -- _did not go far enough_ and tried to go for the simple `optional` that covered the majority of the use cases. That was not enough for many people in the room, and thusly faced opposition because of what it tried to do. To paraphrase, a template specialization which changes from `Regular` to `SemiRegular` is bad in generic code, and is "actively harmful". At this point, individuals cite `vector<bool>` for something that "changes the base template".
+
+The author of this paper does agree, but that was the entire point: to create a `SemiRegular` type while the decisions were hammered out by a less time-constrained Committee at a later date, then shipped to become a normal type under later rules when individuals decided how a type like `std::optional` with a reference should behave in the face of assignment and comparison for parity with `std::optional<T>`. There was almost-consensus to move forward with this simple version, but by not making it through it seems like it would have been a better idea to start and finish the holy war in its entirety by submitting p1683.
+
+Despite publishing this paper so that the work does not go to waste, the author of this paper and p1683 formally abstains from pursuing this area further. It is important to note that without support for references, [performance pitfalls](https://thephd.dev/2018/10/25/Big-Papers-Optional.html) will be a common sort of headache when working with optionals, especially optionals that decay return types. Fixing that divergence is critical to solving the problem on hand, and fixing generic code that does not have 2 separate types for what is the same conceptual model -- references or not -- is also important.
+
+Maybe a full `optional` will survive, but it should be noted that the last time a decision about a reference type in a vocabulary type (`variant`) managed to slip its way through the committee and almost made it in, it was pulled at the eleventh hour because the semantics were not believed to be correct. Winning this war is not a Goliath that can be taken down easily anymore: God's Greatest Speed to whoever picks up this slingshot and any of the 4 sides in this battle.
+
+
+
+## Create `optional_ref<T>` ## {#final-opref}
+
+This is taking this proposal, and giving it a new type name as `optional_ref<T>`. This does not solve the problems of generic code that needs to chain properly, nor does it help with teaching (if you have a value, use this, but if you have a reference, use this other type, and be careful about ...). Library developers will need to wrap their propagating code with `template <typename T> using omni_optional = std::conditional_t<std::is_reference_v<T>, optional_ref<std::remove_reference_t<T>>, optional<std::remove_reference_t<T>>>`. But at this point, why not just forcefully make the library developers do the same thing except without `optional_ref` and with more `std::reference_wrapper`? Code will be uglier, certainly, and library developers will have to virally sprinkle it at all the critical junctures of their code and introduce the same `detail::unwrap` calls so many libraries already contain, but at least the regular user's use cases will be supported. In fact, it can just be `template <typename T> using optional_ref = std::optional<std::reference_wrapper<std::remove_reference_t<T>>>`. This rarely shows up in code because its usability is poor and requires extra syntax just to access the value inside. It is also entirely unclear whether or not this optional should be spaced-optimized ([it isn't](https://godbolt.org/z/YMnk_6)).
+
+It is the author's opinion that this is a hack. It does not really help generic code that needs to propagate a basic C++ reference-qualified type -- which is used prodigiously in return values -- through many higher order abstractions. It is the simple solution but without any aspirations to unite or fix the community, just continue C++'s legacy of patchwork without true solution. Work in this direction is strongly discouraged for standardization: we can and should do better than patchwork.
+
+
+
+## Create a second optional type that gets the semantics right, `std::maybe<T>` ## {#final-maybe}
+
+`maybe<T>` will hold references and values. It will play nice because the semantics can be done properly from the ground up. It is a workable solution, but someone will need to put in the time and convince everyone involved this is a good solution. In the face of `std::optional` already being in the standard, the author does not know what to think about this solution. New types are attractive land grabs for those wishing to leave the baggage behind, but this means that we still have a problem with `std::variant` and `std::expected` which need answers so we -- as a community -- can stop replicating this conundrum.
+
+In the end, `std::maybe<T>` is at best a door to making Standard Library maintainers and friends' lives miserable with duplicated effort. At worst, it is a siren's song into splintering the community in yet another horrible, incompatible way.
+
+
+
+## Just use pointers. ## {#final-pointers}
+
+This is the worst of all the ideas presented. Pointers are not optionals, they are confusing in interfaces, and require programmers to read documentation rather than have the constraints of their type be communicated at compile-time. Pointers are sufficient for C-style interfaces that are optional, and even then are dubious at best when used in string interfaces for C (see the `cwchar` header's conversion functions and the ambiguity of pointers there, or LLVM's owner-nonowner-optional problems that they have been trying to clean up for 3+ years).
+
+Pointers are bad reference optionals, as both parameters and return types. They change the syntax necessary to work with a type and make it difficult to work with generic code.
+
+
+## What about `variant`, `expected`, etc.? ## {#final-others}
+
+The author, sincerely, does not have an answer for the reader here. `variant_ref`? More `std::reference_wrapper`? It is impossible to know how this will all shape up, especially with a type that is meant to deal with parameters and function returns like `std::expected`.
+
+Nevertheless, the author of this paper encourages everyone to drop this paper now and go read p1683. Even if you have a differing opinion, it is important that you are informed of the work and efforts done in this space and do not come to the Committee ill-prepared as the author of this paper once did.
+
+Best of luck to you.
+
+
+
+
+# Overview # {#overview}
+
+<table>
+	<tr>
+		<th>Currently</th>
+		<th>With Proposal</th>
+	</tr>
+	<tr>
+		<td>
+```
+std::optional<MyExpensiveType&> 
+get_cached_value(const my_key_type& key) {
+	if (auto it = cache_table.find(key); 
+	    it != cache_table.cend()) {
+		return it->second;
+	}
+	return std::nullopt;
+}
+```
+❌ - Compilation error; need to return <br/>
+`MyExpensiveType` as a value (and copy)
+		</td>
+		<td>
+```
+std::optional<MyExpensiveType&> 
+get_cached_value(const my_key_type& key) {
+	if (auto it = cache_table.find(key); 
+	    it != cache_table.cend()) {
+		return it->second;
+	}
+	return std::nullopt;
+}
+```
+✔️ - Compiles and runs with no copying
+		</td>
+	</tr>
+</table>
+
+
+
+## The Great Big Table of Behaviors ## {#overview-behavior}
+
+Below is a succinct synopsis of the options presented in this paper and their comparison with known solutions and alternative implementations. It does not include the totality of the optional API surface, but has the most exemplary pieces. A key for the symbols:
+
+✔️ - Succeeds
+
+🚫 - Compile-Time Error
+
+❌ - Runtime Error
+
+❓ - Implementation Inconsistency (between engaged/unengaged states, runtime behaviors, etc.)
+
+ <table>
+	<tr>
+		<th colspan="6">optional behaviors</th>
+	</tr>
+	<tr>
+		<th>Operation</th>
+		<th>T</th>
+		<th>std::reference_wrapper&lt;T&gt;</th>
+		<th>*Proposed:*<br/>[[#design-conservative|T& conservative]]</th>
+	</tr>
+	<tr>
+		<td>exemplary implementation(s)</td>
+		<td>✔️<br/>std::optional<br/>[[martinmoene-optional|nonstd::optional]]<br/>[[llvm-optional|llvm::Optional]]<br/>[[folly-optional|folly::Optional]]<br/>[[mnmlstc-optional|core::Optional]]</td>
+		<td>✔️<br/>std::optional<br/>[[martinmoene-optional|nonstd::optional]]<br/>[[llvm-optional|llvm::Optional]]<br/>[[folly-optional|folly::Optional]]<br/>[[mnmlstc-optional|core::Optional]]</td>
+		<td>✔️<br/>[[akrzemi-optional|std::experimental::optional]]<br/>[[sol2|sol::optional]]</td>
+	</tr>
+	<tr>
+		<td>`optional(const optional&)`</td>
+		<td>✔️<br/>copy constructs `T` (disengaged: nothing)</td>
+		<td>✔️<br/>binds reference (disengaged: nothing)</td>
+		<td>✔️<br/>binds reference (disengaged: nothing)</td>
+	</tr>
+	<tr>
+		<td>`optional(optional&&)`</td>
+		<td>✔️<br/>move constructs `T` (disengaged: nothing)</td>
+		<td>✔️<br/>binds reference (disengaged: nothing)</td>
+		<td>✔️<br/>binds reference (disengaged: nothing)</td>
+	</tr>
+	<tr>
+		<td>`optional(T&)`</td>
+		<td>✔️<br/>(copy) constructs `T`</td>
+		<td>✔️<br/>binds reference</td>
+		<td>✔️<br/>binds reference</td>
+	</tr>
+	<tr>
+		<td>`optional(T&&)`</td>
+		<td>✔️<br/>(move) constructs `T`</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>🚫<br/>compile-time error</td>
+	</tr>
+	<tr>
+		<td>`operator=(T&)`<br/>*engaged*</td>
+		<td>✔️<br/>overwrites `T`</td>
+		<td>✔️<br/>rebinds data</td>
+		<td>🚫<br/>compile-time error</td>
+	</tr>
+	<tr>
+		<td>`operator=(T&)`<br/>*disengaged*</td>
+		<td>️✔️<br/>overwrites data</td>
+		<td>✔️<br/>rebinds data (overwrites reference wrapper)</td>
+		<td>🚫<br/>compile-time error</td>
+	</tr>
+	<tr>
+		<td>`operator=(T&&)`<br/>*engaged*</td>
+		<td>✔️<br/>move-assigns `T`</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>🚫<br/>compile-time error</td>
+	</tr>
+	<tr>
+		<td>`operator=(T&&)`<br/>*disengaged*</td>
+		<td>✔️<br/>constructs `T`</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>🚫<br/>compile-time error</td>
+	</tr>
+	<tr>
+		<td>`operator=(T&)`<br/>*engaged*</td>
+		<td>✔️<br/>overwrites `T`</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>🚫<br/>compile-time error</td>
+	</tr>
+	<tr>
+		<td>`operator=(optional<T>&)`<br/>*disengaged*</td>
+		<td>️✔️<br/>overwrites data</td>
+		<td>✔️<br/>overwrites data</td>
+		<td>🚫<br/>compile-time error</td>
+	</tr>
+	<tr>
+		<td>`operator=(optional<T>&&)`<br/>*engaged;*<br>*arg engaged*</td>
+		<td>✔️<br/>move assign `T`</td>
+		<td>✔️<br/>rebind data</td>
+		<td>✔️<br/>rebind data</td>
+	</tr>
+	<tr>
+		<td>`operator=(optional<T>&&)`<br/>*disengaged;*<br>*arg engaged*</td>
+		<td>✔️<br/>move construct `T`</td>
+		<td>✔️<br/>rebind data</td>
+		<td>✔️<br/>rebind data</td>
+	</tr>
+	<tr>
+		<td>`operator=(optional<T>&&)`<br/>*engaged;*<br>*arg disengaged*</td>
+		<td>✔️<br/>disengage `T`</td>
+		<td>✔️<br/>disengage `T`</td>
+		<td>✔️<br/>disengage `T`</td>
+	</tr>
+	<tr>
+		<td>`operator=(optional<T>&&)`<br/>*disengaged;*<br>*arg disengaged*</td>
+		<td>✔️<br/>nothing</td>
+		<td>✔️<br/>nothing</td>
+		<td>✔️<br/>nothing</td>
+	</tr>
+	<tr>
+		<td>`*my_op = value`<br/>*engaged*</td>
+		<td>✔️<br/>copy assigns `T`</td>
+		<td>✔️<br/>copy assigns `T`</td>
+		<td>✔️<br/>copy assigns `T`</td>
+	</tr>
+	<tr>
+		<td>`*my_op = value`<br/>*disengaged*</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+	</tr>
+	<tr>
+		<td>`*my_op = std::move(value)`<br/>*engaged*</td>
+		<td>✔️<br/>move assigns `T`</td>
+		<td>✔️<br/>move assigns `T`</td>
+		<td>✔️<br/>move assigns `T`</td>
+	</tr>
+	<tr>
+		<td>`*my_op = std::move(value)`<br/>*disengaged*</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+	</tr>
+	<tr>
+		<td>`(*my_op).some_member()`<br/>*engaged*</td>
+		<td>✔️<br/>calls `some_member()`</td>
+		<td>🚫<br/>compile-time error</td>
+		<td>✔️<br/>calls `some_member()`</td>
+	</tr>
+	<tr>
+		<td>`(*my_op).some_member()`<br/>*disengaged*</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+		<td>❌<br/>runtime error</td>
+	</tr>
+	<tr>
+		<td>`operator==(const optional&)`</td>
+		<td>✔️<br/>compares values if both engaged, returns true if both disengaged, returns false otherwise</td>
+		<td>✔️<br/>compares values if both engaged, returns true if both disengaged, returns false otherwise</td>
+		<td>🚫<br/>compile-time error</td>
+	</tr>
+	<tr>
+		<td>`operator<(const optional&)`</td>
+		<td>✔️<br/>compares values if both engaged, returns true if both disengaged, returns false otherwise</td>
+		<td>✔️<br/>compares values if both engaged, returns true if both disengaged, returns false otherwise</td>
+		<td>🚫<br/>compile-time error</td>
+	</tr>
+	<tr>
+		<td>`operator==(const T&)`<br/>*engaged*</td>
+		<td>✔️<br/>compares values</td>
+		<td>✔️<br/>compares values</td>
+		<td>🚫<br/>compile-time error</td>
+	</tr>
+	<tr>
+		<td>`operator<(const T&)`<br/>*engaged*</td>
+		<td>✔️<br/>compares values</td>
+		<td>✔️<br/>compares values</td>
+		<td>🚫<br/>compile-time error</td>
+	</tr>
+	<tr>
+		<td>`operator==(const T&)`<br/>*disengaged*</td>
+		<td>✔️<br/>returns false</td>
+		<td>✔️<br/>returns false</td>
+		<td>🚫<br/>compile-time error</td>
+	</tr>
+	<tr>
+		<td>`operator<(const T&)`<br/>*disengaged*</td>
+		<td>✔️<br/>returns false</td>
+		<td>✔️<br/>returns false</td>
+		<td>🚫<br/>compile-time error</td>
+	</tr>
+</table>
+
+
+
+
+# Motivation # {#motivation}
+
+Originally, `std::optional<T>` -- where `T` denotes the name of a type -- contained a specialization to work with regular references, `std::optional<T&>`. When some of the semantics for references were called into question with respect to assign-through semantics  (assign into the value or rebind the optional) and how comparisons would be performed, the debate stopped early and no full consensus was reached. Rather than remove just the operator or modify comparison operators, the entirety of `std::optional<T&>` was removed entirely. 
+
+This left many codebases in an interesting limbo: previous implementations and external implementations handled references without a problem. Transitioning to pointers created both a problem of unclear API (pointers are an exceedingly overloaded construct used for way too many things) and had serious implications for individuals who wanted to use temporaries as part of their function calls.
+
+As Library Evolution Working Group Chair Titus Winters has frequently stated and demonstrated, having multiple vocabulary types inhibits growth of the C++ ecosystem and fragments libraries and their developers. This comes at an especially high cost for `optional`, `variant`, `any`, `expected` and more. There are at least 6 different `optional`s in the wild with very slightly differing semantics, a handful more `variant`s, a few `expected` types, and more (not including the ones from `boost::`). Of note is that many optionals have been created and are being nurtured to this day without the need to take care of legacy code, which greatly inhibits interopability between code bases and general sharing.
+
+
+
+
+# Design Considerations # {#design}
+
+This solution is the simplest cross-section that enables behavior without encroaching upon a future where the to be posed in the yet-to-be-released p1683r0 will reach an answer to move the C++ community forward. Care has been taken to only approach the most useful subsection, while keeping everything else deleted. This will enable developers to use optional for the 80% use cases, while users handle the 20% use case of rebinding, assigning through, or comparing values / location by choosing much more explicit syntax that will not be deprecated.
+
+
+
+## The Solution ## {#design-conservative}
+
+This baseline version is the version that has seen adoption from hundreds of companies and users: an optional where `operator=` is not allowed, comparison operators are nuked, rebinding is done with an explicit wrapping of `my_op = std::optional<T&>( my_lvalue )` and assign-through is performed using `*my_op = my_l_or_rvalue`. This keeps `std::optional` as a delay-constructed type, allows usage in all of the places a programmer might want to put it trivially, allows it to be used as a parameter, and allows it to be used as a return type.
+
+It forces the user to choose assign-through by explicitly dereferencing the optional as in `*my_op = some_value`, and forces rebind by making the user specify `optional<T&amp;>(some_lvalue)`. It is safe, but penalizes the user for this safety with verbosity (and, arguably, disappointment). It also prevents users of `boost::optional`, `tl::optional`, `ts::optional_ref` and others from migrating painlessly to the standard version, but still allows many of the high-priority uses of such classes with references to transition to using the standard library version.
+
+Another notable feature of adding optional references and using `const T&` is the ability to transition codebases that use temporary values (r-values) passed to functions, this solution will work for individuals without requiring a full rewrite of the code. For example, the function `void old_foo( int arg, const options& opts);` can be transitioned to `void old_foo( int arg, optional<const options&> opts);` and work for both lvalues and r-values passed to the type. This is safe thanks to C++'s lifetime rules around temporary objects, when they bind to references, and when they are lifetime extended; see [class.temporary]/6 for applicable lifetime extension clauses of temporaries, including temporaries that bind to stored references.
+
+
+
+
+# Implementation Experience # {#experience}
+
+This "simple", baseline version is featured in [[akrzemi-optional|akrzemi/optional]], [[sol2]], and the "portable" version of [[boost-optional]] (following Boost's advice to avoid the use of the assignment operator in select cases for compilers with degenerate behavior). It is the least offensive, tasteless, hazard-proof, odorless, non-toxic, biodegradable, organic, and politically correct choice™; it can also be expanded upon at a later date.
+
+This specific version has seen experience for about 8+ years. It is known to be safe and easy to use and covers a good portion of user's use cases without having to invoke the problem of figuring out assign-through or rebind semantics.
+
+The comparison operators do not exist, which make it a subset of `boost` and other optional implementations. Additional work can be done later once the Committee and its constituents .
+
+
+
+
+# Proposed Wording # {#wording}
+
+All wording is relative to [[n4762]].
+
+
+
+## Intent ## {#wording-intent}
+
+The intent of this proposal is to provide a lvalue reference optional. The comparison and equality operators will not be provided. The assignment operator from an lvalue reference or from an lvalue reference of its base will not be provided. The copy-assignment from two optionals will rebind the optional.
+
+Comparison to `nullopt` with equality will provided.
+
+
+
+## Feature Test Macro ## {#wording-feature}
+
+The proposed feature test macro is `__cpp_lib_optional_ref`.
+
+
+
+## Proposed Library Wording ## {#wording-library}
+
+Append to §16.3.1 General [**support.limits.general**]'s **Table 35** one additional entry:
+
+<blockquote>
+<table>
+<tr>
+	<th>Macro name</th>
+	<th>Value</th>
+</tr>
+<tr>
+	<td><ins>__cpp_lib_optional_ref</ins></td>
+	<td><ins>201811L</ins></td>
+</tr>
+</table>
+</blockquote>
+
+Add additional class template specialization to §19.6.2 Header `<optional>` synopsis [**optional.syn**]:
+
+<blockquote>
+```
+// 19.6.3, class template optional
+template<class T>
+class optional;
+```
+<ins>
+```
+// 19.6.4, class template optional for lvalue reference types
+template<class T>
+class optional<T&>;
+```
+</ins>
+</blockquote>
+
+Insert §19.6.4 [**optional.lref**] after §19.6.3 Class template `optional` [**optional.mod**]:
+
+<blockquote>
+<ins>19.6.4 Class template optional for lvalue reference types [**optional.lref**]</ins>
+
+<ins>
+<xmp highlight="C++">
+namespace std {
+
+  template <class T>
+  class optional<T&> {
+  public:
+    typedef T& value_type;
+
+    // 19.6.4.1, construction/destruction
+    constexpr optional() noexcept;
+    constexpr optional(nullopt_t) noexcept;
+    constexpr optional(T&) noexcept;
+    optional(T&&) = delete;
+    constexpr optional(const optional&) noexcept;
+    template <class U> optional(const optional<U&>&) noexcept;
+    ~optional() = default;
+
+    // 19.6.4.2, mutation
+    constexpr optional& operator=(nullopt_t) noexcept;
+    optional& operator=(optional&&) = delete;
+    optional& operator=(const optional&) = delete;
+
+    // 19.6.4.3, observers
+    constexpr T* operator->() const;
+    constexpr T& operator*() const;
+    constexpr explicit operator bool() const noexcept;
+    template<class U> constexpr T value_or(U&&) const&;
+ 
+    // 19.6.4.4, modifiers
+    void reset() noexcept;
+
+  private:
+    T* ref;  // exposition only
+  };
+
+} // namespace std
+</xmp>
+</ins>
+
+<p><ins><sup>1</sup> Engaged instances of `optional<T>` where `T` is of lvalue reference type, refer to objects of type `std::remove_reference_t<T>`, but their life-time is not connected to the life-time of the referred to object. Destroying or disengageing the optional object does not affect the state of the referred to object.</ins></p>
+
+<p><ins><sup>2</sup> Member `ref` is provided for exposition only. Implementations need not provide this member. If `ref == nullptr`, optional object is disengaged; otherwise `ref` points to a valid object.</ins></p>
+
+<p><ins>**19.6.4.1** Construction and destruction [**optional.lref.ctor**]</ins></p>
+
+<ins>
+<xmp highlight="C++">
+constexpr optional<T&>::optional() noexcept;
+constexpr optional<T&>::optional(nullopt_t) noexcept;
+</xmp>
+</ins>
+
+<p><ins><sup>1</sup> Effects: Constructs a disengaged optional object by initializing ref with nullptr.</ins></p>
+
+<p><ins><sup>2</sup> Ensures: `bool(*this) == false.`</ins></p>
+
+<p><ins><sup>3</sup> Remarks: For every object type `T` these constructors shall be constexpr constructors.</ins></p>
+
+<ins>
+<xmp highlight="C++">
+optional<T&>::optional(T& v) noexcept;
+</xmp>
+</ins>
+
+<p><ins><sup>4</sup> Effects: Constructs an engaged optional object by initializing ref with `addressof(v)`.</ins></p>
+
+<p><ins><sup>5</sup> Ensures: `bool(*this) == true && addressof(*(*this)) == addressof(v)`.</ins></p>
+
+<ins>
+<xmp highlight="C++">
+optional<T&>::optional(const optional& rhs) noexcept;
+template <class U> optional<T&>::optional(const optional<U&>& rhs) noexcept;
+</xmp>
+</ins>
+
+<p><ins><sup>6</sup> Constraints: `is_base_of<T, U>::value == true`, and `is_convertible<U&, T&>::value` is true.</ins></p>
+
+<p><ins><sup>7</sup> Effects: If rhs is disengaged, initializes ref with `nullptr`; otherwise, constructs an engaged object by initializing ref with `addressof(*rhs)`.</ins></p>
+
+<ins>
+<xmp highlight="C++">
+optional<T&>::~optional() = default;
+</xmp>
+</ins>
+
+<p><ins><sup>9</sup> Effects: No effect. This destructor shall be a trivial destructor.</ins></p>
+
+<p><ins>**19.6.4.2** Mutation [**optional.lref.mutate**]</ins></p>
+
+<ins>
+<xmp highlight="C++">
+optional<T&>& optional<T&>::operator=(nullopt_t) noexcept;
+</xmp>
+</ins>
+
+<p><ins><sup>1</sup> Effects: Assigns ref with a value of `nullptr`. If ref was non-null initially, the object it referred to is unaffected.</ins></p>
+
+<p><ins><sup>2</sup> Returns: `*this`.</ins></p>
+
+<p><ins><sup>3</sup> Ensures: `bool(*this) == false`.</ins></p>
+
+<p><ins>**19.6.4.3** Observers [**optional.lref.observe**]</ins></p>
+
+<ins>
+<xmp highlight="C++">
+T* optional<T&>::operator->() const;
+</xmp>
+</ins>
+
+<p><ins><sup>1</sup> Requires: `bool(*this) == true`.</ins></p>
+
+<p><ins><sup>2</sup> Returns: ref.</ins></p>
+
+<p><ins><sup>3</sup> Throws: nothing.</ins></p>
+
+<ins>
+<xmp highlight="C++">
+T& optional<T&>::operator*() const;
+</xmp>
+</ins>
+
+<p><ins><sup>4</sup> Requires: `bool(*this) == true`.</ins></p>
+
+<p><ins><sup>5</sup> Returns: `*ref`</ins></p>
+
+<p><ins><sup>6</sup> Throws: nothing.</ins></p>
+
+<ins>
+<xmp highlight="C++">
+explicit optional<T&>::operator bool() noexcept;
+</xmp>
+</ins>
+
+<p><ins><sup>7</sup> Returns: `ref != nullptr`</ins></p>
+
+<ins>
+<xmp highlight="C++">
+template <class U> T& optional<T&>::value_or(U&& u) const;
+</xmp>
+</ins>
+
+<p><ins><sup>8</sup> Returns: `.value()` when `bool(*this)` is true, otherwise `std::forward<U>(u)`.</ins></p>
+
+<p><ins>**19.6.4.4** Observers [**optional.lref.modifiers**]</ins></p>
+
+<ins>
+<xmp highlight="C++">
+template <class U> T& optional<T&>::value_or(U&& u) const;
+</xmp>
+</ins>
+
+<p><ins><sup>12</sup> Returns: `.value()` when `bool(*this)` is true, otherwise `std::forward<U>(u)`.</ins></p>
+</blockquote>
+
+Modify §19.6.6 Relational operators [**optional.relops**] to include the following top-level clause:
+
+<blockquote>
+<ins>
+<sup>1</sup> None of the comparisons in this subsection participate in overload resolutions if `T` or `U` in `optional<T>` or `optional<U>` are an lvalue reference.
+</ins>
+</blockquote>
+
+Modify §19.6.8 Comparison with `T` [**optional.comp_with_t**] to include the following top-level clause:
+
+<blockquote>
+<ins>
+<sup>1</sup> None of the comparisons in this subsection participate in overload resolutions if `T` or `U` in `optional<T>` or `optional<U>` are an lvalue reference.
+</ins>
+</blockquote>
+
+
+
+
+# Acknowledgements # {#acknowledgements}
+
+Thank you to sol2 users for encouraging me to fix this in the standard. Thank you to Lisa Lippincott for encouraging me to make this and one other proposal after seeing my C++Now 2018 presentation. Thank you to Matt Calabrese, R. Martinho Fernandes and Michał Dominiak for the advice on how to write and handle a paper of this magnitude.
+
+Thank you to Tim Song and Walter Brown for reviewing one of my papers, and thus allowing me to improve all of them.
+
+<pre class=biblio>
+{
+	"optional-survey": {
+		"title": "Optional: What's In Our Codebases",
+		"href": "",
+		"date": "August 20th, 2018"
+	},
+	"sol2": {
+		"authors": [
+			"ThePhD"
+		],
+		"title": "sol2: C++ <-> Lua Binding Framework",
+		"href": "https://github.com/ThePhD/sol2",
+		"date": "July 3rd, 2018"
+	},
+	"p0798": {
+		"authors":[
+			"Simon Brand"
+		],
+		"title": "Monadic operations for std::optional",
+		"href": "https://wg21.tartanllama.xyz/monadic-optional/",
+		"date": "May 4th, 2018"
+	},
+	"llvm-optional": {
+		"authors": [
+			"LLVM Developer Group"
+		],
+		"title": "Optional.h",
+		"href": "http://llvm.org/doxygen/Optional_8h_source.html",
+		"date": "July 4th, 2018"
+	},
+	"martinmoene-optional": {
+		"authors": [
+			"Martin Moene"
+		],
+		"title": "Optional Lite",
+		"href": "https://github.com/martinmoene/optional-lite",
+		"date": "June 21st, 2018"
+	},
+	"folly-optional": {
+		"authors": [
+			"Facebook"
+		],
+		"title": "folly/Optional",
+		"href": "https://github.com/facebook/folly",
+		"date": "August 11th, 2018"
+	},
+	"mnmlstc-optional": {
+		"authors": [
+			"Isabella Muerte"
+		],
+		"title": "core::optional",
+		"href": "https://mnmlstc.github.io/core/optional.html",
+		"date": "February 26th, 2018"
+	},
+	"akrzemi-optional": {
+		"authors": [
+			"Andrzej Krzemieński"
+		],
+		"title": "Optional (nullable) objects for C++14",
+		"href": "https://github.com/akrzemi1/Optional",
+		"date": "April 23rd, 2018"
+	},
+	"boost-optional": {
+		"authors": [
+			"Fernando Luis Cacciola Carballal",
+			"Andrzej Krzemieński"
+		],
+		"title": "Boost.Optional",
+		"href": "https://www.boost.org/doc/libs/1_67_0/libs/optional/doc/html/index.html",
+		"date": "July 24th, 2018"
+	},
+	"llama-optional": {
+		"authors": [
+			"Simon Brand (TartanLlama)"
+		],
+		"title": "Optional",
+		"href": "https://github.com/TartanLlama/optional",
+		"date": "June 7th, 2018"
+	},
+	"n4762": {
+		"authors": [
+			"ISO/IEC JTC1/SC22/WG21 - The C++ Standards Committee",
+			"Richard Smith"
+		],
+		"title": "n4762 - Working Draft, Standard for Programming Language C++",
+		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/n4750.pdf",
+		"date": "May 7th, 2018"
+	}
+}
+</pre>

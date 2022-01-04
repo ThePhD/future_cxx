@@ -1,0 +1,195 @@
+<pre class='metadata'>
+Title: Improved Normal Enumerations
+Shortname: 2908
+Revision: 0
+!Previous Revisions: None, Derived from <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2575.pdf">N2575 (r2)</a>
+Status: P
+Date: 2022-01-01
+Group: WG14
+!Proposal Category: Feature Request
+!Target: General Developers, Embedded Systems Developers, Stability Enthusiasts
+Editor: JeanHeyd Meneide (https://thephd.dev), phdofthehouse@gmail.com
+Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Improved%20Normal%20Enumerations.html
+!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-%20Improved%20Normal%20Enumerations.bs">GitHub</a>
+Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
+Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+Abstract: Enumerations should allow values greater than <code>INT_MAX</code> and smaller than <code>INT_MIN</code>.
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<div class="pagebreak"></div>
+
+
+
+
+# Changelog # {#changelog}
+
+
+
+## Revision 0 - January 1<sup>st</sup>, 2022 ## {#changelog-r0}
+
+- Initial release 🎉!
+
+
+
+
+# Introduction and Motivation # {#intro}
+
+C always designates `int` as the type for the enumerators of its enumerations, but it's entirely unspecified what the (underlying compatible) type for the `enum` will end up being. These constants (and the initializers for those constants) must fit within an `int`, otherwise it is a constraint violation. For decades, compilers have been silently providing extensions in their default build modes for enumerations to be larger than `int`, even if `_Generic` and friends always detects the type of such an enumerator to be `int`. It is problematic to only have enumerators which are `int`, especially since it is only guaranteed to be 16-bits wide. Portability breaks happen between normal 32-bit `int` environments like typical GCC and Clang x86 platforms vs. 16-bit `int` environments like SDCC microcontroller targets, which is not desirable.
+
+This proposal provides for enumerations with enumerators of values greater than `INT_MAX` and smaller than `INT_MIN` to have enumerators that are of a different type than `int`, allowing the underlying type and the enumeration constants themselves to be of a different type. It does not change behavior for any enumeration constants which were within the `[INT_MAX, INT_MIN]` range already.
+
+
+
+
+# Prior Art # {#prior}
+
+The design of this feature is to enable what has been existing practice on implementations for a long time now, including GCC, SDCC, Clang, and several other compilers. Compilers have allowed for values greater than `INT_MAX` and values less than `INT_MIN` for a long time in their default compilation modes. We capture this as part of the design discussion below, for how we structure these proposed changes to the C Standard.
+
+
+
+
+# Design # {#design}
+
+This is a very small change that only makes previously ill-formed code now well-formed. It does not provide any other guarantees from the new wording besides allowing constants larger than `int` to be used with enumerations. Better enumeration types and values are better left with the sister paper [on Enhanced Enumerations](https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Improved%20Normal%20Enumerations.html).
+
+More specifically:
+
+- values for enumerators that are outside of the range `[INT_MIN, INT_MAX]` are allowed and change the type of the enumerators from `int`;
+- and, the underlying type for enumerations with such types may be larger than `int`.
+
+Particularly, this code:
+
+```cpp
+enum a {
+	a0 = 0xFFFFFFFFFFFFFFFFULL
+};
+
+int main () {
+	return _Generic(a0,
+		unsigned long long: 0,
+		int: 1,
+		default: 2);
+}
+```
+
+Should produce a value of `0` on a normal implementations (but can give other values, so long as the underlying type is big enough to fit a number (2<sup>64</sup> - 1)). It shall also not produce a diagnostic on even the most strict implementations.
+
+
+
+
+# Proposed Wording # {#wording}
+
+The following wording is [relative to N2731](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2731.pdf).
+
+
+
+## Intent ## {#wording-intent}
+
+The intent of the wording is to provide the ability to express enumerations with the underlying type present. In particular:
+
+- enumerations without an underlying type can have enumerators initialized with integer constant expressions whose type is `int` or some implementation-defined type capable of representing the constant expression's value.
+
+
+
+## Proposed Specification ## {#wording-specification}
+
+
+### Modify Section §6.4.4.3 Enumeration constants ### {#wording-specification-6.4.4.3}
+
+<blockquote>
+<div class="wording-section">
+<p><b>6.4.4.3 &emsp; Enumeration constants</b></p>
+<p><b>Syntax</b></p>
+<div class="wording-numbered">
+<dl>
+	<dd><i>enumeration-constant:</i>
+	<dl>
+		<dd><i>identifier</i></dd>
+	</dl>
+	</dd>
+</dl>
+</div>
+
+<p><b>Semantics</b></p>
+<div class="wording-numbered">
+An identifier declared as an enumeration constant for an enumeration has type <b>int</b><ins> if the value used to initialize the enumeration constant is representable in an <b>int</b>. Otherwise, it is an implementation-defined signed or unsigned integer type capable of holding all of the values of the enumeration, as defined in 6.7.2.2.</ins>
+</div>
+
+Forward references: enumeration specifiers (6.7.2.2).
+</blockquote>
+
+
+### Modify Section §6.7.2.2 Enumeration constants ### {#wording-specification-6.7.2.2}
+
+<blockquote>
+<div class="wording-section">
+<b>6.7.2.2 Enumeration specifiers</b>
+
+<p><b>Syntax</b></p>
+<dl>
+	<dd><i>enum-specifier:</i>
+	<dl>
+		<dd><b>enum</b> <i>attribute-specifier-sequence<sub>opt</sub></i> <i>identifier<sub>opt</sub></i> <b>{</b> <i>enumerator-list</i> <b>}</b>
+		<dd><b>enum</b> <i>attribute-specifier-sequence<sub>opt</sub></i> <i>identifier<sub>opt</sub></i> <b>{</b> <i>enumerator-list</i> <b>,</b> <b>}</b>
+		<dd><b>enum</b> <i>identifier</i>
+	</dl>
+	</dd>
+	<dd><i>enumerator-list:</i>
+	</dl>
+		<dd><i>enumerator</i></dd>
+		<dd><i>enumerator-list</i> <b>,</b> <i>enumerator</i></dd>
+	</dl>
+	</dd>
+	<dd><i>enumerator:</i>
+	<dl>
+		<dd><i>enumeration-constant</i> <i>attribute-specifier-sequence<sub>opt</sub></i></dd>
+		<dd><i>enumeration-constant</i> <i>attribute-specifier-sequence<sub>opt</sub></i> <b>=</b> <i>constant-expression</i></dd>
+	</dl>
+	</dd>
+</dl>
+
+<b>Constraints</b>
+
+<div class="wording-numbered">
+The expression that defines the value of an enumeration constant shall be an integer constant expression.<del> that has a value representable as an <b>int</b>.</del> <ins>If the values of the integer constant expressions for each enumeration constant of an enumeration are representable as an <b>int</b>, then the enumeration constant's type shall be an compatible with <b>int</b>. Otherwise, the values of the integer constant expressions for each enumeration constant for the enumeration determine the implementation-defined compatible type for the enumeration constant. The implementation-defined compatible type shall be capable of representing all of the integer constant expressions used to intiialize the enumeration.</ins>
+</div>
+
+<b>Semantics</b>
+
+<div class="wording-numbered">
+The identifiers in an enumerator list are declared as constants and may appear wherever such are permitted.<sup>133)</sup> An enumerator with <b>=</b> defines its enumeration constant as the value of the constant expression. If the first enumerator has no <b>=</b>, the value of its enumeration constant is 0. Each subsequent enumerator with no <b>=</b> defines its enumeration constant as the value of the constant expression obtained by adding 1 to the value of the previous enumeration constant. (The use of enumerators with <b>=</b> may produce enumeration constants with values that duplicate other values in the same enumeration.) The enumerators of an enumeration are also known as its members.
+</div>
+
+<div class="wording-numbered">
+Each enumerated type shall be compatible with <b>char</b>, a signed integer type, or an unsigned integer type <ins>(excluding the bit-precise integer types)</ins>. The choice of type is implementation-defined<sup>134)</sup>, but shall be capable of representing the values of all the members of the enumeration.
+</div>
+
+<div class="wording-numbered">
+The enumerated type is incomplete until immediately after the <b>}</b> that terminates the list of enumerator declarations, and complete thereafter.
+</div>
+</blockquote>
+</div>
+
+
+### Add implementation-defined enumeration behavior to Annex J ### {#wording-specification-annex-j}
+
+
+
+
+# Acknowledgements # {#acknowledgements}
+
+Thanks to:
+
+- Aaron Ballman for help with the initial drafting;
+- Aaron Ballman, Aaron Bachmann, Jens Gustedt & Joseph Myers for questions, suggestions and offline discussion;
+- Robert Seacord for editing suggestions; and,
+- Clive Pygott for the initial draft of this paper.
+
+We hope this paper serves you all well.

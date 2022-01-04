@@ -1,0 +1,209 @@
+<pre class='metadata'>
+Title: Module Resource Dependency Propagation
+Shortname: P1130
+Revision: 2
+Audience: EWG
+Status: D
+Group: WG21
+URL: 
+!Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/d1130.html">https://thephd.dev/_vendor/future_cxx/papers/d1130.html</a>
+Repository: ThePhD/future_cxx
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Abstract: This paper attempts to provide a level of indirection upon which build system and package management tools build sane, higher-level abstractions.
+Date: 2019-01-21
+Markup Shorthands: markdown yes, biblio yes, markup yes
+</pre>
+
+<pre class=include>
+path: resources/css/wording.bs
+</pre>
+
+
+
+
+# Revision History # {#changelog}
+
+
+
+## Revision 2 - February 30th, 2019 ## {#changelog-r2}
+
+	- Fix bad link.
+	- Give normative teeth to the feature, making not-found files ill-formed (Carruth, Dominiak).
+
+
+
+## Revision 1 - January 21st, 2019 ## {#changelog-r1}
+
+	- Add words of power, "resource location".
+	- Clarify wording around it not being a hard error.
+	- Track changes to [[p1103]] accordingly.
+	- Fix description in motivation of the use of `require`.
+	- Add HRESOURCE example.
+
+
+
+## Revision 0 - November 26th, 2018 ## {#changelog-r0}
+
+	- Initial release.
+
+
+
+
+
+# Motivation # {#motivation}
+
+The only way to declare a dependency in C++ currently is to use a `#include` statement. With Modules coming to C++, dependency information was greatly enhanced by preambles and globule module fragments which allow for both the compiler and build system to understand physical and semantic layout of code. However, there is still a problem area that C++ has not addressed that people in the brave new Modules ecosystem want to answer: external dependency information for Modular C++. There is a huge opportunity to add a small directive to C++ which can be transiently ignored by the compiler but allows a build system or dependency graph generator to stay up to date without compiler-specific and tool-specific hacks.
+
+In particular, consider a resource file on Windows (`.rc`) or an injected resource on Linux (with `objcopy`) or Apple's Bundles. At present, there's no way to inform C++ of these dependencies or inform the build system in a way that keeps both the source code and the build system in-sync: it is easy to fall out of lock-step with each other, and often requires custom rules on the part of the build system vendor or the application author. While resource files are a problem that [[p1040]] plan to solve, San Diego discussion around such a proposal demonstrated that people were conflicted with the idea that there might not be a way to communicate without doing full Semantic Analysis the actual source dependencies (e.g., Phase 1-7 of compilation).
+
+Reducing the complexity of the build system and its dependency on vendor-specific extensions and tools for handling source dependency information is of high priority. This proposal wants to add 2 new statements to the Preprocessing Module Tokens for [[p1103]], in particular `requires { identifier = requires "blah.txt" }` and `requires "blah.txt"` in the Module Declaration.
+
+
+
+
+# Proposed Solution # {#solution}
+
+The proposed solution to the problem is to add a general purpose marker for communication of dependencies in the preamble. There is also an addition for making the string literal used to show dependencies as a global variable, allowing it to be used in `constexpr` contexts. It will be used as part of the typical modules declaration, making it available in public and private modules. For example:
+
+```
+module;
+// communicate this module
+// relies on a file "foo.txt"
+module bar requires "foo.txt";
+```
+
+For multiple dependencies for a single module, we use a multi-clause requires with brackets:
+
+```
+module mega_bar requires { "qux.txt", "meow.jpg", "uuids.csv" };
+```
+
+This allows us to inform the build system of dependencies with no new keywords. This also lets the compiler export dependency information with user-added information at no additional cost to the compiler, not occurring semantic analysis.
+
+A program may also set one or more of the string literals to an identifier made available after the preamble. The value of that identifier will be the string literal set equal to the identifier in the module requires:
+
+```
+module bar requires { bar_ico_name = L"bar.ico" };
+
+// later, same module unit ...
+
+// using, for example, 
+// Windows's RC system
+HRSRC hResource = FindResourceExW(m_hmoduleInstance, 
+	bar_ico_name,
+	m_hresource_type, 
+	MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL));
+```
+
+This allows individuals to not suffer from the multi-location-updating problem: specify the name in the preamble, use that name everywhere else without having to update multiple places or keep 2 names in sync.
+
+The proposal's wording also introduces a "Word of Power" — *resource-locations* — to specify and allow the rest of the C++ Standard to all reference the same place about resource locations and lookup. It is important that this is distinct from inclusion paths, because the two lookup specifications are inherently separate and serve different purposes. Having it as something that can be referenced means that we can keep all resource interaction attempts -- from [[p1040|p1040 - std::embed]] to any upcoming initiatives later in the standard -- perfectly in-sync with one another.
+
+The compiler is normatively required to error if it cannot find anything along the *resource-locations* type.
+
+
+
+
+# Proposed Changes to the Standard # {#wording}
+
+These changes are relative to [[p1103]]. If this is successful in being merged to C++20, then this paper will be rebased on the C++ Working Draft.
+
+
+
+## Proposed Feature Test Macro ## {#wording-feature}
+
+The proposed feature test macro for this is `__cpp_module_dependency_depends`.
+
+
+
+## Intent ## {#wording-intent}
+
+The intent of this wording is to:
+
+- provide a Word of Power called "*resource-locations*" in the Standard that allow other places to reference the same lookup mechanism;
+- allow a `requires` clause at the end of a module declaration to specify resource identifiers;
+- and, allow resource identifiers to be set to a variable name that can be used throughout the <i>module-unit</i>.
+
+This proposal wants to ensure that future and concurrent proposals (such as [[p1040|std::embed]]) can refer to this same lookup mechanism by using the specified word of power ("*resource-locations*").
+
+## Proposed Wording ## {#wording-language}
+
+Modify section §100.1 Modules units and purview [**module.unit**] to also include the following:
+
+<blockquote>
+<dl>
+	<dt><i>module-declaration:</i></dt>
+		<dd>
+			export<sub>opt</sub> module <i>module-name</i> <i>module-partition<sub>opt</sub></i> <i>attribute-specifier-seq<sub>opt</sub></i> <ins> <i>module-requires<sub>opt</sub></i></ins> ;
+		</dd>
+</dl>
+</blockquote>
+
+Add a section §100.� Resource requirement propagation [**module.requires**] to §100 [**modules**]:
+
+<blockquote>
+<ins>
+<b>100.� Resource requirement propagation <span style="float: right">[module.requires]</span></b>
+
+<dl style="text-indent: 5em">
+	<dt><i>module-requires-name:</i></dt>
+		<dd>
+			<i>string-literal</i>
+		</dd>
+		<dd>
+			<i>identifier</i> = <i>string-literal</i>
+		</dd>
+	<dt><i>module-requires-name-seq:</i></dt>
+		<dd>
+			<i>module-requires-name</i>
+		</dd>
+		<dd>
+			<i>module-requires-name</i> , <i>module-requires-name-seq<sub>opt</sub></i>
+		</dd>
+	<dt><i>module-requires:</i></dt>
+		<dd>
+			requires { <i>module-requires-name-seq<sub>opt</sub></i> }
+		</dd>
+		<dd>
+			requires <i>string-literal</i>
+		</dd>
+</dl>
+
+<p><sup>1</sup> A resource requirement is a way for a module unit to communicate its dependency on certain unique resources for the well-formedness of the program. A program may specify one or more <i>string-literal</i>s in the requirements clause to make clear this dependency in the <i>module-declaration</i>. Each <i>string-literal</i> of a resource requirement uniquely identifies one resource.</p>
+
+<p><sup>2</sup> When the <i>module-requires-name</i> specifies an <i>identifier</i> set to a value, then the <i>module-requires-name</i>'s <i>identifier</i> is made available to the module unit as-if by `decltype(string-literal)& identifier = string-literal;`.</p>
+
+<p><sup>3</sup> The locations the implementation may search for the resource uniquely identified by the `string-literal` is implementation defined, and is called the <i>resource-locations</i>.</p>
+
+<p><sup>4</sup> If the implementation cannot find the specified resource, then the program is ill-formed.</p>
+</ins>
+</blockquote>
+
+
+
+# Acknowledgements # {#acknowledgements}
+
+Thanks to Isabella Muerte for helping to select the right type of syntax for this feature.
+
+
+<pre class=biblio>
+{
+	
+	"p1040": {
+		"authors": [
+			"JeanHeyd Meneide"
+		],
+		"title": "std::embed",
+		"href": "https://wg21.link/p1040",
+		"date": "October 12th, 2018"
+	},
+	"p1103": {
+		"authors": [
+			"Richard Smith"
+		],
+		"title": "Merging Modules",
+		"href": "https://wg21.link/p1103",
+		"date": "November 26th, 2018"
+	}
+}
+</pre>

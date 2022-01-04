@@ -1,0 +1,530 @@
+<pre class='metadata'>
+Title: Literal Suffix for (signed) size_t
+Shortname: P0330
+Revision: 8
+Audience: CWG
+Status: P
+Group: WG21
+URL: 
+!Target: C++23
+!Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/d0330.html">https://thephd.dev/_vendor/future_cxx/papers/d0330.html</a>
+Repository: ThePhD/future_cxx
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: Rein Halbersma
+Abstract: This paper proposes core language suffixes for size_t and its associated signed type.
+Date: 2019-11-24
+Markup Shorthands: markdown yes, biblio yes, markup yes
+</pre>
+
+<pre class=include>
+path: resources/css/wording.bs
+</pre>
+
+
+
+
+# Revision History # {#changelog}
+
+
+## Revision 8 - November 4th, 2019 ## {#changelog-r8}
+
+	- Make wording and paper changes for surprise Core Working Group review in Core on November 4th.
+	- Prepare for potential tentatively-ready review for C++23.
+	- Use `std::size_t` everywhere.
+	- Approved early for C++23 for Varna!
+
+
+
+## Revision 7 - June 17th, 2019 ## {#changelog-r7}
+
+	- Added additional motivating examples (thanks David Stone).
+	- Fixed derp in wording (thanks Roger Orr).
+	- Evolution Working Group evaluated the paper, passing the `uz`/`z` literals, while denying the `ut`/`t` literals.
+	- Accept the uz/z literal suffixes for integers as in P0330 for C++23?
+```
+SF  F  N  A SA
+ 4 19 12  2  0
+```
+	- Accept the ut/t literal suffixes for integers as in P0330 for C++23?
+```
+SF  F  N  A SA
+ 0  8 15 10  2
+```
+	- Going to Core Working Group for C++23!
+
+
+
+## Revision 6 - June 17th, 2019 ## {#changelog-r6}
+
+	- Added additional motivating examples (thanks Alberto Escrig).
+	- Update wording to reflect against [[n4820]].
+
+
+
+## Revision 5 - February 8th, 2019 ## {#changelog-r5}
+
+	- Added additional motivation regarding template parameters.
+	- Add additional feature test macros for each type of suffix.
+
+
+
+## Revision 4 - January 21st, 2019 ## {#changelog-r4}
+
+	- Discussed additional reasoning due to `<span>` changes with `ssize(const T&)` and others.
+	- Wording is now relative to [[n4778]], the latest C++ Standard working draft.
+
+
+
+## Revision 3 - November 26th, 2018 ## {#changelog-r3}
+
+	- Strengthened rationale for the current set of suffixes in [[#design-suffix]].
+
+
+
+## Revision 2 - October 1st, 2018 ## {#changelog-r2}
+
+	- Published as P0330R2; change reply-to and point of contact from Rein Halbersma to JeanHeyd Meneide, who revitalized paper according to feedback from Rein Halbersma, and all of LWG. Overwhelming consensus for it to be a Language Feature instead, proposal rewritten as Language proposal with wording against [[n4762]].
+
+
+
+## Revision 1 - October 12th, 2017 ## {#changelog-r1}
+
+	- Published as P0330R1; expanded the survey of existing literals. Synced the proposed wording with the Working Draft WG21/N4687. Moved the reference implementation from BitBucket to GitHub.
+
+
+
+## Revision 0 - November 21st, 2014 ## {#changelog-r0}
+
+	- Initial release; published as N4254.
+	- Published as P0330R0; summarized LEWG's view re N4254; dropped the proposed suffix for ptrdiff_t; changed the proposed suffix for size_t to zu; added survey of existing literal suffixes.
+
+
+
+
+# Feedback on Revisions # {#changelog-polls}
+
+Polls are in the form **Strongly in Favor | Favor | Neutral | Against | Strongly Against**. The polls on Revision 1 were as follows, from an EWG meeting with joint LWG/EWG participation at the WG21 2017 Albuquerque meeting.
+
+*Proposal as presented, i.e., are we OK with the library solution going forward?*
+	
+	**0 | 6 | 5 | 7 | 4**
+
+We translated this as strong discouragement to pursue this feature as a set of user-defined literals. A second poll was taken.
+
+*Do we want to solve this problem with a language feature?*
+
+	**2 | 15 | 0 | 2 | 2**
+
+We considered this overwhelming consensus for it to be a language feature instead, culminating in this paper after much feedback.
+
+
+
+
+# Motivation # {#motivation}
+
+<table>
+	<tr>
+		<th>Currently</th>
+		<th>With Proposal</th>
+	</tr>
+	<tr>
+		<td>
+```c++
+std::vector<int> v{0, 1, 2, 3};
+for (auto i = 0u, s = v.size(); i < s; ++i) {
+	/* use both i and v[i] */
+}
+```
+⚠️ - Compiles on 32-bit, truncates (maybe with warnings) on 64-bit
+
+```c++
+std::vector<int> v{0, 1, 2, 3};
+for (auto i = 0, s = v.size(); i < s; ++i) {
+	/* use both i and v[i] */
+}
+```
+❌ - Compilation error
+		</td>
+		<td>
+```c++
+ 
+
+
+
+
+std::vector<int> v{0, 1, 2, 3};
+for (auto i = 0uz, s = v.size(); i < s; ++i) {
+	/* use both i and v[i] */
+}
+
+
+ 
+```
+✔️ - Compiles with no warnings on 32-bit or 64-bit
+		</td>
+	</tr>
+	<tr>
+		<td>
+```c++
+ 
+auto it = std::find(boost::counting_iterator(0), 
+	boost::counting_iterator(v.size()), 3);
+```
+❌ - Compilation error
+		</td>
+		<td>
+```c++
+ 
+auto it = std::find(boost::counting_iterator(0uz), 
+	boost::counting_iterator(v.size()), 3uz);
+```
+✔️ - Compiles with no warnings on 32-bit or 64-bit
+		</td>
+	</tr>
+	<tr>
+		<td>
+```c++
+std::size_t space_param = /* ... */;
+std::size_t clamped_space = std::max(0, 
+	std::min(54, space_param)
+);
+vec.reserve(clamped_space);
+```
+```c++
+std::span<int> s = /* init */;
+std::ptrdiff_t clamped_space = std::max(0, 
+	std::min(24, std::ssize(s))
+);
+```
+❌ - Compilation error; OR,<br/>
+⚠️ - Compiles, but becomes excessively verbose with `static_cast` or `(type)` casts
+		</td>
+		<td>
+```c++
+std::size_t space_param = /* ... */;
+std::size_t clamped_space = std::max(0uz, 
+	std::min(54uz, space_param)
+);
+vec.reserve(clamped_space);
+```
+```c++
+std::span<int> s = /* init */;
+std::ptrdiff_t clamped_space = std::max(0t, 
+	std::min(24t, std::ssize(s))
+);
+```
+✔️ - Compiles with no warnings on 32-bit or 64-bit
+		</td>
+	</tr>
+	<tr>
+		<td>
+```
+template <class... TYPES>
+constexpr 
+void 
+tuple<TYPES...>::swap(tuple& other)
+noexcept((is_nothrow_swappable_v<TYPES> and ...))
+{
+	for...(constexpr size_t N : view::iota(0, sizeof...(TYPES))) {
+		swap(get<N>(*this), get<N>(other));
+	}
+}
+```
+❌ - Compilation error; OR,<br/>
+⚠️ - Compiles, but becomes excessively verbose with `static_cast` or `(type)` casts
+		</td>
+		<td>
+```
+template <class... TYPES>
+constexpr 
+void 
+tuple<TYPES...>::swap(tuple& other)
+noexcept((is_nothrow_swappable_v<TYPES> and ...))
+{
+	for...(constexpr size_t N : view::iota(0uz, sizeof...(TYPES))) {
+		swap(get<N>(*this), get<N>(other));
+	}
+}
+```
+✔️ - Compiles with no warnings on 32-bit or 64-bit
+		</td>
+	</tr>
+</table>
+
+Consider this very simple code to print an index and its value:
+
+```
+std::vector<int> v{0, 1, 2, 3};
+for (auto i = 0; i < v.size(); ++i) {
+	std::cout << i << ": " << v[i] << '\n';
+}
+```
+
+This code can lead to the following warnings:
+
+```
+main.cpp: In function 'int main()':
+main.cpp:warning: comparison of integer expressions 
+of different signedness: 'int' and 'long unsigned int' [-Wsign-compare]
+    for (auto i = 0; i < v.size(); ++i) {
+                     ~~^~~~~~~~~~
+```
+
+It grows worse if a user wants to cache the size rather than query it per-iteration:
+
+```
+std::vector<int> v{0, 1, 2, 3};
+for (auto i = 0, s = v.size(); i < s; ++i) {
+	/* use both i and v[i] */
+}
+```
+
+Resulting in a hard compiler error:
+
+```
+main.cpp: In function 'int main()':
+main.cpp:8:10: error: inconsistent deduction 
+for 'auto': 'int' and then 'long unsigned int'
+     for (auto i = 0, s = v.size(); i < s; ++i) {
+          ^~~~
+```
+
+This paper proposes adding a `zu`s literal suffix that creates `size_t` literals, making the following warning-free:
+
+```
+for (auto i = 0zu; i < v.size(); ++i) {
+	std::cout << i << ": " << v[i] << '\n';
+}
+```
+
+It also makes this code compile without `error: no matching function for call to 'min(int, std::vector<int>::size_type)'` and similar:
+
+```
+#include <algorithm>
+#include <vector>
+
+int main() {
+	std::vector<int> v;
+	/* work with v... */
+
+	std::size_t clamped_space = std::max(0zu, 
+		std::min(54zu, v.size()) // error without suffix
+	);
+
+	return 0;
+}
+```
+
+More generally:
+
+- int is the default type deduced from integer literals without suffix;
+- comparisons, signs or conversion ranks with integers can lead to surprising results;
+- `size_t` -- and now more frequently, `ptrdiff_t` because of `ssize()` -- are nearly impossible to avoid in the standard library for element access or `.size()` members;
+- programmer intent and stability is hard to communicate portably with the current set of literals;
+- surprises range from (pedantic) compiler errors to undefined behavior;
+- existing integer suffixes (such as `ul`) are not a general solution, e.g. when switching compilation between 32-bit and 64-bit on common architectures;
+- template parameters for multiple arguments often clash with what literals have;
+- and, C-style casts and static_casts are verbose.
+
+
+
+
+# Design # {#design}
+
+Following the feedback from [[#changelog-polls]], we have dropped the `std::support_literals` User-Defined Literals and  chose a Core Language Literal Suffix. We opine that it would better serve the needs of addressing the motivation.
+
+As a language feature, the design of the suffixes becomes much simpler. The core language only has one format for its integer literal suffixes: the letter(s), with an optional `u` on either side of the letter(s) to make it unsigned, with the signed variant being the default on most architectures. We did not want to use `s` because `s` might mean `short` to some and there are people working on the `short float` paper currently wherein a suffix such as `sf` might surface. In this case, it would make some small amount of sense for the suffix `s` to also work for shorts, albeit that might have unforeseen consequences with standard-defined library literals.
+
+The literal suffixes `z` and `uz`/`zu` alongside `t` and `ut`/`tu` were chosen to represent signed/unsigned `size_t` and `ptrdiff_t`, respectively. `decltype(0t)` will yield `ptrdiff_t` and `decltype(0uz)`/`decltype(0zu)` will yield `size_t`. Like other case-insensitive language literal suffixes, it will accept both `Z`/`T` and `z`/`t` (and `U` and `u` alongside of it). This follows the current convention of the core language to be able to place `u` and `z`/`t` in any order / any case for the suffix.
+
+
+
+## Using `t` for `ptrdiff_t` and `zu` for `size_t`? ## {#design-suffix}
+
+Previous invocations of this paper used only `z` and `uz`/`zu`, mostly because there was no named type that represented what a signed `std::size_t` or an unsigned `std::ptrdiff_t` was. This made it awkward to place into the C++ wording for the author writing this paper. However, Core Wording experts (thanks Hubert Tong and Jens Maurer!) have helped elucidate that while the type may not have a formal name or type alias in the language, it is perfectly valid to say "the unsigned/signed integer type corresponding to {X}".
+
+
+
+## Why bother making a suffix for ptrdiff_t? ## {#design-ptrdiff_t}
+
+With the inclusion of a `ssize()` free function coming to the standard, this paper advocates for keeping a literal for `ptrdiff_t`. As the paper was going through the Library group earlier, `span`'s design decisions were not coming to a head and thusly the dialogue did not bring this up. With `span` now headed into C++20 and `ssize()` with it, having a modifier for `ptrdiff_t` is useful for consistency and helpful for success in a world where developers employ a lot of `auto` and `decltype`.
+
+
+
+## But what about {insert favorite suffix here}? ## {#design-favorite-suffix}
+
+We designed the suffixes based on feedback from both EWG and Core members in the 3 mailing list posts corresponding to that discussion. We will take additional polls on the actual suffix desired by the Community before EWG.
+
+For example, it was made clear during discussion that while some people would not lose any sleep over a suffix scheme such as `z` for `ptrdiff_t` and `uz`/`zu` for `size_t`, others were concerned that architectures (such as armv7-apple-darwin) produced answers such as `decltype(0zu) = unsigned long` for `size_t` and `decltype(0z) = int` for `ptrdiff_t`. They have the same range exponent on this architecture but the type disconnect would likely bother some folks. The current scheme is to avoid such a pairing of incongruent types.
+
+
+
+## What about the fixed/least/max (unsigned) int types? ## {#design-std-ints}
+
+This paper does not propose suffixes for the fixed size, at-least size, and max size integral types in the standard library or the language. This paper is focusing exclusively on `ptrdiff_t` and `size_t`. We have also been made aware of another paper which may handle this separately and considers all the design space necessary for such. We feel it would be best left to LEWG to handle such a paper, since they are closer to library types.
+
+
+
+
+# Impact on the Standard # {#impact}
+
+This feature is purely an extension of the language and has, to the best of our knowledge, no conflict with existing or currently proposed features. `z` and `t` are currently not a literal suffix in the language. As a proof of concept, it has a [[gcc-implementation|patch in GCC already]] according to this paper by Ed Smith-Rowland.
+
+
+
+
+# Proposed wording and Feature Test Macros # {#wording}
+
+The following wording is relative to the latest working draft.
+
+
+
+## Proposed Feature Test Macro ## {#wording-feature}
+
+The recommended feature test macro is `__cpp_size_t_suffix`.
+
+
+
+## Intent ## {#wording-intent}
+
+The intent of this paper is to propose 1 language suffix for integral literals of `std::size_t`. We follow the conventions set out for other literals in the standard. We define the suffix to produce types `size_t` and "the signed type corresponding to `size_t`" similar to how [[n4820|§5.13.7 Pointer Literals [lex.nullptr]]] introduces `std::nullptr_t`.
+
+
+
+## Proposed Wording ## {#wording-language}
+
+Modify §5.13.2 Integer Literals [**lex.icon**] with additional suffixes:
+
+<blockquote>
+<p>
+<dl>
+	<dt><i>integer-suffix</i>:</dt>
+		<dd>
+			<i>unsigned-suffix long-suffix<sub>opt</sub></i>
+		</dd>
+		<dd>
+			<i>unsigned-suffix long-long-suffix<sub>opt</sub></i>
+		</dd>
+		<dd>
+			<i><ins>unsigned-suffix size-suffix<sub>opt</sub></i>
+		</dd>
+		<dd>
+			<i>long-suffix unsigned-suffix<sub>opt</sub></i>
+		</dd>
+		<dd>
+			<i>long-long-suffix unsigned-suffix<sub>opt</sub></i>
+		</dd>
+		<dd>
+			<ins><i>size-suffix unsigned-suffix<sub>opt</sub></i></ins>
+		</dd>
+</dl>
+</p>
+
+<p>
+<i>unsigned-suffix</i>: one of<br/>
+&emsp;u U
+</p>
+
+<p>
+<i>long-suffix</i>: one of<br/>
+&emsp;l L
+</p>
+
+<p>
+<i>long-long-suffix</i>: one of<br/>
+&emsp;ll LL
+</p>
+
+<p>
+<ins>
+<i>size-suffix</i>: one of<br/>
+&emsp;z Z
+</ins>
+</p>
+</blockquote>
+
+Append to §5.13.2 Integer Literals [**lex.icon**]'s **Table 7** four additional entries:
+
+<blockquote>
+<table>
+<tr>
+	<th>Suffix</th>
+	<th>Decimal literal</th>
+	<th>Binary, octal, or hexadecimal literal</th>
+</tr>
+<tr>
+	<td><ins>z or Z</ins></td>
+	<td><ins>the signed integer type corresponding to <code>std::size_t</code> (<a href="http://eel.is/c++draft/support.types.layout">[**support.types.layout**] 17.2.4</href>)</ins></td>
+	<td><ins>the signed integer type corresponding to <code>std::size_t</code><br/><ins><code>std::size_t</code></ins></ins></td>
+</tr>
+<tr>
+	<td><ins>Both u or U<br/>and z or Z</ins></td>
+	<td><ins><code>std::size_t</code></ins></td>
+	<td><ins><code>std::size_t</code></ins></td>
+</tr>
+</table>
+</blockquote>
+
+Append to §14.8 Predefined macro names [**cpp.predefined**]'s **Table 17** with one additional entry:
+
+<blockquote>
+<table>
+<tr>
+	<th>Macro name</th>
+	<th>Value</th>
+</tr>
+<tr>
+	<td><ins>__cpp_size_t_suffix</ins></td>
+	<td><ins>202006L</ins></td>
+</tr>
+</table>
+</blockquote>
+
+
+
+
+# Acknowledgements # {#acknowledgements}
+
+Thank you to Rein Halbersma, who started this paper and put in the necessary work for r0 and r1. Thank you to Walter E. Brown, who acted as *locum* on this paper before the Committee twice and gave us valuable feedback on wording. Thank you to Lounge&lt;C++&gt;'s Cicada for encouraging us to write this paper. Thank you to Hubert Tong and Jens Maurer for giving us a few pointers on where in the Core Language to modify things for such a paper and what words to use. Thank you to Tim Song for wording advice.
+
+We appreciate your guidance as we learn to be a better Committee member and represent the C++ community's needs more more efficiently and effectively in the coming months.
+
+<pre class=biblio>
+{
+	"n4820": {
+		"authors": [
+			"ISO/IEC JTC1/SC22/WG21 - The C++ Standards Committee",
+			"Richard Smith"
+		],
+		"title": "N4820 - Working Draft, Standard for Programming Language C++",
+		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/n4800.pdf",
+		"date": "January 21st, 2019"
+	},
+	"n4778": {
+		"authors": [
+			"ISO/IEC JTC1/SC22/WG21 - The C++ Standards Committee",
+			"Richard Smith"
+		],
+		"title": "N4778 - Working Draft, Standard for Programming Language C++",
+		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/n4778.pdf",
+		"date": "November 26th, 2018"
+	},
+	"n4762": {
+		"authors": [
+			"ISO/IEC JTC1/SC22/WG21 - The C++ Standards Committee",
+			"Richard Smith"
+		],
+		"title": "N4762- Working Draft, Standard for Programming Language C++",
+		"href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/n4762.pdf",
+		"date": "May 10th, 2018"
+	},
+	"gcc-implementation": {
+		"authors": [
+			"Ed Smith-Rowland"
+		],
+		"title": "[[C++ PATCH]] Implement C++2a P0330R2 - Literal Suffixes for ptrdiff_t and size_t",
+		"href": "https://gcc.gnu.org/ml/gcc-patches/2018-10/msg01278.html",
+		"date": "October 21st, 2018"
+	}
+}
+</pre>

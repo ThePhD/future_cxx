@@ -1,0 +1,139 @@
+<pre><code>Document Number: P0330R1
+Date:            2017-10-12
+Revises:         P0330R0
+Reply-to:        Rein Halbersma &lt;rhalbersma at gmail dot com&gt;
+Audience:        LWG</code></pre>
+<h1 id="user-defined-literals-for-size_t">User-Defined Literals for <code>size_t</code></h1>
+<h2 id="introduction">1 Introduction</h2>
+<p>We propose the user-defined suffix <code>zu</code> for <code>size_t</code> literals. This allows the succinct and convenient left-to-right <code>auto</code> variable initialization:</p>
+<pre><code>auto s = 0zu; // local variable s has value 0 and type size_t</code></pre>
+<h2 id="motivation-and-scope">2 Motivation and Scope</h2>
+<p><strong>2.1</strong> The main motivations for this proposal are:</p>
+<ul>
+<li><code>int</code> is the default type deduced from integer literals without suffix;</li>
+<li><code>size_t</code> is almost unavoidable when using the standard containers' element access or <code>size()</code> member functions;</li>
+<li>comparisons and arithmetic with integer types of mixed signs or different conversion ranks can lead to surprises;</li>
+<li>surprises range from (pedantic) compiler warnings to undefined behavior;</li>
+<li>using existing unsigned integer literals (such as <code>ul</code>) is not a general solution;</li>
+<li>explicit typing or <code>static_cast</code> are rather verbose;</li>
+<li>a user-defined suffix for <code>size_t</code> literals is a succinct and convenient way to express coding intent.</li>
+</ul>
+<p><strong>2.2</strong> The proposed naming of the literal suffix <code>zu</code> was motivated by the <code>%zu</code> length modifier for <code>size_t</code> formatted I/O in the C standard library header <code>&lt;stdio.h&gt;</code>. See 7.21.6.1/7 for <code>fprintf</code> and 7.21.6.2/11 <code>fscanf</code>, numbered relative to <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1539.pdf">WG14/N1539</a> (see sections 4.1 and 4.2 for a discussion of this design decision and possible alternative namings):</p>
+<pre><code>printf(&quot;%zu&quot;, 0zu); // prints 0</code></pre>
+<p><strong>2.3</strong> The scope of this proposal is limited to adding a literal suffix <code>zu</code> for the support type <code>size_t</code> defined in the Standard Library header <code>&lt;cstddef&gt;</code>, and also making this suffix available through the headers <code>&lt;cstdio&gt;</code>, <code>&lt;cstdlib&gt;</code>, <code>&lt;cstring&gt;</code>, <code>&lt;ctime&gt;</code>, and <code>&lt;cwchar&gt;</code>. See section 4.3 for a discussion of this design decision and section 7.2 for the proposed wording.</p>
+<p><strong>2.4</strong> A previous version of this proposal (<a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n4254.html">WG21/N4254</a>) also proposed adding a user-defined suffix for literals of the type <code>ptrdiff_t</code> defined in <code>&lt;cstddef&gt;</code>. This part of the proposal has been dropped based on feedback from LEWG.</p>
+<p><strong>2.5</strong> Note that a technically similar proposal could be made for the fixed-width integer types in the Standard Library header <code>&lt;cstdint&gt;</code>, such as user-defined suffixes <code>uX</code> for literals of type <code>uintX_t</code>, with <code>X</code> running over <code>{ 8, 16, 32, 64 }</code>. However, these types do not arise naturally when using the standard containers or algorithms. Furthermore, this would require a more thorough analysis of a good naming scheme that is both brief, intuitive, and without name clashes with other user-defined literals in the Standard Library. We therefore do not propose to add user-defined suffixes for these types.</p>
+<p><strong>2.6</strong> For historical reference, see the earlier discussion on <a href="https://groups.google.com/a/isocpp.org/forum/#!topic/std-proposals/tGoPjUeHlKo">std-proposals</a>.</p>
+<h2 id="extended-example">3 Extended Example</h2>
+<p><strong>3.1</strong> As an illustrative example enabled by this proposal, consider looping over a <code>vector</code> and accessing both the loop index <code>i</code> as well as the vector elements <code>v[i]</code></p>
+<pre><code>#include &lt;cstddef&gt; // or &lt;cstdio&gt;, &lt;cstdlib&gt;, &lt;cstring&gt;, &lt;ctime&gt;, &lt;cwchar&gt;
+#include &lt;vector&gt;
+using namespace std::support_literals;
+
+int main() {
+  auto v = std::vector&lt;int&gt; { 98, 03, 11, 14, 17 };
+  
+  // loop counter of type size_t, initialized to 0
+  for (auto i = 0zu, s = v.size(); i &lt; s; ++i) { 
+    /* use both i and v[i] */ 
+  }
+}</code></pre>
+<p>This coding style caches the vector's size, similar to the <code>end()</code> iterator's caching in a range-based <code>for</code> statement. This also fits nicely with the left-to-right <code>auto</code> variable initialization, as recommended in <a href="http://shop.oreilly.com/product/0636920033707.do">Effective Modern C++, Item 5</a> and <a href="http://herbsutter.com/2013/08/12/gotw-94-solution-aaa-style-almost-always-auto/">GotW #94</a>.</p>
+<p><strong>3.2</strong> In the (rare) event that the container's <code>size_type</code> is not equal to <code>size_t</code> (e.g. because of an exotic user-defined allocator), compilation will simply fail, so that no code will break <em>silently</em>. Under these circumstances (as well as in fully generic code), one has to fall back to the more verbose explicit typing</p>
+<pre><code>// fall back to explicit typing when container::size_type != size_t
+for (auto i = decltype(v.size()){0}, s = v.size(); i &lt; s; ++i) { /* ... */ }</code></pre>
+<p><strong>3.3</strong> A loop counter of type <code>int</code> gives the most succinct code, but is likely to lead to sign-related compiler warnings (except for non-standard containers such as <a href="http://doc.qt.io/qt-5/qvector.html#size">QVector</a> for which the <code>size()</code> member function returns <code>int</code>), or even to undefined behavior from signed integer overflow</p>
+<pre><code>// might lead to compiler warnings and signed integer overflow     
+for (auto i = 0; i &lt; v.size(); ++i) {     // -Wsign-compare
+  std::cout &lt;&lt; i &lt;&lt; &quot;: &quot; &lt;&lt; v[i] &lt;&lt; &#39;\n&#39;; // -Wsign-conversion
+}   </code></pre>
+<p>The above code triggers compiler warnings (shown for Clang and g++). Admittedly, those warnings are rather stringent. But they are not, in general, harmless. Furthermore, in many companies, developers are not free to adjust project-wide mandatory warning levels. But more importantly, even when all compilers warnings have been suppressed, the above loop might (for very large containers) lead to signed integer overflow (which is undefined behavior).</p>
+<p><strong>3.4</strong> The example in section 3.3 makes it clear that counters in loops over standard containers should be of unsigned integral type. Note that <code>[support.types]/7</code> recommends that implementations choose types for <code>size_t</code> whose integer conversion ranks are no greater than that of <code>signed long int</code> unless a larger size is necessary to contain all the possible values. This makes <code>unsigned long</code> loop counters (which have the recommended maximum conversion rank and which can use the suffix <code>ul</code>) a seemingly viable alternative to section 3.1</p>
+<pre><code>// not guaranteed to be equivalent to section 3.1
+for (auto i = 0ul, s = v.size(); i &lt; s; ++i) { /* ... */ } </code></pre>
+<p>Note, however, because <code>[support.types]/6</code> leaves <code>size_t</code> an <em>implementation-defined</em> unsigned integer type, it is not guaranteed that <code>unsigned long</code> (or <code>unsigned long long</code> for that matter) is of the same type as <code>size_t</code>. Moreover, a user-defined suffix for <code>size_t</code> literals also expresses coding intent, and therefore increases code readability and maintainability.</p>
+<p><strong>3.5</strong> A fully equivalent alternative to section 3.1 is to name the type of the loop index</p>
+<pre><code>// equivalent to section 3.1, but more verbose
+for (auto i = std::size_t{0}, s = v.size(); i &lt; s; ++i) { /* ... */ }</code></pre>
+<p>This works under the same circumstances as this proposal (with a fallback to <code>decltype(v.size())</code> for exotic containers or fully generic code). Its main drawback is that it is more verbose, especially if the equivalent <code>static_cast&lt;std::size_t&gt;(0)</code> were to be employed.</p>
+<p><strong>3.6</strong> As an aside, note that the above extended example is not meant to imply a definitive coding style for all index-based <code>for</code> loops. E.g., this particular example might be improved by a range-based <code>for</code> statement that emits a <code>size_t</code> index deduced from a hypothetical zero-based <code>integral_range</code> object initialized to <code>v.size()</code></p>
+<pre><code>// integral_range not actually proposed here, loop over [ 0, v.size() )
+for (auto i : integral_range(v.size()) { /* ... */ }  </code></pre>
+<p>However, for non-zero-based integer ranges (e.g. when skipping the first few elements), the same type deduction issues would reappear, and it would become convenient to write</p>
+<pre><code>// integral_range not actually proposed here, loop over [ 1, v.size() )
+for (auto i : integral_range(1zu, v.size()) { /* ... */ }</code></pre>
+<p>Regardless of the benefits of such a hypothetical range-based approach for indexed <code>for</code> loops, we therefore argue that a user-defined suffix for <code>size_t</code> literals has its own merits. Note this proposal does not <em>enforce</em> the use of <code>size_t</code> literals, it merely <em>enables</em> (and perhaps <em>encourages</em>) them.</p>
+<h2 id="design-decisions">4 Design Decisions</h2>
+<p><strong>4.1</strong> A previous version of this paper (<a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n4254.html">WG21/N4254</a>) proposed the shorter suffix <code>z</code>. Based on feedback from LEWG, this has been changed to <code>zu</code>. The main rationale for this change is that <code>z</code> alone is not the entirety of what is needed in C I/O formatting. The rather strong consensus was not to use only the modifier <code>z</code>, but to use the complete form <code>zu</code>.</p>
+<p><strong>4.2</strong> For purposes of bikeshedding, we note that other suffixes than the proposed <code>zu</code> that contain the letter <code>z</code> would also not conflict with existing literals (see section 5 for a full survey). A viable alternative might be to use e.g. the suffix <code>sz</code> for <code>size_t</code> literals. This loses the congruence with the C I/O length modifier <code>%zu</code>, but <code>sz</code> is perhaps easier to remember as a mnemonic for <code>size_t</code>.</p>
+<p><strong>4.3</strong> Note that because other standard headers (<code>&lt;cstdio&gt;</code>, <code>&lt;cstdlib&gt;</code>, <code>&lt;cstring&gt;</code>, <code>&lt;ctime&gt;</code> and <code>&lt;cwchar&gt;</code>) also define <code>size_t</code>, we propose that these headers also make the user-defined suffix <code>zu</code> available. In section 7.2, we use wording similar to that of <code>[iterator.container]/1</code> that makes the <code>&lt;iterator&gt;</code> header available through inclusion of any of the containers, strings or regular expressions headers.</p>
+<p><strong>4.4</strong> This proposal follows the existing practice established in <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3642.pdf">WG21/N3642</a> with respect to the <code>constexpr</code> (present) and <code>noexcept</code> (absent) specifiers, as well as the use of an appropriately named <code>inline namespace std::literals::support_literals</code>.</p>
+<p><strong>4.5</strong> There are no decisions left up to implementers, because the proposed wording (see section 7) forms a full specification.</p>
+<h2 id="survey-of-existing-literal-suffixes">5 Survey of Existing Literal Suffixes</h2>
+<p><strong>5.1</strong> The literal suffixes for builtin integer types are described in Table 5 of <code>[lex.icon]/2</code>. These suffixes (<code>u</code> or <code>U</code> optionally followed by either <code>l</code> or <code>L</code> or by either <code>ll</code> or <code>LL</code>) do not contain the letter <code>z</code> and do not conflict with our proposal.</p>
+<p><strong>5.2</strong> The literal suffixes for builtin floating types are described in <code>[lex.fcon]/1</code>. These suffixes (one of <code>f</code>, <code>l</code>, <code>F</code>, <code>L</code>) do not contain the letter <code>z</code> and do not conflict with our proposal.</p>
+<p><strong>5.3</strong> The Standard Library header <code>&lt;chrono&gt;</code> contains user-defined suffixes for time duration literals, specified in <code>[time.duration.literals]</code>. The suffixes currently in use (<code>h</code>, <code>min</code>, <code>s</code>, <code>ms</code>, <code>us</code>, <code>ns</code>) do not contain the letter <code>z</code> and do not conflict with our proposal.</p>
+<p><strong>5.4</strong> The Standard Library header <code>&lt;complex&gt;</code> contains user-defined suffixes for complex number literals, specified in <code>[complex.literals]</code>. The suffixes currently in use (<code>il</code>, <code>i</code>, <code>if</code>) do not contain the letter <code>z</code> and do not conflict with our proposal.</p>
+<p><strong>5.5</strong> The Standard Library header <code>&lt;string&gt;</code> contains user-defined suffixes for string literals, specified in <code>[basic.string.literals]</code>. The suffix currently in use (<code>s</code>) does not contain the letter <code>z</code> and does not conflict with our proposal.</p>
+<p><strong>5.6</strong> The Standard Library header <code>&lt;string_view&gt;</code> contains user-defined suffixes for string view literals, specified in <code>[string.view.literals]</code>. The suffix currently in use (<code>sv</code>) does not contain the letter <code>z</code> and does not conflict with our proposal.</p>
+<p><strong>5.7</strong> The Technical Report <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n3871.html">WG21/N3871</a> proposes user-defined literals for decimal floating-point literals. The proposed suffixes (<code>DF</code>, <code>DD</code>, <code>DL</code>, <code>df</code>, <code>dd</code>, <code>dl</code>) do not contain the letter <code>z</code> and do not conflict with our proposal.</p>
+<p><strong>5.8</strong> The Graphics Technical Specification <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0267r0.pdf">WG21/P0267R0</a> proposes user-defined suffixes for <code>double</code> literals. The proposed suffixes (<code>ubyte</code>, <code>unorm</code>) do not contain the letter <code>z</code> and do not conflict with our proposal.</p>
+<p><strong>5.9</strong> The proposal <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0373r0.pdf">WG21/P0373R0</a> proposes user-defined file literals prefixing a file's source path. The proposed prefix (<code>EF</code>, with <code>E</code> a file-encoding prefix such as <code>b</code> or <code>t</code> for binary or text mode) does not contain the letter <code>z</code> and does not conflict with our proposal.</p>
+<p><strong>5.10</strong> The <a href="https://ericniebler.github.io/meta/group__integral.html#gaddea0d053893b5bec6ba3d75af70624e">Meta</a> library defines a <code>_z</code> suffix for <code>std::integral_constant&lt;size_t, N&gt;</code> literals using the <code>template &lt;char...&gt; operator &quot;&quot;</code> overload (with <code>N</code> computed at compile-time from the template parameter pack).</p>
+<p>Even though Meta is a support library used in the reference implementation of the proposed Ranges Technical Specification <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/n4569.pdf">WG21/N4569</a>, the Ranges TS does not rely on Meta's user-defined suffix <code>_z</code>. In fact, Meta itself does not even use <code>_z</code> internally. We therefore do not anticipate a conflict with our proposal.</p>
+<p><strong>5.11</strong> <a href="http://www.boost.org/doc/libs/develop/libs/hana/doc/html/namespaceboost_1_1hana_1_1literals.html">Boost.Hana</a> exposes user-defined suffixes (<code>_c</code>, <code>_s</code>) for integral constant and compiletime string literals, and also internally defines user-defined literals (<code>_st</code>, <code>_nd</code>, <code>_rd</code>, <code>_th</code>) for tuple indexing. The suffixes in use do not conflict with our proposal.</p>
+<p><strong>5.12</strong> <a href="http://www.boost.org/doc/libs/1_60_0/libs/multiprecision/doc/html/boost_multiprecision/tut/lits.html">Boost.Multiprecision</a> exposes user-defined suffixes (<code>_cppi</code>, <code>_cppui</code>, <code>_cppiN</code>, <code>_cppuiN</code>, with <code>N</code> an integral power of two) for high precision number literals. The suffixes in use do not conflict with our proposal.</p>
+<p><strong>5.13</strong> To the best of our knowledge, other than the aforementioned standard library headers, Technical Specifications and popular open source libraries, there are no other popular user-defined literals that would conflict with our proposal.</p>
+<h2 id="impact-on-the-standard">6 Impact on the Standard</h2>
+<p><strong>6.1</strong> This proposal does not depend on other library components, and nothing depends on it. It is a pure library extension, but does require additions (though no modifications) to the standard header <code>&lt;cstddef&gt;</code>, (see section 7.1), and also exposing those additions through the headers <code>&lt;cstdio&gt;</code>, <code>&lt;cstdlib&gt;</code>, <code>&lt;cstring&gt;</code>, <code>&lt;ctime&gt;</code>, and <code>&lt;cwchar&gt;</code> (see section 7.2).</p>
+<p><strong>6.2</strong> This proposal can be implemented using C++14 compilers and libraries, and it does not require language or library features that are not part of C++14. In fact, this proposal is entirely implementable using only C++11 language features.</p>
+<p><strong>6.3</strong> The consequences of adopting the proposed literal suffix <code>zu</code> into the Standard are that both novices and occasional programmers, as well as experienced library implementors, can use left-to-right <code>auto</code> variable initializations with <code>size_t</code> literals, without having to define their own literal suffix with leading underscore <code>_zu</code> in order to do so.</p>
+<p>Note that other existing or future Standard Library types (e.g. <code>chrono::duration</code> or <code>complex</code>) are prevented from adopting the same literal suffix, unless they use overloads of the corresponding <code>operator &quot;&quot;</code> that take arguments other than <code>unsigned long long</code> (because <code>[lex.ext]/3</code> gives these overloads lower precedence during overload resolution).</p>
+<p><strong>6.4</strong> There are no (anticipated) conflicts with other literal suffixes, either for builtin types, in other (proposed) Standard Library types, the various Technical Specifications, or in popular open source libraries such as Boost (see section 5).</p>
+<p>Note that <code>[usrlit.suffix]/1</code> states that literal suffix identifiers that do not start with an underscore are reserved for future standardization. This means that even if there were a popular open source library with a user-defined suffix <code>_zu</code>, there would only be a possible conflict with our proposed <code>zu</code> suffix for <code>size_t</code> literals if that suffix from a third-party library would also be accepted for standardization.</p>
+<p><strong>6.5</strong> There are, however, three active CWG issues (<a href="http://www.open-std.org/jtc1/sc22/wg21/docs/cwg_active.html#1266">cwg#1266</a>, <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/cwg_active.html#1620">cwg#1620</a> and <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/cwg_active.html#1735">cwg#1735</a>) that could impact this proposal. All three issues note that in implementations with extended integer types, the decimal-literal in a user-defined integer literal might be too large for an <code>unsigned long long</code> to represent. Suggestions (but no formal proposals) were made to either fall back to a raw literal operator or a literal operator template, or to allow a parameter of an extended integer type. The latter suggestion would be easiest to incorporate into this proposal.</p>
+<p><strong>6.6</strong> There is a <a href="https://github.com/rhalbersma/xstd/blob/master/include/xstd/cstddef.hpp">reference implementation</a> and small <a href="https://github.com/rhalbersma/xstd/blob/master/test/src/cstddef.cpp">test suite</a> available on GitHub for inspection. Note that the reference implementation uses <code>namespace xstd</code> and underscored suffix <code>_zu</code> because of the restriction from <code>[lex.ext]/10</code> that a program containing a user-defined suffix without an underscore is ill-formed, no diagnostic required.</p>
+<p><strong>6.7</strong> This proposal successfully compiles and runs on g++ &gt;= 4.7.3, clang &gt;= 3.1 and Visual C++ &gt;= 2015 (possibly on earlier versions of Visual C++ if <code>constexpr</code> literals are not used).</p>
+<h2 id="proposed-wording">7 Proposed Wording</h2>
+<p>All wording is relative to the Working Draft <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/n4687.pdf">WG21/N4687</a>.</p>
+<p><strong>7.1</strong> Insert in subclause <code>[cstddef.syn]</code> in the synopsis of header <code>&lt;cstddef&gt;</code> at the appropriate place the namespace <code>std::literals::support_literals</code>:</p>
+<blockquote>
+<pre><code>namespace std {
+  inline namespace literals {
+    inline namespace support_literals {
+      constexpr size_t operator &quot;&quot; zu(unsigned long long);                         
+    }
+  }
+}</code></pre>
+</blockquote>
+<p><strong>7.2</strong> Insert a new subclause <code>[support.literals]</code> between <code>[support.types]</code> and <code>[support.limits]</code> as follows:</p>
+<blockquote>
+<p><strong>21.3 Suffixes for support types [support.literals]</strong></p>
+<p>1 This section describes a literal suffix for constructing <code>size_t</code> literals. The suffix <code>zu</code> creates values of type <code>size_t</code>.</p>
+<pre><code>constexpr size_t operator &quot;&quot; zu(unsigned long long u);</code></pre>
+<p>2 Returns: <code>static_cast&lt;size_t&gt;(u)</code>.</p>
+<p>3 In addition to being available via inclusion of the <code>&lt;cstddef&gt;</code> header, this literal operator is available when any of the following headers is included: <code>&lt;cstdio&gt;</code>, <code>&lt;cstdlib&gt;</code>, <code>&lt;cstring&gt;</code>, <code>&lt;ctime&gt;</code>, and <code>&lt;cwchar&gt;</code>.</p>
+</blockquote>
+<h2 id="acknowledgments">8 Acknowledgments</h2>
+<p>We gratefully acknowledge Walter E. Brown for acting as our <em>locum</em> in committee meetings and for his valuable feedback. We also acknowledge feedback on a previous version of this proposal from Jerry Coffin and Andy Prowl on <code>&lt;Lounge C++&gt;</code>, guidance from Daniel Krügler, as well as input from various participants on <code>std-proposals</code>.</p>
+<h2 id="references">9 References</h2>
+<p><code>[Boost.Hana]</code> Louis Dionne: <em>A modern C++ metaprogramming library</em> <a href="http://www.boost.org/doc/libs/1_61_0/libs/hana/doc/html/namespaceboost_1_1hana_1_1literals.html" class="uri">http://www.boost.org/doc/libs/1_61_0/libs/hana/doc/html/namespaceboost_1_1hana_1_1literals.html</a></p>
+<p><code>[Boost.Multiprecision]</code> John Maddock and Christopher Kormanyos: <em>Extended precision arithmetic types for floating point, integer and rational arithmetic</em> <a href="http://www.boost.org/doc/libs/1_61_0/libs/multiprecision/doc/html/boost_multiprecision/tut/lits.html" class="uri">http://www.boost.org/doc/libs/1_61_0/libs/multiprecision/doc/html/boost_multiprecision/tut/lits.html</a></p>
+<p><code>[Effective Modern C++]</code> Scott Meyers: <em>42 Specific Ways to Improve Your Use of C++11 and C++14</em> (<em>Item 5: Prefer auto to explicit type declarations.</em>) <a href="http://shop.oreilly.com/product/0636920033707.do" class="uri">http://shop.oreilly.com/product/0636920033707.do</a></p>
+<p><code>[GotW #94]</code> Herb Sutter: <em>AAA Style (Almost Always Auto)</em> <a href="http://herbsutter.com/2013/08/12/gotw-94-solution-aaa-style-almost-always-auto/" class="uri">http://herbsutter.com/2013/08/12/gotw-94-solution-aaa-style-almost-always-auto/</a></p>
+<p><code>[Meta]</code> Eric Niebler: <em>A tiny metaprogramming library</em> <a href="https://ericniebler.github.io/meta/group__integral.html#gaddea0d053893b5bec6ba3d75af70624e" class="uri">https://ericniebler.github.io/meta/group__integral.html#gaddea0d053893b5bec6ba3d75af70624e</a></p>
+<p><code>[N3642]</code> Peter Sommerlad: <em>User-defined Literals for Standard Library Types (part 1 - version 4)</em> <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3642.pdf" class="uri">http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3642.pdf</a></p>
+<p><code>[N3871]</code> Dietmar Kühl: <em>Proposal to Add Decimal Floating Point Support to C++ (revision 2)</em> <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n3871.html" class="uri">http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n3871.html</a></p>
+<p><code>[N4254]</code> Rein Halbersma: <em>User-defined Literals for size_t</em> <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n4254.html" class="uri">http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n4254.html</a></p>
+<p><code>[N4569]</code> Eric Niebler: <em>Working Draft, C++ Extensions for Ranges</em> <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/n4569.pdf" class="uri">http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/n4569.pdf</a></p>
+<p><code>[N4687]</code> Richard Smith: <em>Working Draft, Standard for Programming Language C++</em> <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/n4687.pdf" class="uri">http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/n4687.pdf</a></p>
+<p><code>[P0276R0]</code> Michael B. McLaughlin, Herb Sutter and Jason Zink: <em>A Proposal to Add 2D Graphics Rendering and Display to C++</em> <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0267r0.pdf" class="uri">http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0267r0.pdf</a></p>
+<p><code>[P0276R0]</code> Andrew Tomazos: <em>Proposal of File Literals</em> <a href="http://open-std.org/JTC1/SC22/WG21/docs/papers/2016/p0373r0.pdf" class="uri">http://open-std.org/JTC1/SC22/WG21/docs/papers/2016/p0373r0.pdf</a></p>
+<p><code>[QVector]</code> <a href="http://doc.qt.io/qt-5/qvector.html#size" class="uri">http://doc.qt.io/qt-5/qvector.html#size</a></p>
+<p><code>[std-proposals]</code> Morwenn Edrahir: <em>User defined literal for size_t</em> <a href="https://groups.google.com/a/isocpp.org/forum/#!topic/std-proposals/tGoPjUeHlKo" class="uri">https://groups.google.com/a/isocpp.org/forum/#!topic/std-proposals/tGoPjUeHlKo</a></p>
+<h2 id="change-history">10 Change History</h2>
+<ol style="list-style-type: decimal">
+<li>2014-11-21; Published as N4254.</li>
+<li>2016-05-15; Published as P0330R0; summarized LEWG's view re N4254; dropped the proposed suffix for <code>ptrdiff_t</code>; changed the proposed suffix for <code>size_t</code> to <code>zu</code>; added survey of existing literal suffixes.</li>
+<li>2017-10-12; Published as P0330R1; expanded the survey of existing literals. Synced the proposed wording with the Working Draft WG21/N4687. Moved the reference implementation from BitBucket to GitHub.</li>
+</ol>
