@@ -1,5 +1,6 @@
 <pre class='metadata'>
 Title: char8_t Compatibility and Portability Fixes
+H1: <code>char8_t</code> Compatibility and Portability Fixes
 Shortname: P2513
 Revision: 0
 Audience: SG16, EWG
@@ -9,10 +10,11 @@ URL:
 !Target: C++26
 !Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/d2513.html">https://thephd.dev/_vendor/future_cxx/papers/d2513.html</a>
 Repository: ThePhD/future_cxx
-Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: JeanHeyd Meneide (https://thephd.dev), phdofthehouse@gmail.com
+Editor: Tom Honermann, tom@honermann.net
 Date: 2022-01-15
 Markup Shorthands: markdown yes, biblio yes, markup yes
-Abstract: char8_t has serious compatibility problems and issues during deployment that people have had to spend a lot of energy working around. This paper aims to alleviate some of those compatibility problems, for both C and C++, around string and character literals for the char8_t type.
+Abstract: <code>char8_t</code> has serious compatibility problems and issues during deployment that people have had to spend a lot of energy working around. This paper aims to alleviate some of those compatibility problems, for both C and C++, around string and character literals for the char8_t type.
 </pre>
 
 <pre class=include>
@@ -39,7 +41,7 @@ path: resources/css/bikeshed-color-fix.html
 
 # Introduction and Motivation # {#intro}
 
-The introduction of `char8_t` has introduced severe backwards **and** forward compatibility issues into the C++ ecosystem, and also issues with C compatibiltiy as well. Despite Tom Honermann's [[P1423r3]], the direct incompatibility between `char` and `char8_t` was sharply felt, so powerfully that [`-fno-char8_t`](https://gcc.gnu.org/onlinedocs/gcc/C_002b_002b-Dialect-Options.html) and [`/Zc:char8_t-`](https://docs.microsoft.com/en-us/cpp/build/reference/zc-char8-t?view=msvc-170) needed to be rolled out once conforming C++20-aspiring implementations rolled out with the `char8_t` changes. Chief among them are that several kinds of string initialization are now entirely illegal:
+The introduction of `char8_t` has introduced severe backwards **and** forward compatibility issues into the C++ ecosystem, and also issues with C compatibility as well. Despite Tom Honermann's [[P1423r3]], the direct incompatibility between `char` and `char8_t` was sharply felt, so powerfully that [`-fno-char8_t`](https://gcc.gnu.org/onlinedocs/gcc/C_002b_002b-Dialect-Options.html) and [`/Zc:char8_t-`](https://docs.microsoft.com/en-us/cpp/build/reference/zc-char8-t?view=msvc-170) needed to be rolled out the moment conforming C++20-aspiring implementations rolled out with the `char8_t` changes to prevent very bad breakages. Chief among them are that several kinds of string initialization are now entirely illegal:
 
 ```cpp
 const char* a = u8"a"; // broken in C++20
@@ -100,7 +102,7 @@ int main () {
 }
 ```
 
-With all due respect to the effort involved, these are solutions only a C++ expert could possibly love. It harkens back to days long-gone-by of `TCHAR` type and `TEXT(...)` macros when programming on Microsoft Windows, which has been fairly universally reviled in Windows Programming for well over a decade now. Is it consistently painful to program in this form and that is why the ANSI and Codepage-based functions are deprecated, and all Windows API users are encouraged to use the `W`-suffixed functions and nothing else. Even non-Microsoft sources encourage this, e.g. explicitly on the [UTF-8 Everything Page](https://utf8everywhere.org/#windows) and Microsoft itself has embraced UTF-8 to get away from it's legacy of `_T(...)`, `TEXT(...)`, and `TCHAR` macros.
+With all due respect to the effort involved, these are solutions only a C++ expert could love. It harkens back to days long-gone-by of `TCHAR` type and `TEXT(...)` macros when programming on Microsoft Windows, which has been fairly universally reviled in Windows Programming for well over a decade now. Is it consistently painful to program in this form and that is why the ANSI and Codepage-based functions are deprecated, and all Windows API users are encouraged to use the `W`-suffixed functions and nothing else. Even non-Microsoft sources encourage this, e.g. explicitly on the [UTF-8 Everything Page](https://utf8everywhere.org/#windows) and Microsoft itself has embraced UTF-8 to get away from it's legacy of `_T(...)`, `TEXT(...)`, and `TCHAR` macros.
 
 There are other solutions as well, such as constructing a `char_array<N>` type that holds the data. This is a little bit more elegant and usable, but still requires substituting places of character arrays with different types entirely and relying on (implicit) conversions to make it work as expected. This does not play nice with templated functions in C++, and is just completely impossible in C code.
 
@@ -123,31 +125,58 @@ This is untenable. Even if the [[n2653|char8_t for C paper, N2653]] passes for C
 extern const unsigned char d[] = u8"d"; // Works in C even after N2653, breaks in C++20
 ```
 
-These breaks have plagued users heavily, including for very popular C and C++ libraries, and the solution is adding C++20-specific overloads. But this does nothing to help individuals who are trying to write C++11, 14, and 17 code that needs to eventually transition to use `char8_t`. To ease portability between the two languages in shared header code and to enable the ability for individuals porting C++11-to-C++17 code to C++20, this proposal works to allow initialization of `unsigned char` arrays from `u8""` string literals.
+These breaks have plagued users heavily, including for very popular C and C++ libraries, and the solution is adding C++20-specific overloads. But this does nothing to help individuals who are trying to write C++11, 14, and 17 code that needs to eventually transition to use `char8_t`. To ease portability between the two languages in shared header code and to enable the ability for individuals porting C++11-to-C++17 code to C++20, this proposal works to allow initialization of `unsigned char` arrays (and other *ordinary character* array types) from `u8""` string literals.
 
 
+
+## Compatibility Troubles in Existing Libraries ## {#intro-troubles}
+
+There are many libraries which have sustained usability decreases from the introduction of `const char8_t[]` as the type for `u8""` string literals. Popular user libraries such as Dear imgui, nlohmann::json, and many others suffer from these issues. For example:
+
+> Basically dear imgui wants to uses low-level types here `const char*` + promote terse code, `u8""` was perfect for encoding strings. When using the lib users typically use LOTS of literals. Now users can’t without a cast or us adding overloads to several hundreds entry points.
+> 
+> Those users, the majority are silent in the first place, they are used to that kind of software not working well for their languages, they move on. Dear ImGui supported them somehow (very imperfectly but enough to attract a crowd). Now things became much less attractive.
+> 
+> … The lib is designed for very fast iteration, compact code, ihmo it is a great loss.
+> 
+> — [Omar, Discussion of imgui, January 4th, 2022](https://twitter.com/ocornut/status/1478281124971433988)
+
+This kind of pain has been repeated in other libraries, such as `nlohmann::json`:
+
+> Watch on this! `std::u8string_view` is serialized as number array now.. I have to explicitly convert it into `std::string_view` every time.
+>
+> — [shrinktofit, Issue #2097, September 28th, 2020](https://github.com/nlohmann/json/issues/2097#issuecomment-699849497)
+
+> You are right, `std::u8string` is currently not supported. I currently see no blocker in supporting it, but I cannot promise any timeline for the feature. Any help (and PRs) welcome!
+> 
+> — [nlohmann, Issue #1914, January 28th, 2020](https://github.com/nlohmann/json/issues/1914)
+
+The tests for `nlohmann::json` were simply stripped of all their uses of `u8"..."` strings. Where necessary the library (and many others) simply use by-hand byte sequence encoding in non-prefixed string literals when they know they cannot influence the use of command line arguments for UTF-8 encoded strings.
+
+Some code just remains broken current, such as the [antlr4](https://github.com/antlr/antlr4/issues/2991) project which generators `std::string`s using `u8"..."` literals. That will require greater surgery to fix.
+
+This proposal allows for a migration to solve the above problems, albeit it still require minor changes. In particular, users will have to first create a variable so that the UTF-8 string literal can be used to initialization a `const char[]`, `const unsigned char[]`, or `const char8_t[]` array. Then, the array can be used as expected.
 
 
 # Design # {#design}
 
 There are three core goals this proposal is out to achieve, **specifically** around the usage of single `char8_t` literal and `u8` string literals:
 
-- code written in both C and C++ in a header file will initialze and work properly when using `unsigned char`;
+- code written in both C and C++ in a header file will initialize and work properly when using `unsigned char`, especially as a migration `typedef` to go to different places;
 - code written to be compatible with both pre-C++17 and C++20-and-beyond can work properly by using `unsigned char` to indicate an unsigned at-least-8-bit code unit;
+- code that wants to remain compatible with old `u8""` literal behavior can initialize to `const char[]` variables or `const signed char[]` variables;
 - and, enabling a gradual migration path that is not a hard break that can be mechanically accounted for, rather than requiring larger, more involved and architected changes.
 
+This proposal is the **smallest, simplest possible fix**. It explicitly does not attempt to deal with conversion or use as a pointer value, and deals strictly with array initialization. This means that function calls and initialization of a `const unsigned char*` or `const char*` pointer is not included in this proposal: a future proposal that is a Defect Report may aid in improving usability if a cast-based solution, discussed below further, does not emerge in the C++26 standardization timeframe.
 
 
-## `unsigned char`? ## {#design-unsigned_char}
+## Why `unsigned char`? ## {#design-unsigned_char}
 
 `unsigned char` is the best candidate for a permanent transition path for C++. It will enable people to write code that has the exact same behaviors and semantics as `char8_t`, and transition more seamlessly when support for `char8_t` strings, string literals, character literals, and more is phased into `std::format`, `std::print`, and the standard library.
 
-
 There is strong in-the-industry usage of `unsigned char` to represent a single UTF-8 code unit, so much so that it has even shown up in [[n1985|papers from as far back as 2006]] and also mentioned briefly in [[n2271|a paper from 2007]] with regards to defining `char8_t` types themselves for their own libraries. It is also a common technique in mature codebases to define `typedef std::basic_string<unsigned char, my_u8_traits> u8string;` as a means to semantically differentiate between a string with potentially any kind of data (or execution encoding data) and UTF-8 data. This is typically the way to handle this in the cases where the programmer is not part of one of the hundred-million, billion, and multi-billion dollar service companies that control their entire computer stacks.
 
-Groups with the power to control the entire vertical stack — from their data centers to the final services running in the browser and on end-user machines — can guarantee that they can simply set their locale to be UTF-8 on their native machine. This is not exactly possible across all tech stacks, however: Microsoft has only just started to encourage UTF-8, after all. However, the option for turning on UTF-8 as the default Active Code Page (ACP) is still hidden in the legacy control panel settings behind 3 dialog boxes and a checkmark to turn on a "BETA" feature. This means that the wide variety of software that still uses `fopen`, command line arguments, `std::fstream`, and more without conversion subject themselves to whatever the execution encoding may happen to be on their machines. For Microsoft software, that is broken just from using the file APIs. On Linux software, even if the file APIs are pass-through, code is broken by way of consuming `const char[]` data in execution encoding and interfacing with file system and other tokens which may not have been stored in that fashion.
-
-Tom Honermann's accepted `char8_t` paper and the remediation paper both state that we do not want to make it easy to convert from `u8""` and `u8'x'` literals to `char`, as that would contribute to the persistent problems on C and C++ implementations. But, there has been no harm both historically and presently to use `unsigned char` as a migration technique.
+Groups with the power to control the entire vertical stack — from their data centers to the final services running in the browser and on end-user machines — can guarantee that they can simply set their locale to be UTF-8 on their native machine. This is not exactly possible across all tech stacks, however: Microsoft has only [[microsoft-utf8|just started to encourage UTF-8, after all]]. However, the option for turning on UTF-8 as the default Active Code Page (ACP) is still hidden in the legacy control panel settings behind 3 dialog boxes and a checkmark to turn on a "BETA" feature. This means that the wide variety of software that still uses `fopen`, command line arguments, `std::fstream`, and more without conversion subject themselves to whatever the execution encoding may happen to be on their machines. For Microsoft software, that is broken just from using the file APIs. On Linux software, even if the file APIs are pass-through, code is broken by way of consuming `const char[]` data in execution encoding and interfacing with file system and other tokens which may not have been stored in that fashion.
 
 Therefore, this proposal focuses on `unsigned char` as a good candidate for a permanent transition path for older-than-C++20 code. Note that this technique has been already deployed to great use in the industry. It was presented on as a "bridging" technique for pre-C++20 code looking for a compile-time way to differentiate their strings and string literals in C++, especially since `std::byte*` can serve as the proper "byte transportation" type:
 
@@ -176,7 +205,11 @@ Because of the nature of C and the fact that the only proposal on the table that
 const unsigned char str[] = u8"";
 ```
 
-may become the lingua-franca of dealing with UTF-8 in a way that is type-level different from normal non-prefixed string literals. This code will work before and after the changes proposed in [[n2563]]. But, it breaks when transitioning to C++20-and-beyond in headers. This can become a severe headache for end-users, which is why we present this as a fix. The functions in [[n2730]] are also going in this direction, with both papers having general approval from WG14 and slated to make it either in late C23 or early C2Y/C3Y.
+may become the lingua-franca of dealing with UTF-8 in a way that is type-level different from normal non-prefixed string literals. This code will work before and after the changes proposed in [[n2653]]. But, it breaks when transitioning to C++20-and-beyond in headers. This can become a severe headache for end-users, which is why we present this as a fix. The functions in [[n2730]] are also going in this direction, with both papers having general approval from WG14 and slated to make it either in late C23 or early C2Y/C3Y.
+
+Additionally, Tom Honermann's accepted `char8_t` paper and the remediation paper both state that we do not want to make it easy to convert from `u8""` and `u8'x'` literals to `char`, as that would contribute to the persistent problems on C and C++ implementations. But, there has been no harm both historically and presently to use `unsigned char` as a migration technique. Furthermore, Tom Honermann has stated that while he may not have a preference, compatibility with C is a high-order priority bit, and therefore is willing to relax his stance on that to aid in making sure C and C++ code for array initialization using `u8""` string literals continues to work.
+
+Therefore, we additionally propose to allow initialization of `char` and `signed char` arrays. This is ultimately for parity with C code, and because `char8_t` is mandated to be exactly `unsigned char` in its underlying type in C++ this is a completely harmless change. It is also okay to allow it, since it is an entirely deliberate action (initialization) and not anything more nefarious (like implicit conversion to a different pointer type).
 
 
 
@@ -188,11 +221,23 @@ This paper is being pushed forward as a Defect Report to C++20, which is when `c
 
 ## What about special `unsigned char*` rules? ## {#design-unsigned_char*}
 
-We do not propose `unsigned char*` as allowed to be initialized with a `u8""` string literal. This is strictly due to rules around `constexpr` and current implementation limits. Forming a pointer to a block of storage which is not officially of the same type can be mocked up in the frontend, but most `constexpr` interpreters in compilers break when actually accessing the values, stating that it is not actually of the correct type (or just SEGFAULT-ing/Internal Compiler Error (ICE)-ing). This is simply a consequence of having a `char8_t` type versus just using `unsigned char`. This problem would also persist even before C++20, where `char` storage cannot be accessed with an `unsigned char*` pointer in `constexpr` engines, even if one manages to use faux-laundering techniques (as the author has experimented with in the Clang and GCC frontends).
+We do not propose `unsigned char*` as allowed to be initialized with a `u8""` string literal. This is strictly due to rules around `constexpr` and current implementation limits. Forming a pointer to a block of storage which is not officially of the same type can be mocked up in the frontend, but most `constexpr` interpreters in compilers break when actually accessing the values, stating that it is not actually of the correct type (or just SEGFAULT-ing/Internal Compiler Error (ICE)-ing). This is simply a consequence of having a `char8_t` type versus just using `unsigned char`. This problem would also persist even before C++20, where `char` storage cannot be accessed with an `const unsigned char*` pointer in `constexpr` engines, even if one manages to use faux-laundering techniques (as the author has experimented with in the Clang and GCC frontends). Note this is not a permanent limitation: special recognition for initialization an `const unsigned char*` from a `u8""` string literal can change it so that the backing storage for the `const unsigned char*` is of the right type.
 
-This problem can be solved, in general, by using special `alias_cast(...)` special rules or similar. But that should be a separate proposal: this proposal provides a safe, `constexpr`-friendly way to access string storage by simple first storing it in an array. This is not the most ergonomic and does not help when passed **directly** to functions rather than first stored in a `const unsigned char[]` first. It is unfortunate, but that is the price of WG14 and WG21 ignoring the few folks who called out that a `char8_t` type was needed in the earlier days. The paper that standardized `char16_t` and `char32_t` explicitly stated that they simply believed that `char` and locale work was enough, as did WG14's papers on this subject also concluded.
+Still, this problem can be solved, in general, by using special `alias_cast(...)` special rules or similar. But that should be a separate proposal: this proposal provides a safe, `constexpr`-friendly way to access string storage by simple first storing it in an array. This is not the most ergonomic and does not help when passed **directly** to functions rather than first stored in a `const unsigned char[]` first. It is unfortunate, but that is the price of WG14 and WG21 ignoring the few folks who called out that a `char8_t` type was needed in the earlier days. The paper that standardized `char16_t` and `char32_t` explicitly stated that they simply believed that `char` and locale work was enough, as did WG14's papers on this subject also concluded.
 
 Clearly, this was not the case and has continued to be an enduring problem, but there is little we can do now to solve this problem besides accept that we made a mistake in C++11 and try to course correct sooner, rather than later.
+
+
+### Compound Literals with C? ### {#design-unsigned_char*-compound_literals}
+
+One way to get a `const unsigned char*` is to use C's compound literal syntax:
+
+```cpp
+void f(const unsigned char*);
+f((unsigned char[]){u8"text"});
+```
+
+This is overtly verbose and, unfortunately, compound literals are not supported in Standard C++ (though they are supported as an implementation extension in some C++ compilers with C modes, such as Clang). There is a proposal for compound literals that has seen some renewed interest over the last year, Zhihao Yuan's [[p2174r0]]. It has not progressed but has been brought up for multiple use cases, meaning that it may once more be brought forward. This can be seen as an alternative solution that can be made viable by Yuan's proposal, but is not pursued in this one.
 
 
 ### But you CAN make it work?? ### {#design-unsigned_char*-special}
@@ -202,15 +247,15 @@ In a way, yes, but it would get messy to solve this for all existing use cases. 
 ```cpp
 #include <cstdio>
 
-void f(unsigned char* f) {
+void f(const unsigned char* f) {
 	printf("%s", "unsigned char\n");
 }
 
-void f(char* f) {
+void f(const char* f) {
 	printf("%s", "char\n");
 }
 
-void f(char8_t* f) {
+void f(const char8_t* f) {
 	printf("%s", "char8_t\n");
 }
 
@@ -223,7 +268,7 @@ int main () {
 }
 ```
 
-The case for the code under `// (1)` is clear and unambiguous. One could easily argue that rather than the compiler creating a `const char8_t[]` magical static storage duration array, the initialization tells the compiler to change that and instead create a `const unsigned char[]` magic static storage duration array instead. That would allow that code to work unambiguously in C and C++. However, strictly speaking, not even the C standard sacntions `// (1)`:
+The case for the code under `// (1)` is clear and unambiguous. One could easily argue that rather than the compiler creating a `const char8_t[]` magical static storage duration array, the initialization tells the compiler to change that and instead create a `const unsigned char[]` magic static storage duration array instead. That would allow that code to work unambiguously in C and C++. However, strictly speaking, not even the C standard blesses `// (1)`:
 
 ```cpp
 <source>:17:34: error: pointer targets in initialization
@@ -234,9 +279,11 @@ The case for the code under `// (1)` is clear and unambiguous. One could easily 
 ```
 <sub>(Uses `-std=c2x -O3 -Wall -Wpedantic -Werror` on any Clang/GCC compiler.)</sub>
 
-This makes the case for `// (2)` illegitimate. The only cross-platform way before C++20 to initialize something related to `unsigned char` from a string literal was an (optionally brace-enclosed) init for an array, `unsigned char[]`. While it would be "nice" to make the function call `f(u8"")` immediately pick `unsigned char*` for C++, it would be wrong to add such a special exemption to C++ and then have to port that same exemption into C. This problem also does not exist for C after [[n2653]]: while Clang has an attribute for overloading, C does not support overloading. It will call a normal `void f(unsigned char* s)`, non-overloaded function without warning or error after [[n2653]]. It will also call it before the inclusion of [[n2653]] under normal implementation conditions (e.g., no `-Werror`/`-Wpedantic`/`-Wall`/`/W4`/etc.).
+This makes the case for `// (2)` less legitimate. The only cross-platform way before C++20 to initialize something related to `unsigned char` from a string literal was an (optionally brace-enclosed) initialization for an array, `unsigned char[]`. While it would be "nice" to make the function call `f(u8"")` immediately pick `unsigned char*` for C++, it would be wrong to add such a special exemption to C++ and then have to port that same exemption into C. This problem also does not exist for C after [[n2653]]: while Clang has an attribute for overloading, C does not support overloading. It will call a normal `void f(unsigned char* s)`, non-overloaded function without warning or error after [[n2653]]. It will also call it before the inclusion of [[n2653]] under normal implementation conditions (e.g., no `-Werror`/`-Wpedantic`/`-Wall`/`/W4`/etc.).
 
 Thusly, we consider only the array initialization case, since this paper primarily focuses on compatibility. We also do not want to disturb overload sets which contain a choice between `void process(unsigned char*)` and `void process(char*)`, where one expects binary data and the other expects "text" (in whatever encoding). While `std::byte` can be used to break the tie, that is a newer feature and not one we can rely on safely covering the majority of C++ code out in the wild. Backwards compatibility is a goal here, and this paper is meant to make it easier, not harder.
+
+We do think that, in the future, there can be improved interoperation with `const char*` and `const unsigned char*`. But, that will involve a great deal of additional effort, especially when it comes to how `u8""` may decay into a `const char*` or `const unsigned char*`, what the ranking is for overloading, and when/where it applies. This should be addressed in a future paper.
 
 
 
@@ -282,7 +329,7 @@ The specification is relative to the latest C++ Working Draft, [[n4901]].
 
 <div class="wording-section">
 <div class="wording-numbered">
-An array of ordinary character type ([basic.fundamental]), `char8_­t` array, `char16_­t` array, `char32_­t` array, or `wchar_­t` array can be initialized by an ordinary string literal, UTF-8 string literal, UTF-16 string literal, UTF-32 string literal, or wide string literal, respectively, or by an appropriately-typed *string-literal* enclosed in braces (<a href="http://eel.is/c++draft/lex.string">[lex.string]</a>). <ins>Additionally, an `unsigned char` array may be initialized by a UTF-8 string literal, or by a `char8_t`-typed *string-literal* enclosed in braces.</ins> Successive characters of the value of the *string-literal* initialize the elements of the array.
+An array of ordinary character type (<a href="http://eel.is/c++draft/basic.fundamental">[basic.fundamental]</a>), `char8_­t` array, `char16_­t` array, `char32_­t` array, or `wchar_­t` array can be initialized by an ordinary string literal, UTF-8 string literal, UTF-16 string literal, UTF-32 string literal, or wide string literal, respectively, or by an appropriately-typed *string-literal* enclosed in braces (<a href="http://eel.is/c++draft/lex.string">[lex.string]</a>). <ins>Additionally, an array of ordinary character type may be initialized by a UTF-8 string literal, or by a `char8_t`-typed *string-literal* enclosed in braces.</ins> Successive characters of the value of the *string-literal* initialize the elements of the array.
 </div>
 </div>
 </blockquote>
@@ -316,6 +363,15 @@ An array of ordinary character type ([basic.fundamental]), `char8_­t` array, `c
 		"href": "https://wg21.link/n4901",
 		"publisher": "ISO/IEC JTC1 SC22 WG21 - Programming Language, C++",
 		"date": "October 23rd, 2021"
+	},
+	"microsoft-utf8": {
+		"title": "",
+		"authors": [
+			"Microsoft"
+		],
+		"href": "https://docs.microsoft.com/en-us/windows/apps/design/globalizing/use-utf8-code-page",
+		"publisher": "Micrsoft",
+		"date": "June 24th, 2021"
 	}
 }
 </pre>
