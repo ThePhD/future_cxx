@@ -34,11 +34,11 @@ path: resources/css/bikeshed-color-fix.html
 
 
 
-## Revision 2 - January 10<sup>th</sup>, 2022 ## {#changelog-r2}
+## Revision 2 - January 31<sup>st</sup>, 2022 ## {#changelog-r2}
 
-- Introduce a concept of weak identifiers, and apply that concept to aliases to solve the Standard Library Redeclaration Problem.
-- Introduce the syntax for the `_Weak` specifier for aliases (and only for aliases for now).
-
+- Provide implementation of Transparent Aliases, available at [this Clang fork](https://github.com/ThePhD/llvm-project/commit/d81faeefa01e7c57a222f5bdfe355bb6a7f4b84f).
+- Provide [a proof of concept](https://github.com/ThePhD/transparent-aliases) using the above implementation, which works on Windows, Mac, and Linux machines where the modified Clang compiler can be deployed.
+- Tweak redeclaration rules for Aliases, to solve Standard Library and other library redeclarations in the face of Aliases.
 
 
 ## Revision 1 - September 15<sup>th</sup>, 2021 ## {#changelog-r1}
@@ -104,11 +104,11 @@ At the surface of this issue and as illustrated by the many failed — and one s
 Our goal with this feature is to create a no-cost, zero-overhead function abstraction layer that prevents a type definition or other structure from leaking into a binary in a permanent and non-upgradable fashion. From the motivation and analysis above, we need the following properties:
 
 - It must be a concrete name, not a macro.
-- It must be able to decay to a function pointer when referenced by name, like a normal function declaration, and that value must be consistent and usable in constant expressions.
+- It must be able to decay to a function pointer when referenced by name, like a normal function declaration, and that value must be usable.
 - It should not require producing a symbol on non-interpreter implementations of C.
-- It should allow for an implementation to upgrade or change the arguments or return type without requiring a detectable binary break on any C implementation.
+- It should allow for an implementation to upgrade or change the arguments or return type of a concrete symbol without requiring a detectable binary break on any binary C implementation.
 
-To fill these requirements, we propose the a new *transparent-function-alias* construct that, in general, would be used like such:
+To fulfill these requirements, we propose the a new *transparent-alias* construct that, in general, would be used like such:
 
 ```cpp
 extern long long __glibc_imaxabs228(long long);
@@ -117,9 +117,9 @@ extern __int128_t __glibc_imaxabs229(__int128_t);
 /* ... */
 
 #if __GNU_LIBC <= 228
-	_Alias imaxabs = __glibc_imaxabs228; // !!
+	_Alias imaxabs = __glibc_imaxabs228;
 #else
-	_Alias imaxabs = __glibc_imaxabs229; // !!
+	_Alias imaxabs = __glibc_imaxabs229;
 #endif
 
 /* ... */
@@ -130,7 +130,7 @@ int main () {
 }
 ```
 
-It is composed of the `_Alias` keyword, followed by an *identifier*, the `equal`s token, and then another *identifier*. The identifier on the right hand side must be either a previously declared *transparent-function-alias* or name a function declaration. Below, we explore the merits of this design and its origins.
+It is composed of the `_Alias` keyword, followed by an *identifier*, the `equal`s token, and then another *identifier*. The identifier on the right hand side must be either a previously declared *transparent-alias* or name a function declaration. Below, we explore the merits of this design and its origins.
 
 
 
@@ -151,10 +151,16 @@ int real_func (double d, int i) {
 
 _Alias alias_func = real_func;
 
-/* The below are Constration Violations. You cannot redeclare */
-/* a function alias with ANY signature. */
-//void alias_func(double d, int i);
+/* The below is a Constration Violation. You cannot redeclare */
+/* a function alias with an incompatible signature. */
 //void alias_func(void);
+
+/* The is fine. You can redeclare a transparent alias, so long as */
+/* the redeclaration is of compatible type. */
+/* This, in particular, solves the Standard Library's issue with */
+/* §7.1.4's permission to redeclare (Standard) Library symbols. */
+void alias_func(double d, int i);
+
 
 /* No Constraint Violation: redeclaration of an alias pointing
 /* to the same declaration is fine. */
@@ -169,7 +175,7 @@ int main ([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
 	assert(&alias_func == &real_func); // no Constraint Violation
 
 	typedef int(real_func_t)(double, int);
-	real_func_t* real_func_ptr = alias_func; // decays to function pointer to real_func
+	real_func_t* real_func_ptr = alias_func; // decays to function pointer of real_func
 	real_func_t* real_func_ptr2 = &alias_func; // function pointer to real_func
 	[[maybe_unused]] int is_3 = alias_func(2.0, 1); // invokes real_func directly
 	[[maybe_unused]] int is_4 = real_func_ptr(3.0, 1); // invokes real_func
@@ -257,12 +263,12 @@ Intermediate object files may still carry the name "`function_decl`", but the bi
 
 ### Other Existing Practice: `asm(...)` and `#pragma` ### {#design-existing-other}
 
-There are 3 other proofs of practice in the industry today. One was an MSVC-like `#pragma` behavior/`EXPORT`-file specification. Another was a Clang-like `asm()`-attribute that rename behavior. The third was a `#pragma` that simply made the linker do a find-and-replace symbol swap. When evaluated as potential alternatives to the syntaxes chosen here, there were a number of deficiencies for providing backwards compatibility. Notably, there are 2 chief concerns at play:
+There are 3 other proofs of practice in the industry today. One was an MSVC-like `#pragma` behavior/`EXPORT`-file specification. Another was a Clang-like `asm()`-attribute that behaved similarly to rename behavior. The third was a `#pragma` that simply made the linker do a find-and-replace symbol swap. When evaluated as potential alternatives to the syntaxes chosen here, there were a number of deficiencies for providing backwards compatibility. Notably, there are 2 chief concerns at play:
 
 - the function entity/entities the end-user must interact with from a given library; and,
 - valid interpretations of the directive in a world where the implementation does not produce binary artefacts.
 
-Clang's `asm(...)`, MSVC's `#pragma`-based approach, and Oracle's `#pragma redefine_extname` ([[oracle-pragma]]) are harder to standardize because each mechanism relies too heavily on the linker and the details of binary artefacts. Whereas the GCC-style attribute is tied to a front-end entity and, therefore, abstracts away binary changes as a means left to the implementation, Clang and MSVC's approaches are not tied to any entity that exists in the program in general. Export `#pragma`s and `asm(...)` attributes can be used to reference any symbol, by unchecked string, that can be resolved at any later stage of compilation (possibly during linking and code generation). There is no good way to standardize such behavior because there are no meaningful semantic constraints that can be placed on their designs that are enforceable within the boundaries of the Abstract Machine.
+Clang's `asm(...)`, MSVC's `#pragma`-based approach, and Oracle's `#pragma redefine_extname` ([[oracle-pragma]]), are harder to standardize because each mechanism relies too heavily on the linker and the details of binary artefacts. The GCC-style attribute is tied to a front-end entity and, therefore, abstracts away binary changes as a means left to the implementation, Clang and MSVC's approaches are not tied to any entity that exists in the program in general. Export `#pragma`s and `asm(...)` attributes can be used to reference any symbol, by unchecked string, that can be resolved at any later stage of compilation (possibly during linking and code generation). There is no good way to standardize such behavior because there are no meaningful semantic constraints that can be placed on their designs that are enforceable within the boundaries of the Abstract Machine.
 
 Contrast this to GCC's attribute. It **requires** that a previous, in-language definition exists. If that definition does not exist, the program has a constraint violation:
 
@@ -284,11 +290,77 @@ int main () {
 
 GCC's design is more suitable for Standard C, since we do not want to specify this in terms of effects on a binary artefact or "symbols". GCC's design makes no imposition on what may or may not happen to the exported symbols, only ties one entity to another in what is typically known as an implementation's "front end". Whether or not final binary artefacts do the right thing is still up to an implementation (and always will be, because the Standard cannot specify such). This gives us proper semantics without undue burden on either specification or implementation.
 
+Unfortunately, GCC's definition of an alias requires that there exists a definition. We see no reason to keep that constraint as present, and therefore remove that constraint in the design of this feature.
+
+
+### Implementation Experience ### {#design-existing-implementation}
+
+An implementation of Transparent Aliases is available at [this Clang fork](https://github.com/ThePhD/llvm-project/commit/d81faeefa01e7c57a222f5bdfe355bb6a7f4b84f). It provides the feature and, when built and installed, can be used to run [this suite of tests](https://github.com/ThePhD/transparent-aliases).
+
+The test suite sets up a supposed ABI on both Linux, Mac, and Windows by creating a DLL with exported functions. Without redefining the functions, the tests show that taking an old Shared Object or a Windows DLL, upgrading it and doing an in-place replacement of that file with a newly built object that contains new definitions, still lets old applications work while new applications return the correct and proper functionality from the updated code.
+
+The test suite also outputs a version number while doing a comparison test. A negative, custom-defined `intmax_t` number - which uses bits in all available registers on 2s complement 32-bit and 64-bit systems - is properly returned from a function `maxabs` that computes its absolute value. That value is further compared equal to the size of a defined `intmax_t`, which resolves to `8` in the old application (`long long`) and `16` in the new application (`__int128_t`):
+
+```cpp
+#include <my_libc/maxabs.h>
+
+#include <stdio.h>
+
+int main() {
+  intmax_t abi_is_hard = -(intmax_t)sizeof(intmax_t);
+  intmax_t but_not_that_hard = maxabs(abi_is_hard);
+  printf("%d\n", my_libc_magic_number());
+  return ((int)(but_not_that_hard) == sizeof(intmax_t)) ? 0 : 1;
+}
+```
+
+The program only returns `0` (and passes the test suite) if the returned value is properly negated and compares equal to the original size. The test output on all 3 of Linux (Ubuntu and Debian), Mac (Mojave), and Windows (Version 10 and 11) is as follows:
+
+```bash
+[proc] Executing command: ctest -j10 -C Debug -T test --output-on-failure
+[ctest] Cannot find file: transparent-aliases/.cmake/build/DartConfiguration.tcl
+[ctest]    Site: 
+[ctest]    Build name: (empty)
+[ctest] Cannot find file: transparent-aliases/.cmake/build/DartConfiguration.tcl
+[ctest] Test project transparent-aliases/.cmake/build
+[ctest]       Start  6: discard_warning.compile.clean
+[ctest]       Start 10: app_old.lib_new-copy
+[ctest]       Start  8: app_old.lib_old
+[ctest]       Start  9: app_new.lib_new
+[ctest]       Start  3: example3
+[ctest]       Start  5: discard_warning
+[ctest]       Start  4: example4
+[ctest]       Start  2: example2
+[ctest]       Start  1: example1
+[ctest]  1/11 Test  #6: discard_warning.compile.clean ....   Passed    0.20 sec
+[ctest]       Start  7: discard_warning.compile
+[ctest]  2/11 Test  #5: discard_warning ..................   Passed    0.12 sec
+[ctest]  3/11 Test #10: app_old.lib_new-copy .............   Passed    0.20 sec
+[ctest]       Start 11: app_old.lib_new
+[ctest]  4/11 Test  #4: example4 .........................   Passed    0.12 sec
+[ctest]  5/11 Test  #2: example2 .........................   Passed    0.09 sec
+[ctest]  6/11 Test  #1: example1 .........................   Passed    0.06 sec
+[ctest]  7/11 Test  #8: app_old.lib_old ..................   Passed    0.22 sec
+[ctest]  8/11 Test  #9: app_new.lib_new ..................   Passed    0.19 sec
+[ctest]  9/11 Test  #3: example3 .........................   Passed    0.16 sec
+[ctest] 10/11 Test #11: app_old.lib_new ..................   Passed    0.03 sec
+[ctest] 11/11 Test  #7: discard_warning.compile ..........   Passed    5.56 sec
+[ctest] 
+[ctest] 100% tests passed, 0 tests failed out of 11
+[ctest] 
+[ctest] Total Test time (real) =   5.79 sec
+[ctest] CTest finished with return code 0
+```
+
+We specifically make sure to turn off typical automatic RPATH handling on *Nix machines, and make sure they load the DLL present in `${ORIGIN}` (so that simply copying over the application-local DLL ensures it is loading the DLL associated with the test.
+
+This serves as concrete evidence that existing implementations can use the feature to produce the same point. Users using the test compiler could reproduce these results successfully.
+
 
 
 ## Why not an `[[attribute]]`? ## {#design-attribute}
 
-At this point in time, one might wonder why we do not propose an attribute or similar for the task here. After all, almost all prior art uses an attribute-like or literal `__attribute__` syntax. Our reasons are 2-fold:
+At this point in time, one might wonder why we do not propose an attribute or similar for the task here. After all, almost all prior art uses an attribute-like or literal `__attribute__` syntax. Our reasons are 2-fold.
 
 
 ### Standard Attributes may be ignored. ### {#design-attribute-ignored}
@@ -344,7 +416,36 @@ _Alias imaxabs = __imaxabs_vanilla_v2;
 
 As long as `inttypes_compatibility.c` is linked with the final binary artefact `vanilla.so`, the presumed mangled symbol `_imaxabs` will always be there. Meanwhile, the "standard" `inttypes.h` will have the normal `imaxabs` symbol that is tied in a transparent way to the "Version 2" of the vanilla implementation, `__imaxabs_vanilla_v2`. This produces a perfectly backwards compatible interface for the previous users of `vanilla.so`. It allows typedefs to be seamlessly upgraded, without breaking already-compiled end user code. Newly compiled code will directly reference the v2 functions with no performance loss or startup switching, getting an upgraded `intmax_t`. Older programs compiled with the old `intmax_t` continue to reference old symbols left by compatibility translation units in the code.
 
-This means that C Standard Libraries will have a language-capable medium of upgrading their code in a systemic and useful fashion.
+This means that C Standard Libraries will have a language-capable medium of upgrading their code in a systemic and useful fashion. A working, tested, compiled version of this example is available at []().
+
+
+### Standard Library Redeclaration ### {#design-compatibility-redeclaration}
+
+One of the bigger problems that comes with this design space is that the C Standard Library specifically allows for a user to redeclare an existing standard library symbol:
+
+> Provided that a library function can be declared without reference to any type defined in a header, it is also permissible to declare the function and use it without including its associated header.
+
+That means the following declaration in this translation unit is legal:
+
+```cpp
+extern char* strcpy(char *restrict s1, const char *restrict s2);
+
+int main () {
+	return 0;
+}
+```
+
+This is a restriction that is special to C. Thankfully, we are not particularly concerned about the ability to upgrade this function: users who are declaring Standard Library functions without including the header like this are doing this strictly as experts. They have a strong expectation of what symbol they are getting from their distribution. Transparent aliases are meant to be used for functions which rely on type definitions or structures defined in the standard library, including (but not limited to):
+
+- `struct timespec` (`timespec_get`, and other functions)
+- `time_t` (`time`, `mktime`, `difftime`, and more functions)
+- `intmax_t` (`imaxabs`, `strtoimax`, and similar functions)
+- `wchar_t` (`mbstowcs`, `wcslen`, and similar functions)
+- and so on, and so forth.
+
+These are types which are controlled exclusively by the standard library and are known to change on 32-bit and 64-bit systems as well as transition based on locale and other compile-time settings. A single DLL can be distributed on a system and accommodate a variety of preprocessor-based switches or other compile-time information and allow an information to accommodate and/or upgrade a given system's symbol table (or DLL/SO's symbol table) without breaking old, original code.
+
+Nevertheless, it is a common practice to redeclare standard library symbols after they are defined by a header. While we do not touch the strong/weak declaration portion of previous existing practice, we do provide wording which allows for a redeclaration of an `_Alias` as a function declaration. This allows for a common use case in code, even if the standard does not explicitly support redeclaring e.g. `imaxabs` or `strtoimax`.
 
 
 
@@ -392,6 +493,27 @@ While we use the word `_Alias` right now as a stand-in, we would appreciate feed
 
 
 
+# Future Directions # {#future}
+
+There has been expressed want for transparent aliases for non-functions. That is:
+
+```cpp
+int f (int value) { return y + y; }
+
+int main () {
+	int x = 1;
+	_Alias y = x;
+	return &y == &x ? f(y) : 0; // returns f(x) == 2
+}
+```
+
+We think this would be a useful **general purpose compile-time renaming mechanism**. But, that is beyond the scope of this paper at the moment. Various implementation-specific attributes above work with variables but we would like more time to work on the semantics of such before attempting to standardize such a feature. The precedence and usage experience for non-variables is far more important. As it is a constraint violation to do this with functions (and not undefined behavior), we have room to do this in the future.
+
+There were also further suggestions to have the ability to make "`_Weak`" aliases: that is, the ability to be able to define a compile-time alias, but be able to redeclare over it and completely erase the old declaration in a way that can be replaced, at compile-time, with a new (and potentially incompatible) declaration. This is actually implemented in the current implementation, and it works as expected, but it is not provided in this paper. There is, thankfully, plenty of room in the grammar to allow for this.
+
+
+
+
 # Wording # {#wording}
 
 The following wording is registered against [[N2596]].
@@ -402,7 +524,7 @@ The following wording is registered against [[N2596]].
 
 <blockquote>
 <div class="wording-numbered wording-numbered-1">
-An identifier can denote an object; a function; a tag or a member of a structure, union, or enumeration; a typedef name; <ins>a function alias name;</ins> a label name; a macro name; or a macro parameter.
+An identifier can denote an object; a function; a tag or a member of a structure, union, or enumeration; a typedef name; <ins>a transparent alias name;</ins> a label name; a macro name; or a macro parameter.
 </div>
 </blockquote>
 
@@ -410,7 +532,7 @@ An identifier can denote an object; a function; a tag or a member of a structure
 
 ## Modify "§6.2.1 Scopes of identifiers", paragraph 4 ## {#wording-6.2.1p4}
 
-Change every instance of "<del>declarator or type specifier</del>" to be "<ins>declarator, function alias, or type specifier</ins>".
+Change every instance of "<del>declarator or type specifier</del>" to be "<ins>declarator, transparent alias, or type specifier</ins>".
 
 
 
@@ -418,7 +540,7 @@ Change every instance of "<del>declarator or type specifier</del>" to be "<ins>d
 
 <blockquote>
 <div class="wording-numbered wording-numbered-7">
-Structure, union, and enumeration tags have scope that begins just after the appearance of the tag in a type specifier that declares the tag. Each enumeration constant has scope that begins just after the appearance of its defining enumerator in an enumerator list.<ins>A function alias name has a scope that begins after the appearance of the function alias target in its definition.</ins> Any other identifier has scope that begins just after the completion of its declarator.
+Structure, union, and enumeration tags have scope that begins just after the appearance of the tag in a type specifier that declares the tag. Each enumeration constant has scope that begins just after the appearance of its defining enumerator in an enumerator list.<ins>A transparent alias name has a scope that begins after the appearance of the transparent alias target in its definition.</ins> Any other identifier has scope that begins just after the completion of its declarator.
 </div>
 </blockquote>
 
@@ -428,19 +550,19 @@ Structure, union, and enumeration tags have scope that begins just after the app
 
 <blockquote>
 <div class="wording-numbered wording-numbered-8">
-The following identifiers have no linkage: an identifier declared to be anything other than an object or a function; <ins>a function alias;</ins> an identifier declared to be a function parameter; a block scope identifier for an object declared without the storage-class specifier <b>extern</b>.
+The following identifiers have no linkage: an identifier declared to be anything other than an object or a function; <ins>a transparent alias;</ins> an identifier declared to be a function parameter; a block scope identifier for an object declared without the storage-class specifier <b>extern</b>.
 </div>
 </blockquote>
 
 
 
-## Add function aliases to "§6.2.3 Name spaces of identifiers", paragraph 1, last bullet ## {#wording-6.2.3}
+## Add transparent aliases to "§6.2.3 Name spaces of identifiers", paragraph 1, last bullet ## {#wording-6.2.3}
 
 <blockquote>
 <div class="wording-numbered wording-numbered-1">
 …
 <ul>
-<li>all other identifiers, called <i>ordinary identifiers</i> (declared in ordinary declarators<ins>, function aliases</ins>, or as enumeration constants).</li>
+<li>all other identifiers, called *ordinary identifiers* (declared in ordinary declarators<ins>, transparent aliases</ins>, or as enumeration constants).</li>
 </ul>
 </div>
 </blockquote>
@@ -450,10 +572,12 @@ The following identifiers have no linkage: an identifier declared to be anything
 ## Add a new keyword to "§6.4.1 Keywords", Syntax, paragraph 1 ## {#wording-6.4.1}
 
 <blockquote>
-<div class="wording-numbered wording-numbered-1">
+<div class="wording-section">
+<div class="wording-numbered">
 <i>keyword</i>: one of<br/>
-<p>…</p>
-<p><ins>ALIAS-TOKEN</ins></p>
+&emsp;<p>…</p>
+&emsp;<p><ins>ALIAS-TOKEN</ins></p>
+</div>
 </div>
 </blockquote>
 
@@ -467,9 +591,12 @@ The following identifiers have no linkage: an identifier declared to be anything
 <blockquote>
 <div class="wording-numbered wording-numbered-1">
 <dl>
-	<dt><i>declaration</i>:</dt>
-	<dd>…</dd>
-	<dd><emsp/><ins><i>function-alias</i> <b>;</b></ins></dd>
+	<dt>*declaration*:</dt>
+	<dd>*declaration-specifiers* *init-declarator-list*<sub>opt</sub>  <b>;</b></dd>
+	<dd>*attribute-specifier-sequence* *declaration-specifiers* *init-declarator-list* <b>;</b></dd>
+	<dd>*static_assert-declaration*</dd>
+	<dd>*attribute-declaration*</dd>
+	<dd><ins>*transparent-alias-declaration*</ins></dd>
 </dl>
 </div>
 </blockquote>
@@ -479,7 +606,7 @@ The following identifiers have no linkage: an identifier declared to be anything
 
 <blockquote>
 <div class="wording-numbered wording-numbered-2">
-A declaration other than a <i>static_assert</i> or <i>attribute</i> declaration shall declare at least a declarator (other than the parameters of a function or the members of a structure or union), a tag<ins>, a function alias</ins>, or the members of an enumeration.
+A declaration other than a <i>static_assert</i> or <i>attribute</i> declaration shall declare at least a declarator (other than the parameters of a function or the members of a structure or union), a tag<ins>, a transparent alias</ins>, or the members of an enumeration.
 </div>
 
 <div class="wording-numbered">
@@ -487,7 +614,7 @@ If an identifier has no linkage, there shall be no more than one declaration of 
 
 <ul>
 	<li>a typedef name may be redefined to denote the same type as it currently does, provided that type is not a variably modified type;</li>
-	<li><ins>a function alias name may be redefined as specified in 6.7.12; and</ins></li>
+	<li><ins>a transparent alias name may be redefined as specified in 6.7.12; and</ins></li>
 	<li>tags may be redeclared as specified in 6.7.2.3.</li>
 	</ul>
 </div>
@@ -504,7 +631,7 @@ A declaration specifies the interpretation and properties of a set of identifier
 - for a function, includes the function body;<sup>129)</sup>
 - for an enumeration constant, is the (only) declaration of the identifier;
 - for a typedef name, is the first (or only) declaration of the identifier<del>.</del><ins>; or</ins>
-- <ins>for a function alias name, is the first (or only) declaration of the identifier.</ins>
+- <ins>for a transparent alias name, is the first (or only) declaration of the identifier.</ins>
 
 </div>
 </blockquote>
@@ -516,46 +643,51 @@ A declaration specifies the interpretation and properties of a set of identifier
 
 <blockquote>
 <div class="wording-numbered wording-numbered-3">
-There shall be no more than one external definition for each identifier declared with internal linkage in a translation unit. Moreover, if an identifier declared with internal linkage is used <ins>directly or indirectly (e.g., through a function alias)</ins> in an expression (other than as a part of the operand of a sizeof or _Alignof operator whose result is an integer constant), there shall be exactly one external definition for the identifier in the translation unit.
+There shall be no more than one external definition for each identifier declared with internal linkage in a translation unit. Moreover, if an identifier declared with internal linkage is used <ins>directly or indirectly (e.g., through a transparent alias)</ins> in an expression (other than as a part of the operand of a <b>sizeof</b> or <b>_Alignof</b> operator whose result is an integer constant), there shall be exactly one external definition for the identifier in the translation unit.
 </div>
 
 …
 
 <div class="wording-numbered wording-numbered-5">
-An external definition is an external declaration that is also a definition of a function (other than an inline definition) or an object. If an identifier declared with external linkage is used <ins>directly or indirectly (e.g., through a function alias)</ins> in an expression (other than as part of the operand of a <b>sizeof</b> or <b>_Alignof</b> operator whose result is an integer constant), somewhere in the entire program there shall be exactly one external definition for the identifier; otherwise, there shall be no more than one.<sup>176)</sup>
+An external definition is an external declaration that is also a definition of a function (other than an inline definition) or an object. If an identifier declared with external linkage is used <ins>directly or indirectly (e.g., through a transparent alias)</ins> in an expression (other than as part of the operand of a <b>sizeof</b> or <b>_Alignof</b> operator whose result is an integer constant), somewhere in the entire program there shall be exactly one external definition for the identifier; otherwise, there shall be no more than one.<sup>176)</sup>
 </div>
 </blockquote>
 
 
 
-## Add a new sub-clause "§6.7.12 Function alias" ## {#wording-6.7.12}
+## Add a new sub-clause "§6.7.12 Transparent alias" ## {#wording-6.7.12}
 
 <blockquote>
 <ins>
-<b>6.7.12 Function alias</b>
+<b>6.7.12 Transparent alias</b>
 
 <b>Syntax</b>
 <div class="wording-numbered wording-numbered-1">
 <dl>
-	<dt><i>function-alias:</i></dt>
-	<dd><emsp/><b>ALIAS-TOKEN</b> <i>identifier</i> <b>=</b> <i>identifier</i></dd>
+	<dt><i>transparent-alias-declaration:</i></dt>
+	<dd><emsp/><i>attribute-specifier-sequence</i><sub>opt</sub> <b>ALIAS-TOKEN</b> <i>identifier</i> <i>attribute-specifier-sequence</i><sub>opt</sub> <b>=</b> <i>identifier</i> <b>;</b></dd>
 </dl>
 </div>
 <div class="wording-numbered">
-Let the identifier on the left hand side be the <i>function alias name</i> and the identifier on the right hand side be the <i>function alias target</i>.
+Let the identifier on the left hand side be the <i>transparent alias name</i> and the identifier on the right hand side be the <i>transparent alias target</i>.
 </div>
 
 <b>Constraints</b>
 <div class="wording-numbered ins">
-A function alias target must refer to a preceding and visible function alias or a preceding and visible function declaration. A function alias being redefined shall refer to the same function declaration<sup>1⭐⭐</sup>.
+A transparent alias target must refer to a preceding and visible transparent alias or a preceding and visible function declaration. A transparent alias being redefined shall refer to the same function declaration<sup>1⭐⭐</sup>. A transparent alias being redeclared as a function declaration shall still be considered a transparent alias after the redeclaration. The redeclaration shall still refer to the transparent alias target when called, and the function declaration shall have a compatible type with the transparent alias target.
 </div>
 
 <b>Semantics</b>
 <div class="wording-numbered">
-A function alias refers to an existing function declaration, either directly or through another function alias. A function alias does not produce a new function declaration; it is only a synonym for the function alias target specified/ If the function alias target is another function alias, it is evaluated to determine the function declaration to which the function alias target is a synonym for.
+A transparent alias refers to an existing function declaration, either directly or through another transparent alias. A transparent alias does not produce a new function declaration; it is only a synonym for the transparent alias target specified. If the transparent alias target is another transparent alias, it is translated, recursively, until the existing function declaration is determined.
 </div>
+
 <div class="wording-numbered">
-A function alias is a function designator (6.3.2.1). If its address is taken with the unary address operator (6.5.3.2) or used in an expression, it is converted to a pointer-to-function whose address is identical to the function declaration that the function alias target refers.
+A transparent alias that refers to a function is a function designator (6.3.2.1). If its address is taken with the unary address operator (6.5.3.2) or used in an expression, it is converted to a pointer-to-function whose address is identical to the function declaration that the transparent alias target refers.
+</div>
+
+<div class="wording-numbered">
+The optional attribute specifier sequence after the transparent alias name appertains to the transparent alias name.
 </div>
 
 <div class="wording-numbered">
@@ -616,8 +748,8 @@ A function alias is a function designator (6.3.2.1). If its address is taken wit
 >
 > void func(void);
 > int main () {
->	// Inner scope.
->	_Alias func = func;
+> 	// Inner scope: no constraint violation
+> 	_Alias func = func;
 > }
 > ```
 </div>
@@ -636,19 +768,36 @@ A function alias is a function designator (6.3.2.1). If its address is taken wit
 >                                  // existing declaration
 > ALIAS-TOKEN truncated_zzz = truncated_zzz; // constraint violation: cannot change 
 >                                            // function declaration
->                                            // to function alias
+>                                            // to transparent alias
 > 
 > ALIAS-TOKEN valid_sleep_alias = zzz;
-> int valid_sleep_alias(int requested_sleep_time); // constraint violation: redeclaring
->                                                  // function alias
+> double valid_sleep_alias(double requested_sleep_time); // constraint violation:
+>                                                        // redeclaring a
+>                                                        // transparent alias with
+>                                                        // non-compatible type
 > ```
 </div>
 
+<div class="wording-numbered">
 
+**EXAMPLE 4** An alias can be redeclared as either an alias or a function declaration so long as it is compatible:
+
+> ```cpp
+> double purr(void) { return 1.0; }
+> ALIAS-TOKEN meow = purr;
+> double meow(void); // compatible redeclaration, still calls "purr"
+> ALIAS-TOKEN meow = purr; // compatible redeclaration
+>
+> int main () {
+> 	double x = meow(); // calls purr
+> 	return (int)(v); // returns 1
+> }
+> ```
+</div>
 
 <div class="wording-numbered">
 
-**EXAMPLE 4** Compatible and completed types through aliases:
+**EXAMPLE 5** Compatible and completed types through aliases:
 
 > ```cpp
 > void otter(int (*)[]);
@@ -661,7 +810,7 @@ A function alias is a function designator (6.3.2.1). If its address is taken wit
 
 <div class="wording-numbered">
 
-**EXAMPLE 5** Shadowing and compatible types through aliases:
+**EXAMPLE 6** Shadowing and compatible types through aliases:
 
 > ```cpp
 > void cookie(int (*)[2]);
@@ -684,7 +833,7 @@ A function alias is a function designator (6.3.2.1). If its address is taken wit
 
 <div class="wording-numbered">
 
-**EXAMPLE 6** Composite and compatible types through aliases:
+**EXAMPLE 7** Composite and compatible types through aliases:
 
 > ```cpp
 > void otter(int (*)[], int (*)[2]);
@@ -701,25 +850,33 @@ A function alias is a function designator (6.3.2.1). If its address is taken wit
 </div>
 
 <div class="wording-footnote">
-<sup>1⭐⭐)</sup> <sub>If the function alias target points to another function alias, then the alias target is first resolved. The resolution occurs recursively until a function declaration is the alias target. Equality between two alias names determines whether or not they ultimately refer to the same function declaration. Resolution of a function alias target happens before the synonym is declared or redeclared, meaning a function alias name may refer to itself when it is being redeclared, but not when it is first declared.</sub>
+<sup>1⭐⭐)</sup> <sub>If the transparent alias target points to another transparent alias, then the alias target is first resolved. The resolution occurs recursively until a function declaration is the alias target. Equality between two alias names determines whether or not they ultimately refer to the same function declaration. Resolution of a transparent alias target happens before the synonym is declared or redeclared, meaning a transparent alias name may refer to itself when it is being redeclared, but not when it is first declared.</sub>
 </div>
 
 <b>Recommended Practice</b>
 <div class="wording-numbered">
-Implementations and programs may use this feature as a way to produce stability for translation units which rely on specific function declaration names being present while aliasing a common declaration name for an interface. It may be particularly helpful for those which use type definitions (6.7.8) in return and parameter types.
+Implementations and programs may use aliases as a way to produce stability for translation units which rely on specific function declaration and definitions being present while aliasing a common declaration name for a more suitable interface. It may be particularly helpful for function declarations which use type definitions (6.7.8) in return and parameter types. Programs may update and upgrade alias definitions alongside type definitions to preserve entities and symbols in a given program while letting newer programs take advantage of upgraded functionality.
 </div>
 
 <div class="wording-numbered">
 
-**EXAMPLE 7**
+**EXAMPLE 8** Versioning of a function call `imaxabs` while keeping old externally-defined function definitions available within the program.
 
 > ```cpp
 > extern intmax_t __imaxabs_32ish(__int32 value);
 > extern intmax_t __imaxabs_64ish(__int64 value);
 > extern intmax_t __imaxabs_128ish(__int128 value);
-> 
-> typedef __int128_t intmax_t;
-> ALIAS-TOKEN imaxabs = __imaxabs_128ish;
+>
+> #if VER0
+> 	typedef int intmax_t;
+> 	ALIAS-TOKEN imaxabs = __imaxabs_32ish;
+> #elif VER1
+> 	typedef long long intmax_t;
+> 	ALIAS-TOKEN imaxabs = __imaxabs_64ish;
+> #elif VER2
+> 	typedef __int128_t intmax_t;
+> 	ALIAS-TOKEN imaxabs = __imaxabs_128ish;
+> #endif
 > ```
 
 </div>
