@@ -1,0 +1,164 @@
+<pre class='metadata'>
+Title: Relax va_start Requirements to Match C
+H1: Relax <code>va_start</code> Requirements to Match C
+Shortname: P2537
+Revision: 0
+Audience: SG22, LEWG
+Status: P
+Group: WG21
+URL:
+!Target: C++26
+!Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/d2513.html">https://thephd.dev/_vendor/future_cxx/papers/d2513.html</a>
+Repository: ThePhD/future_cxx
+Editor: JeanHeyd Meneide (https://thephd.dev), phdofthehouse@gmail.com
+Date: 2022-02-15
+Markup Shorthands: markdown yes, biblio yes, markup yes
+Abstract: At the WG14 January/February Meeting on February 1st, WG14 voted heavily in favor of allowing va_start/arg/end/list-style functions to be able to take 0 arguments, alongside removing the requirement of a special "last parameter" being passed to va_start. C++ has always allowed function declarations and definitions with zero arguments, but intentionally left va_start unupdated to match C's existing practice. This paper follows the new direction for C to remove the restrictions from va_start in C.
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-color-fix.html
+</pre>
+
+
+
+
+# Revision History # {#changelog}
+
+
+
+## Revision 0 - January 15th, 2022 ## {#changelog-r0}
+
+	- Initial Release! 🎉
+
+
+
+
+# Introduction and Motivation # {#intro}
+
+C merged a paper to remove functions without prototypes ("K&R Functions") from C23, closing the chapter on a nearly 40 year old deprecated feature. Unfortunately, K&R declarations served a number of useful purposes that could not be effectively approximated by any other function declaration in C. In C++, old-style K&R functions on both an ABI and an API level could be approximated with a declaration such as `void f(...);`. This was impossible in C thanks to the requirement in both the language that there must be at least one parameter before the `...`, and that the last parameter must be passed to `va_start`. This is bad because many inter-language function calls and similar were enabled in plain, standard C by using K&R declarations and then having the non-C side use assembly or other tricks to appropriately handle both passed-in arguments as well as return values:
+
+```cpp
+// Pre-C23 K&R Declaration
+double compute_values();
+
+int main () {
+	// C: allowed usage under K&R rules, removed in C23
+	// C++: ill-formed (constraint violation), function takes 0 arguments
+	double x = compute_values("with_pi", 2.4, 2.7, true);
+	return (int)x;
+}
+```
+
+The implementation of `compute_values` here could be done VIA assembly or with other tricks in other languages, allowing a C codebase to talk to other programming languages and tools efficiently without having to create a dedicated Foreign Function Interface. Unfortunately, the removal of K&R declarations in C has made the above code illegal in standard C, and taken away a fairly valid use case for prototype-less functions.
+
+
+
+## The Solution ## {#intro-solution}
+
+C is moving to fix this problem by allowing `void f(...);` as a valid function declaration, as shown in [[n2919]]. This will allow the same level of power as K&R declarations without the problematic no-arguments-but-takes-any-number-of-arguments-actually double-meaning syntax. In order to do this, C is updating the `va_start` macro as well as fixing its language rules. C++ does not need to fix any of its language rules:
+
+```cpp
+// Valid in C23, always valid C++
+double compute_values(...);
+
+int main () {
+	// C and C++: allowed and portable in both languages
+	double x = compute_values("with_pi", 2.4, 2.7, true);
+	return (int)x;
+}
+```
+
+Since C++ includes the `<stdarg.h>` header as part of its library offerings in `<cstdarg>`, some adjustments must be made to the contents of the synopsis and wording for `<cstdarg>` to match the changes that will be made for C. Additionally, some modifications must be made to the constraints to match the changes C makes. Because this is something that was not previously allowed before, it has no impact on existing implementations and for all major compilers (GCC, MSVC, Clang, and their derivates) they have the necessary built-in compiler magic to produce working library implementations that do not require the first argument to `va_start`.
+
+An example proving that this is possible is publicly available here: [[ztd.vargs|ztd.vargs (https://ztdvargs.readthedocs.io/en/latest/)]]. The ABI for variadic arguments versus K&R prototypes is no affected because the C ABI did not allow this declaration before, so there is no existing standard code for C that could rely on this function call. C++ may have an ABI for it, but no standards-compliant code could access any of the function arguments using `va_start`/`va_arg`/`va_end` thanks to the macro's specification. Therefore, this feature either introduces a new ABI that did not previously exist on the platform at all, or simply utilizes an existing ABI (the example library implementation leverages well-defined existing ABIs in C++ implementations in order to work properly).
+
+
+
+
+# Specification # {#wording}
+
+The specification is relative to the latest C++ Working Draft, [[n4901]].
+
+
+
+## Library Wording ## {#wording-library}
+
+
+### Modify Header <cstdarg> Synopsis [<a href="https://eel.is/c++draft//cstdarg.syn">cstdarg.syn</a>] ### {#wording-library-cstdarg.syn}
+
+<blockquote>
+<div class="wording-section">
+
+<div class="wording-section-header">
+<span class="clause-title"><b>17.13.2</b></span>
+<span><b>Header `<cstdarg>` Synopsis</b></span>
+<span class="stable-tag">[<a href="https://eel.is/c++draft/cstdarg.syn">cstdarg.syn</a>]</span>
+</div>
+
+<div>
+
+```cpp
+namespace std {
+  using va_list = see below;
+}
+
+#define va_arg(V, P) see below
+#define va_copy(VDST, VSRC) see below
+#define va_end(V) see below
+```
+<del>
+
+```cpp
+#define va_start(V, P) see below
+```
+</del>
+<ins>
+
+```cpp
+#define va_start(V, ...) see below
+```
+</ins>
+
+```cpp
+}
+```
+</div>
+
+<div class="wording-numbered">
+
+The contents of the header `<cstdarg>` are the same as the C standard library header `<stdarg.h>`, with the following changes: The restrictions that ISO C places on the second parameter<ins>, if provided,</ins> to the `va_­start` macro in header `<stdarg.h>` are different in this document. The parameter `parmN` is the rightmost parameter in the variable parameter list of the function definition (the one just before the `...`)<sup>207</sup>. If the parameter `parmN` is a pack expansion ([temp.variadic]) or an entity resulting from a lambda capture ([expr.prim.lambda]), the program is ill-formed, no diagnostic required. If the parameter `parmN` is of a reference type, or of a type that is not compatible with the type that results when passing an argument for which there is no parameter, the behavior is undefined.
+
+SEE ALSO: ISO C 7.16.1.1
+</div>
+</div>
+</blockquote>
+
+<pre class=biblio>
+{
+	"n2919": {
+		"title": "Relax requirements for variadic parameter lists",
+		"authors": [
+			"Alex Gilding",
+            "JeanHeyd Meneide"
+		],
+		"href": "http://open-std.org/JTC1/SC22/WG14/www/docs/n2919.pdf",
+		"publisher": "ISO/IEC JTC1 SC22 WG14 - Programming Language, C",
+		"date": "January 25th, 2022"
+	},
+	"ztd.vargs": {
+		"title": "ztd.vargs",
+		"authors": [
+			"JeanHeyd Meneide",
+			"Shepherd's Oasis, LLC"
+		],
+		"href": "https://ztdvargs.readthedocs.io/en/latest/",
+		"publisher": "Shepherd's Oasis, LLC",
+		"date": "November 22nd, 2021"
+	}
+}
+</pre>
