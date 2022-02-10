@@ -299,6 +299,50 @@ We do think that, in the future, there can be improved interoperation with `cons
 
 
 
+## Overload Resolution for Array-Containing Structure Initialization ## {#design-breakage}
+
+There exists an ambiguity when initializing character arrays from `char` and, after this paper, `char8_t` literals.
+
+The question of whether or not this matters, in overall analysis, leans into it not having significant impact. This same kind of code snippet has similar impact for string literal initialization using a plain `char`, where `unsigned char` and `signed char` usage can clash with a plain `char` array using brace initialization:
+
+```cpp
+struct A {
+	unsigned char s[10];
+};
+struct B {
+	char s[10];
+};
+
+void f(A);
+void f(B);
+
+int main() {
+	f({""}); // ambiguous
+}
+```
+
+This situation now becomes the same deal when workign with `u8""` in this scenario and having `char8_t` as the aggregate initialization:
+
+```cpp
+struct C {
+	char8_t s[10];
+};
+struct D {
+	char s[10];
+};
+
+void f(C);
+void f(D);
+
+int main() {
+	f({u8""}); // ambiguous
+}
+```
+
+Users could not rely on this code successfully disambiguating before C++20, going back to it being ambiguous for this very specific case is fine. Furthermore, this only applies in C++ with C-like aggregate structures: C has no such problem in its codebases, and so it should not show up at all in C code being ported to C++. Because this paper is a Defect Report, it restores it to the behavior it's had since C++11, meaning that there has been very little time for this to manifest. Given that there has been a lack of `char8_t` support in the standard library and that C has no distinct `char8_t` type (it still produces an array of `char`, albeit that might change as pointed at by previously-mentioned papers for the C Committee), this is even less likely to be a problem.
+
+
+
 
 # Specification # {#wording}
 
@@ -345,6 +389,56 @@ An array of ordinary character type (<a href="http://eel.is/c++draft/basic.funda
 </div>
 </div>
 </blockquote>
+
+
+### Add Annex C.1.6 example for change in code [<a href="http://eel.is/c++draft/diff.cpp20">diff.cpp20</a>] ### {#wording-language-diff.cpp20}
+
+<blockquote>
+<div class="wording-section">
+<ins>
+<div class="wording-section-header">
+<span class="clause-title"><b>C.1.6</b></span>
+<span><b><a href="http://eel.is/c++draft/dcl.dcl">[dcl.dcl]</a>: Declarations</b></span>
+<span class="stable-tag">[<a href="http://eel.is/c++draft/diff.cpp20.dcl">diff.cpp20.dcl</a>]</span>
+</div>
+
+<div class="wording-numbered">
+
+**Affected subclaus:** <a href="http://eel.is/c++draft/dcl.init.string">[dcl.init.string]</a>
+
+**Change:** UTF-8 string literals may initialize arrays of ordinary character type, instead of only `char8_t` type.
+
+**Rationale:** Compatibility with previously written code that conformed to previous versions of this document.
+
+**Effect on original feature:** Arrays of orindary character type may now be initialized with a UTF-8 string literal. This can affect initialization that includes arrays which are directly initialized within class types, typically aggregates.
+
+[ *Example 1*:
+
+```cpp
+struct A {
+	char8_t s[10];
+};
+struct B {
+	char s[10];
+};
+
+void f(A);
+void f(B);
+
+int main() {
+	f({u8""}); // ambiguous
+}
+```
+
+— *end example*]
+</div>
+</ins>
+</div>
+</blockquote>
+
+
+
+
 
 <pre class=biblio>
 {
