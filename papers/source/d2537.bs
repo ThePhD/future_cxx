@@ -31,8 +31,12 @@ path: resources/css/bikeshed-color-fix.html
 
 
 
-## Revision 0 - January 15th, 2022 ## {#changelog-r0}
+## Revision 0 - February 15th, 2022 ## {#changelog-r0}
 
+	- SG22 saw this paper on February 11th, 2022 and voted in favor of forwarding it towards WG21 and for WG14. They do not see any compatibility issues, but recommended two things:
+		- Allowing declarations but not definitions in the C paper;
+		- and, talking about ABI changes.
+	- A section 
 	- Initial Release! 🎉
 
 
@@ -76,6 +80,42 @@ int main () {
 Since C++ includes the `<stdarg.h>` header as part of its library offerings in `<cstdarg>`, some adjustments must be made to the contents of the synopsis and wording for `<cstdarg>` to match the changes that will be made for C. Additionally, some modifications must be made to the constraints to match the changes C makes. Because this is something that was not previously allowed before, it has no impact on existing implementations and for all major compilers (GCC, MSVC, Clang, and their derivates) they have the necessary built-in compiler magic to produce working library implementations that do not require the first argument to `va_start`.
 
 An example proving that this is possible is publicly available here: [[ztd.vargs|ztd.vargs (https://ztdvargs.readthedocs.io/en/latest/)]]. The ABI for variadic arguments versus K&R prototypes is no affected because the C ABI did not allow this declaration before, so there is no existing standard code for C that could rely on this function call. C++ may have an ABI for it, but no standards-compliant code could access any of the function arguments using `va_start`/`va_arg`/`va_end` thanks to the macro's specification. Therefore, this feature either introduces a new ABI that did not previously exist on the platform at all, or simply utilizes an existing ABI (the example library implementation leverages well-defined existing ABIs in C++ implementations in order to work properly).
+
+
+### What if the ABI is different? ### {#intro-solution-abi}
+
+There are a handful of C compilers that allow declarations using variable arguments without a first parameter, and some shared C and C++ compiler implementations which also allow it by having `extern "C"` functions declared without the first parameter in C++. Therefore, there can be compilers which do not share an ABI for their K&R and their variable argument declarations.
+
+The solution here is not something that can be specified in the standard. This paper can only recommend that implementations which need more explicit control over the resulting ABI of their K&R functions may need to provide an attribute. like below, when performing the migration:
+
+```cpp
+[[impl::krdecl]] double compute_values(...);
+
+int main () {
+	// compute_values uses right register and stack allocation convention
+	double x = compute_values("with_pi", 2.4, 2.7, true);
+	return (int)x;
+}
+```
+
+This can alleviate much of the trouble of porting, and can still be automated when upgrading to C23. We do not have any means in the standard to provide an `[[impl::krdecl]]` or similar because ABI, register usage, and similar calling convention work is somewhat outside the scope of the standard.
+
+
+### Allow Declaration, not but don't allow Definitions? ### {#intro-solution-decl.vs.defn}
+
+There was discussion about allowing this to change only the ability in C to declare these C functions, and not to define them. This is different from C++ where it is both allowed to be declared and defined with no first parameter. Clang also has an extension that allows these functions to be both declared and defined with C or C++-style name mangling:
+
+```cpp
+void func(...) __attribute__((overloadable)) {
+
+}
+
+int main() {
+  func(1, 2, 3);
+}
+```
+
+The original paper in [[n2919]] and this paper posit that it would be too inconsistent to allow declaratins (like C++) but disallow definitions (unlike C++) in C. Therefore, the C paper is going forward with changing `va_start` and allowing both declarations and definitions. This paper is also being put in the C++ mailing list to bring C++ up to the same level of compatibility with C, if the N2919 change is made. If the change is withdrawn than this paper will be removed.
 
 
 
