@@ -322,7 +322,7 @@ The exact-width types suffer from non-availability on specific platforms, which 
 
 Extended integer types, least-width integer types, and exact-width integer types, can all be used with the type-generic macros since the type-generic macros are required to work over all standard (unsigned) integer types and extended (unsigned) integer types, while excluding `_Bool` and bit-precise (`_BitInt(N)`) integer types that do not match pre-existing type widths. This provides a complete set of functionality that is maximally portable while also allowing for precise semantic control with exact or least-width types.
 
-This paper does not concern itself with the implications of passing a `uint_leastN_t` to bit-counting type-generic functions like `stdc_leading_zeroes` directly: a user must account for such use and be prepared to have types larger than `N` bits in width. This is, very literally, what users are signing up for when they use such types and it is their responsibility to query the `UINT_LEASTN_WIDTH` macros. We expect users to use the `N` of their exact-width integer types with the type-generic macros as well.
+This paper does not concern itself with the implications of passing a `uint_leastN_t` to bit-counting type-generic functions like `stdc_leading_zeros` directly: a user must account for such use and be prepared to have types larger than `N` bits in width. This is, very literally, what users are signing up for when they use such types and it is their responsibility to query the `UINT_LEASTN_WIDTH` macros. We expect users to use the `N` of their exact-width integer types with the type-generic macros as well.
 
 Finally, in general `_Bool` objects are disallowed from the above functions. There is just not a meaningful body of functionality that can be provided, and there is a fundamental difference between something that is expected to be a boolean value and something that is expected to be a 1-bit number (even if they can both serve similar purposes). It is also questionable to compute things such as rotation for `_Bool` objects. If we can grow a consistent set of answers for these operations across the industry, than we can weaken the requirements and add the behavior in. (Note that if we put it in now and choose a behavior, we cut off any improvements made in the future, so it is best to be conservative here.)
 
@@ -605,7 +605,7 @@ The header `<stdbit.h>` defines the following macros, types, and functions, to w
 
 <p><b>7.3�x.1 Endian</b/</p>
 <div class="wording-numbered">
-Two common methods of byte ordering in multi-byte scalar types are <b>big-endian</b> and <b>little-endian</b>. Big-endian is a format for storage of binary data in which the least significant byte is placed first, with the rest in ascending order. Little-endian is a format for storage or transmission of binary data in which the most significant byte is placed first, with the rest in descending order. Other byte orderings are also possible. Declarations and definitions in 7.3�x, a suffix containing `le` typically represents little-endian. A suffix containing `be` typically represents big-endian. This clause describes the endianness of the execution environment with respect to bit-precise integer types without padding bits, standard integer types, and extended integer types.
+Two common methods of byte ordering in multi-byte scalar types are <b>big-endian</b> and <b>little-endian</b>. Big-endian is a format for storage of binary data in which the least significant byte is placed first, with the rest in ascending order. Little-endian is a format for storage or transmission of binary data in which the most significant byte is placed first, with the rest in descending order. Other byte orderings are also possible. Declarations and definitions in 7.3�x, a suffix containing `le` typically represents little-endian. A suffix containing `be` typically represents big-endian. This clause describes the endianness of the execution environment with respect to bit-precise integer types, standard integer types, and extended integer types which do not have padding bits.
 </div>
 
 <div class="wording-numbered">
@@ -619,24 +619,24 @@ The macros are:
 > __STDC_ENDIAN_LITTLE__
 > ```
 
-which represents a method of byte order storage least significant byte is placed first, and the rest are in ascending order is suitable for use in an `#if` preprocessing directive;
+which represents a method of byte order storage least significant byte is placed first and the rest are in ascending order, and is an integer constant expression;
 
 > ```cpp
 > __STDC_ENDIAN_BIG__
 > ```
 
-which represents a method of byte order storage most significant byte is placed first, and the rest are in descending order is suitable for use in an `#if` preprocessing directive;
+which represents a method of byte order storage most significant byte is placed first and the rest are in descending order, and is an integer constant expression;
 
 > ```cpp
 > __STDC_ENDIAN_NATIVE__ /* see below */
 > ```
 
-which represents the method of byte order storage for the execution environment and is suitable for use in an `#if` preprocessing directive.
+which represents the method of byte order storage for the execution environment and is an integer constant expression.
 </div>
 
 <div class="wording-numbered">
 
-`__STDC_ENDIAN_NATIVE__` shall be identical to `__STDC_ENDIAN_LITTLE__` if the execution environment is little-endian. Otherwise, `__STDC_ENDIAN_NATIVE__` shall be identical to `__STDC_ENDIAN_BIG__` if the execution environment is big-endian. If `__STDC_ENDIAN_NATIVE__` is not equivalent to either, then the byte order for the execution environment is implementation-defined.
+`__STDC_ENDIAN_NATIVE__` shall expand to `__STDC_ENDIAN_LITTLE__` if the execution environment is little-endian. Otherwise, `__STDC_ENDIAN_NATIVE__` shall expand to `__STDC_ENDIAN_BIG__` if the execution environment is big-endian. If `__STDC_ENDIAN_NATIVE__` does not expand to either, then the byte order for the execution environment is implementation-defined.
 </div>
 </div>
 </div>
@@ -670,15 +670,16 @@ which represents the method of byte order storage for the execution environment 
 The `stdc_memreverse8` function provides an interface to reverse the order of a given sequence of bytes by treating them as sequences of 8 bits at a time. The function is only present if `CHAR_BIT` is a multiple of 8. It is equivalent to the following algorithm:
 
 ```cpp
-for (size_t index = 0; index < (n / 2); ++index) {
+for (size_t top_bit_index = 0, limit = (n / 2) * CHAR_BIT; top_bit_index < limit;) {
+	const size_t index = top_bit_index / CHAR_BIT;
 	const size_t reverse_index = n - 1 - index;
-	const unsigned char* p = ptr + index;
-	const unsigned char* reverse_p = ptr + reverse_index;
+	unsigned char* p = ptr + index;
+	unsigned char* reverse_p = ptr + reverse_index;
 	const unsigned char b_temp = *p;
 	const unsigned char reverse_b_temp = *reverse_p;
 	*p = 0;
 	*reverse_p = 0;
-	for (size_t bit_index = 0; bit_index < CHAR_BIT; bit_index += 8) {
+	for (size_t bit_index = 0; bit_index < CHAR_BIT; bit_index += 8, top_bit_index += 8) {
 		const size_t reverse_bit_index = CHAR_BIT - 8 - bit_index;
 		const unsigned char bit_mask = 0xFF << bit_index;
 		const unsigned char reverse_bit_mask = 0xFF << reverse_bit_index;
@@ -702,7 +703,7 @@ for (size_t index = 0; index < (n / 2); ++index) {
 > #include <stdint.h>
 > 
 > #if ((N % 8) == 0) && ((CHAR_BIT % 8) == 0)
-> uint_t stdc_memreverse8uN(uint_t value);
+> uint_t stdc_memreverse8uN(uintN_t value);
 > #endif
 > ```
 </div>
@@ -769,11 +770,11 @@ Let `ptr_bit_index` be an integer that starts from 0. Let `byte_index8` be `inde
 <dl>
 	<dd>1. let `byte_mask8` be:
 	<dl>
-		<dd>— `(0x7F << byte_index8)`, if the function is a signed variant, `byte8_index` is equal to `(CHAR_BIT - 8)`, and `ptr_bit_index` is equal to `N - 8`;</dd>
+		<dd>— `(0x7F << byte_index8)`, if the function is a signed variant, `byte_index8` is equal to `(CHAR_BIT - 8)`, and `ptr_bit_index` is equal to `N - 8`;</dd>
 		<dd>— otherwise, `(0xFF << byte_index8)`.</dd>
 	</dl>
 	</dd>
-	<dd>2. computes `value |= (((ptr[ptr_bit_index / CHAR_BIT] & byte8_mask) >> byte_index8) << index)`;</dd>
+	<dd>2. computes `value |= (((ptr[ptr_bit_index / CHAR_BIT] & byte_mask8) >> byte_index8) << index)`;</dd>
 	<dd>3. increments `ptr_bit_index` by 8.</dd>
 </dl>
 
@@ -783,7 +784,7 @@ Finally, if the function is a signed variant, and either:
 	<dd>— or, `(ptr[(N / CHAR_BIT) - 1] >> (CHAR_BIT - 1)) & 0x1` is nonzero for the big endian variant;</dd>
 </dl>
 
-then the most significant bit is set to `1`. Otherwise, it is set to `0`.
+then the sign bit is set to `1`. Otherwise, it is set to `0`.
 </div>
 
 <div class="wording-numbered">
@@ -832,18 +833,18 @@ Let `ptr_bit_index` be an integer that starts from 0. Let `byte_index8` be `inde
 <dl>
 	<dd>1. let `byte_mask8` be:
 	<dl>
-		<dd>— `(0x7F << byte_index8)`, if the function is a signed variant, `byte8_index` is equal to `(CHAR_BIT - 8)`, and `ptr_bit_index` is equal to `N - 8`;</dd>
+		<dd>— `(0x7F << byte_index8)`, if the function is a signed variant, `byte_index8` is equal to `(CHAR_BIT - 8)`, and `ptr_bit_index` is equal to `N - 8`;</dd>
 		<dd>— otherwise, `(0xFF << byte_index8)`.</dd>
 	</dl>
 	</dd>
-	<dd>2. sets the 8 bits in `ptr[ptr_bit_index / CHAR_BIT]` at offset `byte8_index` to `(value >> index) & 0xFF`;</dd>
+	<dd>2. sets the 8 bits in `ptr[ptr_bit_index / CHAR_BIT]` at offset `byte_index8` to `(value >> index) & byte_mask8`;</dd>
 	<dd>3. increments `ptr_bit_index` by 8.</dd>
 </dl>
 
 Finally, if the function is a signed variant, and `value` is less than 0, then either:
 <dl>
-	<dd>— or, `ptr[0]` has its high bit set to 1 if the function is the little endian variant.</dd>
-	<dd>— `ptr[(N / CHAR_BIT) - 1]` has its high bit set to 1 if the function is the big endian variant;</dd>
+	<dd>— `ptr[0]` has its high bit set to 1 if the function is the little endian variant;</dd>
+	<dd>— or, `ptr[(N / CHAR_BIT) - 1]` has its high bit set to 1 if the function is the big endian variant.</dd>
 </dl>
 </div>
 </div>
@@ -883,7 +884,7 @@ The type-generic function (marked by its `generic_integer_type` argument) return
 	<dd>— extended unsigned integer type;</dd>
 	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
 </dl>
-The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large unsigned integer type capable of representing the computed result.
+The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large signed integer type capable of representing the computed result.
 </div>
 </div>
 
@@ -915,7 +916,7 @@ The type-generic function (marked by its `generic_integer_type` argument) return
 	<dd>— extended unsigned integer type;</dd>
 	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
 </dl>
-The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large unsigned integer type capable of representing the computed result.
+The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large signed integer type capable of representing the computed result.
 </div>
 </div>
 
@@ -947,7 +948,7 @@ The type-generic function (marked by its `generic_integer_type` argument) return
 	<dd>— extended unsigned integer type;</dd>
 	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
 </dl>
-The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large unsigned integer type capable of representing the computed result.
+The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large signed integer type capable of representing the computed result.
 </div>
 </div>
 
@@ -1038,7 +1039,7 @@ The type-generic function (marked by its `generic_integer_type` argument) return
 > unsigned long stdc_rotate_rightul(unsigned long value, int count);
 > unsigned long long stdc_rotate_rightull(unsigned long long value, int count);
 > 
-> generic_integer_type stdc_rotate_right(generic_integer_type value, int count);
+> generic_integer_type stdc_rotate_right(generic_integer_type value, generic_integer_count_type count);
 > ```
 </div>
 
@@ -1056,13 +1057,17 @@ Let N be the width corresponding to the type of the input `value`.. Let r be `co
 	<dd>— otherwise, if r is negative, returns `stdc_rotate_left(value, -r)`;</dd>
 </dl>
 </div>
+
 <div class="wording-numbered">
-The type-generic function (marked by its `generic_integer_type` argument) returns the above described result for a given input value so long as the `generic_integer_type` is an
+The type-generic function (marked by its `generic_integer_type` argument) returns the above described result for a given input value so long as the `generic_integer_type` is
+
 <dl>
-	<dd>— standard unsigned integer type, excluding `_Bool`;</dd>
-	<dd>— extended unsigned integer type;</dd>
-	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
+	<dd>— a standard unsigned integer type, excluding `_Bool`;</dd>
+	<dd>— an extended unsigned integer type;</dd>
+	<dd>— or, a bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
 </dl>
+
+The `generic_integer_count_type` shall be an integer type suitably large enough to describe the width of the `generic_integer_type`.
 </div>
 </div>
 
@@ -1089,11 +1094,13 @@ The `stdc_count_ones` functions returns the total number of 1 bits within the gi
 </div>
 <div class="wording-numbered">
 The type-generic function (marked by its `generic_integer_type` argument) returns the previously described result for a given input value so long as the `generic_integer_type` is an
+
 <dl>
 	<dd>— standard unsigned integer type, excluding `_Bool`;</dd>
 	<dd>— extended unsigned integer type;</dd>
 	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
 </dl>
+
 The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large unsigned integer type capable of representing the computed result.
 </div>
 </div>
@@ -1122,11 +1129,13 @@ The `stdc_count_zeros` functions returns the total number of 0 bits within the g
 </div>
 <div class="wording-numbered">
 The type-generic function (marked by its `generic_integer_type` argument) returns the previously described result for a given input value so long as the `generic_integer_type` is an
+
 <dl>
 	<dd>— standard unsigned integer type, excluding `_Bool`;</dd>
 	<dd>— extended unsigned integer type;</dd>
 	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
 </dl>
+
 The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large unsigned integer type capable of representing the computed result.
 </div>
 </div>
