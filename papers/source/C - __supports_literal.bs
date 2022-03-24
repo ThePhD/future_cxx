@@ -1,0 +1,276 @@
+<pre class='metadata'>
+Title: __supports_literal
+H1: <code>__supports_literal</code>
+Shortname: 29XX
+Revision: 0
+!Previous Revisions: None
+Status: P
+Date: 2022-03-30
+Group: WG14
+!Proposal Category: C26 Change Request, Feature Request
+!Target Audience: General Developers, Library Developers
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Consistent,%20Warningless,%20and%20Intuitive%20Initialization%20with%20%7B%7D.html
+!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-%20Consistent,%20Warningless,%20and%20Intuitive%20Initialization%20with%20%7B%7D.bs">GitHub</a>
+Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
+Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+Abstract: This proposal gives compilers the ability to advertise what token sequences are recognizable and what kind of literal they represent to end-users. The construct is a preprocessor construct and aids in replacing the previous limitations of the maximum integer type as well as solve the issues with floating point, string, decimal floating pointer, and other literal creation for an implementation.
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-color-fix.html
+</pre>
+
+<div class="pagebreak"></div>
+
+
+
+
+# Changelog # {#changelog}
+
+
+
+## Revision 0 - February 10<sup>th</sup>, 2022 ## {#changelog-r0}
+
+- Initial release! 🎉
+
+
+
+
+# Introduction and Motivation # {#intro}
+
+Users did not have a way to adequately query support of specific kinds of literals or the maximum integer their processor could handle without triggering constraint violations for handling tokens in the preprocessor. It was only in the upcoming C23 Standard that users received a way to check whether or not an integer constant they wrote was valid by checking the **width** of that value against `(U)INTMAX_WIDTH`.
+
+This, however, still leaves other problems out in the open.
+
+There are implementations with special floating point, string, and other kinds of literals built in as extensions to the language. They cannot be adequately captured by the standard and thus leaves users to fall back to using special compiler-specific preprocessor macros to gate usage so as not to produce errors. Worse, the integer problem ties the Application Binary Interface problems of `intmax_t` to all literals made by the implementation, typically limiting them to 64-bit maximum values for their literals. This has becoming an increasingly difficult problem, and many proposals - including one for bit-precise integer types (`_BitInt(...)`, [[N2946]]) and one for the bit-specific integer types ([[N2889]]) - are trying to divorce `intmax_t` from certain types so they can be larger than the type.
+
+While these are all good movements in the right direction, we propose a more fundamental fix that can be applied to more cases and allow for easier future growth in the space of literals, while simultaneously improving the situation around integer-based literals related to `intmax_t`. The feature is a `__supports_literal`
+
+
+
+
+# Design # {#design}
+
+`__supports_literal` is a preprocessor macro function that is usable in `#if` preprocessor directives and produces an integer constant expression. It takes a `pp-token`s sequence and determines whether or not the given sequence resolves to a literal. The return values are as follows:
+
+- `0`, which means the token sequence does not resolve to any kind of literal, or is a recognized literal that exceeds the limitations of the literal type (e.g., a too-large integer literal);
+- `1`, which means the token sequence resolves to a recognized standard or extended integer literal;
+- `2`, which means the token sequence resolves to a recognized bit-precise integer literal;
+- `3`, which means the token sequence resolves to a recognized standard or extended floating point literal;
+- `4`, which means the token sequence resolves to a recognized character literal; and,
+- `5`, which means the token sequence resolves to a recognized string literal.
+
+This allows an implementation to properly advertise support for various constructs as provided by their implementation. For example, the GNU Compiler Collection (GCC) supports "Raw String literals" (see: [[raw-string-literals]]), but only with `-std=gnu11` instead of `-std=c11`. Therefore, it can be detected by writing:
+
+```cpp
+#if __supports_literal(R"meow(🐈😸😹😺😻)meow")
+	// Supports the raw-string literal syntax
+#else
+	// Does NOT support raw string literal syntax
+#endif
+```
+
+A more concrete example of this are types which extend the typical preprocessor syntax beyond just larger integer support or similar. For exmaple, shading languages like HLSL and GLSL have built-in support for providing floating constants as a 16-bit type named "half" with the syntax `32.h`, where `h` is the floating point suffix here. Some implementations simply support 128-bit integers natively in their compilers as well, but often cannot give support for it in the preprocessor due to the limitations of `intmax_t` and the ABI problems which surround upgrading the type. Finally, there are extensions to write decimal floating point types directly as floating point constants as well.
+
+This syntax enables software engineers hoping to write robust C code to check for the support for all of these things and act accordingly, allowing for a consistent way to enable constants of types outside of what is currently blessed by the C Standard and already in use with many existing implementations and direct derivatives of C.
+
+
+
+
+# Wording # {#wording}
+
+Wording is relative to [[N2731]].
+
+
+
+## Modify 6.10.1 Conditional inclusion with new syntax, a __supports_literal expression, and new Recommended Practice ## {#wording-6.10.1}
+
+<blockquote>
+<div class="wording-clause">
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.10.1</span>
+<span class="wording-clause-title">Conditional inclusion</span>
+</div>
+
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+…
+
+*has-include-expression*:
+:: **__has_include** **(** *header-name* **)**
+:: **__has_include** **(** *header-name-tokens* **)**
+
+<ins>
+
+*supports-literal-expression*:
+:: **__supports_literal** **(** *pp-tokens* **)**
+
+</ins>
+
+…
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+The expression that controls conditional inclusion shall be an integer constant expression except that: identifiers (including those lexically identical to keywords) are interpreted as described below<span class="footnote-ref">182)</span> and it may contain zero or more defined macro expressions, has_include expressions,<ins> supports_literal expressions,</ins> and/or has_c_attribute expressions as unary operator expressions.
+</div>
+
+<div class="wording-newnumbered wording-numbered-7">
+<ins>
+Each supports_literal expression is replaced by a nonzero pp-number matching the form of an integer constant if the implementation supports the given sequence of tokens. The value of the replacement pp-number integer constant for supported token sequences is:
+
+:: — 1 if the token sequence is a valid standard or extended integer constant;
+:: — 2 if the token sequence is a valid bit-precise integer constant;
+:: — 3 if the token sequence is a standard or extended floating constant;
+:: — 4 if the token sequence is a character constant;
+:: — 5 if the token sequence is a string literal;
+:: — or, an integer constant greater than or equal to 1000 in value if the token sequence for any other implementation-defined constant.<span class="footnote-ref">FN0)</span>
+
+Otherwise, the value of the replacement pp-number integer constant shall be zero. The pp-tokens shall match the form of the associated constant or literal when the replacement is a non-zero pp-number.
+</ins>
+</div>
+
+<div>
+…
+</div>
+
+<div class="wording-numbered wording-numbered-11">
+Prior to evaluation, macro invocations in the list of preprocessing tokens that will become the controlling constant expression are replaced (except for those macro names modified by the defined unary operator), just as in normal text. If the token defined is generated as a result of this replacement process or use of the defined unary operator does not match one of the two specified forms prior to macro replacement, the behavior is undefined. After all replacements due to macro expansion and evaluations of defined macro expressions, has_include expressions,<ins>supports_literal expressions,</ins> and has_c_attribute expressions have been performed, all remaining identifiers (including those lexically identical to keywords) are replaced with the pp-number `0`, and then each preprocessing token is converted into a token. The resulting tokens compose the controlling constant expression which is evaluated according to the rules of 6.6. For the purposes of this token conversion and evaluation, all signed integer types and all unsigned integer types act as if they have the same representation as, respectively, <del>the types</del><ins>types with a width that are greater than or equal to</ins> `intmax_t` and `uintmax_t` defined in the header `<stdint.h>`.<span class="footnote-ref">183)</span> This includes interpreting character constants, which may involve converting escape sequences into execution character set members. Whether the numeric value for these character constants matches the value obtained when an identical character constant occurs in an expression (other than within a `#if` or `#elif` directive) is implementation-defined.
+</div>
+
+
+<div>
+…
+</div>
+
+<ins>
+<div class="wording-newnumbered wording-numbered-17">
+**EXAMPLE** This demonstrates a way to check for very large integer literals and, if supported, use it as the type for a large integer type.
+
+```cpp
+#if __supports_literal(340282366920938463463374607431768211455)
+	// use potential implementation-defined large literal type
+	#define SUPPORTS_LONG_LITERAL 1
+	typedef typeof(340282366920938463463374607431768211455) long_literal_t;
+#else
+	#define SUPPORTS_LONG_LITERAL 0
+	// no big literal type
+#endif
+```
+</div>
+</ins>
+
+<ins>
+<div class="wording-clause-section-title">
+Recommended Practice
+</div>
+
+<div class="wording-newnumbered wording-numbered-18">
+For has_c_attribute expressions, an implementation which recognizes a given implementation-defined attribute should replace the expression with a pp-number of the form `yyyymm`. The value should change value whenever a significant change is made to the attribute's semantics.
+</div>
+
+<div class="wording-newnumbered">
+For supports_literal expressions, an implementation which recognizes a given implementation-defined constant or literal should replace the expression with a pp-number of the form `xxxx000`, where "xxxx" provides meaningful information to the end-user. Some meaningful values may be:
+
+<p>
+<center>
+<table>
+	<tr>
+		<th>Value</th>
+		<th>Suggested Meaning</th>
+	</tr>
+	<tr>
+		<td>1000</td>
+		<td>Implementation-defined integer constants, e.g. for flexible, unlimited precision integer constants and similar integer constants.</td>
+	</tr>
+	<tr>
+		<td>2000</td>
+		<td>Implementation-defined bit-precise integer constants, e.g. those potentially beyond the width of `BITINT_MAXWIDTH` but nonetheless supported by the preprocessor or implementation's constant expression engine.</td>
+	</tr>
+	<tr>
+		<td>3000</td>
+		<td>Implementation-defined floating constants, e.g. for Decimal floating point (Annex H) and similar floating point constants.</td>
+	</tr>
+	<tr>
+		<td>4000</td>
+		<td>Implementation-defined character constants, e.g. character constants which imbue a given encoding..</td>
+	</tr>
+	<tr>
+		<td>5000</td>
+		<td>Implementation-defined string literals, e.g. for different formats of string literals which treat escape sequences or provide translation-time format substitution information.</td>
+	</tr>
+</table>
+</center>
+</p>
+</div>
+</ins>
+
+<div class="wording-footer">
+<span class="footnote-ref">183)</span><span class="footnote">Thus, on an implementation where `INT_MAX` is `0x7FFF` and `UINT_MAX` is `0xFFFF`, the constant `0x8000` is signed and positive within an `#if` expression even though it would be unsigned in translation phase 7.<ins> Integers constants larger than the minimum required 64-bit `long long` and `unsigned long long` can be checked using supports_literal expressions before being used.</ins></span>
+
+<p>…</p>
+
+<ins>
+<span class="footnote-ref">FN0)</span><span class="footnote">For example: an implementation-defined extension which provides for a string literal that ignores escape sequences as `"R"raw(merp"baa)raw"`, when used in a supports-literal expression, may produce an integer constant with a value of 5000. An implementation-defined extension which provides for 16-bit binary floating point as `32.5h`, when used in a supports-literal expression, may produce an integer constant with a value of 3000.</span>
+</ins>
+</div>
+</div>
+</blockquote>
+
+
+
+
+<pre class="biblio">
+{
+	"N2731": {
+		"authors": [
+			"ISO/IEC JTC1 SC22 WG14 - Programming Languages, C",
+			"JeanHeyd Meneide",
+			"Freek Wiedijk"
+		],
+		"title": "N2731: ISO/IEC 9899:202x - Programming Languages, C",
+		"href": "http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2731.pdf",
+		"date": "October 18th, 2021"
+	},
+	"N2889": {
+		"authors": [
+			"Jens Gustedt"
+		],
+		"title": "N2889 - Pointers and integer types",
+		"href": "http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2889.htm",
+		"date": "March 22nd, 2022"
+	},
+	"N2946": {
+		"authors": [
+			"Aaron Ballman",
+			"Philipp Klause Krause",
+			"Elizabeth Andrews"
+		],
+		"title": "N2946 - _BitInt Fixes",
+		"href": "http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2946.pdf",
+		"date": "March 22nd, 2022"
+	},
+	"raw-string-literals": {
+		"authors": [
+			"cppreference.com"
+		],
+		"title": "String literal - C++ Language",
+		"href": "https://en.cppreference.com/w/cpp/language/string_literal",
+		"date": "March 24th, 2022"
+	}
+}
+</pre>
