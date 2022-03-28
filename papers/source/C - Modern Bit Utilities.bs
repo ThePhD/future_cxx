@@ -1,10 +1,10 @@
 <pre class='metadata'>
 Title: Modern Bit Utilities
-Shortname: 2903
+Shortname: 29XX
 Revision: 1
-!Previous Revisions: <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2827.htm">n2827 (r0)</a>
+!Previous Revisions: <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2827.htm">n2903 (r1)</a>, <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2827.htm">n2827 (r0)</a>
 Status: P
-Date: 2022-01-01
+Date: 2022-03-30
 Group: WG14
 !Proposal Category: Change Request
 !Target: General Developers
@@ -25,18 +25,38 @@ path: resources/css/bikeshed-wording.html
 <div class="pagebreak"></div>
 
 
+
+
 # Changelog # {#changelog}
 
+
+
+## Revision 2 - March 30<sup>th</sup>, 2022 ## {#changelog-r2}
+
+- For the `rotate_left`/`rotate_right` class of functionality, discussed in [[#design-bit-stdc_rotate_left.stdc_rotate_right]]:
+	- Show assembly from arm, arm64, i686, x86_64 (amd64) for signed rotate values and use this rationale.
+	- Use `int` for the counts for the non-generic functions, and use `generic_return_type` and `generic_count_type` for the type-generic macros (to allow for better portability and ease of use). (Even at its smallest (16-bits), an `int` is large enough to cover the width of all signed and unsigned integer types, excluding bit-precise integers.)
+	- Note that specific architectures have "biases" for which rotate is slower/faster. Therefore, it is better to have both and let the implementation pick one so as to bias how they do codegen when they contain both a `rotl` and a `rotr` like instruction, but performance differs.
+- Use `int` for the count of returns.
+	- This is the same as C++.
+	- We avoid warnings for `stdc_rotate_left(val, stdc_leading_zeros(val))`, which may produce warnings on certain implementations if, e.g., `stdc_leading_zeros(val)` returned an unsigned type.
+	- The primary motivation is matching the `count` parameter for `stdc_rotate_*`.
+- Use `bool` instead of `_Bool` now that it has been accepted.
+- Ensure the wording for `stdc_first_(leading/trailing)_(one/zero)` and friends is present in the paper.
+- Discuss potentially having bit functions which take a with parameter in the future in [[#polls-february.2022-char_bit.8|polling section about CHAR_BIT and width definitions]].
+- Adjust wording for Endian-Aware Load/Store functions.
+	- Typo fixes for the names of mask and index values.
+	- For right shifts, introduce a new `unsigned_value` to be used to avoid implementation-defined behavior in the specification for the store functions.
 
 
 ## Revision 1 - January 1<sup>st</sup>, 2022 ## {#changelog-r1}
 
 - Drastically rework design section and motivations after several rounds of feedback from at least 4 vendors, 6 business partners, 3 Open Source maintainers, and more.
 - Add additional bit utilities and design them from existing practice in C, C++, Go, Rust, Zig, and implementation-specific constraints in Visual C++, CLang, GCC, SDCC, TCC and more.
-  - `stdc_first_(leading/trailing)_(one/zero)`
-  - `stdc_count_(leading/trailing)_(ones/zeros)`
-  - Return types for bit functions counting bits is `int`, and for type-generic functions computing an input-related value is "type suitably large enough to hold the result".
-  - Arguments types should be `int` by default or the target input type, unless otherwise specified.
+	- `stdc_first_(leading/trailing)_(one/zero)`
+	- `stdc_count_(leading/trailing)_(ones/zeros)`
+	- Return types for bit functions counting bits is `int`, and for type-generic functions computing an input-related value is "type suitably large enough to hold the result".
+	- Arguments types should be `int` by default or the target input type, unless otherwise specified.
 - Provide backing implementation for all functionality in this paper at [an official repository](https://github.com/soasis/idk).
 - Provide benchmarks showing performance comparisons using the intrinsics vs. not in [[#motivation-speed]].
 - Use `zeros` consistently in the function name spelling instead of `zeroes`.
@@ -46,6 +66,77 @@ path: resources/css/bikeshed-wording.html
 ## Revision 0 - October 15<sup>th</sup>, 2021 ## {#changelog-r0}
 
 - Initial release. ✨
+
+
+
+
+# Polls # {#polls}
+
+These polls help guide the design of this paper in accordance with WG14 consensus. Where consensus was not sufficient or close (or there were many abstentions in conjunction with not having much consensus), the author chose in a particular direction and provided rationale.
+
+ 
+
+## WG14 Virtual Meeting - February 2022 ## {#polls-february.2022}
+
+WG14 reviewed an earlier version of this paper in N2903, discussing many of its design choices and aspects. WG14 was asked about which functions from the given set below to keep in the paper or remove: all sets of functions were approved when asking the 5 questions about which functionality should be kept (the questions were moved to [[#appendix-decisions]]). This was interpreted as **unanimous consent** to proceed with all of the functionality in this paper. If there is anyone who is interested in bisecting or taking pieces apart from this proposal, **please let the authors know as soon as is humanly possible**.
+
+
+### Does WG14 want the `memreverse8` and endian load/store functions to only be required if CHAR_BIT == 8 similar to N2903? ### {#polls-february.2022-char_bit.8}
+
+<table>
+	<tr>
+		<th>Yes</th>
+		<th>No</th>
+		<th>Abstain</th>
+	</tr>
+	<tr>
+		<td>6</td>
+		<td>5</td>
+		<td>8</td>
+	</tr>
+</table>
+
+This was interpreted as not strong enough consensus, but it was left to the author to decide. As we do not want to leave freestanding implementations which have `CHAR_BIT == 16` or `CHAR_BIT == 32` out in the cold, we decided to leave the `CHAR_BIT % 8 == 0` mandate in, rather than switch to `CHAR_BIT == 8` as a stringent constraint. This complicates the specification but makes the functionality more widely available.
+
+One of the suggestions that came from doing this would also be to require the generic bit functions to take a parameter indicating the desired final width of the integer result, that the user would then cast. This is seen currently in the standard in functions such as `fromfp`, `ufromfp`, and similar found in the C Standard in §7.12.9.10 and §7.12.9.11. Unfortunately, this is less justifiable because existing practice does not follow this pattern for any bit intrinsics. Bit intrinsics are deeply tied to the width of the object being computed and the assumption of that width is what produces the most optimal code since it maps 1:1 with instruction sets and hardware sets. Better code generation can be achieved by providing a `width` parameter that is a constant (e.g., `(unsigned int)stdc_leading_zeros(value, UINT_WIDTH)` or similar). The only problem with this is when either (a) weaker compilers that do not do any constant propagation or expression computation beyond the very minimal set required by the C compiler, or (b) the `width` parameter is not a constant value by necessity or accident.
+
+We also do not have existing practice for bit functions that are specified in this way. These functions are usually meant to map to a tight set of hardware instructions, and are meant to be cheaply translatable to said hardware instructions even by compilers as weak as Tiny C Compiler. So, we focus on providing things that map directly to standard and extended unsigned integer types as well as bit-precise integers that match exact-width integer types. This proposal does not spend further time explore providing `width` as a parameter. We think that this may be a good idea in the future, but this is something we should allow for implementations to provide for.
+
+
+### Does WG14 want new signed-count rotate functions in addition to what is in N2903? ### {#polls-february.2022-new.signed.count.rotate}
+
+<table>
+	<tr>
+		<th>Yes</th>
+		<th>No</th>
+		<th>Abstain</th>
+	</tr>
+	<tr>
+		<td>8</td>
+		<td>6</td>
+		<td>6</td>
+	</tr>
+</table>
+
+This was interpreted as very close consensus, and also left to the author to decide. However, it was made clear in post-discussion that the current design for rotate left/right is fine, because it is a **symmetrical** operation, and is complete free to implement on 2's complement implementations. Another important factor in making this decision was noting that most compilers already generate optimal code with a signed count value, including x86_64, x32_64, i686,  AARCH64 (Arm 64-bit), and Arm 32-bit targets. Finally, there are architectures were both rotate left and rotate right instructions are available, but they do not have the same performance characteristics: the end-user should be able to use either `rotate_left` or `rotate_right` to bias the implementation towards a given instruction where possible.
+
+
+### Does WG14 want to put something along the lines of N2903 into C23? ### {#polls-february.2022-c23}
+
+<table>
+	<tr>
+		<th>Yes</th>
+		<th>No</th>
+		<th>Abstain</th>
+	</tr>
+	<tr>
+		<td>19</td>
+		<td>2</td>
+		<td>2</td>
+	</tr>
+</table>
+
+This is very clear direction to put it into C23, provided that the wording and other design details are hammered into place. We are working on these details.
 
 
 
@@ -61,9 +152,10 @@ In other related programming interfaces, the C functions/macros `ntoh` ("network
 This proposal puts forth the fundamentals that make a homegrown implementation of `htonl`, `ntoh`, and other endianness-based functions possible in Standard C code. It also addresses many of the compiler-based intrinsics found to generate efficient machine code, with a few simpler utilities layered on top of it.
 
 
+
 ## Bits: How Much Faster? ## {#motivation-speed}
 
-Just how much faster can using intrinsics and bit operations as proposed in this paper be? Below is a quantification of the performance differences from naïve algorithms that worked over one "bit" (or ``_Bool``) at a time by attempting to implement a few algorithms using it. The explanations of these graphs can be found at one of the [publicly available implementation of this code in its documentation - https://ztdidk.readthedocs.io/en/latest/benchmarks/bit.html](https://ztdidk.readthedocs.io/en/latest/benchmarks/bit.html).
+Just how much faster can using intrinsics and bit operations as proposed in this paper be? Below is a quantification of the performance differences from naïve algorithms that worked over one "bit" (or ``bool``) at a time by attempting to implement a few algorithms using it. The explanations of these graphs can be found at one of the [publicly available implementation of this code in its documentation - https://ztdidk.readthedocs.io/en/latest/benchmarks/bit.html](https://ztdidk.readthedocs.io/en/latest/benchmarks/bit.html).
 
 If you don't read the previous link, then at the very least it should be shown that the code describes in this proposal provides the means to implement the improvements shown in the **ztdc_packed** group of benchmark bars.
 
@@ -246,23 +338,39 @@ The specification for the endianness functions borrows from many different sourc
 #include <stdint.h>
 
 #if ((N % CHAR_BIT) == 0 && (CHAR_BIT % 8 == 0))
-void stdc_store8_leuN(uint_leastN_t value, unsigned char ptr[static (N / CHAR_BIT)]);
-void stdc_store8_beuN(uint_leastN_t value, unsigned char ptr[static (N / CHAR_BIT)]);
-uint_leastN_t stdc_load8_leuN(const unsigned char ptr[static (N / CHAR_BIT)]);
-uint_leastN_t stdc_load8_beuN(const unsigned char ptr[static (N / CHAR_BIT)]);
-void stdc_store8_aligned_leuN(uint_leastN_t value, unsigned char ptr[static (N / CHAR_BIT)]);
-void stdc_store8_aligned_beuN(uint_leastN_t value, unsigned char ptr[static (N / CHAR_BIT)]);
-uint_leastN_t stdc_load8_aligned_leuN(const unsigned char ptr[static (N / CHAR_BIT)]);
-uint_leastN_t stdc_load8_aligned_beuN(const unsigned char ptr[static (N / CHAR_BIT)]);
+void stdc_store8_leuN(uint_leastN_t value,
+	unsigned char ptr[static (N / CHAR_BIT)]);
+void stdc_store8_beuN(uint_leastN_t value,
+	unsigned char ptr[static (N / CHAR_BIT)]);
+uint_leastN_t stdc_load8_leuN(const
+	unsigned char ptr[static (N / CHAR_BIT)]);
+uint_leastN_t stdc_load8_beuN(const
+	unsigned char ptr[static (N / CHAR_BIT)]);
+void stdc_store8_aligned_leuN(uint_leastN_t value,
+	unsigned char ptr[static (N / CHAR_BIT)]);
+void stdc_store8_aligned_beuN(uint_leastN_t value,
+	unsigned char ptr[static (N / CHAR_BIT)]);
+uint_leastN_t stdc_load8_aligned_leuN(const
+	unsigned char ptr[static (N / CHAR_BIT)]);
+uint_leastN_t stdc_load8_aligned_beuN(const
+	unsigned char ptr[static (N / CHAR_BIT)]);
 
-void stdc_store8_lesN(int_leastN_t value, unsigned char ptr[static (N / CHAR_BIT)]);
-void stdc_store8_besN(int_leastN_t value, unsigned char ptr[static (N / CHAR_BIT)]);
-int_leastN_t stdc_load8_lesN(const unsigned char ptr[static (N / CHAR_BIT)]);
-int_leastN_t stdc_load8_besN(const unsigned char ptr[static (N / CHAR_BIT)]);
-void stdc_store8_aligned_lesN(int_leastN_t value, unsigned char ptr[static (N / CHAR_BIT)]);
-void stdc_store8_aligned_besN(int_leastN_t value, unsigned char ptr[static (N / CHAR_BIT)]);
-int_leastN_t stdc_load8_aligned_lesN(const unsigned char ptr[static (N / CHAR_BIT)]);
-int_leastN_t stdc_load8_aligned_besN(const unsigned char ptr[static (N / CHAR_BIT)]);
+void stdc_store8_lesN(int_leastN_t value,
+	unsigned char ptr[static (N / CHAR_BIT)]);
+void stdc_store8_besN(int_leastN_t value,
+	unsigned char ptr[static (N / CHAR_BIT)]);
+int_leastN_t stdc_load8_lesN(const
+	unsigned char ptr[static (N / CHAR_BIT)]);
+int_leastN_t stdc_load8_besN(const
+	unsigned char ptr[static (N / CHAR_BIT)]);
+void stdc_store8_aligned_lesN(int_leastN_t value,
+	unsigned char ptr[static (N / CHAR_BIT)]);
+void stdc_store8_aligned_besN(int_leastN_t value,
+	unsigned char ptr[static (N / CHAR_BIT)]);
+int_leastN_t stdc_load8_aligned_lesN(const
+	unsigned char ptr[static (N / CHAR_BIT)]);
+int_leastN_t stdc_load8_aligned_besN(const
+	unsigned char ptr[static (N / CHAR_BIT)]);
 #endif
 ```
 
@@ -304,7 +412,7 @@ We try to take the most useful subset of these functions that most closely repre
 
 For many of the bit-based utilities, you will see it introduces functions with several suffixes for the various types. Often, it is asked: why? Even the GCC builtins for things like `popcount` only take `long` and `long long`. The answer is in the blank spaces in the table above: for architectures that do not have perfect instruction mappings for a given built-in type (e.g., ARM for `popcount`), the amount of bits one is utilizing for the given function is actually incredibly important. There is a difference between counting for 8 bits in a loop and counting 64 bits (or larger for extended integer types), so the various forms are provided to allow implementations to produce the most efficient code on their platforms when the user requests a specific size.
 
-The generic interfaces can be used by individuals who want automatic selection of the best. And, as shown in the [[#appendix]], platforms can use any builtins or techniques at their disposal to select an appropriate builtin, instruction, or function call to fit the use case.
+The generic interfaces can be used by individuals who want automatic selection of the best. And, as shown in the [[#appendix]], platforms can use any builtins or techniques at their disposal to select an appropriate built-in, instruction, or function call to fit the use case.
 
 
 ### Type-Generic Macros and Counts for Types ### {#design-bit-generic}
@@ -320,21 +428,21 @@ The `(u)int_leastN_t` types also have `WIDTH` macros, but those macros are not e
 
 The exact-width types suffer from non-availability on specific platforms, which makes little sense for functions which do not depend on a no-padding bits requirement. As long as the values read from the array only involve `N` bits (including the sign bit), and the rest are zero-initialized, we can have predictable semantics.
 
-Extended integer types, least-width integer types, and exact-width integer types, can all be used with the type-generic macros since the type-generic macros are required to work over all standard (unsigned) integer types and extended (unsigned) integer types, while excluding `_Bool` and bit-precise (`_BitInt(N)`) integer types that do not match pre-existing type widths. This provides a complete set of functionality that is maximally portable while also allowing for precise semantic control with exact or least-width types.
+Extended integer types, least-width integer types, and exact-width integer types, can all be used with the type-generic macros since the type-generic macros are required to work over all standard (unsigned) integer types and extended (unsigned) integer types, while excluding `bool` and bit-precise (`_BitInt(N)`) integer types that do not match pre-existing type widths. This provides a complete set of functionality that is maximally portable while also allowing for precise semantic control with exact or least-width types.
 
 This paper does not concern itself with the implications of passing a `uint_leastN_t` to bit-counting type-generic functions like `stdc_leading_zeros` directly: a user must account for such use and be prepared to have types larger than `N` bits in width. This is, very literally, what users are signing up for when they use such types and it is their responsibility to query the `UINT_LEASTN_WIDTH` macros. We expect users to use the `N` of their exact-width integer types with the type-generic macros as well.
 
-Finally, in general `_Bool` objects are disallowed from the above functions. There is just not a meaningful body of functionality that can be provided, and there is a fundamental difference between something that is expected to be a boolean value and something that is expected to be a 1-bit number (even if they can both serve similar purposes). It is also questionable to compute things such as rotation for `_Bool` objects. If we can grow a consistent set of answers for these operations across the industry, than we can weaken the requirements and add the behavior in. (Note that if we put it in now and choose a behavior, we cut off any improvements made in the future, so it is best to be conservative here.)
+Finally, in general `bool` objects are disallowed from the above functions. There is just not a meaningful body of functionality that can be provided, and there is a fundamental difference between something that is expected to be a boolean value and something that is expected to be a 1-bit number (even if they can both serve similar purposes). It is also questionable to compute things such as rotation for `bool` objects. If we can grow a consistent set of answers for these operations across the industry, than we can weaken the requirements and add the behavior in. (Note that if we put it in now and choose a behavior, we cut off any improvements made in the future, so it is best to be conservative here.)
 
 
 ### Return Types ### {#design-bit-returns}
 
-There is the question of what is meant to happen for types which return bit counts, such as `stdc_(leading/trailing)_(ones/zeros)`, `stdc_first_(leading/trailing)_(one/zero)`, and `stdc_count_(ones/zeros)`. Ostensibly, part of the motivation to capture here should be that the types used to do things such as rotations should be identical to the return type used to do things like count zeroes, e.g. `stdc_rotate_left(value, stdc_count_zeros(value));`. This is mostly non-problematic until someone uses `_BitInt`: Clang already supports several megabyte-large `_BitInt`. On platforms where `int` is actually 16 bits, this is far too small to accommodate even a 1 MB `_BitInt`.
+There is the question of what is meant to happen for types which return bit counts, such as `stdc_(leading/trailing)_(ones/zeros)`, `stdc_first_(leading/trailing)_(one/zero)`, and `stdc_count_(ones/zeros)`. Ostensibly, part of the motivation to capture here should be that the types used to do things such as rotations should be identical to the return type used to do things like count zeros, e.g. `stdc_rotate_left(value, stdc_count_zeros(value));`. This is mostly non-problematic until someone uses `_BitInt`: Clang already supports several megabyte-large `_BitInt`. On platforms where `int` is actually 16 bits, this is far too small to accommodate even a 1 MB `_BitInt`.
 
 At the moment, the functions do not accept **all** bit-precise integer types (just ones that are bit-width equivalent to the existing standard and extended integer types), so this is **technically** a non-issue. But, if and when bit-precise integer types are given better handling in `_Generic` macros or similar features that make them more suitable for type-generic macro implementations, this could become a problem. At the moment, we use wording to defer the issue by saying that type generic macros return a type suitably large for the range of the computed value. This allows us forward compatibility while fixing non-type-generic macro return types to `int`. The type-generic macros will have the flexibility from the specification to return larger signed integer types to aid in a smooth transition once bit-precise integer types sees more standard support.
 
 
-### `stdc_count_ones`/`stdc_count_zeroes` ### {#design-bit-count_ones.count_zeroes}
+### `stdc_count_ones`/`stdc_count_zeros` ### {#design-bit-count_ones.count_zeros}
 
 `stdc_count_ones` (also known as `popcount`/Population Count) is an older computer science term taken from the statistics / biology nomenclature to indicate how many bits are set within a grouping. It's a very useful instruction with applications in everything from game development to scientific computing. It is also directly provided by many instruction sets. Its antithesis is `stdc_count_zeros`, which counts the number of zeros in the type. There exist efficient computation, intrinsics, and instructions for both zeros and ones computation, albeit it is more prevalent as `popcount`. We chose the name `stdc_count_zeros` and `stdc_count_ones` due to not having a good way to describe the zeros-analogous version of `popcount` in industry-settled terminology. But, the `count_zeros`/`count_ones` split has been used to good success in C libraries, C++ libraries, Julia, [[rust-count_ones|Rust]], and other (standard) libraries.
 
@@ -356,8 +464,10 @@ int stdc_count_zerosul(unsigned long value);
 int stdc_count_zerosull(unsigned long long value);
 
 // type-generic macros
-int stdc_count_ones(generic_integer_type value);
-int stdc_count_zeros(generic_integer_type value);
+generic_return_type stdc_count_ones(
+	generic_value_type value);
+generic_return_type stdc_count_zeros(
+	generic_value_type value);
 ```
 
 It covers all of the built-in unsigned integer types. The type-generic macro supports all of the built-in types as well as any of the implementation-defined extended integer types. See the [[#appendix-stdc_count_ones|appendix for an implementation.]]
@@ -383,51 +493,189 @@ unsigned long stdc_rotate_rightul(unsigned long value, int count);
 unsigned long long stdc_rotate_rightull(unsigned long long value, int count);
 
 // type-generic macro
-generic_integer_type stdc_rotate_left(generic_integer_type value, int count);
-generic_integer_type stdc_rotate_right(generic_integer_type value, int count);
+generic_value_type stdc_rotate_left(
+	generic_value_type value, generic_count_type count);
+generic_value_type stdc_rotate_right(
+	generic_value_type value, generic_count_type count);
 ```
 
 They cover all of the built-in unsigned integer types. Note that `count` is a signed integer! If (e.g.) `stdc_rotate_leftuc(1, -1)` is called, it will call itself again with `stdc_rotate_rightuc(value, -count)`; if (e.g.) `stdc_rotate_rightuc(1, -1)` is called, it will call itself again with `stdc_rotate_leftuc(value, -count)`. This matches the behavior from C++ and avoids undefined behavior, while also avoiding too-large shift errors from signed-to-unsigned conversions.
 
-SDCC and several other compilers optimize for left and right shifts ([[sdcc]]). Texas Instruments and a handful of other specialist architectures also have "variable shift" instructions (SSHVL), which uses the sign of the argument to shift in one direction or the other ([[ti-tms320c64x]]). Having a `rotate_left` where the a negative number produces the opposite `rotate_right` cyclic operation (and vice-versa) means that both of these architectures can optimize efficiently in the case of hardcoded constants, and still produce well-defined behavior otherwise (`SSHVL` instructions just deploy a "negated by default" for the count value or not, depending on whether the `left` or `right` variant is called, other architectures propagate the information to shift left or right). This also follows existing practice with analogous functions from the C++
+SDCC and several other compilers optimize for left and right shifts ([[sdcc]]). Texas Instruments and a handful of other specialist architectures also have "variable shift" instructions (SSHVL), which uses the sign of the argument to shift in one direction or the other ([[ti-tms320c64x]]). Having a `rotate_left` where the a negative number produces the opposite `rotate_right` cyclic operation (and vice-versa) means that both of these architectures can optimize efficiently in the case of hardcoded constants, and still produce well-defined behavior otherwise (`SSHVL` instructions just deploy a "negated by default" for the count value or not, depending on whether the `left` or `right` variant is called, other architectures propagate the information to shift left or right). This also follows existing practice with analogous functions from the C++ standard library.
+
+To test code generation for using a signed integer and 2's complement arithmetic, we used both C++ and C code samples. It's a fairly accurate predictor of how notable compilers handle this kind of specification. The generated assembly for the compilers turns out to be optimal, so long as an implementation does not do a literal copy-paste of the specification's text
+
+[Using non-constant offset, with generated x86_64 assembly](https://godbolt.org/z/xxbxbrdj1):
+
+```cpp
+#include <bit>
+
+extern unsigned int x;
+extern int offset;
+
+int main () {
+    int l = std::rotl(x, offset);
+    int r = std::rotr(x, offset);
+    return l + r;
+}
+```
+
+```s
+main: # @main
+	mov     eax, dword ptr [rip + x]
+	mov     cl, byte ptr [rip + offset]
+	mov     edx, eax
+	rol     edx, cl
+	ror     eax, cl
+	add     eax, edx
+	ret
+```
+
+— And, [using constant offset, with generated x86_64 assembly](https://godbolt.org/z/z6vTqWoTj).
+
+```cpp
+#include <bit>
+
+extern unsigned int x;
+
+int main () {
+    int l = std::rotl(x, -13);
+    int r = std::rotr(x, -13);
+    return l + r;
+}
+```
+
+```s
+main: # @main
+	mov     eax, dword ptr [rip + x]
+	mov     ecx, eax
+	rol     ecx, 19
+	rol     eax, 13
+	add     eax, ecx
+	ret
+```
+
+The generated code shows that the compiler understands the symmetric nature of the operations (from the constant code) and also shows that it will appropriately handle it even when it cannot see through constant values. The same can be shown when writing C code using a variety of styles, [as shown here](https://godbolt.org/z/f7zEaTsoc):
+
+```cpp
+#if UNSIGNED_COUNT == 1
+
+static unsigned int rotate_right(unsigned int value, unsigned int count);
+
+inline static unsigned int rotate_left(unsigned int value, unsigned int count) {
+	unsigned int c = count % 32;
+	return value >> c 
+		| value << (32 - c);
+}
+
+inline static unsigned int rotate_right(unsigned int value, unsigned int count) {
+	unsigned int c = count % 32;
+	return value << c
+		| value >> (32 - c);
+}
+
+#elif TWOS_COMPLEMENT_CAST == 1
+
+static unsigned int rotate_right(unsigned int value, int count);
+
+inline static unsigned int rotate_left(unsigned int value, int count) {
+	unsigned int c = (unsigned int)count;
+	c = c % 32;
+	return value >> c
+		| value << (32 - c);
+}
+
+inline static unsigned int rotate_right(unsigned int value, int count) {
+	unsigned int c = (unsigned int)count;
+	c = c % 32;
+	return value << c
+		| value >> (32 - c);
+}
+
+#else
+
+static unsigned int rotate_right(unsigned int value, int count);
+
+inline static unsigned int rotate_left(unsigned int value, int count) {
+	int c = count % 32;
+	if (c < 0)  {
+		return rotate_right(value, -c);
+	}
+	return value >> c
+		| value << (32 - c);
+}
+
+	inline static unsigned int rotate_right(unsigned int value, int count) {
+	int c = count % 32;
+	if (c < 0)  {
+		return rotate_left(value, -c);
+	}
+	return value << c
+		| value >> (32 - c);
+}
+
+#endif
+
+#if UNSIGNED_COUNT == 1
+unsigned int f (unsigned int x, unsigned int offset) {
+#else
+unsigned int f (unsigned int x, int offset) {
+#endif
+	unsigned int l = rotate_left(x, offset);
+	unsigned int r = rotate_right(x, offset);
+	return l + r;
+}
+```
+
+When using the various definitions, we find that the generated assembly for `f` is identically good using either the internal unsigned "two's complement" cast, or by just using an unsigned number. Because of how poorly basic mathematics with unsigned numbers happens, we want to avoid a situation where negation or substraction with unsigned qualities may yield undesirable results or promotions. Therefore, we used signed integers for both the offset count and the return values of these functions. Note that even in purely standard C, converting from a signed integer to an unsigned integer is perfectly well-defined behavior and does not raise any signals:
+
+> <sup>2</sup> &emsp; Otherwise, if the new type is unsigned, the value is converted by repeatedly adding or subtracting one more than the maximum value that can be represented in the new type until the value is in the range of the new type.
+>
+> — §6.3.1.3, ¶2, ISO/IEC 9899:202x "C2x" Standard
+
+Finally, existing practice takes the offset value in as a signed integer, and all the return types are also still some form of signed integer (unless the intrinsic is returning the exact same unsigned value put in that was manipulated).
 
 
-### `stdc_count_leading_zeros`, `stdc_count_leading_ones`, `stdc_count_trailing_zeros`, and `stdc_count_trailing_ones` ### {#design-bit-leading.trailing.zeros.ones}
+### `stdc_leading_zeros`, `stdc_leading_ones`, `stdc_trailing_zeros`, and `stdc_trailing_ones` ### {#design-bit-leading.trailing.zeros.ones}
 
-`stdc_count_leading_zeros`, `stdc_count_leading_ones`, `stdc_count_trailing_zeros`, and `stdc_count_trailing_zeros` are semi-common CPU instruction for counting the number of zeros/ones from the most significant bit ("leading") and the least significant bit ("trailing"). C++ adopted this one using the names of the form `count(l|r)_(zero|one)`. The `l`/`r` stand for "left" and "right". C++ uses left to match the concept of the left hand side of integers in lexical parsing and left shift operators in C an C++. We choose "leading" and "trailing" here as that's the more common instruction name, and tie in a little bit better with "most/least significant bit" than "left" or "right" do. The name `most_significant_zeros` (and its variations for the other 3 operations) can also work, albeit it would be one of the biggest names in the C standard library if we do choose it. (This could potentially be shortened to `most_signif_zeros` or even `most_sig_zeros`). It may also run afoul of the 31 minimum linker bytes of significance we have, so we chose these names instead.
+`stdc_leading_zeros`, `stdc_leading_ones`, `stdc_trailing_zeros`, and `stdc_trailing_zeros` are semi-common CPU instruction for counting the number of zeros/ones from the most significant bit ("leading") and the least significant bit ("trailing"). C++ adopted this one using the names of the form `count(l|r)_(zero|one)`. The `l`/`r` stand for "left" and "right". C++ uses left to match the concept of the left hand side of integers in lexical parsing and left shift operators in C an C++. We choose "leading" and "trailing" here as that's the more common instruction name, and tie in a little bit better with "most/least significant bit" than "left" or "right" do. The name `most_significant_zeros` (and its variations for the other 3 operations) can also work, albeit it would be one of the biggest names in the C standard library if we do choose it. (This could potentially be shortened to `most_signif_zeros` or even `most_sig_zeros`). It may also run afoul of the 31 minimum linker bytes of significance we have, so we chose these names instead.
 
 ```cpp
 #include <stdbit.h>
 
-int stdc_count_leading_zerosuc(unsigned char value);
-int stdc_count_leading_zerosus(unsigned short value);
-int stdc_count_leading_zerosui(unsigned int value);
-int stdc_count_leading_zerosul(unsigned long value);
-int stdc_count_leading_zerosull(unsigned long long value);
+int stdc_leading_zerosuc(unsigned char value);
+int stdc_leading_zerosus(unsigned short value);
+int stdc_leading_zerosui(unsigned int value);
+int stdc_leading_zerosul(unsigned long value);
+int stdc_leading_zerosull(unsigned long long value);
 
-int stdc_count_leading_onesuc(unsigned char value);
-int stdc_count_leading_onesus(unsigned short value);
-int stdc_count_leading_onesui(unsigned int value);
-int stdc_count_leading_onesul(unsigned long value);
-int stdc_count_leading_onesull(unsigned long long value);
+int stdc_leading_onesuc(unsigned char value);
+int stdc_leading_onesus(unsigned short value);
+int stdc_leading_onesui(unsigned int value);
+int stdc_leading_onesul(unsigned long value);
+int stdc_leading_onesull(unsigned long long value);
 
-int stdc_count_trailing_zerosuc(unsigned char value);
-int stdc_count_trailing_zerosus(unsigned short value);
-int stdc_count_trailing_zerosui(unsigned int value);
-int stdc_count_trailing_zerosul(unsigned long value);
-int stdc_count_trailing_zerosull(unsigned long long value);
+int stdc_trailing_zerosuc(unsigned char value);
+int stdc_trailing_zerosus(unsigned short value);
+int stdc_trailing_zerosui(unsigned int value);
+int stdc_trailing_zerosul(unsigned long value);
+int stdc_trailing_zerosull(unsigned long long value);
 
-int stdc_count_trailing_onesuc(unsigned char value);
-int stdc_count_trailing_onesus(unsigned short value);
-int stdc_count_trailing_onesui(unsigned int value);
-int stdc_count_trailing_onesul(unsigned long value);
-int stdc_count_trailing_onesull(unsigned long long value);
+int stdc_trailing_onesuc(unsigned char value);
+int stdc_trailing_onesus(unsigned short value);
+int stdc_trailing_onesui(unsigned int value);
+int stdc_trailing_onesul(unsigned long value);
+int stdc_trailing_onesull(unsigned long long value);
 
 // type-generic macros
-int stdc_count_leading_zeros(generic_integer_type value);
-int stdc_count_leading_ones(generic_integer_type value);
-int stdc_count_trailing_zeros(generic_integer_type value);
-int stdc_count_trailing_ones(generic_integer_type value);
+generic_return_type stdc_leading_zeros(
+	generic_value_type value);
+generic_return_type stdc_leading_ones(
+	generic_value_type value);
+generic_return_type stdc_trailing_zeros(
+	generic_value_type value);
+generic_return_type stdc_trailing_ones(
+	generic_value_type value);
 ```
 
 ### `stdc_first_leading_zero`, `stdc_first_leading_one`, `stdc_first_trailing_zero`, and `stdc_first_trailing_one` ### {#design-bit-first_leading.trailing_zeros.ones}
@@ -438,7 +686,7 @@ We specify things to use the interpretation that `0` produces the return value `
 
 `ffs` and its similar names covers the behavior behind `stdc_first_leading_one`. The others are permutations on this behavior: we provide them for completeness, and for the fact that other architectures cover some or part of these other named operations. Whatever happens, `stdc_first_leading_one` is incredibly important, if only for the fact that it is responsible for significant speedups in algorithms that scan over bits to find certain behaviors. The others can be built out of different the other existing intrinsics or with specially-crafted code, but not taxing the compiler's optimize and simply providing the operations directly may be of great benefit.
 
-It is of note that users can implement the find_first_set by using the `stdc_(trailing/leading)_zeros` functions.
+It is of note that users can implement the `find_first_set` functionality by using the `stdc_(trailing/leading)_zeros` functions.
 
 ```cpp
 #include <stdbit.h>
@@ -468,10 +716,14 @@ int stdc_first_trailing_oneul(unsigned long value);
 int stdc_first_trailing_oneull(unsigned long long value);
 
 // type-generic macros
-int stdc_first_leading_zero(generic_integer_type value);
-int stdc_first_leading_one(generic_integer_type value);
-int stdc_first_trailing_zero(generic_integer_type value);
-int stdc_first_trailing_one(generic_integer_type value);
+generic_return_type stdc_first_leading_zero(
+	generic_value_type value);
+generic_return_type stdc_first_leading_one(
+	generic_value_type value);
+generic_return_type stdc_first_trailing_zero(
+	generic_value_type value);
+generic_return_type stdc_first_trailing_one(
+	generic_value_type value);
 ```
 
 
@@ -482,14 +734,14 @@ This is a function that determines if an unsigned integer is a power of 2. It ca
 ```cpp
 #include <stdbit.h>
 
-_Bool stdc_has_single_bituc(unsigned char value);
-_Bool stdc_has_single_bitus(unsigned short value);
-_Bool stdc_has_single_bitui(unsigned int value);
-_Bool stdc_has_single_bitul(unsigned long value);
-_Bool stdc_has_single_bitull(unsigned long long value);
+bool stdc_has_single_bituc(unsigned char value);
+bool stdc_has_single_bitus(unsigned short value);
+bool stdc_has_single_bitui(unsigned int value);
+bool stdc_has_single_bitul(unsigned long value);
+bool stdc_has_single_bitull(unsigned long long value);
 
 // type-generic macro
-_Bool stdc_has_single_bit(generic_integer_type value);
+bool stdc_has_single_bit(generic_value_type value);
 ```
 
 
@@ -516,53 +768,26 @@ unsigned int stdc_bit_ceilui(unsigned int value);
 unsigned long stdc_bit_ceilul(unsigned long value);
 unsigned long long stdc_bit_ceilull(unsigned long long value);
 
-unsigned char stdc_bit_widthuc(unsigned char value);
-unsigned short stdc_bit_widthus(unsigned short value);
-unsigned int stdc_bit_widthui(unsigned int value);
-unsigned long stdc_bit_widthul(unsigned long value);
-unsigned long long stdc_bit_widthull(unsigned long long value);
+int stdc_bit_widthuc(unsigned char value);
+int stdc_bit_widthus(unsigned short value);
+int stdc_bit_widthui(unsigned int value);
+int stdc_bit_widthul(unsigned long value);
+int stdc_bit_widthull(unsigned long long value);
 
 // type-generic macro
-generic_return_type stdc_bit_floor(generic_integer_type value);
-generic_return_type stdc_bit_ceil(generic_integer_type value);
-generic_return_type stdc_bit_width(generic_integer_type value);
+generic_return_type stdc_bit_floor(generic_value_type value);
+generic_return_type stdc_bit_ceil(generic_value_type value);
+generic_return_type stdc_bit_width(generic_value_type value);
 ```
 
-Notably, `stdc_bit_width` requires that the number is big enough to fit the representation. Conceivably, it might be beneficial to synchronize these return types and just return `int`. But, in the case of something like an implementation for `_BitInt(N)`, `N` can be so catastrophically enormous that we could not count it in a (presumably 16 or 32-bit) `int` or `unsigned int` type. C++ always returns the type `T` that was put in, and we follow that here since any type is large enough to hold its own width in bits. However, in anticipation of a potentially enormous `N` in `_BitWidth(N)` — and not wanting to return an e.g. 4 GB `_BitInt` to represent a `_BitWidth` that has an `N` of 4 billion — we allow the return type for the generic functions to be a "suitably large (unsigned/signed) integer type".
-
-
-
-
-# Committee Polls / Questions # {#questions}
-
-For the Committee, this proposal is, effectively, five parts:
-
-1. the endianness definitions;
-2. the `stdc_memreverse8` functions (generic and width-specific);
-3. the `stdc_load8_*`/`stdc_store8_*` endianness functions;
-4. the suite of low-level bit functions:
-	- `stdc_count_(leading/trailing)_(ones/zeros)`,
-	- `stdc_count_(ones/zeros)`,
-	- `stdc_rotate_(left/right)`, and,
-	- `stdc_first_(leading/trailing)_(zero/one)`,  
-
-	which map directly to instructions and/or intrinsics; and,
-5. the suite of useful bit functions:
-	- `stdc_bit_ceil`,
-	- `stdc_bit_floor`,
-	- `stdc_bit_width`, and,
-	- `stdc_has_single_bit`,
-
-	which may not map directly to instructions but are useful nonetheless in a wide variety of contexts
-
-These can be polled together or separately, depending on what the Committee desires. It is the author's recommendation that all are adopted to make serialization and bit work with scalars much simpler and easier.
+Notably, `stdc_bit_width` requires that the number is big enough to fit the representation. For the generic functions, we need to provide the built-in versions. Conceivably, it might be beneficial to synchronize these return types and just return `int`. But, in the case of something like an implementation for `_BitInt(N)`, `N` can be so catastrophically enormous that we could not count it in a (presumably 16 or 32-bit) `int` or `unsigned int` type. C++ always returns the type `T` that was put in, but following a [WG21 Library Working Group (LWG #3656) Issue accepted for C++23](https://cplusplus.github.io/LWG/issue3656), the return type is being changed. However, in anticipation of a potentially enormous `N` in `_BitWidth(N)` — and not wanting to return an e.g. 4 GB `_BitInt` to represent a `_BitWidth` that has an `N` of 4 billion — we allow the return type for the generic functions to be a "suitably large (unsigned/signed) integer type".
 
 
 
 
 # Wording # {#wording}
 
-The following wording is [[n2596|relative to N2596]].
+The following wording is [[n2731|relative to N2731]].
 
 
 
@@ -576,40 +801,50 @@ A conforming freestanding implementation shall accept any strictly conforming pr
 
 ## Add a new bullet point at the top for globally-reserved macro and library names to §7.1.3 "Reserved Identifiers, paragraph 1. ## {#wording-7.1.3p1}
 
-<blockquote>
-<p><ins>— All identifiers starting with `stdc_` are reserved for future use.</ins></p>
-</blockquote>
+<ins>
+
+> :: — All identifiers starting with `stdc_` are reserved for future use.
+
+</ins>
 
 
 
-## Add a new §7.3�x sub-clause for "Bit and Byte Utilities" in §7 ## {#wording-7.3�x}
+## Add a new §7.✨ sub-clause for "Bit and Byte Utilities" in §7 ## {#wording-7.✨}
 
 <blockquote>
 <ins>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨</span> <span class="wording-clause-title">Bit and Byte Utilities `<stdbit.h>`</span>
+</div>
+
 <div class="wording-section">
 
-<p><b>7.3�x Bit and Byte Utilities `<stdbit.h>`</b/</p>
 <div class="wording-numbered">
-The header `<stdbit.h>` defines the following macros, types, and functions, to work with the byte and bit representation of many types, typically integer types. This header makes available the `size_t` type name (7.19) and any <code>uint<i>N</i>_t</code> or <code>uint_least<i>N</i>_t</code> type names defined by the implementation (7.20).
+
+The header `<stdbit.h>` defines the following macros, types, and functions, to work with the byte and bit representation of many types, typically integer types. This header makes available the `size_t` type name (7.19) and any <code>uint<i>N</i>_t</code>,<code>int<i>N</i>_t</code>, <code>uint_least<i>N</i>_t</code>, or <code>int_least<i>N</i>_t</code> type names defined by the implementation (7.20).
 </div>
 </div>
 </ins>
 </blockquote>
 
 
-### Add a new §7.3�x.1 sub-sub-clause for "Endian" in §7.3�x ### {#wording-7.3�x-endianness}
+### Add a new §7.✨.1 sub-sub-clause for "Endian" in §7.✨ ### {#wording-7.✨-endianness}
 
 <blockquote>
 <ins>
 <div class="wording-section">
 
-<p><b>7.3�x.1 Endian</b/</p>
-<div class="wording-numbered">
-Two common methods of byte ordering in multi-byte scalar types are <b>big-endian</b> and <b>little-endian</b>. Big-endian is a format for storage of binary data in which the least significant byte is placed first, with the rest in ascending order. Little-endian is a format for storage or transmission of binary data in which the most significant byte is placed first, with the rest in descending order. Other byte orderings are also possible. Declarations and definitions in 7.3�x, a suffix containing `le` typically represents little-endian. A suffix containing `be` typically represents big-endian. This clause describes the endianness of the execution environment with respect to bit-precise integer types, standard integer types, and extended integer types which do not have padding bits.
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.1</span> <span class="wording-clause-title">Endian</span>
 </div>
 
 <div class="wording-numbered">
-It is unspecified whether any generic function declared in `<stdbit.h>` is a macro or an identifier declared with external linkage. If a macro definition is suppressed in order to access an actual function, or a program defines an external identifier with the name of a generic function, the behavior is undefined.
+
+Two common methods of byte ordering in multi-byte scalar types are <b>big-endian</b> and <b>little-endian</b>. Big-endian is a format for storage of binary data in which the least significant byte is placed first, with the rest in ascending order. Little-endian is a format for storage or transmission of binary data in which the most significant byte is placed first, with the rest in descending order. Other byte orderings are also possible. For declarations and definitions in 7.✨, an identifier with a suffix containing `le` typically represents little-endian. An identifier with a suffix containing `be` typically represents big-endian. This clause describes the endianness of the execution environment with respect to bit-precise integer types, standard integer types, and extended integer types which do not have padding bits.
+</div>
+
+<div class="wording-numbered">
+It is unspecified whether any generic function declared in `<stdbit.h>` is a macro or an identifier declared with external linkage. If a macro definition is suppressed in order to access an actual function, or a program defines an external identifier with the name of a generic function, the behavior is unspecified.
 </div>
 
 <div class="wording-numbered">
@@ -636,22 +871,27 @@ which represents the method of byte order storage for the execution environment 
 
 <div class="wording-numbered">
 
-`__STDC_ENDIAN_NATIVE__` shall expand to `__STDC_ENDIAN_LITTLE__` if the execution environment is little-endian. Otherwise, `__STDC_ENDIAN_NATIVE__` shall expand to `__STDC_ENDIAN_BIG__` if the execution environment is big-endian. If `__STDC_ENDIAN_NATIVE__` does not expand to either, then the byte order for the execution environment is implementation-defined.
-</div>
+`__STDC_ENDIAN_NATIVE__` shall expand to an integer constant expression whose value is equivalent to the value of `__STDC_ENDIAN_LITTLE__` if the execution environment is little-endian. Otherwise, `__STDC_ENDIAN_NATIVE__` shall expand to an integer constant expression whose value is equivalent to the value of `__STDC_ENDIAN_BIG__` if the execution environment is big-endian. If `__STDC_ENDIAN_NATIVE__` is not equivalent to either, then the byte order for the execution environment is implementation-defined.
 </div>
 </div>
 </ins>
 </blockquote>
 
 
-### Add a new §7.3�x.2 sub-sub-clause for "Memory Reordering" in §7.3�x ### {#wording-7.3�x-reordering}
+### Add a new §7.✨.2 sub-sub-clause for "8-bit Memory Reversal" in §7.✨ ### {#wording-7.✨-reordering}
 
 <blockquote>
 <ins>
-<p><b>7.3�x.2 8-bit Memory Reversal</b/</p>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.2</span> <span class="wording-clause-title">8-bit Memory Reversal</span>
+</div>
+
 <div class="wording-section">
 
-<p><b>Synopsis</b/</p>
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
 <div class="wording-numbered">
 
 > ```cpp
@@ -664,13 +904,16 @@ which represents the method of byte order storage for the execution environment 
 > ```
 </div>
 
-<p><b>Description</b/</p>
+<div class="wording-clause-section-title">
+Description
+</div>
+
 <div class="wording-numbered">
 
 The `stdc_memreverse8` function provides an interface to reverse the order of a given sequence of bytes by treating them as sequences of 8 bits at a time. The function is only present if `CHAR_BIT` is a multiple of 8. It is equivalent to the following algorithm:
 
 ```cpp
-for (size_t top_bit_index = 0, limit = (n / 2) * CHAR_BIT; top_bit_index < limit;) {
+for (size_t top_bit_index = 0, limit = (n * CHAR_BIT) / 2; top_bit_index < limit;) {
 	const size_t index = top_bit_index / CHAR_BIT;
 	const size_t reverse_index = n - 1 - index;
 	unsigned char* p = ptr + index;
@@ -679,22 +922,29 @@ for (size_t top_bit_index = 0, limit = (n / 2) * CHAR_BIT; top_bit_index < limit
 	const unsigned char reverse_b_temp = *reverse_p;
 	*p = 0;
 	*reverse_p = 0;
-	for (size_t bit_index = 0; bit_index < CHAR_BIT; bit_index += 8, top_bit_index += 8) {
+	for (size_t bit_index = 0; bit_index < CHAR_BIT; bit_index += 8) {
 		const size_t reverse_bit_index = CHAR_BIT - 8 - bit_index;
 		const unsigned char bit_mask = 0xFF << bit_index;
 		const unsigned char reverse_bit_mask = 0xFF << reverse_bit_index;
 		*p |= ((reverse_b_temp & reverse_bit_mask) << bit_index);
 		*reverse_p |= ((b_temp & bit_mask) << reverse_bit_index);
+		top_bit_index += 8
 	}
 }
 ```
 </div>
 </div>
 
-<p><b>7.3�x.3 Exact-width 8-bit Memory Reversal</b/</p>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.3</span> <span class="wording-clause-title">Exact-width 8-bit Memory Reversal</span>
+</div>
+
 <div class="wording-section">
 
-<p><b>Synopsis</b/</p>
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
 <div class="wording-numbered">
 
 > ```cpp
@@ -703,18 +953,24 @@ for (size_t top_bit_index = 0, limit = (n / 2) * CHAR_BIT; top_bit_index < limit
 > #include <stdint.h>
 > 
 > #if ((N % 8) == 0) && ((CHAR_BIT % 8) == 0)
-> uint_t stdc_memreverse8uN(uintN_t value);
+> uintN_t stdc_memreverse8uN(uintN_t value);
 > #endif
 > ```
 </div>
 
-<p><b>Description</b/</p>
-<div class="wording-numbered">
-
-The <code>stdc_memreverse8u<i>N</i></code> functions provide an interface to swap the bytes of a corresponding <code>uint<i>N</i>_t</code> object, where <i>N</i> matches one of the exact-width integer types (7.20.1.1). If an implementation provides the corresponding <code>uint<i>N</i>_t</code> typedef, it shall define the corresponding byte swap function for that value of <code><i>N</i></code>.
+<div class="wording-clause-section-title">
+Description
 </div>
 
-<p><b>Returns</b/</p>
+<div class="wording-numbered">
+
+The <code>stdc_memreverse8u<i>N</i></code> functions provide an interface to swap the bytes of a corresponding <code>uint<i>N</i>_t</code> object, where <i>N</i> matches one of the exact-width integer types (7.20.1.1). If an implementation provides the corresponding <code>uint<i>N</i>_t</code> typedef, it shall define the corresponding exact-width memory reversal function for that value of <code><i>N</i></code>.
+</div>
+
+<div class="wording-clause-section-title">
+Returns
+</div>
+
 <div class="wording-numbered">
 
 The <code>stdc_memreverse8u<i>N</i></code> functions returns the 8-bit memory reversed <code>uint<i>N</i>_t</code> value, as if by invoking `stdc_memreverse8(sizeof(value), (unsigned char*)&value)`.
@@ -724,14 +980,20 @@ The <code>stdc_memreverse8u<i>N</i></code> functions returns the 8-bit memory re
 </blockquote>
 
 
-### Add a new §7.3�x.4 sub-sub-clause for "Endian Aware" functions in §7.3�x ### {#wording-7.3�x-endian.aware.load.store}
+### Add a new §7.✨.4 sub-sub-clause for "Endian Aware" functions in §7.✨ ### {#wording-7.✨-endian.aware.load.store}
 
 <blockquote>
 <ins>
-<p><b>7.3�x.4 Endian-Aware 8-bit Load</b/</p>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.4</span> <span class="wording-clause-title">Endian-Aware 8-bit Load</span>
+</div>
+
 <div class="wording-section">
 
-<p><b>Synopsis</b/</p>
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
 <div class="wording-numbered">
 
 > ```cpp
@@ -751,38 +1013,40 @@ The <code>stdc_memreverse8u<i>N</i></code> functions returns the 8-bit memory re
 > ```
 </div>
 
-<p><b>Description</b/</p>
-<div class="wording-numbered">
-
-The 8-bit load family of functions functions read a <code>int_least<i>N</i>_t</code> or <code>uint_least<i>N</i>_t</code> object from the provided `ptr` in an endian-aware (7.3�x.1) manner, where <i>N</i> matches an existing minimum-width integer type (7.20.1.2). If this function is present, <i>N</i> shall be a multiple of 8 and `CHAR_BIT` shall be a multiple of 8. The functions containing `_aligned` in the name shall assume that `ptr` is suitably aligned to access a signed or unsigned integer of width <i>N</i>. If the function name contains the <code>s<i>N</i></code> suffix in the name, it is a <i>signed variant</i>. Otherwise, the function is an <i>unsigned variant</i>. If the function name contains the <code>les<i>N</i></code> or <code>leu<i>N</i></code> suffix, it is a <i>little-endian variant</i>. Otherwise, if the function name contains the <code>bes<i>N</i></code> or <code>beu<i>N</i></code> suffix, it is a <i>big-endian variant</i>.
+<div class="wording-clause-section-title">
+Description
 </div>
 
-<p><b>Returns</b/</p>
+<div class="wording-numbered">
+
+The 8-bit load family of functions functions read an <code>int_least<i>N</i>_t</code> or <code>uint_least<i>N</i>_t</code> object from the provided `ptr` in an endian-aware (7.✨.1) manner, where <i>N</i> matches an existing minimum-width integer type (7.20.1.2). If this function is present, <i>N</i> shall be a multiple of 8 and `CHAR_BIT` shall be a multiple of 8. The functions containing `_aligned` in the name shall assume that `ptr` is suitably aligned to access a signed or unsigned integer of width <i>N</i> for a signed or unsigned variant of the function, respectively. If the function name contains the <code>s<i>N</i></code> suffix in the name, it is a <i>signed variant</i>. Otherwise, the function is an <i>unsigned variant</i>. If the function name contains the <code>les<i>N</i></code> or <code>leu<i>N</i></code> suffix, it is a <i>little-endian variant</i>. Otherwise, if the function name contains the <code>bes<i>N</i></code> or <code>beu<i>N</i></code> suffix, it is a <i>big-endian variant</i>.
+</div>
+
+<div class="wording-clause-section-title">
+Returns
+</div>
+
 <div class="wording-numbered">
 
 Let `value` be an object of either <code>int_least<i>N</i>_t</code> if the function is a signed variant or <code>uint_least<i>N</i>_t</code> if the function is an unsigned variant initialized to 0. Let `index` be an integer in a sequence that
-<dl>
-	<dd>— starts from 0 and increments by 8 in the range of [0, N), if the function is a little endian variant;</dd>
-	<dd>— starts from `CHAR_BIT - 8` and decrements by 8 in the range of [0, N), if the function is a big endian variant.</dd>
-</dl>
+
+:: — starts from 0 and increments by 8 in the range of [0, N), if the function is a little endian variant;
+:: — or, starts from `CHAR_BIT - 8` and decrements by 8 in the range of [0, N), if the function is a big endian variant.
 
 Let `ptr_bit_index` be an integer that starts from 0. Let `byte_index8` be `index % CHAR_BIT`. For each `index` in the order of the above-specified sequence:
-<dl>
-	<dd>1. let `byte_mask8` be:
-	<dl>
-		<dd>— `(0x7F << byte_index8)`, if the function is a signed variant, `byte_index8` is equal to `(CHAR_BIT - 8)`, and `ptr_bit_index` is equal to `N - 8`;</dd>
-		<dd>— otherwise, `(0xFF << byte_index8)`.</dd>
-	</dl>
-	</dd>
-	<dd>2. computes `value |= (((ptr[ptr_bit_index / CHAR_BIT] & byte_mask8) >> byte_index8) << index)`;</dd>
-	<dd>3. increments `ptr_bit_index` by 8.</dd>
-</dl>
+
+1. Let `byte_mask8` be
+
+	:: — `(0x7F << byte_index8)`, if the function is a signed variant, `byte_index8` is equal to `(CHAR_BIT - 8)`, and `ptr_bit_index` is equal to `N - 8`;
+	:: — otherwise, `(0xFF << byte_index8)`.
+
+2. computes `value |= (((ptr[ptr_bit_index / CHAR_BIT] & byte_mask8) >> byte_index8) << index)`;
+3. increments `ptr_bit_index` by 8.
 
 Finally, if the function is a signed variant, and either:
-<dl>
-	<dd>— `(ptr[0] >> (CHAR_BIT - 1)) & 0x1` is nonzero for the little endian variant;</dd>
-	<dd>— or, `(ptr[(N / CHAR_BIT) - 1] >> (CHAR_BIT - 1)) & 0x1` is nonzero for the big endian variant;</dd>
-</dl>
+
+:: — `(ptr[0] >> (CHAR_BIT - 1)) & 0x1` is nonzero for the little endian variant;
+:: — or, `(ptr[(N / CHAR_BIT) - 1] >> (CHAR_BIT - 1)) & 0x1` is nonzero for the big endian variant;
 
 then the sign bit is set to `1`. Otherwise, it is set to `0`.
 </div>
@@ -792,74 +1056,99 @@ Returns the computed `value`.
 </div>
 
 
-<p><b>7.3�x.5 Endian-Aware 8-bit Store</b/</p>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.5</span> <span class="wording-clause-title">Endian-Aware 8-bit Store</span>
+</div>
+
 <div class="wording-section">
 
-<p><b>Synopsis</b/</p>
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
 <div class="wording-numbered">
 
 > ```cpp
 > #include <stdbit.h>
 >
-> #if ((N % CHAR_BIT) == 0 && (CHAR_BIT % 8 == 0))
-> void stdc_store8_leuN(uint_leastN_t value, unsigned char ptr[static (N / CHAR_BIT)]);
-> void stdc_store8_beuN(uint_leastN_t value, unsigned char ptr[static (N / CHAR_BIT)]);
-> void stdc_store8_aligned_leuN(uint_leastN_t value, unsigned char ptr[static (N / CHAR_BIT)]);
-> void stdc_store8_aligned_beuN(uint_leastN_t value, unsigned char ptr[static (N / CHAR_BIT)]);
+> #if ((N % CHAR_BIT) == 0) && ((CHAR_BIT % 8 == 0)
+> void stdc_store8_leuN(uint_leastN_t value,
+>	unsigned char ptr[static (N / CHAR_BIT)]);
+> void stdc_store8_beuN(uint_leastN_t value,
+>	unsigned char ptr[static (N / CHAR_BIT)]);
+> void stdc_store8_aligned_leuN(uint_leastN_t value,
+>	unsigned char ptr[static (N / CHAR_BIT)]);
+> void stdc_store8_aligned_beuN(uint_leastN_t value,
+>	unsigned char ptr[static (N / CHAR_BIT)]);
 > 
-> void stdc_store8_lesN(int_leastN_t value, unsigned char ptr[static (N / CHAR_BIT)]);
-> void stdc_store8_besN(int_leastN_t value, unsigned char ptr[static (N / CHAR_BIT)]);
-> void stdc_store8_aligned_lesN(int_leastN_t value, unsigned char ptr[static (N / CHAR_BIT)]);
-> void stdc_store8_aligned_besN(int_leastN_t value, unsigned char ptr[static (N / CHAR_BIT)]);
+> void stdc_store8_lesN(int_leastN_t value,
+>	unsigned char ptr[static (N / CHAR_BIT)]);
+> void stdc_store8_besN(int_leastN_t value,
+>	unsigned char ptr[static (N / CHAR_BIT)]);
+> void stdc_store8_aligned_lesN(int_leastN_t value,
+>	unsigned char ptr[static (N / CHAR_BIT)]);
+> void stdc_store8_aligned_besN(int_leastN_t value,
+>	unsigned char ptr[static (N / CHAR_BIT)]);
 > #endif
 > ```
 </div>
 
-<p><b>Description</b/</p>
+<div class="wording-clause-section-title">
+Description
+</div>
+
 <div class="wording-numbered">
 
-The 8-bit store family of functions functions write a <code>int_least<i>N</i>_t</code> or <code>uint_least<i>N</i>_t</code> object into the provided `ptr` in an endian-aware (7.3�x.1) manner, where <i>N</i> matches an existing minimum-width integer type (7.20.1.2). If this function is present, <i>N</i> shall be a multiple of 8 and `CHAR_BIT` shall be a multiple of 8. The functions containing `_aligned` in the name shall assume that `ptr` is suitably aligned to access a signed or unsigned integer of width <i>N</i>. If the function name contains the <code>s<i>N</i></code> suffix in the name, it is a <i>signed variant</i>. Otherwise, the function is an <i>unsigned variant</i>. If the function name contains the <code>les<i>N</i></code> or <code>leu<i>N</i></code> suffix, it is a <i>little-endian variant</i>. Otherwise, if the function name contains the <code>bes<i>N</i></code> or <code>beu<i>N</i></code> suffix, it is a <i>big-endian variant</i>.
+The 8-bit store family of functions functions write a <code>int_least<i>N</i>_t</code> or <code>uint_least<i>N</i>_t</code> object into the provided `ptr` in an endian-aware (7.✨.1) manner, where <i>N</i> matches an existing minimum-width integer type (7.20.1.2). If this function is present, <i>N</i> shall be a multiple of 8 and `CHAR_BIT` shall be a multiple of 8. The functions containing `_aligned` in the name shall assume that `ptr` is suitably aligned to access a signed or unsigned integer of width <i>N</i>. If the function name contains the <code>s<i>N</i></code> suffix in the name, it is a <i>signed variant</i>. Otherwise, the function is an <i>unsigned variant</i>. If the function name contains the <code>les<i>N</i></code> or <code>leu<i>N</i></code> suffix, it is a <i>little-endian variant</i>. Otherwise, if the function name contains the <code>bes<i>N</i></code> or <code>beu<i>N</i></code> suffix, it is a <i>big-endian variant</i>.
 </div>
 
 <div class="wording-numbered">
 
 Let `index` be an integer in a sequence that
-<dl>
-	<dd>— starts from 0 and increments by 8 in the range of [0, N), if the function is a little endian variant;</dd>
-	<dd>— starts from `CHAR_BIT - 8` and decrements by 8 in the range of [0, N), if the function is a big endian variant.</dd>
-</dl>
+
+:: — starts from 0 and increments by 8 in the range of [0, N), if the function is a little endian variant;
+:: — starts from `CHAR_BIT - 8` and decrements by 8 in the range of [0, N), if the function is a big endian variant.
 
 Let `ptr_bit_index` be an integer that starts from 0. Let `byte_index8` be `index % CHAR_BIT`. For each `index` in the order of the above-specified sequence:
-<dl>
-	<dd>1. let `byte_mask8` be:
-	<dl>
-		<dd>— `(0x7F << byte_index8)`, if the function is a signed variant, `byte_index8` is equal to `(CHAR_BIT - 8)`, and `ptr_bit_index` is equal to `N - 8`;</dd>
-		<dd>— otherwise, `(0xFF << byte_index8)`.</dd>
-	</dl>
-	</dd>
-	<dd>2. sets the 8 bits in `ptr[ptr_bit_index / CHAR_BIT]` at offset `byte_index8` to `(value >> index) & byte_mask8`;</dd>
-	<dd>3. increments `ptr_bit_index` by 8.</dd>
-</dl>
+
+:: 1. Let `byte_mask8` be:
+
+  :: — `(0x7F << byte_index8)`, if the function is a signed variant, `byte_index8` is equal to `(CHAR_BIT - 8)`, and `ptr_bit_index` is equal to `N - 8`;
+  :: — otherwise, `(0xFF << byte_index8)`.
+
+:: 2. Let `value_unsigned` be:
+
+	:: — `value` if the function is a unsigned variant;
+	:: — otherwise, the absolute value of `value` if the function is a signed variant.
+
+:: 3. Sets the 8 bits in `ptr[ptr_bit_index / CHAR_BIT]` at offset `byte_index8` to `(value_unsigned >> index) & byte_mask8`.
+:: 4. Increments `ptr_bit_index` by 8.
 
 Finally, if the function is a signed variant, and `value` is less than 0, then either:
-<dl>
-	<dd>— `ptr[0]` has its high bit set to 1 if the function is the little endian variant;</dd>
-	<dd>— or, `ptr[(N / CHAR_BIT) - 1]` has its high bit set to 1 if the function is the big endian variant.</dd>
-</dl>
+
+:: — `ptr[0]` has its high bit set to 1 if the function is the little endian variant;
+:: — or, `ptr[(N / CHAR_BIT) - 1]` has its high bit set to 1 if the function is the big endian variant.
+
 </div>
 </div>
 </ins>
 </blockquote>
 
 
-### Add a new §7.3�x.6 sub-sub-clause for Low-Level Bit Utilities in §7.3�x ### {#wording-7.3�x-low.level.bit}
+### Add a new §7.✨.6 sub-sub-clause for Low-Level Bit Utilities in §7.✨ ### {#wording-7.✨-low.level.bit}
 
 <blockquote>
 <ins>
-<p><b>7.3�x.6 Count Leading Zeros</b/</p>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.6</span> <span class="wording-clause-title">Count Leading Zeros</span>
+</div>
+
 <div class="wording-section">
 
-<p><b>Synopsis</b/</p>
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
 <div class="wording-numbered">
 
 > ```cpp
@@ -869,29 +1158,38 @@ Finally, if the function is a signed variant, and `value` is less than 0, then e
 > int stdc_leading_zerosul(unsigned long value);
 > int stdc_leading_zerosull(unsigned long long value);
 > 
-> generic_return_type stdc_leading_zeros(generic_integer_type value);
+> generic_return_type stdc_leading_zeros(generic_value_type value);
 > ```
 </div>
 
-<p><b>Returns</b/</p>
+<div class="wording-clause-section-title">
+Returns
+</div>
+
 <div class="wording-numbered">
 Returns the number of consecutive 0 bits in `value`, starting from the most significant bit.
 </div>
 <div class="wording-numbered">
-The type-generic function (marked by its `generic_integer_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
-<dl>
-	<dd>— standard unsigned integer type, excluding `_Bool`;</dd>
-	<dd>— extended unsigned integer type;</dd>
-	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
-</dl>
-The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large signed integer type capable of representing the computed result.
+The type-generic function (marked by its `generic_value_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
+
+:: — standard unsigned integer type, excluding `bool`;
+:: — extended unsigned integer type;
+:: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
+
+The `generic_return_type` type shall be a suitably large signed integer type capable of representing the computed result.
 </div>
 </div>
 
-<p><b>7.3�x.7 Count Leading Ones</b/</p>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.7</span> <span class="wording-clause-title">Count Leading Ones</span>
+</div>
+
 <div class="wording-section">
 
-<p><b>Synopsis</b/</p>
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
 <div class="wording-numbered">
 
 > ```cpp
@@ -901,29 +1199,38 @@ The `generic_return_type` type for the type-generic function need not be the sam
 > int stdc_leading_onesul(unsigned long value);
 > int stdc_leading_onesull(unsigned long long value);
 > 
-> generic_return_type stdc_leading_ones(generic_integer_type value);
+> generic_return_type stdc_leading_ones(generic_value_type value);
 > ```
 </div>
 
-<p><b>Returns</b/</p>
+<div class="wording-clause-section-title">
+Returns
+</div>
+
 <div class="wording-numbered">
 Returns the number of consecutive 1 bits in `value`, starting from the most significant bit.
 </div>
 <div class="wording-numbered">
-The type-generic function (marked by its `generic_integer_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
-<dl>
-	<dd>— standard unsigned integer type, excluding `_Bool`;</dd>
-	<dd>— extended unsigned integer type;</dd>
-	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
-</dl>
-The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large signed integer type capable of representing the computed result.
+The type-generic function (marked by its `generic_value_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
+
+:: — standard unsigned integer type, excluding `bool`;
+:: — extended unsigned integer type;
+:: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
+
+The `generic_return_type` type shall be a suitably large signed integer type capable of representing the computed result.
 </div>
 </div>
 
-<p><b>7.3�x.8 Count Trailing Zeros</b/</p>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.8</span> <span class="wording-clause-title">Count Trailing Zeros</span>
+</div>
+
 <div class="wording-section">
 
-<p><b>Synopsis</b/</p>
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
 <div class="wording-numbered">
 
 > ```cpp
@@ -933,29 +1240,38 @@ The `generic_return_type` type for the type-generic function need not be the sam
 > int stdc_trailing_zerosul(unsigned long value);
 > int stdc_trailing_zerosull(unsigned long long value);
 > 
-> generic_return_type stdc_trailing_zeros(generic_integer_type value);
+> generic_return_type stdc_trailing_zeros(generic_value_type value);
 > ```
 </div>
 
-<p><b>Returns</b/</p>
+<div class="wording-clause-section-title">
+Returns
+</div>
+
 <div class="wording-numbered">
 Returns the number of consecutive 0 bits in `value`, starting from the least significant bit.
 </div>
 <div class="wording-numbered">
-The type-generic function (marked by its `generic_integer_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
-<dl>
-	<dd>— standard unsigned integer type, excluding `_Bool`;</dd>
-	<dd>— extended unsigned integer type;</dd>
-	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
-</dl>
-The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large signed integer type capable of representing the computed result.
+The type-generic function (marked by its `generic_value_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
+
+:: — standard unsigned integer type, excluding `bool`;
+:: — extended unsigned integer type;
+:: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
+
+The `generic_return_type` type shall be a suitably large signed integer type capable of representing the computed result.
 </div>
 </div>
 
-<p><b>7.3�x.9 Count Trailing Ones</b/</p>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.9</span> <span class="wording-clause-title">Count Trailing Ones</span>
+</div>
+
 <div class="wording-section">
 
-<p><b>Synopsis</b/</p>
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
 <div class="wording-numbered">
 
 > ```cpp
@@ -965,30 +1281,206 @@ The `generic_return_type` type for the type-generic function need not be the sam
 > int stdc_trailing_onesul(unsigned long value);
 > int stdc_trailing_onesull(unsigned long long value);
 > 
-> generic_return_type stdc_trailing_ones(generic_integer_type value);
+> generic_return_type stdc_trailing_ones(generic_value_type value);
 > ```
 </div>
 
-<p><b>Returns</b/</p>
+<div class="wording-clause-section-title">
+Returns
+</div>
+
 <div class="wording-numbered">
 Returns the number of consecutive 1 bits in `value`, starting from the least significant bit.
 </div>
 <div class="wording-numbered">
-The type-generic function (marked by its `generic_integer_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
-<dl>
-	<dd>— standard unsigned integer type, excluding `_Bool`;</dd>
-	<dd>— extended unsigned integer type;</dd>
-	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
-</dl>
-The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large unsigned integer type capable of representing the computed result.
+The type-generic function (marked by its `generic_value_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
+
+:: — standard unsigned integer type, excluding `bool`;
+:: — extended unsigned integer type;
+:: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
+
+The `generic_return_type` type shall be a suitably large signed integer type capable of representing the computed result.
 </div>
 </div>
 
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.10</span> <span class="wording-clause-title">First Leading Zero</span>
+</div>
 
-<p><b>7.3�x.10 Rotate Left</b/</p>
 <div class="wording-section">
 
-<p><b>Synopsis</b/</p>
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
+<div class="wording-numbered">
+
+> ```cpp
+> int stdc_first_leading_zerouc(unsigned char value);
+> int stdc_first_leading_zerous(unsigned short value);
+> int stdc_first_leading_zeroui(unsigned int value);
+> int stdc_first_leading_zeroul(unsigned long value);
+> int stdc_first_leading_zeroull(unsigned long long value);
+> 
+> generic_return_type
+>   stdc_leading_zero(generic_value_type value);
+> ```
+</div>
+
+<div class="wording-clause-section-title">
+Returns
+</div>
+
+<div class="wording-numbered">
+Returns the first 0 bit in `value`, starting from the most significant bit, plus 1. If it is not found, this function returns 0.
+</div>
+<div class="wording-numbered">
+The type-generic function (marked by its `generic_value_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
+
+:: — standard unsigned integer type, excluding `bool`;
+:: — extended unsigned integer type;
+:: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
+
+The `generic_return_type` type shall be a suitably large signed integer type capable of representing the computed result.
+</div>
+</div>
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.11</span> <span class="wording-clause-title">First Leading One</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
+<div class="wording-numbered">
+
+> ```cpp
+> int stdc_first_leading_oneuc(unsigned char value);
+> int stdc_first_leading_oneus(unsigned short value);
+> int stdc_first_leading_oneui(unsigned int value);
+> int stdc_first_leading_oneul(unsigned long value);
+> int stdc_first_leading_oneull(unsigned long long value);
+> 
+> generic_return_type stdc_leading_ones(generic_value_type value);
+> ```
+</div>
+
+<div class="wording-clause-section-title">
+Returns
+</div>
+
+<div class="wording-numbered">
+Returns the first 1 bit in `value`, starting from the most significant bit, plus 1. If it is not found, this function returns 0.
+</div>
+<div class="wording-numbered">
+The type-generic function (marked by its `generic_value_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
+
+:: — standard unsigned integer type, excluding `bool`;
+:: — extended unsigned integer type;
+:: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
+
+The `generic_return_type` type shall be a suitably large signed integer type capable of representing the computed result.
+</div>
+</div>
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.12</span> <span class="wording-clause-title">First Trailing Zero</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
+<div class="wording-numbered">
+
+> ```cpp
+> int stdc_first_trailing_zerouc(unsigned char value);
+> int stdc_first_trailing_zerous(unsigned short value);
+> int stdc_first_trailing_zeroui(unsigned int value);
+> int stdc_first_trailing_zeroul(unsigned long value);
+> int stdc_first_trailing_zeroull(unsigned long long value);
+> 
+> generic_return_type
+>   stdc_first_trailing_zero(generic_value_type value);
+> ```
+</div>
+
+<div class="wording-clause-section-title">
+Returns
+</div>
+
+<div class="wording-numbered">
+Returns the first 0 bit in `value`, starting from the least significant bit, plus 1. If it is not found, this function returns 0.
+</div>
+<div class="wording-numbered">
+The type-generic function (marked by its `generic_value_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
+
+:: — standard unsigned integer type, excluding `bool`;
+:: — extended unsigned integer type;
+:: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
+
+The `generic_return_type` type shall be a suitably large signed integer type capable of representing the computed result.
+</div>
+</div>
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.13</span> <span class="wording-clause-title">First Trailing One</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
+<div class="wording-numbered">
+
+> ```cpp
+> int stdc_first_trailing_oneuc(unsigned char value);
+> int stdc_first_trailing_oneus(unsigned short value);
+> int stdc_first_trailing_oneui(unsigned int value);
+> int stdc_first_trailing_oneul(unsigned long value);
+> int stdc_first_trailing_oneull(unsigned long long value);
+> 
+> generic_return_type
+>   stdc_first_trailing_one(generic_value_type value);
+> ```
+</div>
+
+<div class="wording-clause-section-title">
+Returns
+</div>
+
+<div class="wording-numbered">
+Returns the first 1 bit in `value`, starting from the least significant bit, plus 1. If it is not found, this function returns 0.
+</div>
+<div class="wording-numbered">
+The type-generic function (marked by its `generic_value_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
+
+:: — standard unsigned integer type, excluding `bool`;
+:: — extended unsigned integer type;
+:: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
+
+The `generic_return_type` type shall be a suitably large signed integer type capable of representing the computed result.
+</div>
+</div>
+
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.14</span> <span class="wording-clause-title">Rotate Left</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
 <div class="wording-numbered">
 
 > ```cpp
@@ -998,38 +1490,52 @@ The `generic_return_type` type for the type-generic function need not be the sam
 > unsigned long stdc_rotate_leftul(unsigned long value, int count);
 > unsigned long long stdc_rotate_leftull(unsigned long long value, int count);
 > 
-> generic_integer_type stdc_rotate_left(generic_integer_type value, int count);
+> generic_value_type stdc_rotate_left(
+> 	generic_value_type value, generic_count_type count);
 > ```
 </div>
 
-<p><b>Description</b/</p>
+<div class="wording-clause-section-title">
+Description
+</div>
+
 <div class="wording-numbered">
 The `stdc_rotate_left` functions perform a bitwise rotate left. This operation is typically known as a left circular shift.
 </div>
 
-<p><b>Returns</b/</p>
+<div class="wording-clause-section-title">
+Returns
+</div>
+
 <div class="wording-numbered">
 Let N be the width corresponding to the type of the input `value`. Let r be `count % N`.
-<dl>
-	<dd>— If r is 0, returns `value`;</dd>
-	<dd>— otherwise, if r is positive, returns `(value <​< r) | (value >> (N - r))`.</dd>
-	<dd>— otherwise, if r is negative, returns `stdc_rotate_right(value, -r)`;</dd>
-</dl>
+
+:: — If r is 0, returns `value`;
+:: — otherwise, if r is positive, returns `(value <​< r) | (value >> (N - r))`.
+:: — otherwise, if r is negative, returns `stdc_rotate_right(value, -r)`;
+
 </div>
 <div class="wording-numbered">
-The type-generic function (marked by its `generic_integer_type` argument) returns the above described result for a given input value so long as the `generic_integer_type` is an
-<dl>
-	<dd>— standard unsigned integer type, excluding `_Bool`;</dd>
-	<dd>— extended unsigned integer type;</dd>
-	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
-</dl>
+The type-generic function (marked by its `generic_value_type` argument) returns the above described result for a given input value so long as the `generic_value_type` is an
+
+:: — standard unsigned integer type, excluding `bool`;
+:: — extended unsigned integer type;
+:: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
+
+The `generic_return_type` type shall be a suitably large signed integer type capable of representing the computed result.
 </div>
 </div>
 
-<p><b>7.3�x.11 Rotate Right</b/</p>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.15</span> <span class="wording-clause-title">Rotate Right</span>
+</div>
+
 <div class="wording-section">
 
-<p><b>Synopsis</b/</p>
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
 <div class="wording-numbered">
 
 > ```cpp
@@ -1039,42 +1545,53 @@ The type-generic function (marked by its `generic_integer_type` argument) return
 > unsigned long stdc_rotate_rightul(unsigned long value, int count);
 > unsigned long long stdc_rotate_rightull(unsigned long long value, int count);
 > 
-> generic_integer_type stdc_rotate_right(generic_integer_type value, generic_integer_count_type count);
+> generic_value_type stdc_rotate_right(
+> 	generic_value_type value, generic_count_type count);
 > ```
 </div>
 
-<p><b>Description</b/</p>
+<div class="wording-clause-section-title">
+Description
+</div>
+
 <div class="wording-numbered">
 The `stdc_rotate_right` functions perform a bitwise rotate right. This operation is typically known as a right circular shift.
 </div>
 
-<p><b>Returns</b/</p>
+<div class="wording-clause-section-title">
+Returns
+</div>
+
 <div class="wording-numbered">
 Let N be the width corresponding to the type of the input `value`.. Let r be `count % N`.
-<dl>
-	<dd>— If r is 0, returns `value`;</dd>
-	<dd>— otherwise, if r is positive, returns `(value >> r) | (value << (N - r))`;</dd>
-	<dd>— otherwise, if r is negative, returns `stdc_rotate_left(value, -r)`;</dd>
-</dl>
+
+:: — If r is 0, returns `value`;
+:: — otherwise, if r is positive, returns `(value >> r) | (value << (N - r))`;
+:: — otherwise, if r is negative, returns `stdc_rotate_left(value, -r)`.
+
 </div>
 
 <div class="wording-numbered">
-The type-generic function (marked by its `generic_integer_type` argument) returns the above described result for a given input value so long as the `generic_integer_type` is
+The type-generic function (marked by its `generic_value_type` argument) returns the above described result for a given input value so long as the `generic_value_type` is
 
-<dl>
-	<dd>— a standard unsigned integer type, excluding `_Bool`;</dd>
-	<dd>— an extended unsigned integer type;</dd>
-	<dd>— or, a bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
-</dl>
+:: — a standard unsigned integer type, excluding `bool`;
+:: — an extended unsigned integer type;
+:: — or, a bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
 
-The `generic_integer_count_type` shall be an integer type suitably large enough to describe the width of the `generic_integer_type`.
+The `generic_return_type` type shall be a suitably large signed integer type capable of representing the computed result.
 </div>
 </div>
 
-<p><b>7.3�x.12 Count Ones</b/</p>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.16</span> <span class="wording-clause-title">Count Ones</span>
+</div>
+
 <div class="wording-section">
 
-<p><b>Synopsis</b/</p>
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
 <div class="wording-numbered">
 
 > ```cpp
@@ -1084,32 +1601,39 @@ The `generic_integer_count_type` shall be an integer type suitably large enough 
 > int stdc_count_onesul(unsigned long value);
 > int stdc_count_onesull(unsigned long long value);
 > 
-> generic_return_type stdc_count_ones(generic_integer_type value);
+> generic_return_type stdc_count_ones(generic_value_type value);
 > ```
 </div>
 
-<p><b>Returns</b/</p>
+<div class="wording-clause-section-title">
+Returns
+</div>
+
 <div class="wording-numbered">
 The `stdc_count_ones` functions returns the total number of 1 bits within the given `value`.
 </div>
 <div class="wording-numbered">
-The type-generic function (marked by its `generic_integer_type` argument) returns the previously described result for a given input value so long as the `generic_integer_type` is an
+The type-generic function (marked by its `generic_value_type` argument) returns the previously described result for a given input value so long as the `generic_value_type` is an
 
-<dl>
-	<dd>— standard unsigned integer type, excluding `_Bool`;</dd>
-	<dd>— extended unsigned integer type;</dd>
-	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
-</dl>
+:: — standard unsigned integer type, excluding `bool`;
+:: — extended unsigned integer type;
+:: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
 
-The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large unsigned integer type capable of representing the computed result.
+The `generic_return_type` type shall be a suitably large signed integer type capable of representing the computed result.
 </div>
 </div>
 
 
-<p><b>7.3�x.13 Count Zeros</b/</p>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.17</span> <span class="wording-clause-title">Count Zeros</span>
+</div>
+
 <div class="wording-section">
 
-<p><b>Synopsis</b/</p>
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
 <div class="wording-numbered">
 
 > ```cpp
@@ -1119,22 +1643,23 @@ The `generic_return_type` type for the type-generic function need not be the sam
 > int stdc_count_zerosul(unsigned long value);
 > int stdc_count_zerosull(unsigned long long value);
 > 
-> generic_return_type stdc_count_zeros(generic_integer_type value);
+> generic_return_type stdc_count_zeros(generic_value_type value);
 > ```
 </div>
 
-<p><b>Returns</b/</p>
+<div class="wording-clause-section-title">
+Returns
+</div>
+
 <div class="wording-numbered">
 The `stdc_count_zeros` functions returns the total number of 0 bits within the given `value`.
 </div>
 <div class="wording-numbered">
-The type-generic function (marked by its `generic_integer_type` argument) returns the previously described result for a given input value so long as the `generic_integer_type` is an
+The type-generic function (marked by its `generic_value_type` argument) returns the previously described result for a given input value so long as the `generic_value_type` is an
 
-<dl>
-	<dd>— standard unsigned integer type, excluding `_Bool`;</dd>
-	<dd>— extended unsigned integer type;</dd>
-	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
-</dl>
+:: — standard unsigned integer type, excluding `bool`;
+:: — extended unsigned integer type;
+:: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
 
 The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large unsigned integer type capable of representing the computed result.
 </div>
@@ -1143,45 +1668,60 @@ The `generic_return_type` type for the type-generic function need not be the sam
 </blockquote>
 
 
-### Add a new §7.3�x.3 sub-sub-clause for Fundamental Bit Utilities in §7.3�x ### {#wording-7.3�x-fundamental.bit}
+### Add a new §7.✨.3 sub-sub-clause for Fundamental Bit Utilities in §7.✨ ### {#wording-7.✨-fundamental.bit}
 
 <blockquote>
 <ins>
-<p><b>7.3�x.14 Single-bit Check</b/</p>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.18</span> <span class="wording-clause-title">Single-bit Check</span>
+</div>
+
 <div class="wording-section">
 
-<p><b>Synopsis</b/</p>
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
 <div class="wording-numbered">
 
 > ```cpp
-> _Bool stdc_has_single_bituc(unsigned char value);
-> _Bool stdc_has_single_bitus(unsigned short value);
-> _Bool stdc_has_single_bitui(unsigned int value);
-> _Bool stdc_has_single_bitul(unsigned long value);
-> _Bool stdc_has_single_bitull(unsigned long long value);
+> bool stdc_has_single_bituc(unsigned char value);
+> bool stdc_has_single_bitus(unsigned short value);
+> bool stdc_has_single_bitui(unsigned int value);
+> bool stdc_has_single_bitul(unsigned long value);
+> bool stdc_has_single_bitull(unsigned long long value);
 > 
-> _Bool stdc_has_single_bit(generic_integer_type value);
+> bool stdc_has_single_bit(generic_value_type value);
 > ```
 </div>
 
-<p><b>Returns</b/</p>
+<div class="wording-clause-section-title">
+Returns
+</div>
+
 <div class="wording-numbered">
 The `stdc_has_single_bit` functions returns true if and only if there is a single 1 bit in `value`.
 </div>
 <div class="wording-numbered">
-The type-generic function (marked by its `generic_integer_type` argument) returns the previously described result for a given input value so long as the `generic_integer_type` is an 
-<dl>
-	<dd>— standard unsigned integer type, excluding `_Bool`;</dd>
-	<dd>— extended unsigned integer type;</dd>
-	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
-</dl>
+The type-generic function (marked by its `generic_value_type` argument) returns the previously described result for a given input value so long as the `generic_value_type` is an 
+
+:: — standard unsigned integer type, excluding `bool`;
+:: — extended unsigned integer type;
+:: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
+
 </div>
 </div>
 
-<p><b>7.3�x.15 Bit Width</b/</p>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.19</span> <span class="wording-clause-title">Bit Width</span>
+</div>
+
 <div class="wording-section">
 
-<p><b>Synopsis</b/</p>
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
 <div class="wording-numbered">
 
 > ```cpp
@@ -1191,34 +1731,46 @@ The type-generic function (marked by its `generic_integer_type` argument) return
 > unsigned long stdc_bit_widthul(unsigned long value);
 > unsigned long long stdc_bit_widthull(unsigned long long value);
 > 
-> generic_return_type stdc_bit_width(generic_integer_type value);
+> generic_return_type stdc_bit_width(generic_value_type value);
 > ```
 </div>
 
-<p><b>Description</b/</p>
+<div class="wording-clause-section-title">
+Description
+</div>
+
 <div class="wording-numbered">
 The `stdc_bit_width` functions compute the smallest number of bits needed to store `value`.
 </div>
 
-<p><b>Returns</b/</p>
+<div class="wording-clause-section-title">
+Returns
+</div>
+
 <div class="wording-numbered">
 The `stdc_bit_width` functions return 0 if `value` is 0. Otherwise, they return <code>1 + ⌊log<sub>2</sub>(value)⌋</code>.
 </div>
 <div class="wording-numbered">
-The type-generic function (marked by its `generic_integer_type` argument) returns the previously described result for a given input value so long as the `generic_integer_type` is an
-<dl>
-	<dd>— standard unsigned integer type, excluding `_Bool`;</dd>
-	<dd>— extended unsigned integer type;</dd>
-	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
-</dl>
+The type-generic function (marked by its `generic_value_type` argument) returns the previously described result for a given input value so long as the `generic_value_type` is an
+
+:: — standard unsigned integer type, excluding `bool`;
+:: — extended unsigned integer type;
+:: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
+
 The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large unsigned integer type capable of representing the computed result.
 </div>
 </div>
 
-<p><b>7.3�x.16 Bit Floor</b/</p>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.20</span> <span class="wording-clause-title">Bit Floor</span>
+</div>
+
 <div class="wording-section">
 
-<p><b>Synopsis</b/</p>
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
 <div class="wording-numbered">
 
 > ```cpp
@@ -1228,33 +1780,45 @@ The `generic_return_type` type for the type-generic function need not be the sam
 > unsigned long stdc_bit_floorul(unsigned long value);
 > unsigned long long stdc_bit_floorull(unsigned long long value);
 > 
-> generic_integer_type stdc_bit_floor(generic_integer_type value);
+> generic_value_type stdc_bit_floor(generic_value_type value);
 > ```
 </div>
 
-<p><b>Description</b/</p>
+<div class="wording-clause-section-title">
+Description
+</div>
+
 <div class="wording-numbered">
 The `stdc_bit_floor` functions compute the largest integral power of 2 that is not greater than `value`.
 </div>
 
-<p><b>Returns</b/</p>
+<div class="wording-clause-section-title">
+Returns
+</div>
+
 <div class="wording-numbered">
 The `stdc_bit_floor` functions return 0 if `value` is 0. Otherwise, they return the largest integral power of 2 that is not greater than `value`.
 </div>
 <div class="wording-numbered">
-The type-generic function (marked by its `generic_integer_type` argument) returns the previously described result for a given input value so long as the `generic_integer_type` is an
-<dl>
-	<dd>— standard unsigned integer type, excluding `_Bool`;</dd>
-	<dd>— extended unsigned integer type;</dd>
-	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
-</dl>
+The type-generic function (marked by its `generic_value_type` argument) returns the previously described result for a given input value so long as the `generic_value_type` is an
+
+:: — standard unsigned integer type, excluding `bool`;
+:: — extended unsigned integer type;
+:: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
+
 </div>
 </div>
 
-<p><b>7.3�x.17 Bit Ceiling</b/</p>
 <div class="wording-section">
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.21</span> <span class="wording-clause-title">Bit Ceiling</span>
+</div>
 
-<p><b>Synopsis</b/</p>
+
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
 <div class="wording-numbered">
 
 > ```cpp
@@ -1264,26 +1828,32 @@ The type-generic function (marked by its `generic_integer_type` argument) return
 > unsigned long stdc_bit_ceilul(unsigned long value);
 > unsigned long long stdc_bit_ceilull(unsigned long long value);
 > 
-> generic_integer_type stdc_bit_ceil(generic_integer_type value);
+> generic_value_type stdc_bit_ceil(generic_value_type value);
 > ```
 </div>
 
-<p><b>Description</b/</p>
+<div class="wording-clause-section-title">
+Description
+</div>
+
 <div class="wording-numbered">
 The `stdc_bit_ceil` functions compute the smallest integral power of 2 that is not less than `value`. If the computation does not fit in the given return type, the behavior is undefined.
 </div>
 
-<p><b>Returns</b/</p>
+<div class="wording-clause-section-title">
+Returns
+</div>
+
 <div class="wording-numbered">
 The `stdc_bit_ceil` functions return the smallest integral power of 2 that is not less than `value`.
 </div>
 <div class="wording-numbered">
-The type-generic function (marked by its `generic_integer_type` argument) returns the previously described result for a given input value so long as the `generic_integer_type` is an
-<dl>
-	<dd>— standard unsigned integer type, excluding `_Bool`;</dd>
-	<dd>— extended unsigned integer type;</dd>
-	<dd>— or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `_Bool`.</dd>
-</dl>
+The type-generic function (marked by its `generic_value_type` argument) returns the previously described result for a given input value so long as the `generic_value_type` is an
+
+:: — standard unsigned integer type, excluding `bool`;
+:: — extended unsigned integer type;
+:: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
+
 </div>
 </div>
 </ins>
@@ -1294,8 +1864,8 @@ The type-generic function (marked by its `generic_integer_type` argument) return
 ## Add one new entry for Implementation-Defined Behavior in Annex J.3 ## {#wording-annexj.3}
 
 <blockquote>
-<p><ins>— The value of `__STDC_ENDIAN_NATIVE__` if the execution environment is not big-endian or little-endian (7.3�x.1).</ins></p>
-<p><ins>— The value of `__STDC_ENDIAN_BIG__`, and `__STDC_ENDIAN_LITTLE__` if the execution environment is not big-endian or little-endian (7.3�x.1).</ins></p>
+<p><ins>— The value of `__STDC_ENDIAN_NATIVE__` if the execution environment is not big-endian or little-endian (7.✨.1).</ins></p>
+<p><ins>— The value of `__STDC_ENDIAN_BIG__`, and `__STDC_ENDIAN_LITTLE__` if the execution environment is not big-endian or little-endian (7.✨.1).</ins></p>
 </blockquote>
 
 
@@ -1304,7 +1874,7 @@ The type-generic function (marked by its `generic_integer_type` argument) return
 
 <blockquote>
 <p>— The macro definition of a generic function is suppressed in order to access an actual function
-(7.17.1)<ins>, (7.3�x).</ins></p>
+(7.17.1)<ins>, (7.✨).</ins></p>
 </blockquote>
 
 
@@ -1316,9 +1886,36 @@ A collection of miscellaneous and helpful bits of information and implementation
 
 
 
+## Decisions to Committee Questions ## {#appendix-decisions}
+
+Originally titled "Committee Polls / Questions", this section listed all of the different pieces of functionality the Committee wanted. Each of the 5 below questions sets of functionality was asked of WG14: nobody raised objections to even want to see a poll on it. This is interpreted as there was unanimous consent amongst participants to include all of this functionality in the paper, even if no formal poll was done for each of the 5 questions. If this changes, **it is imperative to let the paper author know**.
+
+> For the Committee, this proposal is, effectively, five parts:
+> 
+> 1. the endianness definitions;
+> 2. the `stdc_memreverse8` functions (generic and width-specific);
+> 3. the `stdc_load8_*`/`stdc_store8_*` endianness functions;
+> 4. the suite of low-level bit functions:
+> 	- `stdc_count_(leading/trailing)_(ones/zeros)`,
+> 	- `stdc_count_(ones/zeros)`,
+> 	- `stdc_rotate_(left/right)`, and,
+> 	- `stdc_first_(leading/trailing)_(zero/one)`,  
+> 
+> 	which map directly to instructions and/or intrinsics; and,
+> 5. the suite of useful bit functions:
+> 	- `stdc_bit_ceil`,
+> 	- `stdc_bit_floor`,
+> 	- `stdc_bit_width`, and,
+> 	- `stdc_has_single_bit`,
+> 
+> 	which may not map directly to instructions but are useful nonetheless in a wide variety of contexts
+> 
+> These can be polled together or separately, depending on what the Committee desires.
+
+
 ## Example Implementations in Publicly-Available Libraries ## {#appendix-implementations}
 
-Optimized routines following the naming conventions present in this paper can be found in the [Shepherd's Oasis Industrial Development Kit (IDK) library](), compilable with a conforming C11 compiler and tested on MSVC, GCC, and Clang on Windows, Mac, and Linux:
+Optimized routines following the naming conventions present in this paper can be found in the [Shepherd's Oasis Industrial Development Kit (IDK) library](https://github.com/soasis/idk), compilable with a conforming C11 compiler and tested on MSVC, GCC, and Clang on Windows, Mac, and Linux:
 
 - [Bit Intrinsics](https://ztdidk.readthedocs.io/en/latest/c_api/bit.intrinsic.html) ([Declarations](https://github.com/soasis/idk/blob/main/include/ztd/idk/detail/bit.intrinsic.h#L53)) ([Source](https://github.com/soasis/idk/blob/main/source/ztd/idk/bit.intrinsic.c#L49))
 - [Memory Reverse](https://ztdidk.readthedocs.io/en/latest/c_api/bit.memreverse.html) ([Declarations](https://github.com/soasis/idk/blob/main/include/ztd/idk/detail/bit.memreverse.h#L52)) ([Source](https://github.com/soasis/idk/blob/main/source/ztd/idk/bit.memreverse.c#L46))
@@ -1474,15 +2071,15 @@ Many thanks to David Seifert, Aaron Bachmann, Jens Gustedt, Tony Finch, Erin AO 
 
 <pre class="biblio">
 {
-	"N2596": {
+	"N2731": {
 		"authors": [
 			"ISO/IEC JTC1 SC22 WG14 - Programming Languages, C",
 			"JeanHeyd Meneide",
 			"Freek Wiedijk"
 		],
-		"title": "N2596: ISO/IEC 9899:202x - Programming Languages, C",
-		"href": "http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2596.pdf",
-		"date": "December 11th, 2020"
+		"title": "N2731: ISO/IEC 9899:202x - Programming Languages, C",
+		"href": "http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2731.pdf",
+		"date": "October 18th, 2021"
 	},
 	"gcc-builtins": {
 		"authors": [
