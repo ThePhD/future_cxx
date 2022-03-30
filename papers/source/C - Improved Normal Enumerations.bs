@@ -83,6 +83,60 @@ Should produce a value of `0` on a normal implementations (but can give other va
 
 
 
+## Using the Enumerators Midway in the Definition List ## {#design-midway}
+
+Given this following code snippet:
+
+```cpp
+#include <limits.h>
+
+#define GET_TYPE_INT(x) _Generic(x, \
+	char: 1,\
+	unsigned char: 2,\
+	signed char: 3,\
+	short: 4,\
+	unsigned short: 5,\
+	int: 6,\
+	unsigned int: 7,\
+	long: 8,\
+	unsigned long: 9,\
+	long long: 10,\
+	unsigned long long: 11,\
+	default: 0xFF\
+	)\
+
+enum x {
+	a = INT_MAX,
+	b = ULLONG_MAX,
+	a_type = GET_TYPE_INT(a),
+	b_type = GET_TYPE_INT(b)
+};
+
+#include <stdio.h>
+
+int main () {
+	printf("sizeof(long)=%d\n", (int)sizeof(long));
+	printf("sizeof(long long)=%d\n", (int)sizeof(long long));
+	printf("a_type=%d\n", (int)a_type);
+	printf("b_type=%d\n", (int)b_type);
+	printf("GET_TYPE_INT(a), outside=%d\n", (int)GET_TYPE_INT(a));
+	printf("GET_TYPE_INT(b), outside=%d\n", (int)GET_TYPE_INT(b));
+	return 0;
+}
+```
+
+Compilers [are not consistent](https://godbolt.org/z/qe1fzTbYr), depending on how far with extensions they like to go. Anyone who was depending on a specific type was not relying on either (a) compilable C code, according to the C standard, or (b) widely-existing cross-platform C code, according to what implementation extensions do. Therefore, we attempt to enshrine the best of the available existing practice and improve the status quo somewhat here by giving the enumeration constants themselves the final underlying enumeration integer type. That is, compiling the following in the code above:
+
+```cpp
+extern enum x e_a;
+extern __typeof(b) e_a;
+extern __typeof(a) e_a;
+```
+
+results in failure, because `a` and `b` are of different types (`a` is an `int` and not compatible with `enum x;` or `typeof(b)`, since those are both compatible with `long` or `long long` depending on the selection done by the implementation). We feel it is worthwhile to clarify this and make it more consistent: thus, the type chosen for the constants will be the underlying integer type that the enumeration type is compatible with, which provides the best safety and the best compatibility. This is also the expectation set by the standard: it chose `int` as the type for the enumeration constants, not caring what exactly the underlying type of the enumeration was chosen for.
+
+
+
 
 # Proposed Wording # {#wording}
 
@@ -104,22 +158,30 @@ The intent of the wording is to provide the ability to express enumerations with
 ### Modify Section §6.4.4.3 Enumeration constants ### {#wording-specification-6.4.4.3}
 
 <blockquote>
-<div class="wording-section">
-<p><b>6.4.4.3 &emsp; Enumeration constants</b></p>
-<p><b>Syntax</b></p>
-<div class="wording-numbered">
-<dl>
-	<dd><i>enumeration-constant:</i>
-	<dl>
-		<dd><i>identifier</i></dd>
-	</dl>
-	</dd>
-</dl>
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.4.4.3</span> <span class="wording-clause-title">Enumeration constants</span>
 </div>
 
-<p><b>Semantics</b></p>
+<div class="wording-section">
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
 <div class="wording-numbered">
-An identifier declared as an enumeration constant for an enumeration has type <b>int</b><ins> if the value used to initialize the enumeration constant is representable in an <b>int</b>. Otherwise, it is an implementation-defined signed or unsigned integer type capable of holding all of the values of the enumeration, as defined in 6.7.2.2.</ins>
+
+*enumeration-constant:*
+:: *identifier*
+
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered">
+
+An identifier declared as an enumeration constant for an enumeration has<del> type **int**</del><ins> the compatible integer type of the enumeration, as defined in 6.7.2.2.</ins>
 </div>
 
 Forward references: enumeration specifiers (6.7.2.2).
@@ -129,50 +191,69 @@ Forward references: enumeration specifiers (6.7.2.2).
 ### Modify Section §6.7.2.2 Enumeration constants ### {#wording-specification-6.7.2.2}
 
 <blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.7.2.2</span> <span class="wording-clause-title">Enumeration specifiers</span>
+</div>
+
 <div class="wording-section">
-<b>6.7.2.2 Enumeration specifiers</b>
-
-<p><b>Syntax</b></p>
-<dl>
-	<dd><i>enum-specifier:</i>
-	<dl>
-		<dd><b>enum</b> <i>attribute-specifier-sequence<sub>opt</sub></i> <i>identifier<sub>opt</sub></i> <b>{</b> <i>enumerator-list</i> <b>}</b>
-		<dd><b>enum</b> <i>attribute-specifier-sequence<sub>opt</sub></i> <i>identifier<sub>opt</sub></i> <b>{</b> <i>enumerator-list</i> <b>,</b> <b>}</b>
-		<dd><b>enum</b> <i>identifier</i>
-	</dl>
-	</dd>
-	<dd><i>enumerator-list:</i>
-	</dl>
-		<dd><i>enumerator</i></dd>
-		<dd><i>enumerator-list</i> <b>,</b> <i>enumerator</i></dd>
-	</dl>
-	</dd>
-	<dd><i>enumerator:</i>
-	<dl>
-		<dd><i>enumeration-constant</i> <i>attribute-specifier-sequence<sub>opt</sub></i></dd>
-		<dd><i>enumeration-constant</i> <i>attribute-specifier-sequence<sub>opt</sub></i> <b>=</b> <i>constant-expression</i></dd>
-	</dl>
-	</dd>
-</dl>
-
-<b>Constraints</b>
-
-<div class="wording-numbered">
-The expression that defines the value of an enumeration constant shall be an integer constant expression.<del> that has a value representable as an <b>int</b>.</del> <ins>If the values of the integer constant expressions for each enumeration constant of an enumeration are representable as an <b>int</b>, then the enumeration constant's type shall be an compatible with <b>int</b>. Otherwise, the values of the integer constant expressions for each enumeration constant for the enumeration determine the implementation-defined compatible type for the enumeration constant. The implementation-defined compatible type shall be capable of representing all of the integer constant expressions used to intiialize the enumeration.</ins>
-</div>
-
-<b>Semantics</b>
-
-<div class="wording-numbered">
-The identifiers in an enumerator list are declared as constants and may appear wherever such are permitted.<sup>133)</sup> An enumerator with <b>=</b> defines its enumeration constant as the value of the constant expression. If the first enumerator has no <b>=</b>, the value of its enumeration constant is 0. Each subsequent enumerator with no <b>=</b> defines its enumeration constant as the value of the constant expression obtained by adding 1 to the value of the previous enumeration constant. (The use of enumerators with <b>=</b> may produce enumeration constants with values that duplicate other values in the same enumeration.) The enumerators of an enumeration are also known as its members.
+<div class="wording-clause-section-title">
+Syntax
 </div>
 
 <div class="wording-numbered">
-Each enumerated type shall be compatible with <b>char</b>, a signed integer type, or an unsigned integer type <ins>(excluding the bit-precise integer types)</ins>. The choice of type is implementation-defined<sup>134)</sup>, but shall be capable of representing the values of all the members of the enumeration.
+
+*enum-specifier:*
+:: **enum** <i>attribute-specifier-sequence<sub>opt</sub></i> <i>identifier<sub>opt</sub></i> <b>{</b> *enumerator-list* **}**
+:: **enum** <i>attribute-specifier-sequence<sub>opt</sub></i> <i>identifier<sub>opt</sub></i> <b>{</b> *enumerator-list* <b>,</b> **}**
+:: **enum** *identifier*
+
+*enumerator-list:*
+:: *enumerator*
+:: *enumerator-list* **,** *enumerator*
+
+*enumerator:*
+:: *enumeration-constant* <i>attribute-specifier-sequence<sub>opt</sub></i>
+:: *enumeration-constant* <i>attribute-specifier-sequence<sub>opt</sub></i> **=** *constant-expression*
+
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
 </div>
 
 <div class="wording-numbered">
-The enumerated type is incomplete until immediately after the <b>}</b> that terminates the list of enumerator declarations, and complete thereafter.
+
+The expression that defines the value of an enumeration constant shall be an integer constant expression.<del> that has a value representable as an **int**.</del> <ins>For all the integer constant expressions which make up the values of the enumeration constant, there shall be an implementation-defined signed or unsigned integer type (excluding the bit-precise integer types) capable of representing all of the values.</ins>
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered">
+
+The identifiers in an enumerator list are declared as constants and may appear wherever such are permitted.<span class="footnote-ref">133)</span> An enumerator with **=** defines its enumeration constant as the value of the constant expression. If the first enumerator has no **=**, the value of its enumeration constant is 0. Each subsequent enumerator with no **=** defines its enumeration constant as the value of the constant expression obtained by adding 1 to the value of the previous enumeration constant. (The use of enumerators with **=** may produce enumeration constants with values that duplicate other values in the same enumeration.) The enumerators of an enumeration are also known as its members.
+</div>
+
+<div class="wording-numbered">
+<ins>
+
+During the definition of each enumeration constant in the enumerator list (between the matching **{** and **}** braces), each constant expression is treated as a constant of type **int**. If the constant expression or subsequent enumerator with no **=** defining that enumeration constant would overflow or underflow an **int** (go above `INT_MAX` or below `INT_MIN`, respectively), or is not representable in an **int**, then a suitably large implementation-defined signed or unsigned integer type (excluding bit-precise integer types) that can contain the range of the values<span class="footnote-ref">13✨)</span> is chosen to represent the current integer constant expression. After the closing **}**, every member of the enumeration shall have the type **int** if all the members are representable by **int**. Otherwise, every member of the enumeration shall all have the same suitably large implementation-defined signed or unsigned integer type that can represent all the values.
+</ins>
+</div>
+
+<div class="wording-numbered">
+
+Each enumerated type shall be compatible with **char**, a signed integer type, or an unsigned integer type <ins>(excluding the bit-precise integer types)</ins>. The choice of type is implementation-defined<span class="footnote-ref">134)</span>, but shall be capable of representing the values of all the members of the enumeration.
+</div>
+
+<div class="wording-numbered">
+
+The enumerated type is incomplete until immediately after the **}** that terminates the list of enumerator declarations, and complete thereafter.
+</div>
+
+<div>
+<span class="footnote-ref">13✨)</span><span class="footnote">If there is no such type, then this is a constraint violation.</span>
 </div>
 </blockquote>
 </div>
