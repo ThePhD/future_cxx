@@ -1,10 +1,10 @@
 <pre class='metadata'>
 Title: Modern Bit Utilities
 Shortname: 29XX
-Revision: 1
+Revision: 2
 !Previous Revisions: <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2827.htm">n2903 (r1)</a>, <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2827.htm">n2827 (r0)</a>
 Status: P
-Date: 2022-03-30
+Date: 2022-04-12
 Group: WG14
 !Proposal Category: Feature Request
 !Target: C23
@@ -32,16 +32,10 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 2 - March 30<sup>th</sup>, 2022 ## {#changelog-r2}
+## Revision 2 - April 12<sup>th</sup>, 2022 ## {#changelog-r2}
 
-- For the `rotate_left`/`rotate_right` class of functionality, discussed in [[#design-bit-stdc_rotate_left.stdc_rotate_right]]:
-	- Show assembly from arm, arm64, i686, x86_64 (amd64) for signed rotate values and use this rationale.
-	- Use `int` for the counts for the non-generic functions, and use `generic_return_type` and `generic_count_type` for the type-generic macros (to allow for better portability and ease of use). (Even at its smallest (16-bits), an `int` is large enough to cover the width of all signed and unsigned integer types, excluding bit-precise integers.)
-	- Note that specific architectures have "biases" for which rotate is slower/faster. Therefore, it is better to have both and let the implementation pick one so as to bias how they do codegen when they contain both a `rotl` and a `rotr` like instruction, but performance differs.
-- Use `int` for the count of returns.
-	- This is the same as C++.
-	- We avoid warnings for `stdc_rotate_left(val, stdc_leading_zeros(val))`, which may produce warnings on certain implementations if, e.g., `stdc_leading_zeros(val)` returned an unsigned type.
-	- The primary motivation is matching the `count` parameter for `stdc_rotate_*`.
+- Deeply discussed the `rotate_left`/`rotate_right` class of functionality, and it's effect on the rest of the API, in [[#design-signed.vs.unsigned]].
+- Committed to taking a poll with the new information given about the functionality.
 - Use `bool` instead of `_Bool` now that it has been accepted.
 - Ensure the wording for `stdc_first_(leading/trailing)_(one/zero)` and friends is present in the paper.
 - Discuss potentially having bit functions which take a with parameter in the future in [[#polls-february.2022-char_bit.8|polling section about CHAR_BIT and width definitions]].
@@ -203,6 +197,188 @@ There are 2 choices on how to represent sized pointer arguments. The first is a 
 To start, we still put any `size` + `ptr` arguments in the proper "size first, pointer second" configuration so that implementation extensions which allow `void [static n]` can exist no matter what choice is made here. That part does not change. The `void*` argument convention mean that pointers to structures, or similar, can be passed to these functions without needing a cast. This represents the totality of the ease of use argument. The `unsigned char ptr[static n]` argument convention can produce both better compile-time safety and articulate requirements using purely the function declaration, without needing to look up prose from the C Standard or implementation documentation. The cost is that any use of the function will require a cast in strictly conforming code.
 
 One of the tipping arguments in favor of our choice of `unsigned char ptr[static n]` is that `void*` can be dangerous, especially since we still do not have a `nullptr` constant in the language and `0` can be used for both the size and the pointer argument. (Which is, very sadly, an actual bug that happens in existing code. Especially when users mix `memset` and `memcpy` calls and use the wrong `0` argument because of writing one and meaning the other, and copying values over a large part of their 0-pointer in their low-level driver code.) Using an `unsigned char*` (or its statically-sized array function argument form) means that usage of the functions below would require explicit casting on the part of the user. This is, in fact, the way it is presented in [[portable-endianness]]: as far as existing practice is concerned, users of the code would rather cast and preserve safety rather than easily use something like `stdc_memreverse8` with the guts of their structure.
+
+
+
+## Signed vs. Unsigned ## {#design-signed.vs.unsigned}
+
+This paper has gone back and forth between signed vs. unsigned `count` offsets for the rotl/rotr instruction-based functions, and similarly the return types for many of the types which return purely a "count"-style value. Some important properties and facts follow:
+
+- All of the values returned from the functions here return conceptually unsigned/natural numbers (0 to potentially infinity, but not negative).
+- Some existing practice — e.g., C++ — has in recent years struggled against unsigned integers and tried to move towards signed. "Anything that is a count should just be an `int`", and similar guidance, grows from these functions and their types.
+- Conversely, some of C's most fierce proponents use unsigned numbers almost exclusively until they have a proper justification for a signed number. For them, `unsigned`/`size_t` is the default.
+- Whatever decision we make for one (e.g., for the arugment type of `rotate_left` or `rotate_right`), we must make the identical decision for the return values of other functions (e.g., `count_ones`/`popcount`, or similar).
+
+This brings up a lot of questions about whether or not the functions here should be signed or unsigned. We will analyze this primarily from the standpoint of `rotate_left` and `rotate_right`, as that has the greatest impacts for the portability and semantics of the code presented here.
+
+
+### In Defense of Signed Integers ### {#design-signed.vs.unsigned-signed}
+
+Let us consider a universe where `stdc_rotate_left` and friends take a signed `count`. This allows negative numbers to be passed to the count value for the rotate left. So, when `stdc_rotate_leftuc(1, -1)` is called, it will call itself again with `stdc_rotate_rightuc(value, -count)`; if (e.g.) `stdc_rotate_rightuc(1, -1)` is called, it will call itself again with `stdc_rotate_leftuc(value, -count)`. This is because, specification-wise, these functions are symmetric and cyclical in what they are meant to do. This matches the behavior from C++ and avoids undefined behavior for negative numbers, while also avoiding too-large shift errors from signed-to-unsigned conversions.
+
+SDCC and several other compilers optimize for left and right shifts ([[sdcc]]). Texas Instruments and a handful of other specialist architectures also have "variable shift" instructions (SSHVL), which uses the sign of the argument to shift in one direction or the other ([[ti-tms320c64x]]). Having a `rotate_left` where the a negative number produces the opposite `rotate_right` cyclic operation (and vice-versa) means that both of these architectures can optimize efficiently in the case of hardcoded constants, and still produce well-defined behavior otherwise (`SSHVL` instructions just deploy a "negated by default" for the count value or not, depending on whether the `left` or `right` variant is called, other architectures propagate the information to shift left or right). This also follows existing practice with analogous functions from the C++ standard library.
+
+To test code generation for using a signed integer and 2's complement arithmetic, we used both C++ and C code samples. It's a fairly accurate predictor of how notable compilers handle this kind of specification. The generated assembly for the compilers turns out to be optimal, so long as an implementation does not do a literal copy-paste of the specification's text
+
+[Using non-constant offset, with generated x86_64 assembly](https://godbolt.org/z/xxbxbrdj1):
+
+```cpp
+#include <bit>
+
+extern unsigned int x;
+extern int offset;
+
+int main () {
+    int l = std::rotl(x, offset);
+    int r = std::rotr(x, offset);
+    return l + r;
+}
+```
+
+```s
+main: # @main
+	mov     eax, dword ptr [rip + x]
+	mov     cl, byte ptr [rip + offset]
+	mov     edx, eax
+	rol     edx, cl
+	ror     eax, cl
+	add     eax, edx
+	ret
+```
+
+— And, [using constant offset, with generated x86_64 assembly](https://godbolt.org/z/z6vTqWoTj).
+
+```cpp
+#include <bit>
+
+extern unsigned int x;
+
+int main () {
+    int l = std::rotl(x, -13);
+    int r = std::rotr(x, -13);
+    return l + r;
+}
+```
+
+```s
+main: # @main
+	mov     eax, dword ptr [rip + x]
+	mov     ecx, eax
+	rol     ecx, 19
+	rol     eax, 13
+	add     eax, ecx
+	ret
+```
+
+The generated code shows that the compiler understands the symmetric nature of the operations (from the constant code) and also shows that it will appropriately handle it even when it cannot see through constant values. The same can be shown when writing C code using a variety of styles, [as shown here](https://godbolt.org/z/f7zEaTsoc):
+
+```cpp
+#if UNSIGNED_COUNT == 1
+
+static unsigned int rotate_right(unsigned int value, unsigned int count);
+
+inline static unsigned int rotate_left(unsigned int value, unsigned int count) {
+	unsigned int c = count % 32;
+	return value >> c 
+		| value << (32 - c);
+}
+
+inline static unsigned int rotate_right(unsigned int value, unsigned int count) {
+	unsigned int c = count % 32;
+	return value << c
+		| value >> (32 - c);
+}
+
+#elif TWOS_COMPLEMENT_CAST == 1
+
+static unsigned int rotate_right(unsigned int value, int count);
+
+inline static unsigned int rotate_left(unsigned int value, int count) {
+	unsigned int c = (unsigned int)count;
+	c = c % 32;
+	return value >> c
+		| value << (32 - c);
+}
+
+inline static unsigned int rotate_right(unsigned int value, int count) {
+	unsigned int c = (unsigned int)count;
+	c = c % 32;
+	return value << c
+		| value >> (32 - c);
+}
+
+#else
+
+static unsigned int rotate_right(unsigned int value, int count);
+
+inline static unsigned int rotate_left(unsigned int value, int count) {
+	int c = count % 32;
+	if (c < 0)  {
+		return rotate_right(value, -c);
+	}
+	return value >> c
+		| value << (32 - c);
+}
+
+	inline static unsigned int rotate_right(unsigned int value, int count) {
+	int c = count % 32;
+	if (c < 0)  {
+		return rotate_left(value, -c);
+	}
+	return value << c
+		| value >> (32 - c);
+}
+
+#endif
+
+#if UNSIGNED_COUNT == 1
+unsigned int f (unsigned int x, unsigned int offset) {
+#else
+unsigned int f (unsigned int x, int offset) {
+#endif
+	unsigned int l = rotate_left(x, offset);
+	unsigned int r = rotate_right(x, offset);
+	return l + r;
+}
+```
+
+When using the various definitions, we find that the generated assembly for `f` is identically good using either the internal unsigned "two's complement" cast, or by just using an unsigned number. Because of how poorly basic mathematics with unsigned numbers happens, we want to avoid a situation where negation or substraction with unsigned qualities may yield undesirable results or promotions. Therefore, we used signed integers for both the offset count and the return values of these functions. Note that even in purely standard C, converting from a signed integer to an unsigned integer is perfectly well-defined behavior and does not raise any signals:
+
+> <sup>2</sup> &emsp; Otherwise, if the new type is unsigned, the value is converted by repeatedly adding or subtracting one more than the maximum value that can be represented in the new type until the value is in the range of the new type.
+>
+> — §6.3.1.3, ¶2, ISO/IEC 9899:202x "C2x" Standard
+
+Finally, the vast majority of existing practice takes the offset value in as a signed integer, and all the return types are also still some form of signed integer (unless the intrinsic is returning the exact same unsigned value put in that was manipulated). It also allows "plain math" being done on the type to naturally manifest negative numbers without accidentaly having roundtripping or signed/unsigned conversion issues.
+
+
+### In Defense of Unsigned ### {#design-signed.vs.unsigned-unsigned}
+
+Unsigned, on the other hand, has existing practice **in hardware**. While the intrinsics defined by glibc, C++'s standard libraries, and many more use signed integers, they are conceptually **unsigned** in their implementations. For example, for a 32-bit rotate, most standard libraries taking an `int` offset parameter perform:
+
+```cpp
+count = count & 31;
+```
+
+This is **critical** for optimization here. Note that, if we were to provide a specification using a `signed` offset, our specification has to very deliberately specify that we are going to negate the value and then pass it to the rotate of the opposite direction. This is, effectively, the same as obliterating the sign value and then calling the (symmetrical, cyclical) rotate: a 32-bit rotate therefore can get identical codegen as a signed variant by using the a bit `AND` (NOT a normal `% 32`, as that preserves the sign as we do NOT want that). For an unsigned variant, no such trickery is necessary. Simply truncating the value using:
+
+```cpp
+count = count % 32;
+```
+
+produces optimal code generation for most compilers, as they understand that bit `AND` for hexadecimal `0x1F` (decimal `31`) is identical to modulus of decimal `32`. This means that, by default, unsigned values are the same here. Abusing 2's complement, one can save this by simply doing `unsigned u_count = (unsigned)count;` and then perform modulus to get the same behavior as performing bit `AND` with `31`. The "obvious" code is the efficient code here, as shown by the example of the assembly above.
+
+Rust is one of the few languages that provides optimal versions of this code using `unsigned`. Their code is optimal under both optimizations and a lack thereof, compared to C and C++ code which struggles with function call elision and similar. This may be aided in the future by having this paper put into the C standard, which would allow compilers to treat standard-specific rotate calls as intrinsics to be replaced with the instructions directly.
+
+All in all, unsigned naturally optimizes better and matches the size type of C. It has no undefined behavior on overflow and produces better assembly in-general when it comes to bit intrinsics. Shifting behavior is also well-defined for unsigned types and not signed types, further compounding unsigned types as far better than their signed counterparts.
+
+
+### Which Does This Paper Choses? ### {#design-signed.vs.unsigned-choice}
+
+Ultimately, this paper chooses signed integer types. This is primarily to satisfy architectures which have signed-based variably style shifts. These platforms would have to convert to signed values to perform their variable shifts either way, so it benefits them. We also know that, for 2's complement architectures, signed can be treated best by simply deploying `count & 31` as a way to produce a truncated absolute value.
+
+Furthermore, existing practice in C uses signed integer types for the count for `rotate_left` (and it's analogous builtins and similar). Nominally, breaking with existing practice is actually not difficult in this case because the **behavior** for the rotate is, once again, done as-if it's an unsigned value that can rotate in any direction. However, it is important to remember that the use of positive or negative values can influence the **direction** of the rotate, as well as the choice of which function.
+
+I expect this decision will not be extremelty popular. Ultimately, I expect to poll this at the next meeting. Whichever direction gets higher consensus, will be the direction I pursue for this functionality.
 
 
 
@@ -423,7 +599,7 @@ All of the functions below have type generic macros associated with them. This c
 
 ### Argument Types ### {#design-bit-arguments}
 
-Many of the functions below are defined over the fundamental unsigned integer types, rather than their minimum width or exact width counterparts. This is done to provide maximum portability: users can combine information from the recently-introduced `(S/U)CHAR/(U)SHRT/(U)INT/(U)LONG/(U)LLONG_WIDTH` macros to determine the width of the sizes at translation time as well as enjoy a disjoint and distinct set of fundamental types over which generic selection works.
+Many of the functions below are defined over the fundamental unsigned integer types, rather than their minimum width or exact width counterparts. This is done to provide maximum portability: users can combine information from the recently-introduced `(S/U)CHAR/(U)SHRT/(U)INT/(U)LONG/(U)LLONG_WIDTH` macros to determine the width of the sizes at translation time as well as enjoy a disjoint and distinct set of fundamental types over which generic selection will **always** work.
 
 The `(u)int_leastN_t` types also have `WIDTH` macros, but those macros are not exactly guaranteed to cover a wide range of actual bit sizes either (if the `uintN_t` types do not exist, then a conforming implementation can simply just name all of the types as typedefs for `(unsigned) long long` and call it a day). While an implementation could also define each of the distinct fundamental types from `(unsigned) char` to `(unsigned) long long` to all be the same width as well, we are at the very least guaranteed that they are, in fact, distinct types. This makes selection over types in `_Generic` predictable and usable (i.e. `_Generic(x, uint_least32_t: 0, uint_least64_t: 1)` is not guaranteed to compile since those types are not required to form a mutually exclusive or disjoint set).
 
@@ -500,141 +676,30 @@ generic_value_type stdc_rotate_right(
 	generic_value_type value, generic_count_type count);
 ```
 
-They cover all of the built-in unsigned integer types. Note that `count` is a signed integer! If (e.g.) `stdc_rotate_leftuc(1, -1)` is called, it will call itself again with `stdc_rotate_rightuc(value, -count)`; if (e.g.) `stdc_rotate_rightuc(1, -1)` is called, it will call itself again with `stdc_rotate_leftuc(value, -count)`. This matches the behavior from C++ and avoids undefined behavior, while also avoiding too-large shift errors from signed-to-unsigned conversions.
+They cover all of the built-in unsigned integer types. A discussion of signed vs. unsigned integer types for the count type and the return type can be found in a previous section, here [[#design-signed.vs.unsigned]].
 
-SDCC and several other compilers optimize for left and right shifts ([[sdcc]]). Texas Instruments and a handful of other specialist architectures also have "variable shift" instructions (SSHVL), which uses the sign of the argument to shift in one direction or the other ([[ti-tms320c64x]]). Having a `rotate_left` where the a negative number produces the opposite `rotate_right` cyclic operation (and vice-versa) means that both of these architectures can optimize efficiently in the case of hardcoded constants, and still produce well-defined behavior otherwise (`SSHVL` instructions just deploy a "negated by default" for the count value or not, depending on whether the `left` or `right` variant is called, other architectures propagate the information to shift left or right). This also follows existing practice with analogous functions from the C++ standard library.
-
-To test code generation for using a signed integer and 2's complement arithmetic, we used both C++ and C code samples. It's a fairly accurate predictor of how notable compilers handle this kind of specification. The generated assembly for the compilers turns out to be optimal, so long as an implementation does not do a literal copy-paste of the specification's text
-
-[Using non-constant offset, with generated x86_64 assembly](https://godbolt.org/z/xxbxbrdj1):
-
-```cpp
-#include <bit>
-
-extern unsigned int x;
-extern int offset;
-
-int main () {
-    int l = std::rotl(x, offset);
-    int r = std::rotr(x, offset);
-    return l + r;
-}
-```
+As for choosing a single function like `stdc_rotate(unsigned-integer-type value, int count);` that chooses left / right based on the value, it unfortunately imposes the worst code generation properties of all the options. When using entirely runtime values, unless you have a deliberately have a variable-rotate/shift instruction, you are **requireed** to emit a branch in order to handle the two cases, as rotate left / right - despite being symmetric - need some help. Here is the [assembly for a tehcnically optimal left/right rotate](https://godbolt.org/z/4TbPfhj1o):
 
 ```s
-main: # @main
-	mov     eax, dword ptr [rip + x]
-	mov     cl, byte ptr [rip + offset]
-	mov     edx, eax
-	rol     edx, cl
-	ror     eax, cl
+f:	# @f
+	mov     r8d, edi
+	mov     ecx, esi
+	rol     r8d, cl
+	mov     edx, edi
+	ror     edx, cl
+	mov     ecx, esi
+	neg     ecx
+	mov     eax, edi
+	rol     eax, cl
+	ror     edi, cl
+	test    esi, esi
+	cmovs   edx, r8d
+	cmovle  eax, edi
 	add     eax, edx
 	ret
 ```
 
-— And, [using constant offset, with generated x86_64 assembly](https://godbolt.org/z/z6vTqWoTj).
-
-```cpp
-#include <bit>
-
-extern unsigned int x;
-
-int main () {
-    int l = std::rotl(x, -13);
-    int r = std::rotr(x, -13);
-    return l + r;
-}
-```
-
-```s
-main: # @main
-	mov     eax, dword ptr [rip + x]
-	mov     ecx, eax
-	rol     ecx, 19
-	rol     eax, 13
-	add     eax, ecx
-	ret
-```
-
-The generated code shows that the compiler understands the symmetric nature of the operations (from the constant code) and also shows that it will appropriately handle it even when it cannot see through constant values. The same can be shown when writing C code using a variety of styles, [as shown here](https://godbolt.org/z/f7zEaTsoc):
-
-```cpp
-#if UNSIGNED_COUNT == 1
-
-static unsigned int rotate_right(unsigned int value, unsigned int count);
-
-inline static unsigned int rotate_left(unsigned int value, unsigned int count) {
-	unsigned int c = count % 32;
-	return value >> c 
-		| value << (32 - c);
-}
-
-inline static unsigned int rotate_right(unsigned int value, unsigned int count) {
-	unsigned int c = count % 32;
-	return value << c
-		| value >> (32 - c);
-}
-
-#elif TWOS_COMPLEMENT_CAST == 1
-
-static unsigned int rotate_right(unsigned int value, int count);
-
-inline static unsigned int rotate_left(unsigned int value, int count) {
-	unsigned int c = (unsigned int)count;
-	c = c % 32;
-	return value >> c
-		| value << (32 - c);
-}
-
-inline static unsigned int rotate_right(unsigned int value, int count) {
-	unsigned int c = (unsigned int)count;
-	c = c % 32;
-	return value << c
-		| value >> (32 - c);
-}
-
-#else
-
-static unsigned int rotate_right(unsigned int value, int count);
-
-inline static unsigned int rotate_left(unsigned int value, int count) {
-	int c = count % 32;
-	if (c < 0)  {
-		return rotate_right(value, -c);
-	}
-	return value >> c
-		| value << (32 - c);
-}
-
-	inline static unsigned int rotate_right(unsigned int value, int count) {
-	int c = count % 32;
-	if (c < 0)  {
-		return rotate_left(value, -c);
-	}
-	return value << c
-		| value >> (32 - c);
-}
-
-#endif
-
-#if UNSIGNED_COUNT == 1
-unsigned int f (unsigned int x, unsigned int offset) {
-#else
-unsigned int f (unsigned int x, int offset) {
-#endif
-	unsigned int l = rotate_left(x, offset);
-	unsigned int r = rotate_right(x, offset);
-	return l + r;
-}
-```
-
-When using the various definitions, we find that the generated assembly for `f` is identically good using either the internal unsigned "two's complement" cast, or by just using an unsigned number. Because of how poorly basic mathematics with unsigned numbers happens, we want to avoid a situation where negation or substraction with unsigned qualities may yield undesirable results or promotions. Therefore, we used signed integers for both the offset count and the return values of these functions. Note that even in purely standard C, converting from a signed integer to an unsigned integer is perfectly well-defined behavior and does not raise any signals:
-
-> <sup>2</sup> &emsp; Otherwise, if the new type is unsigned, the value is converted by repeatedly adding or subtracting one more than the maximum value that can be represented in the new type until the value is in the range of the new type.
->
-> — §6.3.1.3, ¶2, ISO/IEC 9899:202x "C2x" Standard
-
-Finally, existing practice takes the offset value in as a signed integer, and all the return types are also still some form of signed integer (unless the intrinsic is returning the exact same unsigned value put in that was manipulated).
+This is more than double the size of the rotates found using left/right directly in [[#design-signed.vs.unsigned]]. Due to this, we decided that it was not advantageous to have a signed count with an unknown left/right: it is important to be capable of biasing the optimizer to whether a given rotate is left/right oriented.
 
 
 ### `stdc_leading_zeros`, `stdc_leading_ones`, `stdc_trailing_zeros`, and `stdc_trailing_ones` ### {#design-bit-leading.trailing.zeros.ones}
