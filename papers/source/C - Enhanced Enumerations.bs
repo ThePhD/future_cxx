@@ -4,7 +4,7 @@ Shortname: 29XX
 Revision: 4
 !Previous Revisions: <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2904.htm">N2904 (r3)</a>, <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2575.pdf">N2575 (r2)</a>, <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2533.pdf">n2533 (r1)</a>, <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2008.pdf">n2008 (r0)</a>
 Status: P
-Date: 2022-03-30
+Date: 2022-04-11
 Group: WG14
 !Proposal Category: Feature Request
 !Target: General Developers, ABI Lovers, Embedded Systems Developers
@@ -13,7 +13,7 @@ Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
 Editor: Clive Pygott (LDRA Ltd.)
 URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Enhanced%20Enumerations.html
 !Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Enhanced%20Enumerations.html">https://thephd.dev/_vendor/future_cxx/papers/C - Enhanced Enumerations.html</a>
-!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-%20Enhanced%20Enumerations.bs">GitHubcxx ThePhD/future_</a>
+!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-%20Enhanced%20Enumerations.bs">GitHub ThePhD/future_cxx</a>
 Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
 Metadata Order: Previous Revisions, Editor, Latest, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
 Markup Shorthands: markdown yes
@@ -34,11 +34,14 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 4 - March 30<sup>th</sup>, 2022 ## {#changelog-r4}
+## Revision 4 - April 12<sup>th</sup>, 2022 ## {#changelog-r4}
 
 - Switch from `_Bool` to `bool` after the latest additions to the C Standard.
 - Vastly improve the wording after feedback, make sure it does not conflict with the [Improved Normal Enumerations](https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Improved%20Normal%20Enumerations.html) paper.
 - Clarify the use of the processing of the integers for the ones of underlying type.
+- Directly specify the use of integer constant expressions and their interaction with enumerations in [[#design-overflow]].
+- Explain rationale for blocking parsing issues in [[#design-parsing]].
+- Be clear about the type of the enumeration constants in [[#design-constant.type]].
 
 
 
@@ -101,7 +104,7 @@ enum a : unsigned long long {
 };
 ```
 
-Furthermore, the type of `a0` is specified to be `unsigned long long`, such this program:
+Furthermore, the type of `a0` is specified to be `unsigned long long`, such that this program:
 
 ```cpp
 enum a : unsigned long long {
@@ -117,11 +120,138 @@ exits with a return value of `0`. Note that because this change is entirely opt-
 
 
 
+## Unsigned, Wrap Around, and Overflow Semantics ## {#design-overflow}
+
+Consider the code sample:
+
+```cpp
+enum flags : unsigned int {
+	a = 0x01,
+	// …
+	o = 0x8000,
+	p = 0x100000,
+	// …
+	low_16_merged_flags = 0xFFFF,
+	alternative_p // implicit 0xFFFF + 1
+}
+```
+
+This code is (intentionally) a footgun. For starters, `int` and `unsigned int` need not be 32 bits wide: their lowest requirement is 16 bits. This means that the `p` flag is not within the representable range of an `unsigned int`. There is also the problem of the enumeration constant that comes after the `low_16_merged_flags` enumeration constant, the `alternative_p`. This one is, implicitly, the same as `p` because of the `0xFFFF + 1` would yield `0x10000`. This, too, is outside the range of a 16-bit unsigned integer type in C.
+
+There are 2 ways to resolve this tension.
+
+The first is to allow this code to compile, and perform silent wraparound on `p` and `alternative_p`.  This means that, regardless of the user intent, the specified value (`p`) and implicit value (`alternative_p`) would both take on a value of `0x1`, same as the `a` flag. If this code was meant to be ported between platforms, this code compiles silently but has the **wrong expected behavior** when run. Tests, fuzzing, and other mechanisms may catch the problem and remind the user to appropriate a better named underlying type, or check the flag values more carefully.
+
+The second way to solve this is to make the above a constraint violation. That means both `p` and `alternative_p`, when ported to a platform where `unsigned int` is 16 bits wide, will loudly complain that the value is inappropriate. This would prevent compilation on platforms, rather than require testing, fuzzing, and other techniques to handle the range of values.
+
+This proposal goes with the second way. It is a far better user experience to prevent compilation where possible: silent wraparound is a property of the machine and done for performance and hardware reasons. For interpreted implementations, the translation step still has to take care of the expression because it is considered a constant expression. Enumeration initialization should be robust C code to remain robust and without error over the long term.
+
+Users who would like to avoid such errors will be reminded to select from the wide variety of battle-tested integer types in `<stdint.h>`, provided for their convenience, when such cases arise in C23 and beyond:
+
+```cpp
+#include <limits.h>
+
+enum flags : uint_least32_t { // 👍!
+	a = 0x01,
+	// …
+	o = 0x8000,
+	p = 0x100000, // works fine
+	p = 0x100000u, // works fine
+	// …
+	low_16_merged_flags = 0xFFFF,
+	alternative_p // implicit 0xFFFF + 1,
+	              // works fine for 32-bit
+}
+```
+
+It is better to provide an error that prevents non-portable code from exhibiting non-portable behavior, while portable code compiles, works, and runs across all platforms as expected. Finally, users who want the wraparound behavior can perform a manual cast to get what they want:
+
+```cpp
+enum flags : unsigned int {
+	a = 0x01,
+	// …
+	o = 0x8000,
+	p = (unsigned int)0x100000, // cast: wraparound explicit
+	p = 0x100000u, // literal suffix: explicit (any errors handled by literal)
+	// …
+	low_16_merged_flags = 0xFFFF,
+	alternative_p // implicit 0xFFFF + 1, constraint violation
+}
+```
+
+This is also [consistent with existing practice around the subject (Clang x86-64 trunk)](https://godbolt.org/z/4sedqzn4r).
+
+
+
 ## Bit-Precise Integer Types and `bool`? ## {#design-bit.precise.integers}
 
 Integers such as `_BitInt(31)` are, currently, allowed as an extension for an underlying enumeration type in Clang. However, discussing this with the Clang implementers, there was sentiment that this just "happened to work" and was a not a fully planned part of the `_BitInt`/`_ExtInt` integration plan. They proposed that they would implement a diagnostic for it for future versions of Clang. In the standard, we do not want to step on the toes of anyone who may want to develop extensions in this place, especially when it comes to whether or not bit-precise enumeration types undergo integer promotion or follow the same rules for enumeration constants and similar. Therefore, we exclude them as usable types at this time.
 
-We do not exclude `bool` from the possible set of types. It is [allowed in C++](https://godbolt.org/z/fY4sedEe4) (as just `bool`) and other C extensions, and it allows for an API to provide mnemonic or otherwise fitting names for binary choices without needing to resort to a bit-field of a particular type. This provides a tangible benefit to code. Values outside of `true` or `false` can be errored/warned on when creating a `bool` enumeration, but that is a quality of implementation decision.
+We do not exclude `bool` from the possible set of types. It is [allowed in C++](https://godbolt.org/z/fY4sedEe4) and other C extensions, and it allows for an API to provide mnemonic or otherwise fitting names for binary choices without needing to resort to a bit-field of a particular type. This provides a tangible benefit to code. Values outside of `true` or `false` can be errored/warned on when creating a `bool` enumeration, but that is a quality of implementation decision.
+
+
+
+## Variables, Declarations, and Parsing (Oh my!) ## {#design-parsing}
+
+Currently, parsers for C may not properly handle the following code:
+
+```cpp
+int main () {
+	enum e : long long value = 0;
+	return 0;
+}
+```
+
+A sufficiently weak parser implementation can determine that this is an enumeration of underlying type `long`, and leave the declaration name to be the second `long`. This is a constraint violation, thanks to declaring a variable of `long`, and there is no workaround for it. There are several options to help accomodate for this problem:
+
+1. for enumerations declaring variables, putting an underlying type is not allowed unless the enumeration is also being defined or is used purely as a forward declaration (no identifier);
+2. for enumerations declaring type definitions, putting an underlying type is not allowed unless the enumeration is also being defined (as you cannot forward-declare a type definition, this does not have the same exemption as #1 on this list); and,
+3. as a fallout from #1, because this can never be used to declare an object, any use of an equals sign or similar to provide an *initializer* to initialize the value is also illegal if there is a specifier for the underlying type.
+
+This forms a comprehensive set of fixes for the given issues. Finally, if an identifier is present, the implementation is required to consume the longest token sequence that would compose of a single type name (named according to the C grammar as: *specifier-qualifier-list*), before the opening brace `{` is provided.
+
+
+
+## Type of Enumeration Constants ## {#design-constant.type}
+
+Given this code sample:
+
+```cpp
+enum e : unsigned short {
+    x
+};
+
+int main () {
+    return _Generic(x, enum e: 0, default: 1);
+}
+```
+
+The program returns `0`. `x` is considered a type `enum e`, and is compatible with `unsigned short`. Therefore, the following program would be a constraint violation regarding `_Generic`:
+
+```cpp
+enum e : unsigned short {
+    x
+};
+
+int main () {
+    return _Generic(x, enum e: 0, unsigned short: 2, default: 1);
+}
+```
+
+Furthermore, this program would return `0`:
+
+```cpp
+enum e : unsigned short {
+    x
+};
+
+int main () {
+    return _Generic(x, unsigned short: 0, default: 1);
+}
+```
+
+since the enumerated type is compatible with the underlying type (but not the other way around).
+
 
 
 
@@ -138,12 +268,11 @@ The intent of the wording is to provide the ability to express enumerations with
 - enumerations can optionally have a type declared as the underlying type or otherwise defaults to the previous behavior (opt-in);
 - enumerations with an underlying type must use a signed or unsigned (standard or extended) integer type that is not a bit-precise integer type, or another enumeration type directly;
 - enumerations with underlying types ignore const, volatile, `_Atomic`, and all other qualifiers on a given type;
-- enumerations with underlying types can be forward-declared;
+- enumerations with underlying types can be forward-declared alongside enumerations without underlying types;
 - enumerations with underlying types cannot be forward-declared with different underlying types than the first forward declaration;
 - enumerations should be allowed to be forward-declared and used as incomplete types, as many implementations allow;
 - enumerations that are foward declared only compatible with themselves, and not any potential underlying type;
 - enumerations with an underlying type can be redeclared without an underlying type (e.g., `enum a : int;` matches `enum a;`);
-- enumerations without an underlying type can be redeclared with an underlying type (which completes that type) (e.g., `enum a;` matches `enum a : short;` but cannot be re-redeclared as `enum a : long` in the same translation unit);
 - enumerations with an underlying type can have enumerators initialized with integer constant expressions whose type is not strictly `int` or `unsigned int` used to specify their values;
 - enumerations of an underlying type used directly in a generic expression are treated as an integer of that underlying type; and,
 - operations performed on an enumeration with an underlying type treat the type of the enumeration as an integer of that specified underlying type.
@@ -169,7 +298,7 @@ The intent of the wording is to provide the ability to express enumerations with
 <blockquote>
 <div class="wording-section">
 <div class="wording-clause-header">
-<span class="wording-clause-number"">6.4.4.3</span> <span class="wording-clause-title">Enumeration constants</span>
+<span class="wording-clause-number">6.4.4.3</span> <span class="wording-clause-title">Enumeration constants</span>
 </div>
 
 <div class="wording-clause-section-title">
@@ -189,7 +318,7 @@ Semantics
 
 <div class="wording-numbered">
 
-An identifier declared as an enumeration constant for an enumeration<ins> without fixed underlying type</ins> has type `int`. <ins>An identifier declared as an enumeration constant for an enumeration with fixed underlying type has that underlying type during the specification of the enumeration type (i.e., from the start of the opening brace in the *enum-specifier*).</ins>
+An identifier declared as an enumeration constant for an enumeration<ins> without fixed underlying type</ins> has type `int`. <ins>An identifier declared as an enumeration constant for an enumeration with fixed underlying type has that underlying type during the specification of the enumeration type (i.e., from the start of the opening brace **{** in the enum-specifier to the closing brace **}**).</ins>
 </div>
 
 <div class="wording-numbered">
@@ -210,7 +339,7 @@ Forward references: enumeration specifiers (6.7.2.2).
 <blockquote>
 <div class="wording-section">
 <div class="wording-clause-header">
-<span class="wording-clause-number"">6.7.2.2</span> <span class="wording-clause-title">Enumeration specifiers</span>
+<span class="wording-clause-number">6.7.2.2</span> <span class="wording-clause-title">Enumeration specifiers</span>
 </div>
 
 <div class="wording-clause-section-title">
@@ -223,7 +352,6 @@ Syntax
 
 :: **enum** <i>attribute-specifier-sequence<sub>opt</sub></i> <i>identifier<sub>opt</sub></i> <ins><i>enum-type-specifier<sub>opt</sub></i></ins> **{** *enumerator-list* **}**
 :: **enum** <i>attribute-specifier-sequence<sub>opt</sub></i> <i>identifier<sub>opt</sub></i> <ins><i>enum-type-specifier<sub>opt</sub></i></ins> **{** *enumerator-list* **,** **}**
-:: **enum** *identifier*
 :: **enum** *identifier* <ins><i>enum-type-specifier<sub>opt</sub></i></ins>
 
 *enumerator-list:*
@@ -260,12 +388,7 @@ Constraints
 <div class="wording-numbered">
 <ins>
 
-Neither overflow or underflow shall occur during the processing of the integer constant expression which defines an enumeration constant (with or without **=** providing an explicit integer constant expression for the value of that enumeration constant).
-</ins>
-</div>
-
-<div class="wording-numbered">
-<ins>The expression that defines the value of an enumeration constant of an enumeration with a fixed underlying type shall have a value representable as that fixed underlying type before conversion. The definition of an enumeration constant from a previous enumeration constant shall not overflow the maximum of the fixed underlying type.</ins>
+For an enumeration with fixed underlying type, the constant expression that defines the value of an enumeration constant, if any, shall have a value representable as that fixed underlying type before conversion. The definition of an enumeration constant without a defining constant expression shall not overflow the maximum of the fixed underlying type by adding 1 to the previous enumeration constant.</ins>
 </div>
 
 
@@ -274,7 +397,7 @@ Neither overflow or underflow shall occur during the processing of the integer c
 </div>
 
 <div class="wording-numbered">
-<ins>If an enum type specifier is present, then the longest possible sequence of tokens that can be interpreted as a specifier qualifier list is as interpreted part of the enum type specifier.</ins>
+<ins>If an enum type specifier is present, then the longest possible sequence of tokens that can be interpreted as a specifier qualifier list is as interpreted part of the enum type specifier. It shall name an integer type that is not an enumeration or bit-precise integer type.</ins>
 </div>
 
 <div class="wording-numbered">
@@ -282,7 +405,7 @@ Neither overflow or underflow shall occur during the processing of the integer c
 
 For any *declarator* (6.7.6) that declares an enumeration with a fixed underlying type (the enum type specifier is present), but does not provide the opening brace **{**, enumerator list, and closing brace **}**, it shall:
 
-:: — not be used to also declare any objects;
+:: — not be used to also declare any objects or function parameters (6.7.6.3);
 :: — not be used to also declare any type definitions (6.7.8); and,
 :: — not be followed by an equal **=** with an *initiaizer* (6.7).
 
@@ -302,7 +425,7 @@ Semantics
 </div>
 
 <div class="wording-numbered">
-The identifiers in an enumerator list<ins> of an enumeration without fixed underlying type</ins> are declared as constants that have type `int`<del>and they</del><ins>. The identifiers in an enumerator list of an enumeration with fixed underlying type are declared as constants whose types are the same as the fixed underlying type. They</ins> may appear may appear wherever such are permitted.<sup>133)</sup> An enumerator with <b>=</b> defines its enumeration constant as the value of the constant expression. If the first enumerator has no <b>=</b>, the value of its enumeration constant is 0. Each subsequent enumerator with no <b>=</b> defines its enumeration constant as the value of the constant expression obtained by adding 1 to the value of the previous enumeration constant. (The use of enumerators with <b>=</b> may produce enumeration constants with values that duplicate other values in the same enumeration.) The enumerators of an enumeration are also known as its members.
+The identifiers in an enumerator list<ins> of an enumeration without fixed underlying type</ins> are declared as constants that have type `int`<del>and they</del><ins>. The identifiers in an enumerator list of an enumeration with fixed underlying type are declared as constants whose types are the same as the enumerated type. They</ins> may appear may appear wherever such are permitted.<sup>133)</sup> An enumerator with <b>=</b> defines its enumeration constant as the value of the constant expression. If the first enumerator has no <b>=</b>, the value of its enumeration constant is 0. Each subsequent enumerator with no <b>=</b> defines its enumeration constant as the value of the constant expression obtained by adding 1 to the value of the previous enumeration constant. (The use of enumerators with <b>=</b> may produce enumeration constants with values that duplicate other values in the same enumeration.) The enumerators of an enumeration are also known as its members.
 </div>
 
 <div class="wording-numbered">
@@ -342,10 +465,32 @@ For all enumerations with a fixed underlying type, the enumerated type is compat
 
 enum us : unsigned short {
 	us_max = USHRT_MAX,
-	us_wrap_to_zero /* Constraint violation:
-	                   USHRT_MAX + 1 is done with largest
-	                   integer type, not unsigned short, and is not
-	                   representable within an unsigned short. */
+	us_violation, /* Constraint violation:
+	                 USHRT_MAX + 1 would overflow. */
+	us_violation_2 = us_max + 1, /* Maybe constraint violation:
+	                                USHRT_MAX + 1 may be promoted to "int", and
+	                                result is too wide for the underlying type. */
+	us_wrap_around_to_zero = (unsigned short)(USHRT_MAX + 1) /* Okay: conversion
+	                          done in constant expression before conversion to
+	                          underlying type: unsigned smenatics okay. */
+};
+
+enum ui : unsigned int {
+	ui_max = UINT_MAX,
+	ui_violation, /* Constraint violation:
+	                 UINT_MAX + 1 would overflow. */
+	ui_no_violation = ui_max + 1, /* Okay: Arithmetic performed as typical
+	                                  unsigned integer arithmetic: conversion
+	                                  from a value that is already 0 to 0. */
+	ui_wrap_around_to_zero = (unsigned int)(UINT_MAX + 1) /* Okay: conversion
+	                          done in constant expression before conversion to
+	                          underlying type: unsigned smenatics okay. */
+};
+
+int main () {
+	// Same as return 0;
+	return ui_wrap_around_to_zero
+	       + us_wrap_around_to_zero;
 }
 ```
 </ins>
@@ -377,8 +522,9 @@ enum E3 {
 enum E3 : int; /* Constraint violation: E3 previously had no underlying type */
 
 enum E4 : unsigned long long {
+	m40 = sizeof(enum E4),
 	m41 = ULLONG_MAX,
-	m42 /* Constraint violation: unrepresentable value (overflow)'' */
+	m42 /* Constraint violation: unrepresentable value (overflow) */
 };
 
 enum E5 y; /* Constraint violation: incomplete type */
@@ -388,7 +534,7 @@ enum E7 : long int = 0; /* Constraint violation:
                            enum-type-specifier with initializer */
 ```
 
-demonstrates many of the properties of multiple declarations of enumerations with underlying types. `E3` in particular is an enumeration declaration that chooses `int` as its underlying type, which matches the second declaration and the third declaration with definition. Despite `E3` being declared without an underlying type first, it is declared with an underlying type second that is the same as its first, so `sizeof(enum E3)` is not a constraint violation.
+demonstrates many of the properties of multiple declarations of enumerations with underlying types. Particularly, `enum E3` is declared without an underlying type first, therefore a redeclaration with an underlying type second is a violation. Because it not complete at that time within its enumerator list, `sizeof(enum E3)` is a constraint violation within the `enum E3` definition. `enum E4` is complete as it is being defined, therefore `sizeof(enum E4)` is not a constraint violation.
 </ins>
 </div>
 
@@ -439,7 +585,7 @@ int main () {
 }
 ```
 
-Here, we are guaranteed that `a` and `b` are both initialized to `1`. This makes enumerations with an underlying size more portable.
+Here, we are guaranteed that `a` and `b` are both initialized to `1`. This makes enumerations with a fixed underlying type more portable.
 </ins>
 </div>
 
@@ -475,7 +621,7 @@ int main () {
 </ins>
 </div>
 
-Forward references: <ins>generic selection (6.5.1.1), </ins>tags (6.7.2.3), <ins>declarations (6.7), declarators (6.7.6), type names (6.7.7)</ins>.
+Forward references: <ins>generic selection (6.5.1.1), </ins>tags (6.7.2.3), <ins>declarations (6.7), declarators (6.7.6), function declarations (6.7.6.3), type names (6.7.7)</ins>.
 </blockquote>
 </div>
 
@@ -486,7 +632,7 @@ Forward references: <ins>generic selection (6.5.1.1), </ins>tags (6.7.2.3), <ins
 <div class="wording-section">
 <div class="wording-section">
 <div class="wording-clause-header">
-<span class="wording-clause-number"">6.7.2.3</span> <span class="wording-clause-title">Tags</span>
+<span class="wording-clause-number">6.7.2.3</span> <span class="wording-clause-title">Tags</span>
 </div>
 
 <div class="wording-clause-section-title">
@@ -503,7 +649,7 @@ A type specifier of the form
 
 :: **enum** *identifier*
 
-without an enumerator list shall only appear <ins>in a context where incomplete types are allowed or</ins> after the type it specifies is complete. <ins>For an enumeration without fixed underlying type, it is considered complete only after the closing **}** of its enumerator list. For an enumeration with fixed underlying type, it is complete after its enum type specifier.</ins>
+without an enumerator list shall only appear <ins>in a context where incomplete types are allowed or</ins> after the type it specifies is complete.
 </div>
 
 <div>

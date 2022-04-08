@@ -4,7 +4,7 @@ Shortname: 29XX
 Revision: 1
 !Previous Revisions: <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2908.htm">N2908 (r0)</a>, Derived from <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2575.pdf">N2575 (r2)</a>
 Status: P
-Date: 2022-03-30
+Date: 2022-04-12
 Group: WG14
 !Proposal Category: Feature Request
 !Target: C23
@@ -33,7 +33,7 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 1 - March 30<sup>sth</sup>, 2022 ## {#changelog-r1}
+## Revision 1 - April 12<sup>sth</sup>, 2022 ## {#changelog-r1}
 
 - More directly specify the algorithm for selecting the types of enumeration constants, both after and midway through the definition of an enumeration.
 - Move all of the specification for the new algorithm into §6.7.2.2 in the [[#wording-specification-6.7.2.2]].
@@ -134,17 +134,53 @@ int main () {
 }
 ```
 
-Compilers [are not consistent](https://godbolt.org/z/qe1fzTbYr), depending on how far with extensions they like to go. Anyone who was depending on a specific type was not relying on either (a) compilable C code, according to the C standard, or (b) widely-existing cross-platform C code, according to what implementation extensions do. Therefore, we attempt to enshrine the best of the available existing practice and improve the status quo somewhat here by giving the enumeration constants themselves the final underlying enumeration integer type. The reason we want to specify it this way is because implementations are wildly varying on how they handle this today in their extensions, with no clear consensus on how it is done. That is, using existing extensions today in various compilers, adding the following code into the above:
+Compilers [are not consistent](https://godbolt.org/z/qe1fzTbYr), depending on how far with extensions they like to go. Anyone who was depending on a specific type was not relying on either (a) compilable C code, according to the C standard, or (b) widely-existing cross-platform C code, according to what implementation extensions do. Therefore, we attempt to enshrine the best of the available existing practice and improve the status quo.
+
+
+### Midway Type: Whatever the Compiler Chooses ### {#design-midway-during}
+
+During the definition of an enumeration type, the enumeration constants themselves have whatever type the enumeration wants if they are not representable by `int`. This is as consistent as we can be for existing code that relies on using existing enumeration constants at definition time.
+
+
+### Final Type: the Enumerated Type ### {#design-midway-after}
+
+After the enumeration type's definition is completed (after the `}`), the enumeration constants have the enumeration type (but only when all the constants are not representable by `int`). The reason we want to specify it this way is because implementations are wildly varying on how they handle this today in their extensions, with no clear consensus on how it is done. That is, using existing extensions today in various compilers, adding 3 extra lines to modify the snippet from the up-level section:
 
 ```cpp
+#include <limits.h>
+
+#define GET_TYPE_INT(x) _Generic(x, \
+	char: 1,\
+	unsigned char: 2,\
+	signed char: 3,\
+	short: 4,\
+	unsigned short: 5,\
+	int: 6,\
+	unsigned int: 7,\
+	long: 8,\
+	unsigned long: 9,\
+	long long: 10,\
+	unsigned long long: 11,\
+	default: 0xFF\
+	)\
+
+enum x {
+	a = INT_MAX,
+	b = ULLONG_MAX,
+	a_type = GET_TYPE_INT(a),
+	b_type = GET_TYPE_INT(b)
+};
+
 extern enum x e_a;
 extern __typeof(b) e_a;
 extern __typeof(a) e_a;
+
+// …
 ```
 
-results in various failures on today's implementations. This is because `a` and `b` are of different types (`a` is an `int` and not compatible with `enum x;` or `typeof(b)`, since those are both compatible with `long` or `long long` depending on the selection done by the implementation). We feel it is worthwhile to clarify this and make it more consistent: thus, the type chosen for the constants will be the underlying integer type that the enumeration type is compatible with, which provides the best safety and the best compatibility. This is also the expectation set by the standard: it chose `int` as the type for the enumeration constants, not caring what exactly the underlying type of the enumeration was chosen for.
+results in various failures on today's implementations. This is because `a` and `b` are of different types (`a` is an `int` and not compatible with `enum x;` or `typeof(b)`, since those are both compatible with `long` or `long long` depending on the selection done by the implementation). We feel it is worthwhile to clarify this and make it more consistent.
 
-We can fix this by providing a consistent choice of the underlying integer type of `enum x` for the integer constants when used after the closing brace of `}`. We do not expect many users to have relied on this detail because it varies so wildly between compilers, and even within single compiler implementations due to the use of enumeration-impacting flags.
+There is no way to make such code portable, as it was (A) already using an extension that was not standardized until before C23 and (B) already relied in an implementation detail that could change between implementations, but also **within** a given implementation (e.g., `-fshort-enum`). The above code is utterly non-portable, and outside of what we can possibly concern ourselves with when trying to provide at least some degree of standardized behavior. We can fix this by providing a consistent choice of the underlying integer type of `enum x` for the integer constants when used after the closing brace of `}`. We expect this to be the best possible and most consistent choice for enumerations going forward.
 
 
 
@@ -270,7 +306,7 @@ During the processing of each enumeration constant in the enumerator list, the t
 
 <div class="wording-numbered">
 
-Each enumerated type shall be compatible with `char`, a signed integer type, or an unsigned integer type <ins>(excluding the bit-precise integer types)</ins>. The choice of type is implementation-defined<span class="footnote-ref">139)</span>, but shall be capable of representing the values of all the members of the enumeration.<ins><span class="footnote-ref">FN1✨)</span></ins>
+Each enumerated type shall be compatible with `char`, a signed integer type, or an unsigned integer type <ins>(excluding the bit-precise integer types)</ins>. The choice of type is implementation-defined<span class="footnote-ref">139)</span>, but shall be capable of representing the values of all the members of the enumeration.
 </div>
 
 <div class="wording-numbered">
@@ -280,7 +316,7 @@ The enumerated type is incomplete until immediately after the **}** that termina
 <ins>
 
 :: — `int` if all the values of the enumeration are representable as an `int`; or,
-:: — an implementation-defined signed or unsigned integer type (excluding the bit-precise integer types) that is compatible with the enumerated type.
+:: — the enumerated type.<span class="footnote-ref">FN0✨)</span>
 
 </ins>
 </div>
@@ -293,21 +329,11 @@ The enumerated type is incomplete until immediately after the **}** that termina
 </div>
 <div>
 <ins>
-<span class="footnote-ref">FN0✨)</span><span class="footnote">The type selected during processing of the enumerator list and before completion of the enumeration and after the enumeration is completed may be two separate types.</span>
-</ins>
-</div>
-<div>
-<ins>
-<span class="footnote-ref">FN1✨)</span><span class="footnote">If there is no such type, then this is a constraint violation.</span>
+<span class="footnote-ref">FN0✨)</span><span class="footnote">The type selected during processing of the enumerator list (before completion) of the enumeration may be incompatible from the type selected after the enumeration is completed.</span>
 </ins>
 </div>
 </blockquote>
 </div>
-
-
-### Add implementation-defined enumeration behavior to Annex J ### {#wording-specification-annex-j}
-
-
 
 
 ### Add implementation-defined enumeration behavior to Annex J ### {#wording-specification-annex-j}
