@@ -1,0 +1,216 @@
+# Acknowledgements # {#acknowledgements}
+
+Thank you to Alex Gilding for bolstering this proposal with additional ideas and motivation. Thank you to Aaron Ballman, David Keaton, and Rajan Bhakta for early feedback on this proposal. Thank you to the <a href="https://www.includecpp.org/">`#include<C++>`</a> for bouncing lots of ideas off the idea in their Discord. Thank you to Hubert Tong for refining the proposal's implementation-defined extension points.
+
+Thank you to the Lounge&lt;C++&gt; for their continued support, and to rmf for the valuable early implementation feedback.
+
+<div class="pagebreak"></div>
+
+
+
+
+# Appendix  # {#appendix}
+
+
+
+## Existing Tools ## {#appendix-existing}
+
+This section categorizes some of the platform-specific techniques used to work with C++ and some of the challenges they face. Other techniques used include pre-processing data, link-time based tooling, and assembly-time runtime loading. They are detailed below, for a complete picture of today's landscape of options. They include both C and C++ options.
+
+
+### Pre-Processing Tools ### {#appendix-existing-pre_processing_tools}
+
+1. Run the tool over the data (`xxd -i xxd_data.bin > xxd_data.h`) to obtain the generated file (`xxd_data.h`) and add a null terminator if necessary:
+
+```cpp
+unsigned char xxd_data_bin[] = {
+	0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x2c, 0x20, 0x57, 0x6f, 0x72, 0x6c, 0x64,
+	0x0a, 0x00
+};
+unsigned int xxd_data_bin_len = 13;
+```
+
+2. Compile `main.c`:
+
+```cpp
+#include <stdlib.h>
+#include <stdio.h>
+
+// prefix as const,
+// even if it generates some warnings in g++/clang++
+const
+#include "xxd_data.h"
+
+int main() {
+		const char* data = reinterpret_cast<const char*>(xxd_data_bin);
+		puts(data); // Hello, World!
+		return 0;
+}
+```
+
+Others still use python or other small scripting languages as part of their build process, outputting data in the exact C++ format that they require.
+
+There are problems with the `xxd -i` or similar tool-based approach. Tokenization and Parsing data-as-source-code adds an enormous overhead to actually reading and making that data available.
+
+Binary data as C(++) arrays provide the overhead of having to comma-delimit every single byte present, it also requires that the compiler verify every entry in that array is a valid literal or entry according to the C++ language.
+
+This scales poorly with larger files, and build times suffer for any non-trivial binary file, especially when it scales into Megabytes in size (e.g., firmware and similar).
+
+
+### `python` ### {#appendix-existing-python}
+
+Other companies are forced to create their own ad-hoc tools to embed data and files into their C++ code. MongoDB uses a [custom python script](https://github.com/mongodb/mongo/blob/master/site_scons/site_tools/jstoh.py), just to format their data for compiler consumption:
+
+```python
+import os
+import sys
+
+def jsToHeader(target, source):
+		outFile = target
+		h = [
+				'#include "mongo/base/string_data.h"',
+				'#include "mongo/scripting/engine.h"',
+				'namespace mongo {',
+				'namespace JSFiles{',
+		]
+		def lineToChars(s):
+				return ','.join(str(ord(c)) for c in (s.rstrip() + '\n')) + ','
+		for s in source:
+				filename = str(s)
+				objname = os.path.split(filename)[1].split('.')[0]
+				stringname = '_jscode_raw_' + objname
+
+				h.append('constexpr char ' + stringname + "[] = {")
+
+				with open(filename, 'r') as f:
+						for line in f:
+								h.append(lineToChars(line))
+
+				h.append("0};")
+				# symbols aren't exported w/o this
+				h.append('extern const JSFile %s;' % objname)
+				h.append('const JSFile %s = { "%s", StringData(%s, sizeof(%s) - 1) };' %
+								 (objname, filename.replace('\\', '/'), stringname, stringname))
+
+		h.append("} // namespace JSFiles")
+		h.append("} // namespace mongo")
+		h.append("")
+
+		text = '\n'.join(h)
+
+		with open(outFile, 'wb') as out:
+				try:
+						out.write(text)
+				finally:
+						out.close()
+
+
+if __name__ == "__main__":
+		if len(sys.argv) < 3:
+				print "Must specify [target] [source] "
+				sys.exit(1)
+		jsToHeader(sys.argv[1], sys.argv[2:])
+```
+
+MongoDB were brave enough to share their code with me and make public the things they have to do: other companies have shared many similar concerns, but do not have the same bravery. We thank MongoDB for sharing.
+
+
+### `ld` ### {#appendix-existing-ld}
+
+A complete example (does not compile on Visual C++):
+
+1. Have a file ld_data.bin with the contents `Hello, World!`.
+
+2. Run `ld -r binary -o ld_data.o ld_data.bin`.
+
+3. Compile the following `main.cpp` with `gcc -std=c++17 ld_data.o main.cpp`:
+
+```cpp
+#include <stdlib.h>
+#include <stdio.h>
+
+#define STRINGIZE_(x) #x
+#define STRINGIZE(x) STRINGIZE_(x)
+
+#ifdef __APPLE__
+#include <mach-o/getsect.h>
+
+#define DECLARE_LD_(LNAME) extern const unsigned char _section$__DATA__##LNAME[];
+#define LD_NAME_(LNAME) _section$__DATA__##LNAME
+#define LD_SIZE_(LNAME) (getsectbyLNAME("__DATA", "__" STRINGIZE(LNAME))->size)
+#define DECLARE_LD(LNAME) DECLARE_LD_(LNAME)
+#define LD_NAME(LNAME) LD_NAME_(LNAME)
+#define LD_SIZE(LNAME) LD_SIZE_(LNAME)
+
+#elif (defined __MINGW32__) /* mingw */
+
+#define DECLARE_LD(LNAME)                                 \
+	extern const unsigned char binary_##LNAME##_start[];    \
+	extern const unsigned char binary_##LNAME##_end[];
+#define LD_NAME(LNAME) binary_##LNAME##_start
+#define LD_SIZE(LNAME) ((binary_##LNAME##_end) - (binary_##LNAME##_start))
+#define DECLARE_LD(LNAME) DECLARE_LD_(LNAME)
+#define LD_NAME(LNAME) LD_NAME_(LNAME)
+#define LD_SIZE(LNAME) LD_SIZE_(LNAME)
+
+#else /* gnu/linux ld */
+
+#define DECLARE_LD_(LNAME)                                  \
+	extern const unsigned char _binary_##LNAME##_start[];     \
+	extern const unsigned char _binary_##LNAME##_end[];
+#define LD_NAME_(LNAME) _binary_##LNAME##_start
+#define LD_SIZE_(LNAME) ((_binary_##LNAME##_end) - (_binary_##LNAME##_start))
+#define DECLARE_LD(LNAME) DECLARE_LD_(LNAME)
+#define LD_NAME(LNAME) LD_NAME_(LNAME)
+#define LD_SIZE(LNAME) LD_SIZE_(LNAME)
+#endif
+
+DECLARE_LD(ld_data_bin);
+
+int main() {
+	const char* p_data = reinterpret_cast<const char*>(LD_NAME(ld_data_bin));
+	// impossible, not null-terminated
+	//puts(p_data);
+	// must copy instead
+	return 0;
+}
+```
+
+This scales a little bit better in terms of raw compilation time but is shockingly OS, vendor and platform specific in ways that novice developers would not be able to handle fully. The macros are required to erase differences, lest subtle differences in name will destroy one's ability to use these macros effectively. We omitted the code for handling VC++ resource files because it is excessively verbose than what is present here.
+
+N.B.: Because these declarations are `extern`, the values in the array cannot be accessed at compilation/translation-time.
+
+
+### `incbin` ### {#appendix-existing-incbin}
+
+There is a tool called <a href="https://github.com/graphitemaster/incbin">`incbin`</a> which is a 3rd party attempt at pulling files in at "assembly time". Its approach is incredibly similar to `ld`, with the caveat that files must be shipped with their binary. It unfortunately falls prey to the same problems of cross-platform woes when dealing with Visual C, requiring additional pre-processing to work out in full.
+
+
+### Type Flexibility ### {#appendix-existing-type_flexibility}
+
+**Note:** As per the vote in the September C++ Evolution Working Group Meeting, Type Flexibility is not being pursued in the preprocessor for various implementation and support splitting concerns.
+
+A type can be specified after the `#embed` to view the data in a very specific manner. This allows data to initialized as exactly that type.
+
+Type flexibility was not pursued for various implementation concerns. Chief among them was single-purpose preprocessors that did not have access to frontend information. This meant it was very hard to make a system that was both preprocessor conformant but did not require e.g. `sizeof(...)` information at the point of preprocessor invocation. Therefore, the type flexibility feature was pulled from `#embed` and will be conglomerated in other additions such as `std::bitcast` or `std::embed`.
+
+```cpp
+/* specify a type-name to change array type */
+const int shorten_flac[] = {
+		#embed int "stripped_music.flac"
+};
+```
+
+The contents of the resource are mapped in an implementation-defined manner to the data, such that it will use `sizeof(type-name) * CHAR_BIT` bits for each element. If the file does not have enough bits to fill out a multiple of `sizeof(type-name) * CHAR_BIT` bits, then a diagnostic is required. Furthermore, we require that the type passed to `#embed` that must one of the following fundamental types, signed or unsigned, spelled exactly in this manner:
+
+- `char`, `unsigned char`, `signed char`
+- `short`, `unsigned short`, `signed short`
+- `int`, `unsigned int`, `signed int`
+- `long`, `unsigned long`, `signed long`
+- `long long`, `unsigned long long`, `signed long long`
+
+More types can be supported by the implementation if the implementation so chooses (both the GCC and Clang prototypes described below support more than this). The reason exactly these types are required is because these are the only types for which there is a suitable way to obtain their size at pre-processor time. Quoting from §5.2.4.2.1, paragraph 1:
+
+> The values given below shall be replaced by constant expressions suitable for use in `#if` preprocessing directives.
+
+This means that the types above have a specific size that can be properly initialized by a preprocessor entirely independent of a proper C frontend, without needing to know more than how to be a preprocessor. Originally, the proposal required that every use of `#embed` is accompanied by a `#include <limits.h>` (or, in the case of C++, `#include <climits>`). Instead, the proposal now lets the implementation "figure it out" on an implementation-by-implementation basis.

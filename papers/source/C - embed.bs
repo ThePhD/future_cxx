@@ -1,0 +1,946 @@
+<pre class='metadata'>
+Title: #embed - a scannable, tooling-friendly binary resource inclusion mechanism
+H1: #embed - a scannable, tooling-friendly binary resource inclusion mechanism
+Shortname: 2967
+Revision: 5
+Status: P
+Date: 2022-04-12
+Group: WG14
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20embed.html
+!Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20embed.html">https://thephd.dev/_vendor/future_cxx/papers/C%20-%20embed.html</a>
+!Previous Revisions: <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2898.htm">n2898 (r4)</a>, <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2725.htm">n2725 (r3)</a>, <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2592.htm">n2592 (r2)</a>, <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2499.pdf">n2499 (r1)</a>, <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2470.pdf">n2470 (r0)</a>
+!Implementation: <a href="https://github.com/ThePhD/embed">GitHub ThePhD/embed</a>
+!Paper Source: <a href="https://github.com/ThePhD/future_cxx/blob/main/papers/source/C%20-%20embed.bs">GitHub ThePhD/future_cxx</a>
+Metadata Order: Editor, Latest, Previous Revisions, Paper Source, Implementation, Project, Audience
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+Abstract: Pulling binary data into a program often involves external tools and build system coordination. Many programs need binary data such as images, encoded text, icons and other data in a specific format. Current state of the art for working with such static data in C includes creating files which contain solely string literals, directly invoking the linker to create data blobs to access through carefully named extern variables, or generating large brace-delimited lists of integers to place into arrays. As binary data has grown larger, these approaches have begun to have drawbacks and issues scaling. From parsing 5 megabytes worth of integer literal expressions into AST nodes to arbitrary string literal length limits in compilers, portably putting binary data in a C program has become an arduous task that taxes build infrastructure and compilation memory and time. This proposal provides a flexible preprocessor directive for making this data available to the user in a straightforward manner.
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-color-fix.html
+</pre>
+
+<div class="pagebreak"></div>
+
+
+
+
+# Changelog # {#changelog}
+
+
+
+## Revision 5  - April 12<sup>th</sup>, 2022 ## {#changelog-r5}
+
+- Additional syntax changes based on feedback from Joseph Myers, Hubert Tong, and users.
+- Minor wording tweaks and typo clean up.
+- An implementation [available in Godbolt (since last revision as well and noted below)](https://godbolt.org/z/Kb3ejE7q5).
+- The paper's source code has been refactored:
+	- Separated WG21 paper from WG14 paper.
+	- Core paper together (rationale, reasoning), included in both C and C++ papers since rationale is identical.
+- Changed `__has_embed` to match feedback from last standards meeting, nominally that an empty resource returns `2` instead of `1` (but both decay to a truthy value during preprocessor conditional inclusion expressions). Modified by the wording and the prose in [[#design-__has_embed]].
+	- As a reaction to this, the `is_empty` embed parameter  is an optional part of the proposal, as explained in [[#design-syntax-parameters-empty]]. This did affect a user in an impactful manner but the new functionality is fine, but has some downsides w.r.t. "repeating yourself".
+- The wording for the limit parameter ([[#wording-parameters]]) adjusted to perform macro expansion, at least once. Exact wording may need help.
+
+
+
+## Revision 4  - February 7<sup>th</sup>, 2022 ## {#changelog-r4}
+
+- Clean up syntax.
+- Reimplement and deploy extension in Clang to ensure an implementation of named parameters work.
+- Change wording to encapsulate the new fixes.
+- Removed C++ wording to focus on C wording for this document.
+
+
+
+## Revision 3 - May 15<sup>th</sup>, 2021 (WG14) ## {#changelog-r3}
+
+- Added post C meeting fixes to prepare for hopeful success next meeting.
+- Added 2 more examples to C and C++ wording.
+- Vastly improved wording and reduced ambiguities in syntax and semantics.
+- Fixed various wording issues.
+
+
+
+## Revision 2 - October 25<sup>th</sup>, 2020 ## {#changelog-r2}
+
+- Added post C++ meeting notes and discussion.
+- Removed type or bit specifications from the `#embed` directive.
+- Moved "Type Flexibility" section and related notes to the Appendix as they are now unpursued.
+
+
+
+## Revision 1 - April 10<sup>th</sup>, 2020 ## {#changelog-r1}
+
+- Added post C meeting notes and discussion.
+- Added discussion of potential endianness.
+- Improved wording section at the end to be more detailed in handling preprocessor (which does not understand types).
+
+
+
+## Revision 0 - January 5<sup>th</sup>, 2020 ## {#changelog-r0}
+
+- Initial release! 🎉
+
+
+
+
+# Polls & Votes # {#polls}
+
+The votes for the C Committee are as follows:
+
+- Y: Ye
+- N: Nay
+- A: Abstain
+
+
+
+## January/February 2022 C Meeting ## {#polls-january.february.2022.c}
+
+"Does WG14 want the embed parameter specification as shown in N2898?"
+
+<table>
+<thead>
+	<tr>
+		<th>Y</th>
+		<th>N</th>
+		<th>A</th>
+	</tr>
+</thead>
+<tbody>
+	<tr>
+		<td>12</td>
+		<td>2</td>
+		<td>8</td>
+	</tr>
+</tbody>
+</table>
+
+From the January/February 2022 Meeting Minutes, Summary of Decisions:
+
+> WG14 wants the embed parameter specification as shown in N2898.
+
+We interpret this as consensus. We keep the parameters but make the one that folks were questioning (`is_empty`) optional in response to the feedback during and after the meeting.
+
+
+
+## December 2020 Virtual C Meeting ## {#polls-december.2020.c}
+
+"Do we want to allow #embed to appear in any context that is different from an initialization of a character array?"
+
+<table>
+<thead>
+	<tr>
+		<th>Y</th>
+		<th>N</th>
+		<th>A</th>
+	</tr>
+</thead>
+<tbody>
+	<tr>
+		<td>5</td>
+		<td>8</td>
+		<td>6</td>
+	</tr>
+</tbody>
+</table>
+
+"Leaning in the direction of no but not clear." The paper author after consideration chose to keep this as-is right now. Discussion of the feature meant that trying to ban this from different contexts meant that a naïve, separated-preprocessor implementation would be banned and it would require special compiler magic to diagnose. Others pointed out that just trying to leave it "unspecified whether it works outside of the initialization of an array or not" is very dangerous to portability. The author agrees with this assessment and therefore will leave it as-is. The goal of this feature is to enable implementers to use the magic if they so choose, as an implementation detail and a Quality of Implementation selling point. Vendors who provide a simple expansion may not see improvements to throughput and speed of translation but that is their choice as an implementer. Therefore, we cannot do anything which would require them or any preprocessor implementation to traffic in magic directives unless they want to.
+
+
+
+## April 2020 Virtual C Meeting ## {#polls-april.2020.c}
+
+"We want to have a proper preprocessor `#embed ...` over a `#pragma _STDC embed ...`-based directive."
+
+This had UNANIMOUS CONSENT to pursue a proper preprocessor directive and NOT use the `#pragma` syntax. It is noted that the author deems this to be the best decision!
+
+
+**The following poll was later superceded in the C and C++ Committees.**
+
+"We want to specify embed as using `#embed [bits-per-element] header-name` rather than `#embed [pp-tokens-for-type] header-name`." (2-way poll.)
+
+<table>
+<thead>
+	<tr>
+		<th>Y</th>
+		<th>N</th>
+		<th>A</th>
+	</tr>
+</thead>
+<tbody>
+	<tr>
+		<td>10</td>
+		<td>2</td>
+		<td>3</td>
+	</tr>
+</tbody>
+</table>
+
+- Y: 10 bits-per-element (Ye)
+- N: 2 type-based (Nay)
+- A: 4 Abstain (Abstain)
+
+This poll will be a bit harder to accommodate properly. Using a <i>`constant-expression`</i> that produces a numeric constant means that the max-length specifier is now ambiguous. The syntax of the directive may need to change to accommodate further exploration.
+
+
+
+
+<pre class="include">
+path: Preprocessor Embed Core.bs
+</pre>
+
+
+
+
+# Wording # {#wording}
+
+This wording is relative to C's latest working draft.
+
+
+*Editor's Note: The ✨ characters are intentional. They represent stand-ins to be replaced by the editor.*
+
+
+## Modify 6.4, paragraph 4 ## {#wording-§6.4¶4}
+
+<blockquote>
+<div class="wording-section">
+<div class="wording-numbered wording-numbered-4">
+
+If the input stream has been parsed into preprocessing tokens up to a given character, the next preprocessing token is the longest sequence of characters that could constitute a preprocessing token. There is one exception to this rule: <del>header name preprocessing tokens are recognized only within `#include` preprocessing directives, in `__has_include` expressions, and in implementation-defined locations within #pragma directives.</del> <ins>header name preprocessing tokens are recognized only within `#include` and `#embed` preprocessing directives, in `__has_include` and `__has_embed` expressions, as well as in implementation-defined locations within `#pragma` directives.</ins> In such contexts, a sequence of characters that could be either a header name or a string literal is recognized as the former.
+</div>
+</div>
+</blockquote>
+
+
+## Add another *control-line* production to §6.10 Preprocessing Directives, Syntax, paragraph 1 ## {#wording-§6.10.7¶1}
+
+<blockquote>
+<div class="wording-section">
+
+*control-line:*
+
+:: …
+:: <ins>**#** **embed** *pp-tokens* *new-line*</ins>
+
+<div>
+…
+</div>
+
+<ins>
+
+*embed-parameter-list*:
+:: *attribute*
+:: *embed-parameter-list* *attribute*
+
+</ins>
+</div>
+</blockquote>
+
+
+## Modify §6.10.1 Conditional inclusion to include a new "has-embed-expression" production by modifying paragraph 1, then modify the following paragraphs: ## {#wording-§6.10.1¶1-6}
+
+<blockquote>
+<div class="wording-section">
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+<div>
+…
+</div>
+
+*has-include-expression*:
+:: **__has_include** **(** *header-name* **)**
+:: **__has_include** **(** *header-name-tokens* **)**
+
+<ins>
+
+*has-embed-expression*:
+:: **__has_embed** **(** *header-name* *embed-parameter-list* **)**
+:: **__has_embed** **(** *header-name-tokens* *embed-parameter-list* **)**
+
+</ins>
+
+<div>
+…
+</div>
+
+<div class="wording-numbered">
+
+The expression that controls conditional inclusion shall be an integer constant expression except that: identifiers (including those lexically identical to keywords) are interpreted as described below<span class="footnote-ref">182)</span> and it may contain zero or more defined macro expressions, has_include expressions,<ins> has_embed expressions,</ins> and/or has_c_attribute expressions as unary operator expressions.
+</div>
+
+<div>
+…
+</div>
+
+<div class="wording-numbered wording-numbered-4">
+The second forms of the has_include expression<ins> and has_embed expression</ins> are considered only if the first form does not match, in which case the preprocessing tokens are processed just as in normal text.
+</div>
+
+<div>
+…
+</div>
+
+<ins>
+<div class="wording-numbered wording-numbered-6">
+The resource (6.10.✨) identified by the header-name preprocessing token sequence in each contained has_embed expression is searched for as if those preprocessing token were the pp-tokens in a `#embed` directive, except that no further macro expansion is performed. Such a directive shall satisfy the syntactic requirements of a `#embed` directive. The has_embed expression evaluates to:
+
+:: — 0 if the search fails or if any of the embed parameters in the embed parameter list specified are not supported by the implementation for the `#embed` directive; or,
+:: — 1 if the search for the resource succeeds and all embed parameters in the embed parameter list specified are supported by the implementation for the `#embed` directive and the resource is not empty; or,
+:: — 2 if the search for the resource succeeds and all embed parameters in the embed parameter list specified are supported by the implementation for the `#embed` directive and the resource is empty.
+
+</div>
+</ins>
+
+<div>
+…
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered wording-numbered-9">
+The `#ifdef`, `#ifndef`, `#elifdef`, and `#elifndef`, and the defined conditional inclusion operator, shall treat `__has_include`<ins>, `__has_embed`,</ins> and `__has_c_attribute` as if they were the name of defined macros. The identifiers `__has_include`<ins>, `__has_embed`,</ins> and `__has_c_attribute` shall not appear in any context not mentioned in this subclause.
+</div>
+
+<div>
+…
+</div>
+
+<div class="wording-numbered wording-numbered-17">
+<ins>
+EXAMPLE: A combination of `__FILE__` (6.10.8.1) and `__has_embed` could be used to check for support of specific implementation extensions for the `#embed` directive's parameters.
+
+```cpp
+#if __has_embed(__FILE__ ext::token(0xB055))
+#define DESCRIPTION "Supports extended token embed"
+#else
+#define DESCRIPTION "Does not support extended token embed"
+#endif
+```
+</ins>
+</div>
+
+<div class="wording-numbered">
+<ins>
+EXAMPLE: The below snippet uses `__has_embed` to check for support of a specific implementation-defined embed parameter, and otherwise uses standard behavior to produce the same effect.
+
+```cpp
+void parse_into_s(short* ptr, unsigned char* ptr_bytes,
+  unsigned long long size);
+
+int main () {
+#if __has_embed ("bits.bin" ds9000::element_type(short))
+	/* Vendor extension: create short integers from the */
+	/* translation environment resource into */
+	/*  a sequence of integer constants */
+	short meow[] = {
+#embed "bits.bin" clang::element_type(short)
+	};
+#else
+	/* no support for implementation-specific */
+	/* ds9000::element_type(short) parameter */
+	const unsigned char meow_bytes[] = {
+#embed "bits.bin"
+	};
+	short meow[sizeof(meow_bytes) / sizeof(short)] = {};
+	/* parse meow_bytes into short values by-hand! */
+	parse_into_s(meow, meow_bytes, sizeof(meow_bytes));
+#else
+#error "cannot find bits.bin resource"
+#endif
+	return (int)(meow[0] + meow[(sizeof(meow) / sizeof(*meow)) - 1]);
+}
+```
+</ins>
+</div>
+</div>
+
+<div>
+…
+</div>
+
+<div>
+Forward references: … <ins>Mandatory macros (6.10.8.1)</ins>…
+</div>
+</blockquote>
+
+
+## Add a new sub clause as §6.10.✨ to §6.10 Preprocessing Directives, preferably after §6.10.2 Source file inclusion ## {#wording-§6.10.✨}
+
+<blockquote>
+<ins>
+<div class="wording-section">
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.10.✨</span> <span class="wording-clause-title">Binary resource inclusion</span>
+</div>
+
+<div class="wording-clause-section-title">
+Description
+</div>
+
+<div class="wording-numbered">
+
+A *resource* is a source of data accessible from the translation environment. An *embed parameter* is a single attribute in the embed parameter list. It has an *implementation resource width*, which is the implementation-defined size in bits of the located resource. It also has a *resource width*, which is either:
+
+:: — the number of bits as computed from the optionally-provided `limit` embed parameter (6.10.✨.1), if present; or,
+:: — the implementation resource width.
+
+</div>
+
+<div class="wording-numbered">
+
+An *embed parameter list* is a whitespace-delimited list of attributes which may modify the result of the replacement for the `#embed` preprocessing directive.
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+An `#embed` directive shall identify a resource that can be processed by the implementation as a binary data sequence given the provided embed parameters.
+</div>
+
+<div class="wording-numbered">
+
+Embed parameters not specified in this document shall be implementation-defined. Implementation-defined embed parameters may change the below-defined semantics of the directive; otherwise, `#embed` directives which do not contain implementation-defined embed parameters shall behave as described in this document.
+</div>
+
+<div class="wording-numbered">
+A resource is considered empty when its resource width is zero.
+</div>
+
+<div class="wording-numbered">
+
+Let *embed element width* be either:
+
+:: — an integer constant expression greater than zero determined an implementation-defined embed parameter; or,
+:: — `CHAR_BIT`.
+
+The result of `(resource width) % (embed element width)` shall be zero.<span class="footnote-ref">FN0✨)</span>
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered">
+
+The expansion of a `#embed` directive is a token sequence formed from the list of integer constant expressions described below. The group of tokens for each integer constant expression in the list is separated in the token sequence from the group of tokens for the previous integer constant expression in the list by a comma. The sequence neither begins nor ends in a comma. If the list of integer constant expressions is empty, the token sequence is empty. The directive is replaced by its expansion and, with the presence of certain embed parameters, additional or replacement token sequences.
+</div>
+
+<div class="wording-numbered">
+A preprocessing directive of the form
+
+:: **#** **embed** **<** *h-char-sequence* <b><code>&gt;</code></b> *embed-parameter-list*<sub>opt</sub> *new-line*
+
+searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the `<` and `>`. The search for the named resource is done in an implementation-defined manner.
+</div>
+
+<div class="wording-numbered">
+A preprocessing directive of the form
+
+:: <b>#</b> **embed** **"** *q-char-sequence* **"** *embed-parameter-list*<sub>opt</sub> *new-line*
+
+
+searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the `"` delimiters. The search for the named resource is done in an implementation-defined manner. If this search is not supported, or if the search fails, the directive is reprocessed as if it read
+
+:: <b>#</b> **embed** `<` *h-char-sequence* `>` *embed-parameter-list*<sub>opt</sub> *new-line*
+
+with the identical contained *q-char-sequence* (including `>` characters, if any) from the original directive.
+</div>
+
+<div class="wording-numbered">
+Either form of the `#embed` directive specified previously behave as specified below. The values of the integer constant expressions in the expanded sequence is determined by an implementation-defined mapping of the resource's data. Each integer constant expression's value is in the range from <code>0</code> to <code>(2<sup>embed element width</sup>) - 1</code>, inclusive<span class="footnote-ref">FN1✨)</span>.
+</div>
+
+<div class="wording-numbered">
+If the list of integer constant expressions:
+
+:: — is used to initialize an array of a type compatible with `unsigned char` or, if `char` is an unsigned type; and,
+:: — the embed element width is equivalent to `CHAR_BIT` (5.2.4.2.1),
+
+then the contents of the initialized elements of the array are as-if the resource's binary data was `fread` into the array at translation time.
+</div>
+
+<div class="wording-numbered">
+A preprocessing directive of the form
+
+:: **#** **embed** *pp-tokens* *new-line*
+
+(that does not match one of the two previous forms) is permitted. The preprocessing tokens after **embed** in the directive are processed just as in normal text. (Each identifier currently defined as a macro name is replaced by its replacement list of preprocessing tokens.) The directive resulting after all replacements shall match one of the two previous forms<span class="footnote-ref">FN2✨)</span>. The method by which a sequence of preprocessing tokens between a `<` and a `>` preprocessing token pair or a pair of `"` characters is combined into a single resource name preprocessing token is implementation-defined.
+</div>
+
+<div class="wording-numbered">
+
+An embed parameter with an attribute token that is one of the following is a standard embed parameter:
+
+:: `limit` &emsp; &emsp; &emsp; &emsp; `prefix` &emsp; &emsp; &emsp; &emsp; `suffix`
+
+</div>
+
+<p><span class="footnote-ref">FN0✨)</span><sub> This constraint helps ensure data is neither filled with padding values nor truncated in a given environment, and helps ensure the data is portable with respect to usages of `memcpy` with character type arrays initialized from the data.</sub></p>
+<p><span class="footnote-ref">FN1✨)</span><sub> For example, an embed element width of 8 will yield a range of values from 0 to 255, inclusive.</sub></p>
+<p><span class="footnote-ref">FN2✨)</span><sub> Note that adjacent string literals are not concatenated into a single string literal (see the translation phases in 5.1.1.2); thus, an expansion that results in two string literals is an invalid directive.</sub></p>
+</div>
+</div>
+
+<div class="wording-clause-section-title">
+Recommended Practice
+</div>
+
+<div class="wording-numbered wording-numbered-15">
+
+The `#embed` directive is meant to translate binary data in resources to sequence of integer constant expressions in a way that preserves the value of the resource's bit stream where possible.
+</div>
+
+<div class="wording-numbered wording-numbered">
+
+Implementations should take into account translation-time bit and byte orders as well as execution time bit and byte orders to more appropriately represent the resource's binary data from the directive. This maximizes the chance that, if the resource referenced at translation time through the `#embed` directive is the same one accessed through execution-time means, the data that is e.g. `fread` or similar into contiguous storage will compare bit-for-bit equal to an array of character type initialized from an `#embed` directive's expanded contents.
+</div>
+
+<div class="wording-numbered wording-numbered">
+
+Implementations are encouraged to diagnose embed parameters that they do not process or understand, with the understanding that `__has_embed` can be used to check if an implementation supports a given embed parameter.
+</div>
+
+<div class="wording-numbered wording-numbered">
+
+**EXAMPLE 1** Placing a small image resource.
+
+```cpp 
+#include <stddef.h>
+
+void have_you_any_wool(const unsigned char*, size_t);
+
+int main (int, char*[]) {
+	const unsigned char baa_baa[] = {
+#embed "black_sheep.ico"
+	};
+
+	have_you_any_wool(baa_baa, sizeof(baa_baa));
+
+	return 0;
+}
+```
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 2** Checking the first 4 elements of a sound resource.</ins>
+
+```cpp
+#include <assert.h>
+
+int main (int, char*[]) {
+	const char sound_signature[] = {
+#embed <sdk/jump.wav> limit(2+2)
+	};
+
+	// verify PCM WAV resource
+	assert(sound_signature[0] == 'R');
+	assert(sound_signature[1] == 'I');
+	assert(sound_signature[2] == 'F');
+	assert(sound_signature[3] == 'F');
+	assert(sizeof(sound_signature) == 4);
+
+	return 0;
+}
+```
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 3** Constraint violation for a resource which is too small.
+
+```cpp
+
+int main (int, char*[]) {
+	const unsigned char coefficients[] = {
+#embed "only_3_bits.bin" // constraint violation
+	};
+
+	return 0;
+}
+```
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 4** Extra elements added to array initializer.
+
+```cpp
+#include <string.h>
+
+#ifndef SHADER_TARGET
+#define SHADER_TARGET "edith-impl.glsl"
+#endif
+
+extern char* null_term_shader_data;
+
+void fill_in_data () {
+	const char internal_data[] = {
+#embed SHADER_TARGET \
+		suffix(,)
+		0
+	};
+
+	strcpy(null_term_shader_data, internal_data);
+}
+```
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 5** Initialization of non-arrays.
+
+```cpp
+int main () {
+	int i = {
+#embed "i.dat"
+	}; /* i value is [0, 2^(embed element width)) from first entry */
+	int i2 =
+#embed "i.dat"
+	; /* valid if i.dat produces 1 value,
+	     i2 value is [0, 2^(embed element width)) */
+	struct s {
+		double a, b, c;
+		struct { double e, f, g; };
+		double h, i, j;
+	};
+	struct s x = {
+	/* initializes each element in
+	   order according to initialization rules with
+	   comma-separated list of integer constant expressions
+	   inside of braces */
+#embed "s.dat"
+	};
+	return 0;
+}
+```
+
+<ins>Non-array types can still be initialized since the directive produces a comma-delimited lists of integer constant expressions, a single integer constant expression, or nothing.</ins>
+</div>
+
+
+<div class="wording-numbered">
+
+**EXAMPLE 6** Equivalency of bit sequence and bit order.
+
+```cpp
+#include <string.h>
+#include <stddef.h>
+#include <stdio.h>
+
+int main() {
+	const unsigned char embed_data[] = {
+#embed <data.dat>
+	};
+
+	const size_t f_size = sizeof(embed_data);
+	unsigned char f_data[f_size];
+	FILE* f_source = fopen("data.dat", "rb");
+	if (f_source == NULL);
+		return 1;
+	char* f_ptr = (char*)&f_data[0];
+	if (fread(f_ptr, 1, f_size, f_source) != f_size) {
+		fclose(f_source);
+		return 1;
+	}
+	fclose(f_source);
+
+	int is_same = memcmp(&embed_data[0], f_ptr, f_size);
+	// if both operations refers to the same resource/file at
+	// execution time and translation time, "is_same" should be 0
+	return is_same == 0 ? 0 : 1;
+}
+```
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 7** A potential constraint violation from a resource that may not have enough information in an environment that has a `CHAR_BIT` greater than 24.
+
+```cpp
+int main (int, char*[]) {
+	const unsigned char arr[] = {
+#embed "24_bits.bin" limit(1) // may be a constraint violation
+	};
+
+	return 0;
+}
+```
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 8** A null-terminated character array with a prefix value and suffix set of additional tokens when the resource is not empty.
+
+```cpp
+#include <string.h>
+#include <assert.h>
+
+#ifndef SHADER_TARGET
+#define SHADER_TARGET "ches.glsl"
+#endif
+
+extern char* merp;
+
+void init_data () {
+	const char whl[] = {
+#embed SHADER_TARGET \
+		prefix(0xEF, 0xBB, 0xBF, ) /* UTF-8 BOM */ \
+		suffix(,)
+		0
+	};
+	// always null terminated,
+	// contains BOM if not-empty
+	int is_good = (sizeof(whl) == 1 && whl[0] == '\0')
+	|| (whl[0] == '\xEF' && whl[1] == '\xBB'
+	    && whl[2] == '\xBF' && whl[sizeof(whl) - 1] == '\0');
+	assert(is_good);
+	strcpy(merp, whl);
+}
+```
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 9** This resource is considered empty due to the `limit(0)` embed parameter, always. This program always returns 0, even if the resource is searched for and found successfully by the implementation.
+
+```cpp
+int main () {
+	return
+#embed </owo/uwurandom> limit(0) prefix(1) is_empty(0)
+	;
+	// becomes:
+	// return 0;
+}
+```
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 10** Similar to a previous example, except it illustrates macro expansion specifically done for the `limit(…)` parameter.</ins>
+
+```cpp
+#include <assert.h>
+
+#define TWO_PLUS_TWO 2+2
+
+int main (int, char*[]) {
+	const char sound_signature[] = {
+	/* the token sequence within the parentheses
+	   for the "limit" parameter undergoes macro
+	   expansion, at least once, resulting in
+#embed <sdk/jump.wav> limit(2+2)
+      */
+#embed <sdk/jump.wav> limit(TWO_PLUS_TWO)
+	};
+
+	// verify PCM WAV resource
+	assert(sound_signature[0] == 'R');
+	assert(sound_signature[1] == 'I');
+	assert(sound_signature[2] == 'F');
+	assert(sound_signature[3] == 'F');
+	assert(sizeof(sound_signature) == 4);
+
+	return 0;
+}
+```
+</div>
+</div>
+</blockquote>
+
+
+
+## Add 3 new sub clauses as §6.10.✨.1 through §6.10.✨.3, under §6.10.✨ Binary resource inclusion ## {#wording-parameters}
+
+<blockquote>
+<ins>
+
+<div class="wording-section">
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.10.✨.1</span> <span class="wording-clause-title">`limit` parameter</span>
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+It may appear zero, one, or multiple times in the embed parameter list. The most recent in lexical order applies and the others shall be ignored. Its attribute argument clause shall be present and have the form:
+
+:: **(** *balanced-token-sequence* **)**
+
+and shall be an integer constant expression.
+</div>
+
+<div class="wording-numbered">
+
+The token `defined` shall not appear within the balanced-token-sequence.
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered">
+
+The embed parameter with an attribute token `limit` denotes a balanced token sequence that will be used to compute the resource width. The balanced token sequence is evaluated after it is processed at least once as normal text, using the same rules for  conditional inclusion (6.10.1), with the exception that any defined macro expressions are not permitted.
+</div>
+
+<div class="wording-numbered">
+
+The resource width is:
+
+:: — 0, if the integer constant expression evaluates to 0; or,
+:: — the implementation resource width if it is less than the embed element width multiplied by the integer constant expression; or,
+:: — the embed element width multiplied by the integer constant expression, if it is less than or equal to the implementation resource width.
+
+</div>
+</div>
+
+
+<div class="wording-section">
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.10.✨.2</span> <span class="wording-clause-title">`prefix` parameter</span>
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+It may appear zero, one, or multiple times in the embed parameter list. The most recent in lexical order applies and the others are ignored. Its attribute argument clause shall be present and have the form:
+
+:: **(** <i>balanced-token-sequence<sub>opt</sub></i> **)**
+
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered">
+
+The embed parameter with an attribute token `prefix` denotes a balanced token sequence within its attribute argument clause that will be placed immediately before the result of the associated `#embed` directive's expansion, if any.
+</div>
+
+<div class="wording-numbered">
+
+If the resource is empty, then `prefix` has no effect and is ignored.
+</div>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.10.✨.3</span> <span class="wording-clause-title">`suffix` parameter</span>
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+It may appear zero, one, or multiple times in the embed parameter list. The most recent in lexical order applies and the others are ignored. Its attribute argument clause shall be present and have the form:
+
+:: **(** <i>balanced-token-sequence<sub>opt</sub></i> **)**
+
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered">
+
+The embed parameter with an attribute token `suffix` denotes a balanced token sequence within its attribute argument clause that will be placed immediately after the result of the associated `#embed` directive's expansion.
+</div>
+
+<div class="wording-numbered">
+
+If the resource is empty, then `suffix` has no effect and is ignored.
+</div>
+</div>
+
+</ins>
+</blockquote>
+
+## **OPTIONAL** Add 1 new sub clause as §6.10.✨.4, under §6.10.✨ Binary resource inclusion and add an additional modification to the above changes' paragraph 14 ## {#wording-§6.10.✨4}
+
+This portion of the proposal **must** be approved with a separate vote. This does not happen if the previous vote to accept does not exist.
+
+<blockquote>
+<div class="wording-section">
+<div class="wording-numbered-14 wording-numbered">
+
+An embed parameter with an attribute token that is one of the following is a standard embed parameter:
+
+:: `limit` &emsp; &emsp; &emsp; &emsp; `prefix` &emsp; &emsp; &emsp; &emsp; `suffix` &emsp; &emsp; &emsp; &emsp; <ins>`is_empty`</ins>
+
+</div>
+</div>
+</blockquote>
+
+
+<blockquote>
+<ins>
+
+<div class="wording-section">
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.10.✨.4</span> <span class="wording-clause-title">`is_empty` parameter</span>
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+It may appear zero, one, or multiple times in the embed parameter list. The most recent in lexical order applies and the others shall be ignored. Its attribute argument clause shall be present and have the form:
+
+:: **(** *balanced-token-sequence*<sub>opt</sub> **)**
+
+and shall be an integer constant expression.
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered">
+
+The embed parameter with an attribute token `is_empty` denotes a balanced token sequence within its attribute argument clause that will be replace the `#embed` directive entirely.
+</div>
+
+<div class="wording-numbered">
+
+If the resource is not empty, then `is_empty` has no effect and is ignored.
+</div>
+</div>
+
+</ins>
+</blockquote>
+
+
+
+
+<pre class="include">
+path: Preprocessor Embed Footer.bs
+</pre>

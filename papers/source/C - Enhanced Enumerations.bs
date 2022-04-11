@@ -1,13 +1,13 @@
 <pre class='metadata'>
 Title: Enhancements to Enumerations
-Shortname: 29XX
+Shortname: 2963
 Revision: 4
 !Previous Revisions: <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2904.htm">N2904 (r3)</a>, <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2575.pdf">N2575 (r2)</a>, <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2533.pdf">n2533 (r1)</a>, <a href="http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2008.pdf">n2008 (r0)</a>
 Status: P
-Date: 2022-04-11
+Date: 2022-04-12
 Group: WG14
 !Proposal Category: Feature Request
-!Target: General Developers, ABI Lovers, Embedded Systems Developers
+!Target: C23
 Editor: JeanHeyd Meneide (https://thephd.dev), phdofthehouse@gmail.com
 Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
 Editor: Clive Pygott (LDRA Ltd.)
@@ -254,6 +254,20 @@ since the enumerated type is compatible with the underlying type (but not the ot
 
 
 
+## Incomplete Types? ## {#design-incomplete}
+
+Previous revisions of this paper attempted to say that enumerations declared without underlying types could be considered incomplete types, similar to structures and unions. This may not always work because compatibility rules (and the ability to pun between pointers of said types) may not work because a forward-declared enumeration without an underlying type may be compatible with any integer type, and it is not guaranteed that all pointers to integer types have the same storage and alignment requirements. Does there exist an implementation where `int*`, `long long*`, `void*`, and similar do not exhibit the same storage and alignment requirements (not of what they point to, but of the literal pointer value itself)? It is dubious to answer "yes". But, the rule in §6.2.5¶25 that makes structures and unions have the same alignment requirements but not the integer types:
+
+> A pointer to void shall have the same representation and alignment requirements as a pointer to a character type.53) Similarly, pointers to qualified or unqualified versions of compatible types shall have the same representation and alignment requirements. All pointers to structure types shall have the same representation and alignment requirements as each other. All pointers to union types shall have the same representation and alignment requirements as each other. Pointers to other types need not have the same representation or alignment requirements.
+>
+> — **§6.2.5¶31**, *ISO/IEC 9899:202x, C Standard Working Draft, April 12th, 2022*
+
+So we cannot guarantee that the requirements for compatibility (pointer values to any two types have the same storage and alignment) are met. That rule has been there for a long time, so they must have a good reason for not allowing it for the integer types. (… Right?)
+
+Nothing needs to be said for enumerations with fixed underlying types because enumerations with fixed underlying types are always complete, and therefore need no special rules for handling their existence as an "incomplete" pointer.
+
+
+
 
 # Proposed Wording # {#wording}
 
@@ -270,7 +284,6 @@ The intent of the wording is to provide the ability to express enumerations with
 - enumerations with underlying types ignore const, volatile, `_Atomic`, and all other qualifiers on a given type;
 - enumerations with underlying types can be forward-declared alongside enumerations without underlying types;
 - enumerations with underlying types cannot be forward-declared with different underlying types than the first forward declaration;
-- enumerations should be allowed to be forward-declared and used as incomplete types, as many implementations allow;
 - enumerations that are foward declared only compatible with themselves, and not any potential underlying type;
 - enumerations with an underlying type can be redeclared without an underlying type (e.g., `enum a : int;` matches `enum a;`);
 - enumerations with an underlying type can have enumerators initialized with integer constant expressions whose type is not strictly `int` or `unsigned int` used to specify their values;
@@ -390,8 +403,8 @@ Constraints
 
 For an enumeration with a fixed underlying type, an enumeration constant with a constant expression that defines its value shall:
 
-:: — have a value representable as that fixed underlying type before conversion, if the fixed underlying type is not `bool`; or
-:: — be implicitly convertible to `bool`.
+:: — have that value be representable as that fixed underlying type without conversion, if the fixed underlying type is not `bool`; or
+:: — be implicitly converted to 1 or 0 following the usual conversion rules for `bool` (6.3.1.2), if the underlying type is `bool`.
 
 The definition of an enumeration constant without a defining constant expression shall not overflow the maximum of the fixed underlying type by adding 1 to the previous enumeration constant.
 </ins>
@@ -614,7 +627,8 @@ typedef enum q : short { s } R;
 
 enum forward;
 extern enum forward fwd_val0; /* Constraint violation: incomplete type */
-extern enum forward* fwd_ptr0;
+extern enum forward* fwd_ptr0; /* Constraint violation: enums cannot be
+                                  used like other incomplete types */
 extern int* fwd_ptr0; /* Constraint violation: incompatible with incomplete type */
 
 enum forward1 : int;
@@ -659,9 +673,9 @@ Constraints
 
 A type specifier of the form
 
-:: **enum** *identifier*
+:: **enum** <ins><i>attribute-specifier-sequence<sub>opt</sub></i></ins> *identifier*
 
-without an enumerator list shall only appear <ins>in a context where incomplete types are allowed or</ins> after the type it specifies is complete.
+without an enumerator list shall only appear after the type it specifies is complete.
 </div>
 
 <div>
@@ -698,7 +712,7 @@ A declaration of the form
 
 :: <ins>**enum** <i>attribute-specifier-sequence<sub>opt</sub></i> *identifier* <ins><i>enum-type-specifier<sub>opt</sub></i></ins> <b>;</b></ins>
 
-specifies a <del>structure or union type</del><ins>structure, union, or enumerated type</ins> and declares the identifier as a tag of that type.<sup>142)</sup> <ins>If the enumerated type does not contain the enum type specifier, the enumerated type is incomplete. Otherwise, the enumerated type is complete.</ins> The optional attribute specifier sequence appertains to the structure or union type being declared; the attributes in that attribute specifier sequence are thereafter considered attributes of the structure or union type whenever it is named.
+specifies a <del>structure or union type</del><ins>structure, union, or enumerated type</ins> and declares the identifier as a tag of that type.<span class="footnote-ref">142)</span> <ins>If the enumerated type contains the enum type specifier, it is complete.</ins> The optional attribute specifier sequence appertains to the structure or union type being declared; the attributes in that attribute specifier sequence are thereafter considered attributes of the structure or union type whenever it is named.
 </div>
 
 <div class="wording-numbered wording-numbered-9">
@@ -706,17 +720,11 @@ If a type specifier of the form
 
 :: *struct-or-union* <i>attribute-specifier-sequence<sub>opt</sub></i></i> *identifier*
 
-<ins>or</ins>
-
-:: <ins>**enum** <i>attribute-specifier-sequence<sub>opt</sub></i> *identifier*</ins>
-
-occurs other than as part of one of the above forms, and no other declaration of the identifier as a tag is visible, then it declares an incomplete <del>structure or union type</del><ins>structure, union, or enumerated type</ins>, and declares the identifier as the tag of that type.<del><sup>142)</sup></del>
+occurs other than as part of one of the above forms, and no other declaration of the identifier as a tag is visible, then it declares an incomplete structure or union type, and declares the identifier as the tag of that type.<span class="footnote-ref">143)</span>
 
 <div>
-<del>
-<sup>142)</sup><sub>A similar construction with enum does not exist.</sub>
+<span class="footnote-ref">143)</span><span class="footnote">A similar construction with `enum`<ins> that does not contain a fixed underlying type</ins> does not exist.<ins> Enumerations with a fixed underlying type are always complete after the enum type specifier.</ins></span>
 </del>
-</div>
 </div>
 
 
