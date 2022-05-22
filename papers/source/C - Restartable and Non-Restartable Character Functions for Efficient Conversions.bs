@@ -33,19 +33,27 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 8 - May 12<sup>th</sup>, 2022 ## {#changelog-r8}
+## Revision 8 - June 1<sup>st</sup>, 2022 ## {#changelog-r8}
 
 - Editorial changes:
 	- Use "is a null pointer" versus "is `NULL`" and similar.
 	- Fix a grammar mistake for a sentence discussing code points.
-- All <diff-del>deletions</diff-del> and <diff-ins>additions</diff-ins> that were done are highlighted a bit differently to distinguish them from their counterparts.
+	- Use "initial shift state" over "initial conversion sequence"
+- Talk about how `mbstate_t` is not necessary for the u8/u16/u32 functions, but preserves function form for macro-generic programming.
+- Wording changes:
+	- Define code point, code unit, encoding error, unrecorded encoding error, and more in 6.2.9 for use elsewhere.
+	- Properly change how the functions handle the `*state` and `state` object in the wording.
+	- Fix the problem with the specification of the output values when processing a null character value or when using `input`/`*input` that are null pointers.
+	- Adjust the specification to give proper unspecified behavior.
+	- Add Annex J.1 entry.
+
 
 
 ## Revision 7 - April 12<sup>th</sup>, 2022 ## {#changelog-r7}
 
 - Update definitions for when the `input` pointer - and its pointed to pointer - are `NULL`, and make sure they have identical behaviors.
 - Update definitions for when the `output` pointer - and its pointed to pointer - are `NULL`, and make sure they have identical behaviors.
-- Ensure that `mbstate_t` is properly cleared to the initial conversion sequence on both `NULL` input pointers or U+00000000 being processed in the input string. Ensure that it outputs any code unit sequences to the output necessary to return the output to its initial conversion sequence as well (thanks, Hubert Tong!).
+- Ensure that `mbstate_t` is properly cleared to the initial conversion state on both `NULL` input pointers or U+00000000 being processed in the input string. Ensure that it outputs any code unit sequences to the output necessary to return the output to its initial conversion state as well (thanks, Hubert Tong!).
 - Handle `LC_CTYPE` being changed in the wording (it's unspecified behavior) (thanks, Hubert Tong!).
 - Switch to using `char8_t` officially now that it has been accepted to C23 (thanks, Joseph Myers!).
 - `restrict` added to the function prototypes ([[#design-forms-choice]]).
@@ -571,11 +579,11 @@ If an error happens, the conversion is stopped and an error code is returned. Th
 The behaviors are as follows:
 
 - if `state` is a null pointer, then:
-  - an automatic storage duration (non-`static`) `mbstate_t` object is initialized to the initial conversion sequence;
+  - an automatic storage duration (non-`static`) `mbstate_t` object is initialized to the initial conversion state;
   - and, a pointer to this state object plus the original four parameters are passed to the function.
-- if `output` is a null pointer or `*output` is a null pointer, then no output will be written. If `*output_size` is not-`NULL`, the value will be decremented the amount of characters that would have been written.
-- if `output` and `*output` are non-`NULL` and `output_size` is a null pointer, then enough space is assumed in the output buffer for the entire operation.
-- if `input` is a null pointer or `*input` is a null pointer, then `state` is set to the initial conversion sequence and, if `output` <diff-del>is not `NULL`</diff-del><diff-ins>is not a null pointer</diff-ins>, will write out a sequence - if any - to represent a change to the initial conversion sequence. No other actions are performed. In all other cases, `input` must <diff-del>not be `NULL`</diff-del><diff-ins>not be a null pointer</diff-ins>.
+- if `output` is a null pointer or `*output` is a null pointer, then no output will be written. If `*output_size` is not a null pointer, the value will be decremented the amount of characters that would have been written.
+- if `output` and `*output` are not null pointers, and `output_size` is a null pointer, then enough space is assumed in the output buffer for the entire operation.
+- if `input` is a null pointer or `*input` is a null pointer, then `state` is set to the initial conversion state and, if `output` is not a null pointer, will write out a sequence - if any - to represent a change to the initial conversion state. No other actions are performed. In all other cases, `input` must not be a null pointer.
 
 Finally, it is useful to prevent the class of `stdc_mcerr_insufficient_output`/`-3` errors from showing up in your code if you know you have enough space. For the non-string (the functions lacking `s`) that perform a single conversion, a user can pre-allocate a suitably sized static buffer in automatic storage duration space. This will be facilitated by a group of integral constant expressions contained in macros, which would be;
 
@@ -843,7 +851,12 @@ stdc_mcerr stdc_XnrtoYn(size_t*restrict output_size, const charY* output,
 
 The form of (1) is what is in this paper and the form that this paper started out with. It is what we are going to move forward with for this proposal. It is similar to `iconv`, but deviates from that design a bit by using the typical Win32 and similar convention that a null pointer argument changes the behavior to allow for greater flexibility. For example, passing `NULL` to the first design for the `output_size` allows an implementation to assume the output buffer is large enough: this can save on size checking on every successful conversion and write out. It also allows passing `NULL` for `output`, which allows an end-user to not perform any write outs but simply determine the full count of objects.
 
-As a negative, it requires writes through indirect pointers for both the input and output, as well as for the sizes for the input and output. This causes multiple updates to be necessary, and duplicates information in exchange for a moderate decrease in ease-of-use. Unfortunately, it turns out this form is actually necessary for all of the functionality proposed here.
+As a negative, it requires writes through indirect pointers for both the input and output, as well as for the sizes for the input and output. This causes multiple updates to be necessary, and duplicates information in exchange for a moderate decrease in ease-of-use. U#fortunately, it turns out this form is actually necessary for all of the functionality proposed here.
+
+
+### `mbstate_t` Parameter for Unicode-only Conversions? ### {#design-forms-state}
+
+Because the Unicode conversions, as speceified, require no intermediate holdings, there is technically no reason to provide the `mbstate_t` parameter. However, macro-generic programming used to wrap this code may partially rely on having an additional parameter to pass to the function. There is currently no way to have a variable argument parameter in a macro reflected with `__VA_ARGS__` without undefined behavior / implementation extensions, and solving such an issue would take even more advanced macro generic programming to solve the problem. Therefore, we keep the `mbstate_t` parameter, noting that passing the state object or just simply passing `NULL`/`0` all the time to such a parameter is a viable usage strategy. We realize this is not ideal but it is [how it has been implemented in our code](https://ztdcuneicode.readthedocs.io/en/latest/api/generic%20typed%20conversions.html#c.cnc_cxsnrtocysn).
 
 
 ### Simplification Without Loss of Functionality? ### {#design-forms-simplify}
@@ -861,7 +874,6 @@ std_mcerr err = stdc_c8srntoc32sn(NULL, some_utf32_buffer, &input_sz, some_utf8_
 ```
 
 The above seems okay, until it becomes clear that you have no idea how many characters were written out into `some_utf32_buffer`. By passing `NULL` for the size but having no pointer to update, the information is lost entirely. One could argue that someone should call the version which does the counting first and THEN pass `NULL` for the size, but this is overly restrictive. For example, a maximally-sized buffer can be prepared before hand when doing a UTF-8 to UTF-32 by simply assuming every code unit of input will result in one code point of output (e.g., everything input is ASCII). One could guarantee the fastest possible writing speed by creating such a maximally-sized buffer and then using `NULL` for the size, but it would be impossible to know **exactly** how much output was written in that case. One could compromise the return value to return that information, but that brings up the same API design issues mentioned above. Therefore, we keep the double-pointer form to retain the information properly.
-
 
 
 ### Performance of Double-Pointers? ### {#design-forms-performance}
@@ -903,9 +915,9 @@ The intent of the wording is to provide transcoding functions that:
 - define "code unit" as the smallest piece of information;
 - define the notion of an "indivisible unit of work";
 - introduce the notion of multi-unit work that does not use the same 1:N or M:1 design as the precious `wchar_t` functions;
-- convert from the execution ("mc") and wide execution ("mwc") encodings to the unicode ("c8", "c16", "c32") encodings and vice-versa;
-- convert from the execution encoding ("mc") to the wide execution ("mwc") encoding and vice-versa;
-- provide a way for `mbstate_t` to be properly initialized as the initial conversion sequence; and,
+- convert from the execution ("mc") and wide execution ("mwc") encodings to the Unicode ("c8", "c16", "c32") encodings and vice-versa;
+- convert from the execution ("mc") encoding to the wide execution ("mwc") encoding and vice-versa;
+- provide a way for `mbstate_t` to be properly initialized as the initial conversion state; and,
 - to be entirely thread-safe by default with no magic internal state asides from what is already required by locales.
 
 
@@ -915,7 +927,76 @@ The intent of the wording is to provide transcoding functions that:
 *Author's Note: Any � is a stand-in character to be replaced by the editor.*
 
 
-### Create a new section 7.S✨ Text Transcoding Utilities ### {#wording-specification-7.S✨}
+### Modify §6.2.9 Encodings to include definitions of Code Point, Code Unit, Wide/Narrow Exceution Encodings, and Encoding Error ### {#wording-specification-6.2.9}
+
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.2.9</span> <span class="wording-clause-title">Encodings</span>
+</div>
+
+<div class="wording-section">
+<div class="wording-numbered wording-numbered-1">
+…
+</div>
+
+<div class="wording-numbered wording-numbered-2">
+…
+</div>
+
+<ins>
+<div class="wording-numbered wording-numbered-3">
+
+A *code unit* is a single compositional unit of encoded information, usually of type `char`, `char8_t`, `char16_t`, `char32_t`, or `wchar_t`.
+</div>
+
+<div class="wording-numbered">
+
+A *code point* is a single compositional unit of decoded information. Code points are generally used as the single complete decoded output, or as an intermediary to transcode to other code units. A *Unicode code point* is a single compositional unit of decoded information as defined in ISO/IEC 10646, typically used to convert to or from UTF-8, UTF-16, and UTF-32.
+</div>
+
+<div class="wording-numbered">
+
+The *narrow execution encoding* is the implementation-defined, `LC_CTYPE`, (7.11.1)-influenced, locale-based execution environment encoding. The *wide execution encoding* is the implementation-defined, `LC_CTYPE` (7.11.1)-influenced, locale-based wide execution environment encoding. Both of these encodings are called the *execution encodings*.
+</div>
+
+<div class="wording-numbered">
+
+An *unrecorded encoding error* is when a sequence of code units or code points being processed by an encoding, decoding, or transcoding function does not form a valid sequence according to the encoding of the function.
+</div>
+
+<div class="wording-numbered">
+
+An *encoding error* is the same as an *unrecorded encoding error*, except that the value of the macro `EILSEQ` (7.5) is stored in `errno` when such an error occurs during execution of the functions defined in this document unless otherwise specified.
+</div>
+
+</ins>
+</div>
+</blockquote>
+
+
+### Modify §7.21.3 Files so that it no longer defines the term "encoding error', since it was moved to §6.2.9 Encodings ### {#wording-specification-7.21.3}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.21.3</span> <span class="wording-clause-title">Files</span>
+</div>
+
+<div class="wording-section">
+<div class="wording-numbered wording-numbered-1">
+…
+</div>
+
+<div class="wording-numbered wording-numbered-14">
+
+An <del>*encoding error*</del><ins>encoding error</ins>  occurs if the character sequence presented to the underlying `mbrtowc` function does not form a valid (generalized) multibyte character, or if the code value passed to the underlying `wcrtomb` does not correspond to a valid (generalized) multibyte character. The wide character input/output functions and the byte input/output functions store the value of the macro `EILSEQ` in `errno` if and only if an encoding error occurs.
+</div>
+
+</div>
+</blockquote>
+
+
+### Create a new section §7.S✨ Text Transcoding Utilities ### {#wording-specification-7.S✨}
 
 <blockquote>
 <ins>
@@ -927,19 +1008,13 @@ The intent of the wording is to provide transcoding functions that:
 <div class="wording-section">
 
 <div class="wording-numbered">
+
 The header `<stdmchar.h>` declares four status code enumerators, five macros, several types and several functions for transcoding encoded text safely and efficiently. It is meant to supersede conversion utilities from Unicode utilities (7.28) and Extended multibyte and wide character utilities (7.29). It is meant to represent "multi character" functions. These functions can be used to count the number of input that form a complete sequence, count the number of output characters required for a conversion with no additional allocation, validate an input sequence, or transcode text from one encoding to another encoding. Particularly, it provides single unit and multi unit transcoding functions for transcoding by working on *code units* and *code points*.
 </div>
 
 <div class="wording-numbered">
-A code unit is a single compositional unit of encoded information, usually of type `char`, `char8_t`, `char16_t`, `char32_t`, or `wchar_t`. One or more code units are interpreted as specified by the encoding associated with a given function and code unit, described below.
-</div>
 
-<div class="wording-numbered">
-A code point is a single compositional unit of decoded information. Code points are generally used as the single complete decoded output, or as an intermediary to transcode to other code units<diff-del>, for example, Unicode Code Points as defined in ISO/IEC 10646 for use with UTF-8, UTF-16, and UTF-32.</diff-del><diff-ins> (e.g., Unicode Code Points as defined in ISO/IEC 10646 to convert to UTF-8, UTF-16, and UTF-32).</diff-ins>
-</div>
-
-<div class="wording-numbered">
-Inputs to the functions in this clause are read until there is enough information taken in to perform an *indivisible unit of work*. An indivisible unit is the smallest possible input, as defined by the encoding, that can produce either one or more outputs or perform a transformation of any internal state. The conversion of these indivisible units is called an indivisible unit of work, and they are used to complete the transcoding operations specified below.
+Inputs to the functions in this clause are read until there is enough information taken in to perform an *indivisible unit of work*. An indivisible unit is the smallest possible input, as defined by the encoding, that can produce one or more outputs, perform a transformation of any state, or both. The conversion of these indivisible units is called an indivisible unit of work, and they are used to complete the transcoding operations specified below.
 </div>
 
 <div class="wording-numbered">
@@ -949,13 +1024,12 @@ One or more of the following must hold for any given transcoding operation on an
 :: — output is written from consuming input, or output is written from the state which causes the state to change; or,
 :: — an error occurs and both the input and output do not change relative to the current indivisible unit of work.
 
-
-The state - managed through the `mbstate_t` pointer - may change during any of these operations, and may be left in an indeterminate state after an error occurs. For the multi unit functions, the process acts as if it completes one indivisible unit of work repeatedly. When an error occurs, only the input successfully consumed and the output successfully written according to the last indivisible unit of work are reflected in the output values: no other values are written.
+For the multi unit functions, the process acts as if it completes one indivisible unit of work repeatedly. When an error occurs, only the input successfully consumed and the output successfully written according to the last indivisible unit of work are reflected in the output values: no other values are written.
 </div>
 
 <div class="wording-numbered">
 
-The *narrow execution encoding* is the implementation-defined `LC_CTYPE` (7.11.1)-influenced locale execution environment encoding. The *wide execution encoding* is the implementation-defined `LC_CTYPE` (7.11.1)-influenced locale wide execution environment encoding. Functions in `<stdmchar.h>` which use `char` and `wchar_t`, or their qualified forms, derive their implementation-defined encoding from the locale. The other encodings are UTF-8, associated with `char8_t`, UTF-16, associated with `char16_t`, and UTF-32, associated with `char32_t`.<span class="footnote-ref">FN✨0)</span> 
+Functions in `<stdmchar.h>` which use `char` and `wchar_t`, or their qualified forms, derive their implementation-defined encodings from the narrow execution encoding or the wide execution encoding (6.2.9), respectively. The other encodings are UTF-8, associated with `char8_t`, UTF-16, associated with `char16_t`, and UTF-32, associated with `char32_t`.<span class="footnote-ref">FN✨0)</span>
 </div>
 
 <div class="wording-numbered">
@@ -978,7 +1052,13 @@ For the UTF-8, UTF-16, and UTF-32 encodings, collectively referred to as the *Un
 
 <div class="wording-numbered">
 
-For all encodings, when the equivalent of a `'\0'` (a code unit value of 0) is successfully transcoded, the `mbstate_t` object in use for the transcoding operation shall be the initial conversion sequence. Any write operations necessary to leave the output in its initial shift state shall also be performed, provided that the pointer to the output buffer and the output buffer itself <diff-del>are not `NULL`</diff-del><diff-ins>are not null pointers</diff-ins>.
+For all encodings, when the equivalent of a `'\0'` (a code unit value of 0) is encountered in the input, the `mbstate_t` object in use for the transcoding operation is set to the initial conversion state. Any write operations necessary to leave the output in its initial shift state shall also be performed, provided that the output is writable according to the specification of the functions in this clause.
+</div>
+
+<div class="wording-numbered">
+
+Changing the `LC_CTYPE` category causes the conversion state used with the functions in this clause to
+be indeterminate.
 </div>
 
 <div class="wording-numbered">
@@ -1007,11 +1087,10 @@ which correspond to the maximum output for each single unit conversion function 
 </div>
 
 <div class="wording-numbered">
-<p>
-There is an association of naming convention, types, encoding, and maximums, used to describe the functions in this clause:
-</p>
 
-<p>
+There is an association of naming convention, types, encoding, and maximums, used to describe the functions in this clause:
+
+
 <table>
 	<tr>
 		<th>Name</th>
@@ -1056,11 +1135,8 @@ There is an association of naming convention, types, encoding, and maximums, use
 		<td>`1`</td>
 	</tr>
 </table>
-</p>
 
-<p>
 The maximum output macro values specified in the above table are related to the single unit conversion functions (7.S✨.1). These functions perform at most one indivisible unit of work, or return an error. The maximum output macro values shall be integer constant expressions large enough that conversions to the single unit conversion function's specified encoding shall not overflow a buffer of the proper code unit type with that size. The maximum output macro values do not affect the multi unit conversion functions (7.S✨.2), which perform as many indivisible units of work as is possible until an error occurs, until the output space is exhausted, or until the input is exhausted.
-</p>
 </div>
 
 <div class="wording-numbered">
@@ -1077,7 +1153,7 @@ Each value represents an specific situation when calling the relevant transcodin
 
 :: — `stdc_mcerr_insufficient_output`, when the input is correct and an indivisible unit of work can be performed but there is not enough output space to write to;
 :: — `stdc_mcerr_incomplete_input`, when input has been exhausted and the sequence is not incorrect but there are no more input values;
-:: — `stdc_mcerr_invalid`, when an encoding error occurred; and,
+:: — `stdc_mcerr_invalid`, when a unrecorded encoding error occurred; and,
 :: — `stdc_mcerr_ok`, when the operation was successful (none of the situations described for the other values of this enumerated type apply).
 
 No other value shall be returned from the functions described in this clause.
@@ -1088,7 +1164,7 @@ Recommended Practice
 </div>
 
 <div class="wording-numbered">
-The maximum output macro values are intended for use in making automatic storage duration array declarations. Implementations should choose values for the macros that are spacious enough to accommodate a variety of underlying implementation choices for the target encodings supported by the narrow execution encodings and wide execution encodings, which for some encodings can output more than one UTF-32 code point. Below is a set of values that may be resilient to future additions and changes in implementations:
+The maximum output macro values are intended for use in making automatic storage duration array declarations. Implementations should choose values for the macros that are spacious enough to accommodate a variety of underlying implementation choices for the target encodings supported by the narrow execution encodings and wide execution encodings, which for some encodings can output more than one UTF-32 code point. Below is a set of values which are mot resilient to future additions and changes in implementations:
 
 > ```cpp
 > #define STDC_C8_MAX  32
@@ -1101,7 +1177,7 @@ The maximum output macro values are intended for use in making automatic storage
 
 <div class="wording-numbered">
 
-Beyond just the Unicode encodings mentioned above, implementations are encouraged to not store partial reads or partial writes in the `mbstate_t` object with these functions unless as is strictly necessary. Implementations providing additional encodings for use with these functions should, to the extent possible for a given encoding, always define an indivisible unit of work to transcode as complete a unit of information as is possible or produce an error. If a sequence of code units cannot form a complete state transition or produce output, then an implementation should return `stdc_mcerr_incomplete_input` if the input is exhausted, or `stdc_mcerr_invalid` if the input sequence is incorrect.
+Beyond just the Unicode encodings mentioned above, implementations are encouraged to not store partial reads or partial writes in the `mbstate_t` object with these functions unless as is strictly necessary. Implementations providing additional encodings for use with these functions should, to the extent possible for a given encoding, always define an indivisible unit of work to transcode as complete a unit of information as is possible or produce an error. If a sequence of code units cannot form a complete shift sequence or produce output, then an implementation should return `stdc_mcerr_incomplete_input` if the input is exhausted, or `stdc_mcerr_invalid` if the input sequence is incorrect.
 </div>
 </div>
 </ins>
@@ -1111,8 +1187,7 @@ Beyond just the Unicode encodings mentioned above, implementations are encourage
 <ins>
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.S✨.1</span> <span class="wording-clause-title">Single Unit, Sized Conversion Functions
-</span>
+<span class="wording-clause-number">7.S✨.1</span> <span class="wording-clause-title">Single Unit, Sized Conversion Functions</span>
 </div>
 
 <div class="wording-section">
@@ -1234,7 +1309,7 @@ Synopsis
 </div>
 
 <div class="wording-clause-section-title">
-<diff-ins>Description</diff-ins>
+Description
 </div>
 
 <div class="wording-numbered">
@@ -1260,34 +1335,34 @@ The transcoding functions take an input buffer and an output buffer of the assoc
 
 <div class="wording-numbered">
 
-The transcoding functions convert from code units of type `charX` interpreted according to encoding X to code units of type `charY` according to encoding Y given a conversion state of value `*state`. This function only performs a single indivisible unit of work. It does nothing and returns `stdc_mcerr_ok` if the input is empty<diff-del> (only signified by first checking if `input_size` <diff-del>is `NULL`</diff-del><diff-ins>is a null pointer</diff-ins>, then checking if `*input_size` is equal to zero).</diff-del><diff-ins>. The input is considered empty if `input_size` is a null pointer, or `*input_size` is zero.</diff-ins> The behavior of the transcoding functions is as follows.
+The transcoding functions convert from code units of type `charX` interpreted according to encoding X to code units of type `charY` according to encoding Y given a conversion state of value `*state`. This function only performs a single indivisible unit of work. It returns `stdc_mcerr_ok` if the input is empty. The input is considered empty if `input_size` is a null pointer, or `*input_size` is zero if `input_size` is not a null pointer. The behavior of the transcoding functions is as follows.
 
-:: — If `state` <diff-del>is `NULL`</diff-del><diff-ins>is a null pointer</diff-ins>, then an automatic storage duration object of type `mbstate_t` is created. It is initialized to the initial conversion sequence and a pointer to this object is used wherever `state` is used in this paragraph.
-:: — If `input` is a null pointer or `*input` <diff-del>is `NULL`</diff-del><diff-ins>is a null pointer</diff-ins>, then `*state` is set to the initial conversion sequence. If `output` and `*output` <diff-del>are not `NULL`</diff-del><diff-ins>are not null pointers</diff-ins>, and if `*state` is not in the initial conversion sequence, it may write output to return the output sequence to the initial conversion sequence if necessary. If `output_size` <diff-del>is not `NULL`</diff-del><diff-ins>is not a null pointer</diff-ins> and there is not enough space to write a sequence to return to the initial conversion sequence, the function returns `stdc_mcerr_insufficient_output`. Otherwise, the function returns `stdc_mcerr_ok`.
-:: — The function reads code units from `*input` if `*input_size` is large enough to produce an indivisible unit of work. If no encoding errors have occurred but the input is exhausted before an indivisible unit of work can be computed, the function returns `stdc_mcerr_incomplete_input`. If an encoding error occurs, then the function returns `stdc_mcerr_invalid`.
-:: — If `output_size` <diff-del>is not `NULL`</diff-del><diff-ins>is not a null pointer</diff-ins>, then `*output_size` will be decremented the amount of code units that would have been written to `*output` (even if `output` was `NULL`). If the output would be exhausted (`*output_size` will be decremented below zero by the write out of the indivisible unit of work), the function returns `stdc_mcerr_insufficient_output` and does not decrement `*output_size`.
-:: — If `output` or `*output` <diff-del>is `NULL`</diff-del><diff-ins>is a null pointer</diff-ins>, then no output will be written. `*input` is still read and incremented. If `output_size` <diff-del>is not `NULL`</diff-del><diff-ins>is not a null pointer</diff-ins> and both `output` and `*output` <diff-del>is not `NULL`</diff-del><diff-ins>is not a null pointer</diff-ins>, then `*output` points to at least `*output_size` *charY* code units.
-:: — If `output_size` <diff-del>is `NULL`</diff-del><diff-ins>is a null pointer</diff-ins> and output <diff-del>is not `NULL`</diff-del><diff-ins>is not a null pointer</diff-ins>, then enough space in the buffer pointed to by `*output` is assumed for the write out of the completed indivisible unit of work. The behavior is undefined if the output buffer is not large enough for the transcoding operation.
+:: — If `state` is a null pointer, then an automatic storage duration object of type `mbstate_t` is created. It is initialized to the initial conversion state and a pointer to this object is used wherever `state` is used in this paragraph.
+:: — If `input` is a null pointer or `*input` is a null pointer, then `*state` is set to the initial conversion state. If `output` and `*output` are not null pointers, and if `*state` is not in the initial conversion state, it writes any necessary output to return the output sequence to the initial shift state, unless `output_size` is not a null pointer and there is not enough space to write that output. In the case where the output sequence is not written to because there is not enough space, `stdc_mcerr_insufficient_output` is returned. Otherwise, the function returns `stdc_mcerr_ok` and if `output_size` is not a null pointer then `*output_size` is decremented by the amount of output written. If `output_size` is a null pointer and `output` and `*output` are not null pointers, then enough space to perform the write out is assumed; the behavior is undefined if the output buffer is not large enough for the transcoding operation in this case.
+:: — The function reads code units from `*input` if `*input_size` is large enough to produce an indivisible unit of work. If no encoding errors have occurred but the input is exhausted before an indivisible unit of work can be computed, the function returns `stdc_mcerr_incomplete_input`. If a unrecorded encoding error occurs, then the function returns `stdc_mcerr_invalid`.
+:: — If `output_size` is not a null pointer, then `*output_size` will be decremented the amount of code units that would have been written to `*output` (even if `output` is a null pointer). If the output would be exhausted (`*output_size` will be decremented below zero by the write out of the indivisible unit of work), the function returns `stdc_mcerr_insufficient_output` and does not decrement `*output_size`.
+:: — If `output` or `*output` is a null pointer, then no output will be written. If applicable, `*input` is still read and incremented. If `output_size` is not a null pointer and both `output` and `*output` is not a null pointer, then `*output` shall point to at least `*output_size` *charY* code units.
+:: — If `output_size` is a null pointer, `output` is not a null pointer, and `*output` is not a null pointer, then enough space in the buffer pointed to by `*output` is assumed for the write out of the completed indivisible unit of work. The behavior is undefined if the output buffer is not large enough for the transcoding operation.
 
 </div>
 
 <div class="wording-clause-section-title">
-<diff-ins>Returns</diff-ins>
+Returns
 </div>
 
 <div class="wording-numbered">
 
-On success or failure, the transcoding functions shall return one of the above error codes (7.S✨). If `*state` is not initialized to the initial conversion sequence for the function on first use, or is used after being input into a function whose result is not one of `stdc_mcerr_ok`, `stdc_mcerr_incomplete_input`, or `stdc_mcerr_insufficient_output`, the behavior of the functions is unspecified. If `input` <diff-del>is `NULL`</diff-del><diff-ins>is a null pointer</diff-ins> or `*input` <diff-del>is `NULL`</diff-del><diff-ins>is a null pointer</diff-ins>, then `*state` is set to the initial conversion sequence as described below and no other work is performed. Otherwise, `input` shall <diff-del>not be `NULL`</diff-del><diff-ins>not be a null pointer</diff-ins>.
+On success or failure, the transcoding functions shall return one of the above error codes (7.S✨). If `state` is not a null pointer and `*state` is not initialized to the initial conversion state for the function on first use, or is used after being input into a function whose result is not one of `stdc_mcerr_ok`, `stdc_mcerr_incomplete_input`, or `stdc_mcerr_insufficient_output`, the behavior of the functions is unspecified. If `input` is a null pointer or `*input` is a null pointer, then `*state` is set to the initial conversion state as described below and no other work is performed.
 </div>
 
 <div class="wording-numbered">
 
 If the function returns `stdc_mcerr_ok`, then all of the following is true:
 
-:: — if `input` and `*input` <diff-del>are not `NULL`</diff-del><diff-ins>are not null pointers</diff-ins>, `*input` is incremented by the number of code units read and successfully converted ;
-:: — if `input_size` <diff-del>is not `NULL`</diff-del><diff-ins>is not a null pointer</diff-ins>, `*input_size` is decremented by the number of code units read and successfully converted from the input;
-:: — if `output` and `*output*` <diff-del>are not `NULL`</diff-del><diff-ins>are not null pointers</diff-ins>, `*output` is incremented by the number of code units written to the output; and,
-:: — if `output_size` <diff-del>is not `NULL`</diff-del><diff-ins>is not a null pointer</diff-ins>, `*output_size` is decremented by the number of code units written to the output.
+:: — if `input` and `*input` are not null pointers, `*input` is incremented by the number of code units read and successfully converted ;
+:: — if `input_size` is not a null pointer, `*input_size` is decremented by the number of code units read and successfully converted from the input;
+:: — if `output` and `*output` are not null pointers, `*output` is incremented by the number of code units written to the output; and,
+:: — if `output_size` is not a null pointer, `*output_size` is decremented by the number of code units written to the output.
 
 
 Otherwise, if an error is returned then none of the above occurs. If the return value is `stdc_mcerr_invalid`, then `*state` is in an unspecified state. If the return value is `stdc_mcerr_incomplete_input` or `stdc_mcerr_insufficient_output`, then `*state` is not changed.
@@ -1299,7 +1374,7 @@ Recommended Practice
 
 <div class="wording-numbered">
 
-Implementations should take advantage of the information of `NULL` values for the output size pointer, output data pointer, or both, to drastically improve performance characteristics for assumed unlimited write space, output counting scenarios, or input validation/counting, respectively.
+Implementations should take advantage of the information of null pointer values for the output size pointer, output data pointer, or both, to drastically improve performance characteristics for assumed unlimited write space, output counting scenarios, or input validation/counting, respectively.
 </div>
 
 <div class="wording-numbered">
@@ -1437,7 +1512,7 @@ Synopsis
 </div>
 
 <div class="wording-clause-section-title">
-<diff-ins>Description</diff-ins>
+Description
 </div>
 
 <div class="wording-numbered">
@@ -1461,6 +1536,12 @@ with the following properties:
 The multi unit transcoding functions take an input buffer and an output buffer of the associated code unit types, potentially with their sizes. The functions consume any number of code units to perform a sequence of indivisible units of work, which results in zero or more output code units. The functions will repeatedly perform an indivisible unit of work until either an error occurs or the input is exhausted.
 </div>
 
+
+<div class="wording-numbered">
+
+If `input_size` is a null pointer, `input` shall either be a null pointer or point to a null pointer. Otherwise, `input` shall be a pointer to a non-null pointer to an array of at least `*input_size` elements.
+</div>
+
 <div class="wording-numbered">
 
 The multi unit transcoding functions convert from code units of type `charX` interpreted according to encoding X to code units of type `charY` according to encoding Y given a conversion state of value `*state`. The behavior of these functions is as-if the analogous single unit function `stdc_XntoYn` was repeatedly called, with the same `output`, `output_size`, `input`, `input_size`, and `state` parameters, to perform multiple indivisible units of work. The function stops when an error occurs or the input is exhausted (only signified when `*input_size` is zero).
@@ -1469,9 +1550,9 @@ The multi unit transcoding functions convert from code units of type `charX` int
 <div class="wording-numbered">
 The multi unit transcoding functions behave as-if:
 
-:: 1. If `state` <diff-del>is `NULL`</diff-del><diff-ins>is a null pointer</diff-ins>, then an automatic storage duration object of type `mbstate_t` is created. It is initialized to the initial conversion sequence and used wherever `state` is used in this paragraph.
-:: 2. If `input` <diff-del>is `NULL`</diff-del><diff-ins>is a null pointer</diff-ins> or `*input` is NULL, then `*state` is set to the initial conversion sequence with the following additional requirements: If `output` and `*output` <diff-del>are not `NULL`</diff-del><diff-ins>are not null pointers</diff-ins>, and if `*state` is not in the initial conversion sequence, it may write output to return the output sequence to the initial conversion sequence. If `output_size` <diff-del>is not `NULL`</diff-del><diff-ins>is not a null pointer</diff-ins>, but there is not enough space to write a sequence to return to the initial conversion sequence (if required), the function returns `stdc_mcerr_insufficient_output`. Otherwise, the function returns `stdc_mcerr_ok`.
-:: 3. `stdc_XnrtoYn` is called with `output_size`, `output`, `input_size`, `input`, and `state` with its result stored in a temporary named `err`.
+:: 1. If `state` is a null pointer, then an automatic storage duration object of type `mbstate_t` is created. It is initialized to the initial conversion state and used wherever `state` is used in this paragraph.
+:: 2. `stdc_XnrtoYn` is called with `output_size`, `output`, `input_size`, `input`, and `state` with its result stored in a temporary named `err`.
+:: 3. If `input` is a null pointer or `*input` is a null pointer, go to (5).
 :: 4. If `err` is `stdc_mcerr_ok`, then:
 :: :: &emsp; — if `*input_size` is 0, return `err`;
 :: :: &emsp; — otherwise, go back to (2).
@@ -1480,23 +1561,23 @@ The multi unit transcoding functions behave as-if:
 </div>
 
 <div class="wording-clause-section-title">
-<diff-ins>Returns</diff-ins>
+Returns
 </div>
 
 <div class="wording-numbered">
 
-On success or failure, the transcoding functions shall return one of the above error codes (7.S✨). If `*state` is not initialized to the initial conversion sequence for the function on its first use, or is used after being input into a function whose result is not one of `stdc_mcerr_ok`, `stdc_mcerr_incomplete_input`, or `stdc_mcerr_insufficient_output`, the behavior of the functions is unspecified. If `input` or `*input` <diff-del>is `NULL`</diff-del><diff-ins>is a null pointer</diff-ins>, then `*state` is set to the initial conversion sequence as described below and no other work is performed. Otherwise, `input` and `*input` must <diff-del>not be `NULL`</diff-del><diff-ins>not be a null pointer</diff-ins> and `input_size` must <diff-del>not be `NULL`</diff-del><diff-ins>not be a null pointer</diff-ins>.
+On success or failure, the transcoding functions shall return one of the above error codes (7.S✨). If `state` is not a null pointer and `*state` is not initialized to the initial conversion state for the function on its first use, or is used after being input into a function whose result is not one of `stdc_mcerr_ok`, `stdc_mcerr_incomplete_input`, or `stdc_mcerr_insufficient_output`, the behavior of the functions is unspecified.
 </div>
 
 <div class="wording-numbered">
 The following is true after the invocation:
 
-:: — `*input` will be incremented by the number of code units read and successfully converted if `input` and `*input` <diff-del>are not `NULL`</diff-del><diff-ins>are not null pointers</diff-ins>. If `stdc_mcerr_ok` is returned, then this will consume all the input. Otherwise, `*input` will point to the location just after the last successfully completed indivisible unit of work.
+:: — `*input` will be incremented by the number of code units read and successfully converted if `input` and `*input` are not null pointers. If `stdc_mcerr_ok` is returned, then this will consume all the input. Otherwise, `*input` will point to the location just after the last successfully completed indivisible unit of work.
 :: — `*input_size` is decremented by the number of code units read from `*input` that were successfully converted. If no error occurred, then `*input_size` will be 0.
-:: — if `output` and `*output` <diff-del>is not `NULL`</diff-del><diff-ins>is not a null pointer</diff-ins>, `*output` will be incremented by the number of code units written from successfully completed indivisible unit of work.
-:: — if `output_size` <diff-del>is not `NULL`</diff-del><diff-ins>is not a null pointer</diff-ins>, `*output_size` is decremented by the number of code units written to the output or that would have been written to the output.
+:: — if `output` and `*output` is not a null pointer, `*output` will be incremented by the number of code units written from successfully completed indivisible unit of work.
+:: — if `output_size` is not a null pointer, `*output_size` is decremented by the number of code units written to the output or that would have been written to the output.
 
-If the return value is `stdc_mcerr_invalid` and `state` <diff-del>is not `NULL`</diff-del><diff-ins>is not a null pointer</diff-ins>, then `*state` is in an unspecified state.
+If the return value is `stdc_mcerr_invalid` and `state` is not a null pointer, then `*state` is in an unspecified state.
 </div>
 
 <div class="wording-clause-section-title">
@@ -1505,15 +1586,38 @@ Recommended Practice
 
 <div class="wording-numbered">
 
-The multi unit transcoding functions are explicitly for the purpose of performing conversions on the largest contiguous section of valid data in the shortest amount of time possible. Implementations should take advantage of the information of <diff-del>`NULL` values</diff-del><diff-ins>null poiner values</diff-ins> for the output size pointer, output data pointer, or both, to drastically improve performance characteristics for assumed unlimited write space, output counting scenarios, or input validation/counting, respectively.
+The multi unit transcoding functions are explicitly for the purpose of performing conversions on the largest contiguous section of valid data in the shortest amount of time possible. Implementations should take advantage of the information of null pointer values for the output size pointer, output data pointer, or both, to drastically improve performance characteristics for assumed unlimited write space, output counting scenarios, or input validation/counting, respectively.
 </div>
 
 <div class="wording-numbered">
-Implementations should prefer returning an error for an incomplete input sequence over storing intermediate data within the state where possible for non-Unicode encodings. This may make it easier for functionality built on top of the functions in this subclause to report errors without skipping over potentially invalid input data.
+Implementations should prefer returning an error for an incomplete input sequence over storing intermediate data within the state where possible for non-Unicode encodings. By leaving partial input unconsumed, it can be easier for functionality built on top of the functions in this subclause to report errors without skipping over potentially invalid input data.
 </div>
 </div>
 
 </ins>
+</blockquote>
+
+
+### Add unspecified behavior to Annex J.1 Unspecified behavior ### {#wording-specification-j.1}
+
+<blockquote>
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">J.1</span> <span class="wording-clause-title">Unspecified Behavior</span>
+</div>
+
+<div class="wording-section">
+<div class="wording-numbered">
+The following are unspecified:
+
+:: …
+:: — The conversion state after an encoding error<ins> (6.2.9)</ins> occurs (7.30.6.3.2, 7.30.6.3.3, 7.30.6.4.1, 7.30.6.4.2).
+:: <ins>— The conversion state after a unrecorded encoding error (6.2.9) occurs (7.S✨).</ins>
+:: …
+
+</div>
+</div>
+
 </blockquote>
 
 
