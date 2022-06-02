@@ -32,7 +32,7 @@ This paper removes the ability to concatenate wide string literals (<code>u</cod
 
 This paper is a compatibility-parity and query paper to resolve a Liason request from WG21 - Programming Languages, C++. It is almost identical to [p2201](https://wg21.link/p2201).
 
-String concatenation involving string-literals with encoding-prefixes mixing L"", u8"", u"", and U"" is currently conditionally-supported with implementation-defined behavior ([N2573 §6.4.5 String literals, Semantics, paragraph 5](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf)).
+String concatenation involving string-literals with encoding-prefixes mixing L"", u8"", u"", and U"" is currently conditionally-supported with implementation-defined behavior ([N2573 §6.4.5 String literals, Semantics, paragraph 5](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf)).
 
 None of [icc, gcc, clang, MSVC supports such mixed concatenations; all issue an error](https://compiler-explorer.com/z/hx4TTf). Test code:
 
@@ -66,7 +66,7 @@ Therefore, this paper makes such mixed concatenations ill-formed.
 
 # Wording
 
-The following wording is relative to [N2573](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf).
+The following wording is relative to [N2573](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2573.pdf).
 
 **Add the following sentence to §6.4.5 String Literals, Constraints**
 

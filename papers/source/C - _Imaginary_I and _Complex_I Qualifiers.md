@@ -48,7 +48,7 @@ Because it may become possible to observe types in the (very near) future, we sh
 
 # Wording
 
-The following wording is relative to [N2596](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2596.pdf).
+The following wording is relative to [N2596](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2596.pdf).
 
 **Remove `const` from 7.3.1 paragraph 4 and 5**
 

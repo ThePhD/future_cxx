@@ -99,7 +99,7 @@ No. ISO/IEC 10646 is kept as an undated reference in the C Standard, which means
 
 # Wording
 
-The following wording is relative to [N2596](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2596.pdf).
+The following wording is relative to [N2596](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2596.pdf).
 
 
 

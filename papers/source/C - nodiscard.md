@@ -32,7 +32,7 @@ Many functions return a value, however, not all function return values are of eq
 
 # Introduction
 
-[Document N2267](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2267.pdf) introduced a new attribute `[[nodiscard]]` in the C2x working paper. This has provided significant improvements in reminding programmers of the safety issues of discarding the return value of a function. The `[[nodiscard]]` attribute has helped prevent a serious class of software bugs, but sometimes it is hard to communicate exactly **why** a function is marked as `[[nodiscard]]` and perhaps what actions should be taken to rectify the issue.
+[Document N2267](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2267.pdf) introduced a new attribute `[[nodiscard]]` in the C2x working paper. This has provided significant improvements in reminding programmers of the safety issues of discarding the return value of a function. The `[[nodiscard]]` attribute has helped prevent a serious class of software bugs, but sometimes it is hard to communicate exactly **why** a function is marked as `[[nodiscard]]` and perhaps what actions should be taken to rectify the issue.
 
 This paper supplies an addendum to allow a developer to add a string attribute token to let someone provide a small reasoning or reminder for why a function has been marked `[[nodiscard("potential memory leak")]]`.
 
@@ -164,4 +164,3 @@ Add a third example after the first two in the **Recommended Practice** subsecti
 > > }
 > > ```
 > > <ins>A diagnostic for the call to `arm_detonator` using the *string literal* `"must check armed state"` from the *attribute argument clause* is encouraged.</ins>
-
