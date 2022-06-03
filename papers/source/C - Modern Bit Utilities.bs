@@ -19,6 +19,14 @@ Toggle Diffs: no
 Abstract: Endian preprocessor macros, byte swapping, big endian / little endian load and store, functions, and several bit utilities that have become commonplace amongst compilers, bytecodes, and implementations.
 </pre>
 
+
+<script>
+MathJax = {
+	tex: {inlineMath: [['$', '$'], ['\\(', '\\)']]}
+};
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+
 <pre class="include-raw">
 path: resources/css/bikeshed-wording.html
 </pre>
@@ -37,7 +45,7 @@ path: resources/css/bikeshed-wording.html
 - Removed a bullet point about adding a reservation for `stdc_` in the future: that is taken care of by a [different paper](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2968.htm).
 - Fixed the wording for Question 0 and Question 1 with respect to mentioning `generic_count_type` properly.
 - Adjust the position of the `<stdbit.h>` header in the Freestanding list (the list is in alphabetical order).
-- 
+- Formulated the return descriptions of the Endian-Aware Load and Store functions much more clearly and use pure mathematics notation, as suggested by Joseph Myers.
 
 
 
@@ -1223,32 +1231,20 @@ Returns
 
 <div class="wording-numbered">
 
-Let `value` be an object of either <code>int_least<i>N</i>_t</code> if the function is a signed variant or <code>uint_least<i>N</i>_t</code> if the function is an unsigned variant initialized to 0. Let `index` be an integer in a sequence that
+Let the computed value $result$ be:
 
-:: — starts from 0 and increments by 8 in the range of [0, N), if the function is a little-endian variant;
-:: — or, starts from `N - 8` and decrements by 8 in the range of [0, N), if the function is a big-endian variant.
+$$\sum_{index = 0}^{(N \div{} CHAR\_{}BIT) - 1} b_{index} \times{} 2^{8 \times{} index}$$
 
-Let `ptr_bit_index` be an integer that starts from 0. Let `byte_index8` be `index % CHAR_BIT`. For each `index` in the order of the above-specified sequence:
+where $b_{index}$ is:
 
-1. Let `byte_mask8` be an object of the same type as `value` . It is
+:: — `ptr[index / (CHAR_BIT / 8)] >> ((index % (CHAR_BIT / 8)) * 8)`, if the function is the  little-endian variant;
+:: — otherwise, `ptr[(((N / CHAR_BIT) - 1) - index) / (CHAR_BIT / 8)] >> (((((N / CHAR_BIT) - 1) - index) % (CHAR_BIT / 8)) * 8)`, if the function is the the big-endian variant.
 
-	:: — `(0x7F << byte_index8)`, if the function is a signed variant, `byte_index8` is equal to `(CHAR_BIT - 8)`, and `ptr_bit_index` is equal to `N - 8`;
-	:: — otherwise, `(0xFF << byte_index8)`.
+If the function is an unsigned variant, return $result$. Otherwise, if the function is a signed variant, return:
 
-2. computes `value |= (((ptr[ptr_bit_index / CHAR_BIT] & byte_mask8) >> byte_index8) << index)`;
-3. increments `ptr_bit_index` by 8.
+:: - $result$, if $result$ is less than $2^{N-1}$;
+:: - otherwise, $result - 2^{N}$.
 
-Finally, if the function is a signed variant, and either:
-
-:: — `(ptr[0] >> (CHAR_BIT - 1)) & 0x1` is nonzero for the little-endian variant;
-:: — or, `(ptr[(N / CHAR_BIT) - 1] >> (CHAR_BIT - 1)) & 0x1` is nonzero for the big-endian variant;
-
-then the sign bit is set to `1`. Otherwise, it is set to `0`.
-</div>
-
-<div class="wording-numbered">
-
-Returns the computed `value`.
 </div>
 
 
@@ -1269,22 +1265,22 @@ Synopsis
 >
 > #if ((N % CHAR_BIT) == 0) && ((CHAR_BIT % 8 == 0)
 > void stdc_store8_leuN(uint_leastN_t value,
->	unsigned char ptr[static (N / CHAR_BIT)]);
+> 	unsigned char ptr[static (N / CHAR_BIT)]);
 > void stdc_store8_beuN(uint_leastN_t value,
->	unsigned char ptr[static (N / CHAR_BIT)]);
+> 	unsigned char ptr[static (N / CHAR_BIT)]);
 > void stdc_store8_aligned_leuN(uint_leastN_t value,
->	unsigned char ptr[static (N / CHAR_BIT)]);
+> 	unsigned char ptr[static (N / CHAR_BIT)]);
 > void stdc_store8_aligned_beuN(uint_leastN_t value,
->	unsigned char ptr[static (N / CHAR_BIT)]);
+> 	unsigned char ptr[static (N / CHAR_BIT)]);
 > 
 > void stdc_store8_lesN(int_leastN_t value,
->	unsigned char ptr[static (N / CHAR_BIT)]);
+> 	unsigned char ptr[static (N / CHAR_BIT)]);
 > void stdc_store8_besN(int_leastN_t value,
->	unsigned char ptr[static (N / CHAR_BIT)]);
+> 	unsigned char ptr[static (N / CHAR_BIT)]);
 > void stdc_store8_aligned_lesN(int_leastN_t value,
->	unsigned char ptr[static (N / CHAR_BIT)]);
+> 	unsigned char ptr[static (N / CHAR_BIT)]);
 > void stdc_store8_aligned_besN(int_leastN_t value,
->	unsigned char ptr[static (N / CHAR_BIT)]);
+> 	unsigned char ptr[static (N / CHAR_BIT)]);
 > #endif
 > ```
 </div>
@@ -1300,30 +1296,18 @@ The 8-bit store family of functions functions write a <code>int_least<i>N</i>_t<
 
 <div class="wording-numbered">
 
+Let `value_unsigned` be `value` if the function is a unsigned variant. Otherwise, let `value_unsigned` be the conversion of `value` to its corresponding unsigned type, if the function is a signed variant.
+
 Let `index` be an integer in a sequence that
 
 :: — starts from 0 and increments by 8 in the range of [0, N), if the function is a little-endian variant;
-:: — starts from `CHAR_BIT - 8` and decrements by 8 in the range of [0, N), if the function is a big-endian variant.
+:: — starts from `N - 8` and decrements by 8 in the range of [0, N), if the function is a big-endian variant.
 
 Let `ptr_bit_index` be an integer that starts from 0. Let `byte_index8` be `index % CHAR_BIT`. For each `index` in the order of the above-specified sequence:
 
-:: 1. Let `byte_mask8` be:
-
-  :: — `(0x7F << byte_index8)`, if the function is a signed variant, `byte_index8` is equal to `(CHAR_BIT - 8)`, and `ptr_bit_index` is equal to `N - 8`;
-  :: — otherwise, `(0xFF << byte_index8)`.
-
-:: 2. Let `value_unsigned` be:
-
-	:: — `value` if the function is a unsigned variant;
-	:: — otherwise, the absolute value of `value` if the function is a signed variant.
-
-:: 3. Sets the 8 bits in `ptr[ptr_bit_index / CHAR_BIT]` at offset `byte_index8` to `(value_unsigned >> index) & byte_mask8`.
-:: 4. Increments `ptr_bit_index` by 8.
-
-Finally, if the function is a signed variant, and `value` is less than 0, then either:
-
-:: — `ptr[0]` has its high bit set to 1 if the function is the little-endian variant;
-:: — or, `ptr[(N / CHAR_BIT) - 1]` has its high bit set to 1 if the function is the big-endian variant.
+:: 1. Let `byte_mask8` be an object of value `(0xFF << byte_index8)` of a suitably large unsigned type.
+:: 2. Sets the 8 bits in `ptr[ptr_bit_index / CHAR_BIT]` at offset `byte_index8` to `(value_unsigned >> index) & byte_mask8`.
+:: 3. Increments `ptr_bit_index` by 8.
 
 </div>
 </div>
@@ -1730,7 +1714,7 @@ Returns
 
 <div class="wording-numbered">
 
-Let *N* be the width corresponding to the type of the input `value`. Let r be `count % N`.
+Let *N* be the width corresponding to the type of the input `value`. Let `r` be `count % N`.
 
 :: — If r is 0, returns `value`;
 :: — otherwise, if r is positive, returns `(value <​< r) | (value >> (N - r))`;
