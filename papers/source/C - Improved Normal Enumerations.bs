@@ -4,7 +4,7 @@ Shortname: 2997
 Revision: 2
 !Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2964.htm">N2964 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2908.htm">N2908 (r0)</a>, Derived from <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2575.pdf">N2575 (r2)</a>
 Status: P
-Date: 2022-06-04
+Date: 2022-06-17
 Group: WG14
 !Proposal Category: Feature Request
 !Target: C23
@@ -33,13 +33,14 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 2 - June 4<sup>th</sup>, 2022 ## {#changelog-r2}
+## Revision 2 - June 17<sup>th</sup>, 2022 ## {#changelog-r2}
 
 - Address the use of **both** overflow and wraparound for signed and unsigned types in the "add `1` to previous constant" warning.
 - Separate out two terms:
 	- *enumerated type* for the type of the enumeration itself; and,
 	- *enumeration member type* for the type of the enumeration members. (Thanks, Joseph Myers!)
 - Various typo and grammar fixes.
+- Added a new section describing whether or not this is a breaking change insofar for the compilers we surveyed at [[#design-miscompiles]].
 
 
 
@@ -154,7 +155,7 @@ During the definition of an enumerated type, the enumeration constants themselve
 
 ### Final Type: the Enumerated Type ### {#design-midway-after}
 
-After the enumerated type's definition is completed (after the `}`), the enumeration constants have the enumerated type (but only when all the constants are not representable by `int`). The reason we want to specify it this way is because implementations are wildly varying on how they handle this today in their extensions, with no clear consensus on how it is done. That is, using existing extensions today in various compilers, adding 3 extra lines to modify the snippet from the up-level section:
+After the enumerated type's definition is completed (after the `}`), the enumeration constants have the enumerated type. Because this could be a breaking change, it only applies when all the constants are not representable by `int` as in the previous version. The reason we want to specify it this way is because implementations are wildly varying on how they handle this today in their extensions, with no clear consensus on how it is done. That is, using existing extensions today in various compilers, adding 3 extra lines to modify the snippet from the up-level section:
 
 ```cpp
 #include <limits.h>
@@ -191,6 +192,42 @@ extern __typeof(a) e_a;
 results in various failures on today's implementations. This is because `a` and `b` are of different types (`a` is an `int` and not compatible with `enum x;` or `typeof(b)`, since those are both compatible with `long` or `long long` depending on the selection done by the implementation). We feel it is worthwhile to clarify this and make it more consistent.
 
 There is no way to make such code portable, as it was (A) already using an extension that was not standardized until before C23 and (B) already relied in an implementation detail that could change between implementations, but also **within** a given implementation (e.g., `-fshort-enum`). The above code is utterly non-portable, and outside of what we can possibly concern ourselves with when trying to provide at least some degree of standardized behavior. We can fix this by providing a consistent choice of the underlying integer type of `enum x` for the integer constants when used after the closing brace of `}`. We expect this to be the best possible and most consistent choice for enumerations going forward.
+
+
+
+## Mis-Compiles ## {#design-miscompiles}
+
+Additionally, some compilers produce what could probably be considered a "mis-compile" of the code. For example, when given this code snippet:
+
+```cpp
+enum a {
+	a0 = 0xFFFFFFFFFFFFFFFFULL
+};
+
+_Bool e () {
+    return a0;
+}
+
+int f () {
+    return a0;
+}
+
+unsigned long g () {
+    return a0;
+}
+
+unsigned long long h () {
+    return a0;
+}
+
+int main () {
+    return f();
+}
+```
+
+One compiler will do the expected behavior of converting implicitly to each integer type and `_Bool` (returns `true`/`1`), but for the case of `f` returns `0` (SDCC version 4.1.0). It only does this for integer returns in this specific case. Others will not compile the code at all (Tendra, GCC and Clang confingured with `-pedantic` + `-Werror` mode). (See a sampling of such compilations at the [link here](https://godbolt.org/z/h5efjs1j1).) All the others that work properly manifest the behavior described in this proposal, in so far as we checked (some 15 different compilers for various architectures). It seems like the behavior here is the culmination of the best existing practice we have. For the cases where it is not, the compilers are either mis-compiling (producing demonstrably unexpected and wrong output) or not accepting it (strictly standards compliant).
+
+Therefore, this proposal is not - insofar as understood by the author and the various folks asked to test for their compilers - breaking any code that was not already broken.
 
 
 
@@ -310,7 +347,10 @@ During the processing of each enumeration constant in the enumerator list, the t
 :: — `int`, if there are no previous enumeration constants in the enumerator list and no explicit **=** with a defining integer constant expression; or,
 :: — `int`, if given explicitly with **=** and the value of the integer constant expression is representable by an `int`; or,
 :: — the type of the integer constant expression, if given explicitly with **=** and if the value of the integer constant expression is not representable by `int`; or,
-:: — the type of the value from last enumeration constant with `1` added to it. If such an integer constant expression would overflow or wraparound the value of the previous enumeration constant from the addition of `1`, the type takes on either: a suitably sized signed integer type (excluding the bit-precise signed integer types), or a suitably sized unsigned integer type (excluding the bit-precise unsigned integer types), capable of representing the value of the previous enumeration constant plus `1`. A signed integer type is chosen if the previous enumeration constant being added is of signed integer type. An unsigned integer type is chosen if the previous enumeration constant is of unsigned integer type. If there is no suitably sized integer type described previous which can represent the new value, then the enumeration has no type which is capable of representing all of its values<span class="footnote-ref">FN0✨)</span>.
+:: — the type of the value from last enumeration constant with `1` added to it. If such an integer constant expression would overflow or wraparound the value of the previous enumeration constant from the addition of `1`, the type takes on either:
+:: :: — a suitably sized signed integer type (excluding the bit-precise signed integer types) capable of representing the value of the previous enumeration constant plus `1`; or,
+:: :: — a suitably sized unsigned integer type (excluding the bit-precise unsigned integer types) capable of representing the value of the previous enumeration constant plus `1`.
+:: A signed integer type is chosen if the previous enumeration constant being added is of signed integer type. An unsigned integer type is chosen if the previous enumeration constant is of unsigned integer type. If there is no suitably sized integer type described previous which can represent the new value, then the enumeration has no type which is capable of representing all of its values<span class="footnote-ref">FN0✨)</span>.
 
 </ins>
 </div>
