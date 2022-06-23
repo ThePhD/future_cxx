@@ -154,7 +154,7 @@ There are two design goals at play here, sculpted to specifically cover industry
 
 The first is to enable developers to get binary content quickly and easily into their applications. This can be icons/images, scripts, tiny sound effects, hardcoded firmware binaries, and more. In order to support this use case, this feature was designed for simplicity and builds upon widespread existing practice.
 
-The second is extensibility. We recognize that talking to arbitrary places on either the file system, network, or similar has different requirements. After feedback from an implementer about syntax for extensions, we reached out to various users of the beta builds or custom builds using `#embed`-like things. It turns out many of them have needs that, since they are the ones building and in some cases patching over/maintaining their compiler, have needs for extensible attributes that can be passed to `#embed` directives. Therefore, we structured the syntax in a way that is favorable to "simple" scanning tools but powerful enough to handle arbitrary directives and future extension points.
+The second is extensibility. We recognize that talking to arbitrary places on either the file system, network, or similar has different requirements. After feedback from an implementer about syntax for extensions, we reached out to various users of the beta builds or custom builds using `#embed`-like things. It turns out many of them have needs that, since they are the ones building and in some cases patching over/maintaining their compiler, have needs for extensible parmaeters that can be passed to `#embed` directives. Therefore, we structured the syntax in a way that is favorable to "simple" scanning tools but powerful enough to handle arbitrary directives and future extension points.
 
 
 
@@ -208,16 +208,18 @@ The syntax for this feature is for an extensible preprocessor directive. The gen
 
 where `parameters` refers to the syntax of `no_arg`/`with_arg(values, ...)`/`vendor::no_arg`/`vendor::with_arg(tokens...)` that is already part of the grammar. The syntax takes after many existing extensions in many preprocessor implementations and specifications, including OpenMP, Clang `#pragma`s, Microsoft `#pragma`s, and more. The named parameters was a recommendation by an implementer 
 
-This syntax keeps the header-name, enclosed in angle brackets or quotation marks, first to allow a "simple" preprocessing tool to quickly scan for all the necessary dependency names without having to parse any of the names or parameters that come after. Both standard names and vendor/implementation-specific names can also be accommodated in the list of naked attributes, allowing for specific vendor extensions in a consistent manner while the standard can take the normal `foo` names.
+This syntax keeps the header-name, enclosed in angle brackets or quotation marks, first to allow a "simple" preprocessing tool to quickly scan for all the necessary dependency names without having to parse any of the names or parameters that come after. Both standard names and vendor/implementation-specific names can also be accommodated in the list of parameters, allowing for specific vendor extensions in a consistent manner while the standard can take the normal `foo` names.
 
 
 ### Parameters ### {#design-syntax-parameters}
 
 One of the things that's critical about `#embed` is that, because it works with binary resources, those resources have characteristics very much different from source and header files present in a typical filesystem. There may be need for authentication (possibly networked), permission, access, additional processing (new-line normalization), and more that can be somewhat similarly specified through the implementation-defined parameters already available through the C and C++ Standards' "`fopen`" function.
 
-However, adding a "mode" string similar to `fopen`, while extensible, is archaic and hard to check. Therefore, the syntax allows for multiple "named expressions", encapsulated in parentheses, and marked with `::` as a form of "namespacing" identifiers similar to `[[vendor::attr]]` attribute-style syntax. However, parameters do not have the balanced square bracket `[[]]` delimiters, and just use the `vendor::attr` form with an optional parentheses-enclosed list of arguments.
+However, adding a "mode" string similar to `fopen`, while extensible, is archaic and hard to check. Therefore, the syntax allows for multiple "named parameters", encapsulated in parentheses, and marked with `::` as a form of "namespacing" identifiers similar to `[[vendor::attr]]` attribute-style syntax. However, parameters do not have the balanced square bracket `[[]]` delimiters, and just use the `vendor::attr` form with an optional parentheses-enclosed list of arguments.
 
-Some example attributes including interpreting the binary data as "text" rather than a bitstream with `clang::text(utf-8)`, providing authenticated access with `fs::auth("username", "password")`, `yosys::type(hardware_entry)` to change the element of each entry produced, and more. These are all things vendors have indicated they might support for their use cases.
+Furthermore, parameters as defined in this proposal may open the door to better vendor-quality preprocessor parameters. They are defined generically and they are set to be a constraint violation (C) or make the program ill-formed (C++) if they are not recognized. This is why they are not named "attributes" and steer very far away from the attribute naming in this revision of the paper.
+
+Some example parameters including interpreting the binary data as "text" rather than a bitstream with `clang::text(utf-8)`, providing authenticated access with `fs::auth("username", "password")`, `yosys::type(hardware_entry)` to change the element of each entry produced, and more. These are all things vendors have indicated they might support for their use cases.
 
 #### Limit Parameter #### {#design-syntax-parameters-limit}
 
@@ -287,7 +289,7 @@ This makes `#embed` especially powerful, since it guarantees these values are av
 
 ## `__has_embed` ## {#design-__has_embed}
 
-C and C++ are support a `__has_include` . It makes sense to have an analogous `__has_embed` identifier. It can take a `__has_embed( "header-name" ... )` or `__has_embed (<header-name> ... )` resource name identifier, as well as additional arguments to let vendors pass in any additional arguments they need to properly access the file (following the same attribute-like parameters passed to the directive). `__has_embed` evaluates to:
+C and C++ are support a `__has_include` . It makes sense to have an analogous `__has_embed` identifier. It can take a `__has_embed( "header-name" ... )` or `__has_embed (<header-name> ... )` resource name identifier, as well as additional arguments to let vendors pass in any additional arguments they need to properly access the file (following the same parameters passed to the directive). `__has_embed` evaluates to:
 
 - `0` if the reesource is not found or any parameter in the `embed-parameter-list` does not exist; or,
 - `1` if the resource is found, it is not empty, and the `embed-parameter-list` (including the vendor-specific ones) are supported; or,
@@ -299,7 +301,7 @@ Finally, note that this directive DOES expand to `0` if a given parameters that 
 
 ```cpp
 int main () {
-#if __has_embed (__FILE__ clang::element_type(short))
+#if __has_embed ("bits.bin" clang::element_type(short))
 	// load "short" values directly from memory
 	short meow[] = {
 #embed "bits.bin" clang::element_type(short)

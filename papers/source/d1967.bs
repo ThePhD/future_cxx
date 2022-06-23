@@ -4,7 +4,7 @@ H1: <code>#embed</code> - a scannable, tooling-friendly binary resource inclusio
 Shortname: P1967
 Revision: 7
 Status: P
-Date: 2022-06-18
+Date: 2022-06-23
 Group: WG21
 Audience: EWG
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
@@ -36,7 +36,7 @@ path: resources/css/bikeshed-color-fix.html
 
 
 
-## Revision 7  - June 20<sup>th</sup>, 2022 ## {#changelog-r7}
+## Revision 7 - June 23<sup>rd</sup>, 2022 ## {#changelog-r7}
 
 - Add letter of support sent to the C Committee.
 - Add brief history.
@@ -45,6 +45,9 @@ path: resources/css/bikeshed-color-fix.html
 	- Remove redundant/poorly copied text for embed parameters.
 	- Move "Notes" into "Recommended Practice" sections.
 	- Use textual descriptions for some of the mathematics.
+- Make `prefix`/`suffix`/`is_empty` optional, so as to be polled for inclusion in the next revision.
+- Remove all mentions of "attribute", and produce solely parameter types.
+- Document discussion and reaction to discussion from June 2022 meeting in [[#polls-june.2022.c++]].
 
 
 
@@ -119,12 +122,44 @@ The votes for the C++ Committee are as follows:
 
 
 
+## June 2022 Virtual C++ meeting ## {#polls-june.2022.c++}
+
+"EWG encourages P1967 to define the form of vendor extensions as parameters to `#embed`?"
+
+<table>
+<thead>
+	<tr>
+		<th>SF</th>
+		<th>F</th>
+		<th>N</th>
+		<th>A</th>
+		<th>SA</th>
+	</tr>
+</thead>
+<tbody>
+	<tr>
+		<td>4</td>
+		<td>4</td>
+		<td>3</td>
+		<td>1</td>
+		<td>0</td>
+	</tr>
+</tbody>
+</table>
+
+This was the result of consensus. The extensive discussion also made it clear that we must make sure that unrecognized embed parameters, due to them changing how an initializer may be formed, must be considered ill-formed. Users may get around this by using `__has_embed`. To dispel the notion that they may be optional, frontmatter wording was added to [[#wording-specification-cpp.pre]] to make it clear the expectations.
+
+Part of the discussion during this meeting was also whether or not the case for emptiness was useful. We moved the empty-based parameters to **OPTIONAL** pieces of wording, and expect to forward each of these on independent votes asides from the base proposal. This captures the sentiment of folks who may not have spoken up a lot during the meeting but nevertheless felt uneasy: we can simply go with whatever the poll says next meeting.
+
+We decided not to take the direct feedback to possibly explore the name `if_empty` over `is_empty`. The name for this parameter used to be `empty`, and it was already workshopped by users to be `is_empty` instead of that. `if_empty` is unfortunately not much of an improvement that users are likely not to see the benefit of such a name.
+
+
 ## July 2021 Virtual C++ meeting ## {#polls-july.2021.c++}
 
 No votes were taken at this meeting, since it was mostly directional and about the changing of the syntax to better fit tools and scanners. In particular, it was more or less unanimously encouraged to:
 
 - re-do the syntax to be `#embed header-name additional-tokens...` instead of `#embed limit-parameter header-name`;
-- the `additional-tokens` should be reshaped into a parameter specification, giving both standard parameters (such as making a named `limit(integer-constant)` argument) and implementation-defined ones (such as `clang::elementy_type(short)`);
+- the `additional-tokens` should be reshaped into a parameter specification, giving both standard parameters (such as making a named `limit(integer-constant)` argument) and implementation-defined ones (such as `clang::element_type(short)`);
 - and, the wording should include some recommendation or specification for "as-if by fread" to make wording easier.
 
 All of these recommendations were incorporated below.
@@ -269,17 +304,42 @@ The proposed feature test macro is `__cpp_pp_embed` for the preprocessor functio
 </blockquote>
 
 
-### Add to the *control-line* production in §15.1 Preamble [**cpp.pre**] a new grammar production, as well as a supporting *embed-attribute-list* production ### {#wording-specification-cpp.pre}
+### Add to the *control-line* production in §15.1 Preamble [**cpp.pre**] a new grammar production, as well as a supporting *embed-parameter-list* production ### {#wording-specification-cpp.pre}
 
 <blockquote>
 <div class="wording-section">
 <div>
 <ins>
 
-*embed-parameter-list*:
+*pp-parameter*:
+:: *pp-parameter-name* *pp-parameter-clause*<sub>*opt*</sub>
 
-:: *attribute*
-:: *embed-parameter-list* *attribute*
+*pp-parameter-name*:
+:: *pp-standard-parameter*
+:: *pp-prefixed-parameter*
+
+*pp-standard-parameter*:
+:: *identifier*
+
+*pp-prefixed-parameter*:
+:: *identifier* **::** *identifier*
+
+*pp-parameter-clause*:
+:: **(** *pp-balanced-token-sequence*<sub>*opt*</sub> **)**
+
+*pp-balanced-token-sequence*:
+:: *pp-balanced-token*
+:: *pp-balanced-token-sequence* *pp-balanced-token*
+
+*pp-balanced-token*:
+:: **(** *pp-balanced-token-sequence*<sub>*opt*</sub> **)**
+:: **[** *pp-balanced-token-sequence*<sub>*opt*</sub> **]**
+:: **{** *pp-balanced-token-sequence*<sub>*opt*</sub> **}**
+:: any *preprocessing-token* other than a parenthesis, a bracket, or a brace
+
+*embed-parameter-list*:
+:: *pp-parameter*
+:: *embed-parameter-list* *pp-parameter*
 
 </ins>
 </div>
@@ -288,10 +348,37 @@ The proposed feature test macro is `__cpp_pp_embed` for the preprocessor functio
 
 *control-line*:
 
-:: ...<br/>
-:: <ins><code># embed</code> *pp-tokens* *new-line*</ins>
+:: ...
+:: <ins>`#` `embed` *pp-tokens* *new-line*</ins>
 
 </div>
+
+<div>
+…
+</div>
+
+<ins>
+<div class="wording-newnumbered wording-numbered-8">
+
+Some preprocessing directives take additional information by the use of *preprocessing parameters*. A preprocessor parameter (*pp-parameter*) shall be either a *preprocessor prefixed parameter* (identified by a *pp-prefixed-parameter*, for implementation-defined preprocessor parameters) or a *preprocessor standard parameter* (identified with a *pp-standard-parameter*, for *pp-parameters* specified by this document). [ *Note:* Unless otherwise specified, an unrecognized preprocessor parameter, except where specified, is ill-formed. — *end note* ]
+</div>
+
+<div class="wording-newnumbered">
+
+In all aspects, a preprocessor standard parameter specified by this document as an identifier `pp_param` and an identifier of the form `__pp_param__` shall behave the same when used as a preprocessor parameter, except for the spelling.
+
+*Recommended Practice:* Implementations are encouraged to behave similarly for preprocessor parameters (including preprocessor prefixed parameters) they provide.
+
+[ *Example*:
+
+```cpp
+#embed "boop.h" limit(5)
+#embed "boop.h" __limit__(5)
+```
+
+Both of these preprocessor parameters are treated the same. – *end example*]
+</div>
+</ins>
 
 </div>
 </blockquote>
@@ -305,7 +392,7 @@ The proposed feature test macro is `__cpp_pp_embed` for the preprocessor functio
 *has-embed-expression*:
 
 :: ...
-:: `__has_embed` `(` *header-name-tokens* *embed-parameter-list*<sub>opt</sub> `)` *new-line*
+:: `__has_embed` `(` *header-name-tokens* *embed-parameter-list*<sub>*opt*</sub> `)` *new-line*
 
 </ins>
 </blockquote>
@@ -328,10 +415,10 @@ The resource identified by the parenthesized preprocessing token sequence in eac
 
 <div class="wording-numbered-list">
 
-- `0` if the search fails or any given *embed parameters* in the *embed-parameter-list* are not supported.
-- Otherwise, `1` if the search for the resource succeeds, all the given *embed parameters* in the *embed-parameter-list* are supported, and the resource is not empty.
-- Otherwise, `2` if the search for the resource succeeds, all the given *embed parameters* in the *embed-parameter-list* are supported, and the resource is empty.
+- `0` if the search fails or any given embed parameters in the *embed-parameter-list* are not supported.
+- Otherwise, `1` if the search for the resource succeeds, all the given embed parameters in the *embed-parameter-list* are supported.
 
+[ *Note:* An unrecognized preprocessor parameter given to a *has-embed-expression* is not ill-formed. — *end note* ]
 </div>
 
 </div>
@@ -361,7 +448,7 @@ The resource identified by the parenthesized preprocessing token sequence in eac
 <div class="wording-numbered">
 A preprocessing directive of the form
 
-:: `# embed <` *h-char-sequence* `>` *embed-parameter-list*<sub>opt</sub> *new-line*
+:: `# embed <` *h-char-sequence* `>` *embed-parameter-list*<sub>*opt*</sub> *new-line*
 
 searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the `<` and `>` delimiters, and causes the replacement of that directive by a comma-delimited list of integer constant expressions as specified below. It is implementation-defined how the places or how the resource is identified.
 
@@ -372,13 +459,13 @@ searches a sequence of implementation-defined places for a resource identified u
 
 A preprocessing directive of the form
 
-:: `# embed` `"` *q-char-sequence* `"` *embed-parameter-list*<sub>opt</sub> *new-line*
+:: `# embed` `"` *q-char-sequence* `"` *embed-parameter-list*<sub>*opt*</sub> *new-line*
 
 searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the `"` and `"` delimiters. It is implementation-defined how the places or how the resource is identified.
 
 If this search is not supported, or if the search fails, the directive is reprocessed as if it read
 
-:: `# embed` `<` *h-char-sequence* `>` *embed-parameter-list*<sub>opt</sub> *new-line*
+:: `# embed` `<` *h-char-sequence* `>` *embed-parameter-list*<sub>*opt*</sub> *new-line*
 
 with the identical contained sequence (including " characters, if any) from the original directive.
 
@@ -387,7 +474,7 @@ with the identical contained sequence (including " characters, if any) from the 
 
 <div class="wording-numbered">
 
-An `#embed` directive shall identify a resource that can be processed into a comma-delimited list of integer literals. A *resource* is a source of data accessible from the translation environment. An `# embed` directive can take an arbitrary number of *attribute* token sequences after the *q-char-sequence* or *h-char-sequence*, separated by white space. This is the *embed-parameter-list*, described in ([<a href="#cpp.res.param">cpp.res.param</a>]). An *embed-parameter* is a single attribute in the *embed-parameter-list*. It has an *implementation-resource-width*, which is the implementation-defined size in bits of the located resource. It also has a *resource-width*, which is:
+An `#embed` directive shall identify a resource that can be processed into a comma-delimited list of integer literals. A *resource* is a source of data accessible from the translation environment. An `# embed` directive can take an arbitrary number of preprocessor parameters after the *q-char-sequence* or *h-char-sequence*, separated by white space. This is the *embed-parameter-list*, described in ([<a href="#cpp.res.param">cpp.res.param</a>]). An *embed-parameter* is a single preprocessor parameter in the *embed-parameter-list*. A resource has an *implementation-resource-width*, which is the implementation-defined size in bits of the located resource. It also has a *resource-width*, which is:
 
 <div class="wording-numbered-list">
 
@@ -549,7 +636,7 @@ int main () {
 </ins>
 </blockquote>
 
-### Add a new sub-clause §15.4.1 under Resource Inclusion for Embed parameters [**cpp.res.param**] ### {#wording-specification-cpp.res.param}
+### Add a new sub-clause §15.4.2 under Resource Inclusion for Embed parameters [**cpp.res.param**] ### {#wording-specification-cpp.res.param}
 
 <blockquote>
 <ins>
@@ -571,12 +658,7 @@ int main () {
 
 <div class="wording-numbered">
 
-The *embed-parameter-list* contains *attributes* which may modify the result of the replacement for the `# embed` preprocessing directive. The *attribute-tokens* defined below are `limit`, `is_empty`, `prefix`, and `suffix`.
-</div>
-
-<div class="wording-numbered">
-
-For an *attribute-token* (including an *attribute-scoped-token*) not specified in this clause, the behavior is implementation-defined. Tokens reserved as *embed-parameter-list* for future revisions of this document and implementations are the same as described for attribute as in ([<a href="http://eel.is/c++draft/dcl.attr.grammar">dcl.attr.grammar</a>]).
+The *embed-parameter-list* contains preprocessor parameters separated by whitespace. The use of a preprocessor parameter may modify the result of the replacement for a `# embed` preprocessing directive.
 </div>
 
 </div>
@@ -590,7 +672,7 @@ For an *attribute-token* (including an *attribute-scoped-token*) not specified i
 
 <div class="wording-numbered">
 
-The *attribute-token* `limit` denotes a maximum number of elements that may be produced in the comma-delimited list. It may appear zero or one times in the *embed-parameter-list*. Its *attribute-argument-clause* shall be present and have the form:
+The *pp-parameter* `limit` denotes a maximum number of elements that may be produced in the comma-delimited list. It may appear zero or one times in the *embed-parameter-list*. Its *pp-parameter-clause* shall be present and have the form:
 
 :: `(` *constant-expression* `)`
 
@@ -598,7 +680,7 @@ The *attribute-token* `limit` denotes a maximum number of elements that may be p
 
 <div class="wording-numbered">
 
-Its *attribute-argument-clause* shall be processed as described in conditional inclusion ([<a href="http://eel.is/c++draft/cpp.cond">cpp.cond</a>]). It shall be an integral constant expression greater than zero after evaluation. If the token `defined` appears in the *attribute-argument-clause* the program is ill-formed. The *attribute-argument-clause* tokens shall be processed just as in normal text before the evaluation of the integer constant expression.
+Its *pp-parameter-clause* shall be processed as described in conditional inclusion ([<a href="http://eel.is/c++draft/cpp.cond">cpp.cond</a>]). It shall be an integral constant expression greater than zero after evaluation. If the token `defined` appears in the *pp-parameter-clause* the program is ill-formed. The *pp-parameter-clause* tokens shall be processed just as in normal text before the evaluation of the integer constant expression.
 </div>
 
 <div class="wording-numbered">
@@ -652,6 +734,47 @@ int main (int, char*[]) {
 </div>
 </div>
 
+</ins>
+</blockquote>
+
+
+
+### **OPTIONAL:** Modify the previously-added clause for `__has_embed` to return `2` if the list of supported files is empty and add example ### {#wording-specification-cpp.pre.has_embed}
+
+<blockquote>
+<div class="wording-section">
+
+<div>
+…
+</div>
+
+<div class="wording-numbered wording-numbered-5">
+
+The resource identified by the parenthesized preprocessing token sequence in each contained *has-embed-expression* is searched for as if that preprocessing token sequence were the *pp-tokens* in a `# embed` directive ([<a href="#cpp.res">cpp.res</a>]). If such a directive would not satisfy the syntactic requirements of a `# embed` directive, the program is ill-formed. The *has-embed-expression* evaluates to:
+
+<div class="wording-numbered-list">
+
+- `0` if the search fails or any given embed parameters in the *embed-parameter-list* are not supported.
+- Otherwise, `1` if the search for the resource succeeds, all the given embed parameters in the *embed-parameter-list* are supported<ins>, and the resource is not empty</ins>.
+- <ins>Otherwise, `2` if the search for the resource succeeds, all the given embed parameters in the *embed-parameter-list* are supported, and the resource is empty.</ins>
+
+</div>
+
+<div>
+...
+</div>
+</div>
+
+</div>
+</blockquote>
+
+
+
+### **OPTIONAL:** Add a new sub-clause §15.4.2.3-5 under Resource Inclusion for Embed parameters `prefix`, `suffix`, and `is_empty` [**cpp.res.param.prefix/suffix/is_empty**] ### {#wording-specification-cpp.res.param.prefix.suffix.empty}
+
+<blockquote>
+<ins>
+
 <div id="cpp.res.param.prefix" class="wording-section">
 <div class="wording-section-header">
 <span class="wording-clause-number">15.4.2.3</span>
@@ -661,9 +784,9 @@ int main (int, char*[]) {
 
 <div class="wording-numbered">
 
-The *attribute-token* `prefix` denotes a sequence of tokens to be placed before the expansion of the `# embed` directive, if the resource is not empty.  It may appear zero or one times in the *embed-parameter-list*. Its *attribute-argument-clause* shall be present and have the form:
+The *pp-parameter* `prefix` denotes a sequence of tokens to be placed before the expansion of the `# embed` directive, if the resource is not empty.  It may appear zero or one times in the *embed-parameter-list*. Its *pp-parameter-clause* shall be present and have the form:
 
-:: `(` *pp-tokens*<sub>opt</sub> `)`
+:: `(` *pp-balanced-token-sequence*<sub>*opt*</sub> `)`
 
 </div>
 
@@ -676,15 +799,15 @@ If the resource is empty, this *embed-parameter* is ignored. Otherwise, any *pp-
 <div id="cpp.res.param.suffix" class="wording-section">
 <div class="wording-section-header">
 <span class="wording-clause-number">15.4.2.4</span>
-<span class="clause-title">`suffix` parameter</span>
-<span class="stable-tag">[<b>cpp.res.param.suffix</b>]</span>
+<span class="wording-clause-title">`suffix` parameter</span>
+<span class="wording-clause-stable-tag">[<b>cpp.res.param.suffix</b>]</span>
 </div>
 
 <div class="wording-numbered">
 
-The *attribute-token* `suffix` denotes a sequence of tokens to appear after the expansion of the `# embed` directive, if the resource is not empty. It may appear zero or one times in the *embed-parameter-list*. Its *attribute-argument-clause* shall be present and have the form:
+The *pp-parameter* `suffix` denotes a sequence of tokens to appear after the expansion of the `# embed` directive, if the resource is not empty. It may appear zero or one times in the *embed-parameter-list*. Its *pp-parameter-clause* shall be present and have the form:
 
-:: `(` *pp-token*<sub>opt</sub> `)`
+:: `(` *pp-balanced-token-sequence*<sub>*opt*</sub> `)`
 
 </div>
 
@@ -724,18 +847,18 @@ void init_data () {
 </div>
 </div>
 
-<div id="cpp.res.param.empty" class="wording-section">
+<div id="cpp.res.param.is_empty" class="wording-section">
 <div class="wording-section-header">
 <span class="wording-clause-number">15.4.2.5</span>
 <span class="wording-clause-title">`is_empty` parameter</span>
-<span class="wording-clause-stable-tag">[<b>cpp.res.param.empty</b>]</span>
+<span class="wording-clause-stable-tag">[<b>cpp.res.param.is_empty</b>]</span>
 </div>
 
 <div class="wording-numbered">
 
-The *attribute-token* `is_empty` denotes a sequence of tokens to use if the resource is empty. It may appear zero or one times in the *embed-parameter-list*. Its *attribute-argument-clause* shall be present and have the form:
+The *pp-parameter* `is_empty` denotes a sequence of tokens to use if the resource is empty. It may appear zero or one times in the *embed-parameter-list*. Its *pp-parameter-clause* shall be present and have the form:
 
-:: `(` *pp-tokens*<sub>opt</sub> `)`
+:: `(` *pp-balanced-token-sequence*<sub>*opt*</sub> `)`
 
 </div>
 
@@ -761,6 +884,31 @@ constexpr const char x[] = {
 ```
 
 Otherwise, it expands to the contents of the resource. – *end example*]
+</div>
+</div>
+
+</ins>
+</blockquote>
+
+#### 📝 If the `is_empty` parameter is accepted with the `__has_embed` changes, add this example to the end of the `is_empty` section: #### {#wording-specification-cpp.res.suffix.prefix.empty-example}
+
+<blockquote>
+<div id="cpp.res.param.is_empty.limit" class="wording-section">
+<div class="wording-section-header">
+<span class="wording-clause-number">15.4.2.5</span>
+<span class="wording-clause-title">`is_empty` parameter</span>
+<span class="wording-clause-stable-tag">[<b>cpp.res.param.is_empty</b>]</span>
+</div>
+
+<div>
+…
+</div>
+
+<div class="wording-numbered wording-numbered-2">
+
+…
+
+<ins>
 
 [ *Example*: This resource is considered empty due to the `limit(0)` *embed-parameter*, always, including in `__has_embed` clauses.
 
@@ -779,12 +927,11 @@ int main () {
 ```
 
  – *end example*]
-</div>
+<ins>
 </div>
 
-</ins>
+</div>
 </blockquote>
-
 
 
 
