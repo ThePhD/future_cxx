@@ -10,7 +10,7 @@ Thusly, we propose a new preprocessor directive whose sole purpose is to be `#in
 
 ## Motivation ## {#intro-motivation}
 
-The reason this needs a new language feature is simple: current source-level encodings of "producing binary" to the compiler are incredibly inefficient both ergonomically and mechanically. Creating a brace-delimited list of numerics in C comes with baggage in the form of how numbers and lists are formatted. C's preprocessor and the forcing of tokenization also forces an unavoidable cost to lexer and parser handling of values.
+The reason this needs a new language feature is simple: current source-level encodings of "producing binary" to the compiler are incredibly inefficient both ergonomically and mechanically. Creating a brace-delimited list of numbers in C comes with baggage in the form of how numbers and lists are formatted. C's preprocessor and the forcing of tokenization also forces an unavoidable cost to lexer and parser handling of values.
 
 Therefore, using arrays with specific initialized values of any significant size becomes borderline impossible. One would [think this old problem](https://groups.google.com/forum/#!topic/comp.std.c/zWFEXDvyTwM) would be work-around-able in a succinct manner. Given how old this desire is (that comp.std.c thread is not even the oldest recorded feature request), proper solutions would have arisen. Unfortunately, that could not be farther from the truth. Even the compilers themselves suffer build time and memory usage degradation, as contributors to the LLVM compiler ran the gamut of [[llvm-string-init-fail|the biggest problems that motivate this proposal]] in a matter of a week or two earlier this very year. Luke is not alone in his frustrations: developers all over suffer from the inability to include binary in their program quickly and perform [exceptional gymnastics](https://twitter.com/oe1cxw/status/1008361214018244608) to get around the compiler's inability to handle these cases.
 
@@ -199,7 +199,6 @@ This preprocessor directive fits perfectly into existing build architecture by b
 
 
 
-
 ## Syntax ## {#design-syntax}
 
 The syntax for this feature is for an extensible preprocessor directive. The general form is:
@@ -254,11 +253,13 @@ const unsigned char null_terminated_file_data[] = {
 
 `prefix` and `suffix` only work if the `#embed` resource is not empty. If a user wants a prefix or suffix that appears unconditionally, they can simply just type the tokens they want before and after: there is nothing to be gained from adding a standards-mandated prefix and suffix that works in both the empty and non-empty case.
 
+We do not want to entirely lose that user's use case, however, so we have made the `suffix`/`prefix` parameters an **optional** part of the wording, to be voted on as a **separate** piece.
+
 #### Empty Signifier #### {#design-syntax-parameters-empty}
 
-This is for the case when the given resource exists, but it is empty. This allows a user to have a sequence of tokens between the parentheses passed to the `is_empty` parameter here: `#embed "blah" is_empty(SPECIAL_EMPTY_MARKER MORE TOKENS)`.
+This is for the case when the given resource exists, but it is empty. This allows a user to have a sequence of tokens between the parentheses passed to the `if_empty` parameter here: `#embed "blah" if_empty(SPECIAL_EMPTY_MARKER MORE TOKENS)`.
 
-If `"blah"` exists but is empty, this will replace the directive with the (potentially macro expanded) contents between the parentheses of the `is_empty` parameter. This can also be combined with a `limit(0)` parameter to always have the `is_empty` token return. This can be useful for macro-expanded integer constant expressions that may end up being 0.
+If `"blah"` exists but is empty, this will replace the directive with the (potentially macro expanded) contents between the parentheses of the `if_empty` parameter. This can also be combined with a `limit(0)` parameter to always have the `if_empty` token return. This can be useful for macro-expanded integer constant expressions that may end up being 0.
 
 An example program `single-urandom.c`:
 
@@ -266,16 +267,22 @@ An example program `single-urandom.c`:
 int main () {
 #define SOME_CONSTANT 0
     return
-#embed </dev/urandom> is_empty(0) limit(SOME_CONSTANT)
+#embed </dev/urandom> if_empty(0) limit(SOME_CONSTANT)
     ;
 }
 ```
 
 This program will expand to the equivalent of `int main () { return 0; }` if `SOME_CONSTANT` is 0, or a single (random) `unsigned char` value if it is 1. (If `SOME_CONSTANT` is greater than 1, it produces a comma-delimited list of integers, which gets treated as a sequence to the comma operator after the `return` keyword. [Some compilers warn about the left-hand operands having no effect](https://godbolt.org/z/Kjn9nreY1).)
 
-Previously, this was the only way to detect that the resource was empty. This functionality can be substituted with having to use `__has_embed(…)` with the same contents and specifically check for the return value of `== 2`. While this change create some repeating-yourself friction in the identifier, there was only 1 user who actually needed the is_empty signifier, and that was only because they were using it to replace it with a very particularly sized and shaped data array. The `__has_embed` technique worked just fine for them as well at the cost of some repetition (to check for embed parameters), and after some discussion with the user it was deemed okay to switch to this syntax, since during the discusison of `#embed` in the January/February 2022 WG14 C Standards Committee Meeting it was commented on that there were too many signifiers.
+Previously, this was the only way to detect that the resource was empty. This functionality can be substituted with having to use `__has_embed(…)` with the same contents and specifically check for the return value of `== 2`. While this change create some repeating-yourself friction in the identifier, there was only 1 user who actually needed the if_empty signifier, and that was only because they were using it to replace it with a very particularly sized and shaped data array. The `__has_embed` technique worked just fine for them as well at the cost of some repetition (to check for embed parameters), and after some discussion with the user it was deemed okay to switch to this syntax, since during the discussion of `#embed` in the January/February 2022 WG14 C Standards Committee Meeting it was commented on that there were too many signifiers.
 
-We do not want to entirely lose that user's use case, however, so we have made the `is_empty` parameter an **optional** part of the wording, to be voted on as a **separate** piece.
+We do not want to entirely lose that user's use case, however, so we have made the `if_empty` parameter an **optional** part of the wording, to be voted on as a **separate** piece.
+
+#### Why is `__param_name__` part of the grammar? #### {#design-syntax-parameters-double.underscore}
+
+This is specifically at the request of the C Committee. There are plenty of places where `limit`/`suffix`/`prefix` may be preexisting macro names. Thus, following the same rationale of other preprocessor-hardened names (such as attributes in the C standard), names that are prefixed and suffixed by a double underscore (e.g., `__limit__`, `__suffix__`, and similar) behave identically to their non-underscore counterparts. This is to aid in differentiation to prevent macro collisions, and is featured as part of the style of attributes in C++.
+
+This feature will only be part of the C version of the proposal, as C++ does not have a similar rule for its attributes and therefore has no precedent amongst C++ compilers. (We expect that dual-C-and-C++ compilers will support both spellings in the interest of ease-of-shared-implementation.)
 
 
 
@@ -291,11 +298,11 @@ This makes `#embed` especially powerful, since it guarantees these values are av
 
 C and C++ are support a `__has_include` . It makes sense to have an analogous `__has_embed` identifier. It can take a `__has_embed( "header-name" ... )` or `__has_embed (<header-name> ... )` resource name identifier, as well as additional arguments to let vendors pass in any additional arguments they need to properly access the file (following the same parameters passed to the directive). `__has_embed` evaluates to:
 
-- `0` if the reesource is not found or any parameter in the `embed-parameter-list` does not exist; or,
+- `0` if the resource is not found or any parameter in the `embed-parameter-list` does not exist; or,
 - `1` if the resource is found, it is not empty, and the `embed-parameter-list` (including the vendor-specific ones) are supported; or,
 - `2` if the resource is found, it is empty, and the `embed-parameter-list` (including the vendor-specific ones) are supported.
 
-This may raise questions of "TOCTTOU" (Time of Check to Time of Use) problems, but we already have these problems between `__has_include` and `#include`. They are also already solved by existing implementations. For example, the LLVM/Clang compiler uses `FileManager` and `SourceManager` abstractions which cache files. GCC's "libcpp" will cache already-opened files (up to a limit). Any TOCTTOU problems have already been managed and provided for using the current `#include` infrastructure of these compilers, and if any compiler wants a more streamlined and consistent experience they should deploy whatever Quality of Implementation (QoI) they see fit to achieve that goal.
+This may raise questions of "TOCTTOU" (Time of Check to Time of Use) problems, but we already have these problems between `__has_include` and `#include`. They are also already solved by existing implementations. For example, the LLVM/Clang compiler uses `FileManager` and `SourceManager` abstractions which cache files. GCC's "libcpp" (not its C++ library but it's preprocessor library) will cache already-opened files (up to a limit). Any TOCTTOU problems have already been managed and provided for using the current `#include` infrastructure of these compilers, and if any compiler wants a more streamlined and consistent experience they should deploy whatever Quality of Implementation (QoI) they see fit to achieve that goal.
 
 Finally, note that this directive DOES expand to `0` if a given parameters that the implementation does not support. This makes it easier to determine if a given vendor-specific embed directive is supported. In fact, support can be checked in most cases by using a combination of `__FILE__` and `__has_embed`:
 
@@ -390,13 +397,89 @@ Previously, different syntax was used to specify the limit and other kinds of pa
 
 
 
+## `__has_embed(…) == 2`, `suffix`/`prefix`/`if_empty` parameters, both, or neither? ## {#alternative-empty}
+
+This proposal contains two different ways to handle empty parameters. Both are optionally included in this proposal to be voted on by WG21 (C++) and WG14 (C) respectively. While `__has_embed` can be used specifically to check if a resource is empty (by checking if it expands to a value of `2`), `prefix`, `suffix`, and `if_empty` reduce the complexity of the series of necessary checks in order to handle specific situations. For example, let's take a common situation of checking if a resource is empty, and if it isn't simply defaulting some data to be empty:
+
+```cpp
+static_assert(CHAR_BIT == 8, "expects an 8-bit char.");
+
+const unsigned char raw_data[] = {
+#if __has_embed(<some_file.txt>) == 2
+	// file is empty
+	0, 0
+#else
+	// file has content, or implementation defined search fails (errors)
+#	embed <some_file.txt> 
+	, 0, 0 // need the extra in this case,
+#endif
+};
+```
+
+Now, let's add checks for platform-specific-data, using just `__has_embed` as before:
+
+```cpp
+static_assert(CHAR_BIT == 8, "expects an 8-bit char.");
+
+const unsigned char raw_data[] = {
+#if __has_embed(<some_file.txt> acme::open_mode("x,nt")) == 1
+	// supports the directive: very nice!
+#	embed <some_file.txt> acme::open_mode("x,nt")
+#elif __has_embed(<some_file.txt>) == 2
+	// file is empty
+	0, 0	
+#else
+	// file has content, or implementation defined search fails (errors)
+#	embed <some_file.txt> 
+	, 0, 0 // need the extra in this case,
+#endif
+};
+```
+
+Each new condition adds yet another branch. In the case of something like a `clang::element_type(type)` which supports doing "direct binary translation into a sequence of objects with type `type`" or similar, this can become a very lengthy list of supported directives. This does not necessarily mean a world with the empty-handling parameters are more helpful: `__has_embed` is still needed to check whether implementation-defined parameters are allowed:
+
+```cpp
+static_assert(CHAR_BIT == 8, "expects an 8-bit char.");
+
+const unsigned char raw_data[] = {
+#if __has_embed(<some_file.txt> acme::open_mode("x,nt"))
+	// supports the directive: very nice!
+#	embed <some_file.txt> acme::open_mode("x,nt")
+#else
+	// file has content, or implementation defined search fails (errors)
+	// suffix takes care of adding the necessary comma
+#	embed <some_file.txt> suffix(,)
+	0, 0 // need the extra in this case,
+#endif
+};
+```
+
+We only lose a single `#elif` branch here. For more involved or complicated code that cares even more deeply about adding prefixes (UTF-8 prefixes) or different kinds of suffixes / empty-handlers, the reduction for handling empty cases may drop much more. For the case where we're not worried about special vendor extensions at all, the code is shorter:
+
+```cpp
+static_assert(CHAR_BIT == 8, "expects an 8-bit char.");
+
+const unsigned char raw_data[] = {
+	// file has content, or implementation defined search fails (errors)
+	// suffix takes care of adding the necessary comma
+#embed <some_file.txt> suffix(,)
+	0, 0 // need the extra in this case,
+};
+```
+
+We do not actually have a terrible preference about how much we would like to force users to make the ladder of `#if`/`#elif`. We introduced the parameter-based approach for empty files before we introduced the tri-state `__has_embed(…)` replacement value in the preprocessor. Users found the fix for empty files targeted and helpful, but perhaps that is not the best "general purpose" solution. The "general purpose" solution does make doing tests potentially complex, but maybe that complexity results in an overall more pleasant and coherent experience.
+
+We leave it up to the Committee to pick one, the other, neither, or both of the given ways of handling empty files (and, importantly, staving off errors from empty contiguous sequences, C-style arrays in particular).
+
+
+
 ## Why a Preprocessor Directive, Specifically? ## {#alternative-choice}
 
 Although the reasoning is scattered around the paper, it may be illuminating to explain the full "etymology" of the preprocessor directive of `#embed` and why it came to be. Originally, `#embed` was conceived not by the authors of this paper, but as a C++ feature (potentially portable to C) using a String Literal of the form `F"file.ext"` or `bF"file.ext"`. This proposal was soundly rejected by WG21, despite having one of the strongest champions it could possibly have presenting it (the original author of the paper could not make Committee Meetings). There was much confusion about whether or not this functionality would include a null terminator (some argued "yes", because it was the form of a string literal; others argued "no"). There was also the confusion between what it meant to include the file as a "text" file versus a "binary" file (the `F""` versus `bF""` prefixes). Furthermore, there was the question of what kind of data would come out on the other side (`char` for "text" data, `unsigned char` for binary?).
 
-From there, the authors of this paper worked to explore a new version that was, effectively, language magic. This was done because, very long ago, solutions around doing `#include_binary` or similar were (colloquially) rejected from both WG21 and WG14, with various different reasons. This is where the C++-shaped `std::embed("file.ext")` came from, and forms the basis of the C++ proposal [[p1040r6]]. It was meant to be filled in using either directly compiler-based language magic such as a builtin (like `__builtin_embed`), or using compiler-specific extensions such as `.incbin` ([[incbin]]) but mightily improved to be usable as a constant expression. This approach found great traction until tool vendors and tool developers within compiler groups complained that such a construct - especially in C++ - would allow evaluation of more than just String Literals as the entry into `std::embed`. This is partly a feature, as it meant that reading a file and pulling file names from it could reuse the included data to then feed it back into the magic directive to read another file, resulting in the ability to parse e.g. GLSL shader files or JSON files which referenced other JSON files into read-only, compiled memory. Unfortunately, such ability means that it is beyond the Phase 1-5, preprocessor abilities of C and C++ compilers, and dependencies must be computed at what is typically known as "Semantic Analysis" time in compilers.
+From there, the authors of this paper worked to explore a new version that was, effectively, language magic. This was done because, very long ago, solutions around doing `#include_binary` or similar were (colloquially) rejected from both WG21 and WG14, with various different reasons. This is where the C++-shaped `std::embed("file.ext")` came from, and forms the basis of the C++ proposal [[p1040r6]]. It was meant to be filled in using either directly compiler-based language magic such as a built-in (like `__builtin_embed`), or using compiler-specific extensions such as `.incbin` ([[incbin]]) but mightily improved to be usable as a constant expression. This approach found great traction until tool vendors and tool developers within compiler groups complained that such a construct - especially in C++ - would allow evaluation of more than just String Literals as the entry into `std::embed`. This is partly a feature, as it meant that reading a file and pulling file names from it could reuse the included data to then feed it back into the magic directive to read another file, resulting in the ability to parse e.g. GLSL shader files or JSON files which referenced other JSON files into read-only, compiled memory. Unfortunately, such ability means that it is beyond the Phase 1-5, preprocessor abilities of C and C++ compilers, and dependencies must be computed at what is typically known as "Semantic Analysis" time in compilers.
 
-This also proved problematic for tool developers outside of the C++ Standards Committee. Correspondence with Henry Miller of the icecc (distributed build tool) development list over e-mail revealed that while he would be comfortable just having a loosely-based "best effort" approach to finding file names from any `std::embed("...")` function call. He indicated some preference for a more static version that could allow him to find all potentially-included files without any risk of false-positives or other issues, that a simple tool like icecc could handle.
+This also proved problematic for tool developers outside of the C++ Standards Committee. Correspondence with Henry Miller of the `icecc` (distributed build tool) development list over e-mail revealed that while he would be comfortable just having a loosely-based "best effort" approach to finding file names from any `std::embed("...")` function call. He indicated some preference for a more static version that could allow him to find all potentially-included files without any risk of false-positives or other issues, that a simple tool like `icecc` could handle.
 
 This is where `#embed` was conceived. While it loses the ability to be used recursively with itself like the language-magic version in C++, it retains the following important qualities for all stakeholders involved:
 
