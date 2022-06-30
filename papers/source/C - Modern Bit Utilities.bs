@@ -1,10 +1,10 @@
 <pre class='metadata'>
 Title: Modern Bit Utilities
-Shortname: 3001
-Revision: 3
-!Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2965.htm">2965 (r2)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2827.htm">n2903 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2827.htm">n2827 (r0)</a>
+Shortname: 30XX
+Revision: 4
+!Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3001.htm">n3001 (r3)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2965.htm">n2965 (r2)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2827.htm">n2903 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2827.htm">n2827 (r0)</a>
 Status: P
-Date: 2022-06-17
+Date: 2022-06-28
 Group: WG14
 !Proposal Category: Feature Request
 !Target: C23
@@ -38,6 +38,16 @@ path: resources/css/bikeshed-wording.html
 
 # Changelog # {#changelog}
 
+
+
+## Revision 4 - June 28<sup>th</sup>, 2022 ## {#changelog-r4}
+
+- Wording improvements:
+	- Revised `generic_count_type` to simply be of the required signed-ness (it may be a narrower type, or a larger type: it does not matter).
+	- Provide concrete definitions for *most significant index* and *least significant index* in the wording.
+	- Rework all of the preamble and requirements into a "General" paragraph for the `<stdbit.h>` header, to leave no hanging paragraphs. (Hanging paragraphs are contrary to ISO wording policy).
+- Add additional verification of the 8-bit memreverse function and use that implementation exactly in [[#design-memreverse-implementation]].
+- Add additional verification of the 8-bit endian-aware load and store functions in [[#design-endianness-implementation]], and try to transcribe that implementation directly to avoid errors in the wording.
 
 
 ## Revision 3 - June 17<sup>th</sup>, 2022 ## {#changelog-r3}
@@ -517,6 +527,18 @@ Byte swapping, by itself, is absolutely dangerous in terms of code portability. 
 The inclusion of the `<stdbit.h>` header reduces this problem by giving access to the `__STDC_NATIVE_ENDIAN__` macro definition, but does not fully eliminate it. This is why many Linux and BSDs include functions which directly transcribe from one endianness to another. This is why the [[endian-fallacy|Byte Order Fallacy]] has spread so far in Systems Programming communities, and why many create their own versions of this both in official widespread vendor code ([[linux-endian]]) and in more personal code used for specific distributions ([[portable-endianness]]). Thusly, this proposal includes some endianness functions, specified just below.
 
 
+### Vetting the Implementation / Algorithm for `memreverse` ### {#design-memreverse-implementation}
+
+In previous iterations of the paper, there were various off-by-one errors in transcribing the algorithm used to get the job done. Therefore, we more directly lifted the code for the algorithm from [the example implementation here](https://github.com/soasis/idk/blob/main/include/ztd/idk/detail/bit.memreverse.impl.h#L55-L75). To further prove that it works on "bytes" that may be larger than 8 bits, we also took the following steps.
+
+- Implemented it as a macro (as shown from the link above).
+- Use that macro implementation in the normal `unsigned char`-based [implementation]();
+- Use that macro implementation all unsigned integer types that are larger than `unsigned char` to [test if it deals with sub-8-bit-groups correctly](https://github.com/soasis/idk/blob/main/tests/idk/basic_run_time_c%2B%2B/source/bit.memreverse.8.no-alias.cpp#L44-L65);
+- Apply `-fno-strict-alias` or [equivalent flag to the compiler](https://github.com/soasis/idk/blob/main/tests/idk/basic_run_time_c%2B%2B/CMakeLists.txt#L62) and test across platforms.
+
+All of the tests pass across the three major compilers (MSVC, GCC, and Clang) and across platforms (Windows, Linux, Mac OS). We find this to be compelling enough to ensure that the implementation and the algorithm in the wording is suitably correct. Nevertheless, any wording failures present here represent the authors' collective inability to properly serialize wording, not that an implementation is not possible or too inventive.
+
+
 
 ## `stdc_load8_*`/`stdc_store8_*` Endian-Aware Functions ## {#design-endianness}
 
@@ -581,6 +603,18 @@ We are fine with not making these precisely `uintN_t`/`intN_t` because the upcom
 Similarly to `stdc_memreverse8`, we want a dependable set of functionality that can work across platforms. Therefore, the functions only exist if both `N` and `CHAR_BIT` is evenly divisible by 8. We use the `(u)int_leastN_t` types still because we want these functions to be generally available when the requirements are met, because we can guarantee a proper value as long as a user is working with `(u)int_leastN_t` as anticipated. A lack of padding bits is not required to work with the memory correctly, unlike `stdc_memreverse8` and its exact-width counterpart.
 
 Note that this means a `CHAR_BIT == 16` implementation can still implement a `stdc_load8_les24` function, as it satisfies both `((CHAR_BIT % 8) == 0)` and `((N % 8) == 0)` and uses the `int_least24_t` parameter, which is guaranteed to be available in that implementation's `<stdint.h>` header.
+
+
+### Vetting the Implementation / Algorithm for 8-bit loads and stores ### {#design-endianness-implementation}
+
+In previous iterations of the paper, getting the algorithm written down properly in a way that does not rely on any kind of implementation-defined behavior for signed and unsigned endian-aware loads and stores was tough and resulted in many errors in the wording. Still, we know that the implementation is solid because we have tested it (both theoretically and factually) by writing implementations which base "unit" for writing into has a width greater than `CHAR_BIT`. It is similar to the design
+
+- Implemented the core bodies of the functions as macros whose base unit is not necessarily `unsigned char` (as [shown here](https://github.com/soasis/idk/blob/main/include/ztd/idk/detail/bit.load_store.impl.h#L54-L122)).
+- Use that macro implementation in the normal `unsigned char`-based [implementation](https://github.com/soasis/idk/blob/main/source/ztd/idk/bit.load_store.c);
+- Use that macro implementation all unsigned integer types that are larger than `unsigned char` to [test if it deals with sub-8-bit-groups correctly](https://github.com/soasis/idk/blob/main/tests/idk/basic_run_time_c%2B%2B/source/bit.load_store.8.no-alias.cpp#L126-L445);
+- Apply `-fno-strict-alias` or [equivalent flag to the compiler](https://github.com/soasis/idk/blob/main/tests/idk/basic_run_time_c%2B%2B/CMakeLists.txt#L62) and test across platforms.
+
+All of the tests pass across the three major compilers (MSVC, GCC, and Clang) and across platforms (Windows, Linux, Mac OS). We find this to be compelling enough to ensure that the implementation is suitably correct, even if the wording may not be proper or ideal. Therefore, we hope this can serve as a good basis in establishing that, at the very least, this is both implementable and usable. This also corroborates additional materials outside of compilers who always target `CHAR_BIT == 8`, such as the F2838x/F28069 series, and C28x series, of chips from Texas Instruments. For example, [the TMS320C28x reference guide](https://www.ti.com/lit/ug/spru430f/spru430f.pdf) gives a listing for how to properly and effectively swap 8-bit bytes of a 32-bit integer, despite being a 16-bit architecture (Page 292). It is, at least in some cases, important enough to include in reference material and programming guides for these chips, even if the authors could not personally find implementations of publicly-discussable compilers which provided a C-style intrinsic for a `CHAR_BIT == 16/32/64` platform.
 
 
 
@@ -889,12 +923,12 @@ These are decisions the Committee might want to make to alter the wording below.
 
 NOTE: #3 from [[#wording-decisions-q1]] does not apply if this question is accepted, because then the rotate must have a sign to communicate left/right.
 
-If the answer to this question is "Yes", then the below sections on "**§7.✨.14 Rotate Left**" and "**§7.✨.15 Rotate Right**" will be swapped out for the following wording:
+If the answer to this question is "Yes", then the below sections on "**§7.✨.15 Rotate Left**" and "**§7.✨.16 Rotate Right**" will be swapped out for the following wording:
 
 <blockquote>
 <ins>
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.14</span> <span class="wording-clause-title">Rotate</span>
+<span class="wording-clause-number">7.✨.15</span> <span class="wording-clause-title">Rotate</span>
 </div>
 
 <div class="wording-section">
@@ -947,7 +981,7 @@ The type-generic function (marked by its `generic_value_type` argument) returns 
 :: — extended unsigned integer type;
 :: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
 
-`generic_count_type` and `generic_return_type` types shall be a suitably large signed and unsigned integer types capable of representing the width of the `generic_value_type` and the computed result, respectively.
+The `generic_return_type` type shall be suitably large unsigned integer type capable of representing the width of the computed result. The `generic_count_type` shall be a signed integer type.
 </div>
 </div>
 </ins>
@@ -955,7 +989,6 @@ The type-generic function (marked by its `generic_value_type` argument) returns 
 
 
 ### Question 1 ### {#wording-decisions-q1}
-
 
 — Do we want unsigned (`unsigned int`, and similar) rotate counts + return values? (Both the function parameters for counts and the count-like return value types will be changed to be consistent with this decision).
 
@@ -986,9 +1019,9 @@ If the answer to this question is "Yes", then the following mechanical changes a
 	- Replace the parameter type for all the rotate functions from <del>`int` count</del> to <ins>`unsigned int` count</ins> for the second parameter.
 	- Remove the bullet point for when a negative count/"r" is encountered: <del>— otherwise, if r is negative, returns `…`</del>.
 	- Change the last sentence for both functions concerning the types of the generic count and returns from:
-		:: <del>`generic_count_type` and `generic_return_type` types shall be suitably large signed integer types capable of representing the width of the `generic_value_type` and the computed result, respectively.</del>
+		:: <del>The `generic_return_type` type shall be a suitably large signed integer type capable of representing the width of the computed. The `generic_count_type` type shall be a signed integer type.</del>
 		:: … to …
-		:: <ins>`generic_count_type` and `generic_return_type` types shall be suitably large unsigned integer types capable of representing the width of the `generic_value_type` and the computed result, respectively..</ins>
+		:: <ins>The `generic_return_type` type shall be a suitably large unsigned integer type capable of representing the width of the computed result. The `generic_count_type` type shall be an unsigned integer type.</ins>
 
 
 NOTE: #3 does not apply if [[#wording-decisions-q0]] is accepted, because then the rotate must have a sign. This is captured in the wording shown above.
@@ -1020,12 +1053,36 @@ A conforming freestanding implementation shall accept any strictly conforming pr
 <span class="wording-clause-number">7.✨</span> <span class="wording-clause-title">Bit and Byte Utilities `<stdbit.h>`</span>
 </div>
 
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.✨.1</span> <span class="wording-clause-title">General `<stdbit.h>`</span>
+</div>
 <div class="wording-section">
 
 <div class="wording-numbered">
 
 The header `<stdbit.h>` defines the following macros, types, and functions, to work with the byte and bit representation of many types, typically integer types. This header makes available the `size_t` type name (7.19) and any <code>uint<i>N</i>_t</code>,<code>int<i>N</i>_t</code>, <code>uint_least<i>N</i>_t</code>, or <code>int_least<i>N</i>_t</code> type names defined by the implementation (7.20).
 </div>
+
+<div class="wording-numbered">
+
+For declarations and definitions in 7.✨, an identifier with a suffix containing `le` typically represents little-endian. An identifier with a suffix containing `be` typically represents big-endian. This clause describes the endianness of the execution environment with respect to bit-precise integer types, standard integer types, and extended integer types which do not have padding bits.
+</div>
+
+<div class="wording-numbered">
+
+The *most significant index* is the 0-based index counting from the most significant bit, $0$, to the least significant bit, $w - 1$, where $w$ is the width of the type that is having its most significant index computed.
+</div>
+
+<div class="wording-numbered">
+
+The *least significant index* is the 0-based index counting from the least significant bit, $0$, to the most significant bit, $w - 1$, where $w$ is the width of the type that is having its least significant index computed.
+</div>
+
+<div class="wording-numbered">
+
+It is unspecified whether any generic function declared in `<stdbit.h>` is a macro or an identifier declared with external linkage. If a macro definition is suppressed in order to access an actual function, or a program defines an external identifier with the name of a generic function, the behavior is unspecified.
+</div>
+
 </div>
 </ins>
 </blockquote>
@@ -1038,16 +1095,12 @@ The header `<stdbit.h>` defines the following macros, types, and functions, to w
 <div class="wording-section">
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.1</span> <span class="wording-clause-title">Endian</span>
+<span class="wording-clause-number">7.✨.2</span> <span class="wording-clause-title">Endian</span>
 </div>
 
 <div class="wording-numbered">
 
-Two common methods of byte ordering in multi-byte scalar types are <b>little-endian</b> and <b>big-endian</b>. Little-endian is a format for storage of binary data in which the least significant byte is placed first, with the rest in ascending order. Or, that the least significant byte is stored at the smallest memory address. Big-endian is a format for storage or transmission of binary data in which the most significant byte is placed first, with the rest in descending order. Or, that the most significant byte is stored at the smallest memory address. Other byte orderings are also possible. For declarations and definitions in 7.✨, an identifier with a suffix containing `le` typically represents little-endian. An identifier with a suffix containing `be` typically represents big-endian. This clause describes the endianness of the execution environment with respect to bit-precise integer types, standard integer types, and extended integer types which do not have padding bits.
-</div>
-
-<div class="wording-numbered">
-It is unspecified whether any generic function declared in `<stdbit.h>` is a macro or an identifier declared with external linkage. If a macro definition is suppressed in order to access an actual function, or a program defines an external identifier with the name of a generic function, the behavior is unspecified.
+Two common methods of byte ordering in multi-byte scalar types are <b>little-endian</b> and <b>big-endian</b>. Little-endian is a format for storage of binary data in which the least significant byte is placed first, with the rest in ascending order. Or, that the least significant byte is stored at the smallest memory address. Big-endian is a format for storage or transmission of binary data in which the most significant byte is placed first, with the rest in descending order. Or, that the most significant byte is stored at the smallest memory address. Other byte orderings are also possible.
 </div>
 
 <div class="wording-numbered">
@@ -1081,12 +1134,12 @@ which represents the method of byte order storage for the execution environment 
 </blockquote>
 
 
-### Add a new §7.✨.2 sub-sub-clause for "8-bit Memory Reversal" in §7.✨ ### {#wording-7.✨-reordering}
+### Add a new §7.✨.3 sub-sub-clause for "8-bit Memory Reversal" in §7.✨ ### {#wording-7.✨-reordering}
 
 <blockquote>
 <ins>
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.2</span> <span class="wording-clause-title">8-bit Memory Reversal</span>
+<span class="wording-clause-number">7.✨.3</span> <span class="wording-clause-title">8-bit Memory Reversal</span>
 </div>
 
 <div class="wording-section">
@@ -1116,22 +1169,22 @@ Description
 The `stdc_memreverse8` function provides an interface to reverse the order of a given sequence of bytes by treating them as sequences of 8 bits at a time. The function is only present if `CHAR_BIT` is a multiple of 8. It is equivalent to the following algorithm:
 
 ```cpp
-for (size_t top_bit_index = 0, limit = (n * CHAR_BIT) / 2; top_bit_index < limit;) {
-	const size_t index = top_bit_index / CHAR_BIT;
-	const size_t reverse_index = n - 1 - index;
-	unsigned char* p = ptr + index;
-	unsigned char* reverse_p = ptr + reverse_index;
-	const unsigned char b_temp = *p;
-	const unsigned char reverse_b_temp = *reverse_p;
-	*p = 0;
-	*reverse_p = 0;
-	for (size_t bit_index = 0; bit_index < CHAR_BIT; bit_index += 8) {
+for (size_t index = 0, limit = ((n * CHAR_BIT) / 2); index < limit;) {
+	const size_t ptr_index         = index / CHAR_BIT;
+	const size_t reverseptr_index = n - 1 - ptr_index;
+	unsigned char* p                       = ptr + ptr_index;
+	unsigned char* reverse_p               = ptr + reverseptr_index;
+	const unsigned char b_temp             = *p;
+	const unsigned char reverse_b_temp     = *reverse_p;
+	*p                             = 0;
+	*reverse_p                     = 0;
+	for (size_t bit_index = 0, bit_limit = CHAR_BIT; bit_index < bit_limit; bit_index += 8) {
 		const size_t reverse_bit_index = CHAR_BIT - 8 - bit_index;
-		const unsigned char bit_mask = 0xFF << bit_index;
-		const unsigned char reverse_bit_mask = 0xFF << reverse_bit_index;
-		*p |= ((reverse_b_temp & reverse_bit_mask) << bit_index);
-		*reverse_p |= ((b_temp & bit_mask) << reverse_bit_index);
-		top_bit_index += 8
+		const unsigned char bit_mask           = ((unsigned char)0xFF) << bit_index;
+		const unsigned char reverse_bit_mask   = ((unsigned char)0xFF) << reverse_bit_index;
+		*p |= (((reverse_b_temp & reverse_bit_mask) >> reverse_bit_index) << bit_index);
+		*reverse_p |= (((b_temp & bit_mask) >> bit_index) << reverse_bit_index);
+		index += 8;
 	}
 }
 ```
@@ -1139,7 +1192,7 @@ for (size_t top_bit_index = 0, limit = (n * CHAR_BIT) / 2; top_bit_index < limit
 </div>
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.3</span> <span class="wording-clause-title">Exact-width 8-bit Memory Reversal</span>
+<span class="wording-clause-number">7.✨.4</span> <span class="wording-clause-title">Exact-width 8-bit Memory Reversal</span>
 </div>
 
 <div class="wording-section">
@@ -1183,12 +1236,12 @@ The <code>stdc_memreverse8u<i>N</i></code> functions returns the 8-bit memory re
 </blockquote>
 
 
-### Add a new §7.✨.4 sub-sub-clause for "Endian Aware" functions in §7.✨ ### {#wording-7.✨-endian.aware.load.store}
+### Add a new §7.✨.5 sub-sub-clause for "Endian-Aware" functions in §7.✨ ### {#wording-7.✨-endian.aware.load.store}
 
 <blockquote>
 <ins>
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.4</span> <span class="wording-clause-title">Endian-Aware 8-bit Load</span>
+<span class="wording-clause-number">7.✨.5</span> <span class="wording-clause-title">Endian-Aware 8-bit Load</span>
 </div>
 
 <div class="wording-section">
@@ -1222,7 +1275,7 @@ Description
 
 <div class="wording-numbered">
 
-The 8-bit load family of functions functions read an <code>int_least<i>N</i>_t</code> or <code>uint_least<i>N</i>_t</code> object from the provided `ptr` in an endian-aware (7.✨.1) manner, where <i>N</i> matches an existing minimum-width integer type (7.20.1.2). If this function is present, <i>N</i> shall be a multiple of 8 and `CHAR_BIT` shall be a multiple of 8. The functions containing `_aligned` in the name shall assume that `ptr` is suitably aligned to access a signed or unsigned integer of width <i>N</i> for a signed or unsigned variant of the function, respectively. If the function name contains the <code>s<i>N</i></code> suffix in the name, it is a <i>signed variant</i>. Otherwise, the function is an <i>unsigned variant</i>. If the function name contains the <code>les<i>N</i></code> or <code>leu<i>N</i></code> suffix, it is a <i>little-endian variant</i>. Otherwise, if the function name contains the <code>bes<i>N</i></code> or <code>beu<i>N</i></code> suffix, it is a <i>big-endian variant</i>.
+The 8-bit load family of functions functions read an <code>int_least<i>N</i>_t</code> or <code>uint_least<i>N</i>_t</code> object from the provided `ptr` in an endian-aware (7.✨.2) manner, where <i>N</i> matches an existing minimum-width integer type (7.20.1.2). If this function is present, <i>N</i> shall be a multiple of 8 and `CHAR_BIT` shall be a multiple of 8. The functions containing `_aligned` in the name shall assume that `ptr` is suitably aligned to access a signed or unsigned integer of width <i>N</i> for a signed or unsigned variant of the function, respectively. If the function name contains the <code>s<i>N</i></code> suffix in the name, it is a <i>signed variant</i>. Otherwise, the function is an <i>unsigned variant</i>. If the function name contains the <code>les<i>N</i></code> or <code>leu<i>N</i></code> suffix, it is a <i>little-endian variant</i>. Otherwise, if the function name contains the <code>bes<i>N</i></code> or <code>beu<i>N</i></code> suffix, it is a <i>big-endian variant</i>.
 </div>
 
 <div class="wording-clause-section-title">
@@ -1237,8 +1290,8 @@ $$\sum_{index = 0}^{(N \div{} CHAR\_{}BIT) - 1} b_{index} \times{} 2^{8 \times{}
 
 where $b_{index}$ is:
 
-:: — `ptr[index / (CHAR_BIT / 8)] >> ((index % (CHAR_BIT / 8)) * 8)`, if the function is the  little-endian variant;
-:: — otherwise, `ptr[(((N / CHAR_BIT) - 1) - index) / (CHAR_BIT / 8)] >> (((((N / CHAR_BIT) - 1) - index) % (CHAR_BIT / 8)) * 8)`, if the function is the the big-endian variant.
+:: — `(ptr[index / (CHAR_BIT / 8)] >> ((index % (CHAR_BIT / 8)) * 8)) & 0xFF`, if the function is the  little-endian variant;
+:: — otherwise, `(ptr[(((N / CHAR_BIT) - 1) - index) / (CHAR_BIT / 8)] >> (((((N / CHAR_BIT) - 1) - index) % (CHAR_BIT / 8)) * 8))) & 0xFF`, if the function is the the big-endian variant.
 
 If the function is an unsigned variant, return $result$. Otherwise, if the function is a signed variant, return:
 
@@ -1249,7 +1302,7 @@ If the function is an unsigned variant, return $result$. Otherwise, if the funct
 
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.5</span> <span class="wording-clause-title">Endian-Aware 8-bit Store</span>
+<span class="wording-clause-number">7.✨.6</span> <span class="wording-clause-title">Endian-Aware 8-bit Store</span>
 </div>
 
 <div class="wording-section">
@@ -1291,7 +1344,7 @@ Description
 
 <div class="wording-numbered">
 
-The 8-bit store family of functions functions write a <code>int_least<i>N</i>_t</code> or <code>uint_least<i>N</i>_t</code> object into the provided `ptr` in an endian-aware (7.✨.1) manner, where <i>N</i> matches an existing minimum-width integer type (7.20.1.2). If this function is present, <i>N</i> shall be a multiple of 8 and `CHAR_BIT` shall be a multiple of 8. The functions containing `_aligned` in the name shall assume that `ptr` is suitably aligned to access a signed or unsigned integer of width <i>N</i>. If the function name contains the <code>s<i>N</i></code> suffix in the name, it is a <i>signed variant</i>. Otherwise, the function is an <i>unsigned variant</i>. If the function name contains the <code>les<i>N</i></code> or <code>leu<i>N</i></code> suffix, it is a <i>little-endian variant</i>. Otherwise, if the function name contains the <code>bes<i>N</i></code> or <code>beu<i>N</i></code> suffix, it is a <i>big-endian variant</i>.
+The 8-bit store family of functions functions write a <code>int_least<i>N</i>_t</code> or <code>uint_least<i>N</i>_t</code> object into the provided `ptr` in an endian-aware (7.✨.2) manner, where <i>N</i> matches an existing minimum-width integer type (7.20.1.2). If this function is present, <i>N</i> shall be a multiple of 8 and `CHAR_BIT` shall be a multiple of 8. The functions containing `_aligned` in the name shall assume that `ptr` is suitably aligned to access a signed or unsigned integer of width <i>N</i>. If the function name contains the <code>s<i>N</i></code> suffix in the name, it is a <i>signed variant</i>. Otherwise, the function is an <i>unsigned variant</i>. If the function name contains the <code>les<i>N</i></code> or <code>leu<i>N</i></code> suffix, it is a <i>little-endian variant</i>. Otherwise, if the function name contains the <code>bes<i>N</i></code> or <code>beu<i>N</i></code> suffix, it is a <i>big-endian variant</i>.
 </div>
 
 <div class="wording-numbered">
@@ -1315,12 +1368,12 @@ Let `ptr_bit_index` be an integer that starts from 0. Let `byte_index8` be `inde
 </blockquote>
 
 
-### Add a new §7.✨.6 sub-sub-clause for Low-Level Bit Utilities in §7.✨ ### {#wording-7.✨-low.level.bit}
+### Add a new §7.✨.7 sub-sub-clause for Low-Level Bit Utilities in §7.✨ ### {#wording-7.✨-low.level.bit}
 
 <blockquote>
 <ins>
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.6</span> <span class="wording-clause-title">Count Leading Zeros</span>
+<span class="wording-clause-number">7.✨.7</span> <span class="wording-clause-title">Count Leading Zeros</span>
 </div>
 
 <div class="wording-section">
@@ -1364,7 +1417,7 @@ The `generic_return_type` type shall be a suitably large signed integer type cap
 </div>
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.7</span> <span class="wording-clause-title">Count Leading Ones</span>
+<span class="wording-clause-number">7.✨.8</span> <span class="wording-clause-title">Count Leading Ones</span>
 </div>
 
 <div class="wording-section">
@@ -1408,7 +1461,7 @@ The `generic_return_type` type shall be a suitably large signed integer type cap
 </div>
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.8</span> <span class="wording-clause-title">Count Trailing Zeros</span>
+<span class="wording-clause-number">7.✨.9</span> <span class="wording-clause-title">Count Trailing Zeros</span>
 </div>
 
 <div class="wording-section">
@@ -1452,7 +1505,7 @@ The `generic_return_type` type shall be a suitably large signed integer type cap
 </div>
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.9</span> <span class="wording-clause-title">Count Trailing Ones</span>
+<span class="wording-clause-number">7.✨.10</span> <span class="wording-clause-title">Count Trailing Ones</span>
 </div>
 
 <div class="wording-section">
@@ -1496,7 +1549,7 @@ The `generic_return_type` type shall be a suitably large signed integer type cap
 </div>
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.10</span> <span class="wording-clause-title">First Leading Zero</span>
+<span class="wording-clause-number">7.✨.11</span> <span class="wording-clause-title">First Leading Zero</span>
 </div>
 
 <div class="wording-section">
@@ -1525,7 +1578,7 @@ Returns
 
 <div class="wording-numbered">
 
-Returns the index of the first 0 bit in `value`, starting from the most significant bit, plus 1. If it is not found, this function returns 0.
+Returns the most significant index of the first 0 bit in `value`, plus 1. If it is not found, this function returns 0.
 </div>
 
 <div class="wording-numbered">
@@ -1541,7 +1594,7 @@ The `generic_return_type` type shall be a suitably large signed integer type cap
 </div>
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.11</span> <span class="wording-clause-title">First Leading One</span>
+<span class="wording-clause-number">7.✨.12</span> <span class="wording-clause-title">First Leading One</span>
 </div>
 
 <div class="wording-section">
@@ -1570,12 +1623,12 @@ Returns
 
 <div class="wording-numbered">
 
-Returns the index of the first 1 bit in `value`, starting from the most significant bit, plus 1. If it is not found, this function returns 0.
+Returns the most significant index of the first 1 bit in `value`, plus 1. If it is not found, this function returns 0.
 </div>
 
 <div class="wording-numbered">
 
-The type-generic function (marked by its `generic_value_type` argument) returns the appropriate value based on the type of the input value, so long as it is an
+The type-generic function (marked by its `generic_value_type` argument) returns the appropriate value based on the type of the input value, so long as it is an:
 
 :: — standard unsigned integer type, excluding `bool`;
 :: — extended unsigned integer type;
@@ -1586,7 +1639,7 @@ The `generic_return_type` type shall be a suitably large signed integer type cap
 </div>
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.12</span> <span class="wording-clause-title">First Trailing Zero</span>
+<span class="wording-clause-number">7.✨.13</span> <span class="wording-clause-title">First Trailing Zero</span>
 </div>
 
 <div class="wording-section">
@@ -1615,7 +1668,7 @@ Returns
 
 <div class="wording-numbered">
 
-Returns the index of the first 0 bit in `value`, starting from the least significant bit, plus 1. If it is not found, this function returns 0.
+Returns the least significant index of the first 0 bit in `value`, plus 1. If it is not found, this function returns 0.
 </div>
 
 <div class="wording-numbered">
@@ -1631,7 +1684,7 @@ The `generic_return_type` type shall be a suitably large signed integer type cap
 </div>
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.13</span> <span class="wording-clause-title">First Trailing One</span>
+<span class="wording-clause-number">7.✨.14</span> <span class="wording-clause-title">First Trailing One</span>
 </div>
 
 <div class="wording-section">
@@ -1660,7 +1713,7 @@ Returns
 
 <div class="wording-numbered">
 
-Returns the index of the first 1 bit in `value`, starting from the least significant bit, plus 1. If it is not found, this function returns 0.
+Returns the least significant index of the first 1 bit in `value`, plus 1. If it is not found, this function returns 0.
 </div>
 
 <div class="wording-numbered">
@@ -1677,7 +1730,7 @@ The `generic_return_type` type shall be a suitably large signed integer type cap
 
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.14</span> <span class="wording-clause-title">Rotate Left</span>
+<span class="wording-clause-number">7.✨.15</span> <span class="wording-clause-title">Rotate Left</span>
 </div>
 
 <div class="wording-section">
@@ -1729,12 +1782,12 @@ The type-generic function (marked by its `generic_value_type` argument) returns 
 :: — extended unsigned integer type;
 :: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
 
-`generic_count_type` and `generic_return_type` types shall be suitably large signed and unsigned (respectively) integer types capable of representing the width of the `generic_value_type` and the computed result, respectively.
+The `generic_return_type` type shall be suitably large unsigned integer type capable of representing the width of the computed result. The `generic_count_type` shall be a signed integer type.
 </div>
 </div>
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.15</span> <span class="wording-clause-title">Rotate Right</span>
+<span class="wording-clause-number">7.✨.16</span> <span class="wording-clause-title">Rotate Right</span>
 </div>
 
 <div class="wording-section">
@@ -1787,12 +1840,12 @@ The type-generic function (marked by its `generic_value_type` argument) returns 
 :: — an extended unsigned integer type;
 :: — or, a bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
 
-`generic_count_type` and `generic_return_type` types shall be suitably large signed and unsigned (respectively) integer types capable of representing the width of the `generic_value_type` and the computed result, respectively.
+The `generic_return_type` type shall be suitably large unsigned integer type capable of representing the width of the computed result. The `generic_count_type` shall be a signed integer type.
 </div>
 </div>
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.16</span> <span class="wording-clause-title">Count Ones</span>
+<span class="wording-clause-number">7.✨.17</span> <span class="wording-clause-title">Count Ones</span>
 </div>
 
 <div class="wording-section">
@@ -1837,7 +1890,7 @@ The `generic_return_type` type shall be a suitably large signed integer type cap
 
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.17</span> <span class="wording-clause-title">Count Zeros</span>
+<span class="wording-clause-number">7.✨.18</span> <span class="wording-clause-title">Count Zeros</span>
 </div>
 
 <div class="wording-section">
@@ -1883,12 +1936,12 @@ The `generic_return_type` type for the type-generic function need not be the sam
 </blockquote>
 
 
-### Add a new §7.✨.3 sub-sub-clause for Fundamental Bit Utilities in §7.✨ ### {#wording-7.✨-fundamental.bit}
+### Add a new §7.✨.4 sub-sub-clause for Fundamental Bit Utilities in §7.✨ ### {#wording-7.✨-fundamental.bit}
 
 <blockquote>
 <ins>
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.18</span> <span class="wording-clause-title">Single-bit Check</span>
+<span class="wording-clause-number">7.✨.19</span> <span class="wording-clause-title">Single-bit Check</span>
 </div>
 
 <div class="wording-section">
@@ -1931,7 +1984,7 @@ The type-generic function (marked by its `generic_value_type` argument) returns 
 </div>
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.19</span> <span class="wording-clause-title">Bit Width</span>
+<span class="wording-clause-number">7.✨.20</span> <span class="wording-clause-title">Bit Width</span>
 </div>
 
 <div class="wording-section">
@@ -1984,7 +2037,7 @@ The `generic_return_type` type for the type-generic function need not be the sam
 </div>
 
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.20</span> <span class="wording-clause-title">Bit Floor</span>
+<span class="wording-clause-number">7.✨.21</span> <span class="wording-clause-title">Bit Floor</span>
 </div>
 
 <div class="wording-section">
@@ -2036,7 +2089,7 @@ The type-generic function (marked by its `generic_value_type` argument) returns 
 
 <div class="wording-section">
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.✨.21</span> <span class="wording-clause-title">Bit Ceiling</span>
+<span class="wording-clause-number">7.✨.22</span> <span class="wording-clause-title">Bit Ceiling</span>
 </div>
 
 
@@ -2092,8 +2145,8 @@ The type-generic function (marked by its `generic_value_type` argument) returns 
 ## Add one new entry for Implementation-Defined Behavior in Annex J.3 ## {#wording-annexj.3}
 
 <blockquote>
-<p><ins>— The value of `__STDC_ENDIAN_NATIVE__` if the execution environment is not big-endian or little-endian (7.✨.1).</ins></p>
-<p><ins>— The value of `__STDC_ENDIAN_BIG__`, and `__STDC_ENDIAN_LITTLE__` if the execution environment is not big-endian or little-endian (7.✨.1).</ins></p>
+<p><ins>— The value of `__STDC_ENDIAN_NATIVE__` if the execution environment is not big-endian or little-endian (7.✨.2).</ins></p>
+<p><ins>— The value of `__STDC_ENDIAN_BIG__`, and `__STDC_ENDIAN_LITTLE__` if the execution environment is not big-endian or little-endian (7.✨.2).</ins></p>
 </blockquote>
 
 
