@@ -10,7 +10,7 @@ URL:
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Shepherd (Shepherd's Oasis), shepherd@soasis.org
-Date: 2021-04-15
+Date: 2022-09-01
 Markup Shorthands: markdown yes, biblio yes, markup yes
 Abstract: The standard lacks facilities for transcoding text from one form into another, leaving a serious barrier to entry for individuals who want to process text in any sensible manner in the Standard Library. This paper explores and proposes a static interface for encoding that can be used and built upon for the creation of higher-level abstractions.
 </pre>
@@ -30,31 +30,33 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 2 - April 15<sup>th</sup>, 2021 ## {#changelog-r2}
+## Revision 2 - September 1<sup>st</sup>, 2022 ## {#changelog-r2}
 
-	- Fix up typos and customization points descriptions.
-	- Write up first-draft wording.
+- Fix `unicode_scalar_value` missing it's definition.
+- Adjust the names of the functions, as has been bikeshed between users and others, to match the names in the implementation (for validation and similar functions).
+- Encoding types provided by the standard should end with `_t` when they are not templated, and common encodings should be object types (e.g., `std::text::utf8` is an object of type `std::text::utf8_t` - thanks Hana Dusíková).
+- The documentation and rationale for much of the implementation that is up-to-date can be found [[ztd_text_docs|online]].
 
 
 
 ## Revision 1 - March 2<sup>nd</sup>, 2020 ## {#changelog-r1}
 
-	- Thoroughly improve [[#motivation]].
-		- Explicitly state goals and non-goals in the [[#motivation-objectives]].
-	- Rewrite most of paper to more thoroughly explain the API, especially the [[#design-high-level]] section with `validate`, `count_code_points`, `count_code_units`, and more APIs.
-		- Include drastically improve the explanation for the free functions in [[#design-high-level-free]].
-		- Emphasize the need for ranges in [[#design-high-level-ranges]].
-	- Add new descriptions in the low-level API regarding error handling in [[#design-low-level-results-error_handler]].
-	- Describe customization points in full in [[#design-speed-customization]].
-	- The [[#implementation-visible|Implementation]] is now hidden, after [doing a magic trick](https://thephd.dev/assets/snd/Crystal%20Carry%20Invisibility.mp3). Contact the author for access.
-	- Add [[#faq]].
-	- Going no-where, targeted at no-one.
+- Thoroughly improve [[#motivation]].
+	- Explicitly state goals and non-goals in the [[#motivation-objectives]].
+- Rewrite most of paper to more thoroughly explain the API, especially the [[#design-high-level]] section with `validate`, `count_code_points`, `count_code_units`, and more APIs.
+	- Include drastically improve the explanation for the free functions in [[#design-high-level-free]].
+	- Emphasize the need for ranges in [[#design-high-level-ranges]].
+- Add new descriptions in the low-level API regarding error handling in [[#design-low-level-results-error_handler]].
+- Describe customization points in full in [[#design-speed-customization]].
+- The [[#implementation-visible|Implementation]] is now hidden, after [doing a magic trick](https://thephd.dev/assets/snd/Crystal%20Carry%20Invisibility.mp3). Contact the author for access.
+- Add [[#faq]].
+- Going no-where, targeted at no-one.
 
 
 
 ## Revision 0 - June 17<sup>th</sup>, 2019 ## {#changelog-r0}
 
-	- Initial release of exploratory paper.
+- Initial release of exploratory paper.
 
 
 
@@ -84,7 +86,7 @@ int main (int, char*[]) {
 	// future proposal: container type
 	std::text::u8text my_text
 		// this proposal: transcoding
-		= std::text::transcode(“안녕하세요 👋”sv, std::text::utf8{});
+		= std::text::transcode(“안녕하세요 👋”sv, std::text::utf8);
 	std::cout << my_text << std::endl; // prints 안녕하세요 👋 to a capable console
 	std::cout << std::hex;
 	for (const auto& cp : my_text) {
@@ -181,16 +183,14 @@ class session : public std::enable_shared_from_this<session> {
 
 		// utf16, but big endian
 		std::text::encoding_scheme<
-			std::text::utf16,
+			std::text::utf16_t,
 			std::endian::big
 		> from_encoding{};
 		// alternatively: std::text::utf16_be
 
-		std::text::utf8 to_encoding{};
-
 		// transcode from bytes that are UTF16, Big Endian,
 		// into unbounded output
-		std::text::transcode(bytes, output, from_encoding, to_encoding);
+		std::text::transcode(bytes, output, from_encoding, std::text::utf8);
 		std::clog << converted_body_ << std::endl;
 
 		/* Commit / clean up, etc. */
@@ -282,7 +282,7 @@ Here are some handy definitions which will be used liberally to shorten the pros
 - Unicode Code Point: the 21-bit value (often represented as a 32-bit number for implementation-related reasons) that represents a code point from the Unicode Standard. Specifically, it is the range of integers 0 to 0x10FFFF inclusive.
 - Unicode Scalar Value: the 21-bit value that represents a code point from the Unicode Standard, but without Surrogate Unicode Code Point values. Specifically, it is the ranges of integers 0 to 0xD7FF and 0xE000 to 0x10FFFF inclusive.
 - `unicode_code_point`: a type in C++ that represent at Unicode Code Point. Alias of `char32_t`.
-- `unicode_scalar_value`: a type for C++ that represents. Strong typedef that supports all the same operations as `char32_t`. It's constructor may assert / trap on values outside of the allowed 21 Unicode bits and may assert / trap on values that are surrogate characters.
+- `unicode_scalar_value`: a type for C++ that represents  a Unicode Code Point, barring all surrogate characters (the values used to encode double-code unit UTF-16 characters). Strong typedef that supports all the same operations as `char32_t`. It's constructor may assert / trap on values outside of the allowed 21 Unicode bits and may assert / trap on values that are surrogate characters.
 - `template <typename T> constexpr bool is_code_point_v`: a boolean value that indicates whether or not a given type is a code point value. Program-specializations are allowed for all types. The primary template returns `true` if `T` is `char32_t`, `unicode_code_point`, and `unicode_scalar_value`.
 - `template <typename T> constexpr bool is_scalar_value_v`: a boolean value that indicates whether or not a given type is a unicode scalar value. Program-specializations are allowed for all types. The primary template returns `true` if `T` is `unicode_scalar_value`.
 - `template <typename T> using encode_state_t = typename std::remove_cvref_t<T>::state;`.
@@ -698,9 +698,9 @@ There are many pieces of this encoding object. Some of them fit the purposes exp
 	- If `is_{encode|decode}_state_independent_v<Encoding>` is true, then:
 		- the `{encode|decode}_state_t<Encoding>` may not be default-constructible; and,
 		- the encoding must be constructible when given a parameter of type `const UEncoding&`.
-	- Encodings that do not need state are `utf8`, `utf16`, `utf32`, `ascii`, `utf_ebcdic`, and similar and fall under the case where `is_{encode|decode}_state_independent_v<Encoding>` would be false (and the `state` structure itself would be empty).
+	- Encodings that do not need state are `utf8_t`, `utf16_t`, `utf32_t`, `ascii_t`, `utf_ebcdic_t`, and similar and fall under the case where `is_{encode|decode}_state_independent_v<Encoding>` would be false (and the `state` structure itself would be empty).
 	- Many IBM/Windows code pages, ISO 2022 encodings, and Extended Unix Code (EUC) encodings, regardless of the self-state, will need `state` to process its characters properly. This does not require `is_{encode|decode}_state_independent_v<Encoding>` to be `true`.
-	- Encodings where the encoding may point to itself to have additional information like this include run-time, type-erased encodings like `any_encoding`, `one_encoding_of<utf8, utf16, shift_jis, tscii, ...>`. For these run-time erased encodings, `is_encoding_self_state_v<Encoding>` would be true because the encoding has special knowledge that is needed to manage the state properly.
+	- Encodings where the encoding may point to itself to have additional information like this include run-time, type-erased encodings like `any_encoding`, `one_encoding_of<utf8_t, utf16_t, shift_jis, tscii, ...>`. For these run-time erased encodings, `is_encoding_self_state_v<Encoding>` would be true because the encoding has special knowledge that is needed to manage the state properly.
 - `max_code_units` and `max_code_points` represent integral values which inform users of the encoding the necessary size of a buffer to handle at least one full, encoded sequence of code units and one full, decoded sequence of code points. In most cases, `max_code_points` will be `1`, but there are cases where this is not the case (e.g., the Tamil Standard Code for Information Interchange (TSCII)).
 - `decode_one` and `encode_one` are fundamental functions which convert one full unit of complete, indivisible information from one representation to the other. Specifically, `decode_one` converts from `code_unit`s to `code_point`s, and `encode_one` converts from `code_point`s to `code_unit`s. `Input` is an input range, `Output` is an output range, and `Handler` is an error handler as defined in [[#design-low-level-results-error_handler]].
 
@@ -739,14 +739,23 @@ namespace std::text {
 	template <typename CharT, typename Codepoint>
 	class no_encoding;
 
-	class ascii;
-	using utf8 = basic_utf8<char8_t, unicode_code_point>;
-	using utf16 = basic_utf16<char16_t, unicode_code_point>;
-	using utf32 = basic_utf32<char32_t, unicode_code_point>;
-	class narrow_literal;
-	class wide_literal;
-	class narrow_execution;
-	class wide_execution;
+	class ascii_t;
+	using utf8_t = basic_utf8<char8_t, unicode_code_point>;
+	using utf16_t = basic_utf16<char16_t, unicode_code_point>;
+	using utf32_t = basic_utf32<char32_t, unicode_code_point>;
+	class literal_t;
+	class wide_literal_t;
+	class execution_t;
+	class wide_execution_t;
+
+	inline constexpr auto ascii = ascii_t{};
+	inline constexpr auto utf8 = utf8_t{};
+	inline constexpr auto utf16 = utf16_t{};
+	inline constexpr auto utf32 = utf32_t{};
+	inline constexpr auto literal = literal_t{};
+	inline constexpr auto wide_literal = wide_literal_t{};
+	inline constexpr auto execution = execution_t{};
+	inline constexpr auto wide_execution = wide_execution_t{};
 
 	template <typename Byte, typename CharT = char16_t, typename Codepoint = unicode_code_point>
 	using basic_utf16_le = encoding_scheme<
@@ -790,13 +799,21 @@ namespace std::text {
 		Byte
 	>;
 
-	using utf16_le = basic_utf16_le<std::byte, char16_t, unicode_code_point>;
-	using utf16_be = basic_utf16_le<std::byte, char16_t, unicode_code_point>;
-	using utf16_ne = basic_utf16_le<std::byte, char16_t, unicode_code_point>;
+	using utf16_le_t = basic_utf16_le<std::byte, char16_t, unicode_code_point>;
+	using utf16_be_t = basic_utf16_le<std::byte, char16_t, unicode_code_point>;
+	using utf16_ne_t = basic_utf16_le<std::byte, char16_t, unicode_code_point>;
 
-	using utf32_le = basic_utf32_le<std::byte, char32_t, unicode_code_point>;
-	using utf32_be = basic_utf32_le<std::byte, char32_t, unicode_code_point>;
-	using utf32_ne = basic_utf32_le<std::byte, char32_t, unicode_code_point>;
+	using utf32_le_t = basic_utf32_le<std::byte, char32_t, unicode_code_point>;
+	using utf32_be_t = basic_utf32_le<std::byte, char32_t, unicode_code_point>;
+	using utf32_ne_t = basic_utf32_le<std::byte, char32_t, unicode_code_point>;
+
+	inline constexpr auto utf16_le = utf16_le_t{};
+	inline constexpr auto utf16_be = utf16_be_t{};
+	inline constexpr auto utf16_ne = utf16_ne_t{};
+
+	inline constexpr auto utf32_le = utf32_le_t{};
+	inline constexpr auto utf32_be = utf32_be_t{};
+	inline constexpr auto utf32_ne = utf32_ne_t{};
 }
 ```
 
@@ -875,7 +892,7 @@ A few SG16 members have frequently advocated that the base inputs and outputs fo
 
 Advisement: Writing mostly-duplicate encoding object types for `utf16_be`, `utf16_le`, and other such shenanigans is a thorough and fundamental waste of everyone's time.
 
-Note: **Lesson Learned!** This direction is far less boilerplate, and has also already seen implementation experience in [[libogonek]]'s [[libogonek-encoding_scheme]] type. Users have not complained. It has also proved to be implementable by simply decomposing the original input/output ranges into their iterators, and wrapping said iterators with a `__detail::byte_iterator<OriginalIterator>`. It has worked well in the [[#prior-art-current|implementation experience linked below]].
+Note: **Lesson Learned!** This direction is far less boilerplate, and has also already seen implementation experience in [[libogonek]]'s [[libogonek-encoding_scheme]] type. Users have not complained. It has also proved to be implementable by simply decomposing the original input/output ranges into their iterators, and wrapping said iterators with a `__detail::byte_iterator<OriginalIterator>`. It has worked well in the [[#implementation|implementation experience linked below]].
 
 #### Default Encodings #### {#design-low-level-encodings-default}
 
@@ -1020,12 +1037,12 @@ int main () {
 	std::text::unicode_code_point array_output[41]{};
 	std::u8string_view input = u8"𐌼𐌰𐌲 𐌲𐌻𐌴𐍃 𐌹̈𐍄𐌰𐌽, 𐌽𐌹 𐌼𐌹𐍃 𐍅𐌿 𐌽𐌳𐌰𐌽 𐌱𐍂𐌹𐌲𐌲𐌹𐌸.";
 
-	std::text::utf8 encoding{};
+	std::text::utf8_t encoding{};
 
 	std::u8string_view working_input = input;
 	std::span<std::text::unicode_code_point> working_output(array_output);
 	std::text::default_handler handler{};
-	std::text::utf8::state encoding_state{};
+	std::text::utf8_t::state encoding_state{};
 
 	for (;;) {
 		auto result = encoding.decode(working_input, working_output,
@@ -1056,7 +1073,7 @@ assert(output == U"𐌼𐌰𐌲 𐌲𐌻𐌴𐍃 𐌹̈𐍄𐌰𐌽, 𐌽𐌹 �
 
 This is much simpler and does exactly the same as the above, without all the setup and boilerplate. Of course, taking only the input and giving the output is too **much** of a simplification, so there are a few overloads and variants that will be offered. Particularly, there needs to be 3 sets of free functions: `decode`/`decode_into`, `encode`/`encode_into`, and `transcode`/`transcode_into`. These are high-level functions that perform essentially what is shown above, but with numerous overloads that default a few parameters in the case where they can be figured out.
 
-Note that, at the core of all these functions, the loop as shown above captures the core of the work. All of these abstractions are built on the 7 basis operations specified in [[#design-low-level-encodings]]. Actually getting additional optimizations is, of course, left to the readers and implementers through the use of [[#design-high-level-customization-points]].
+Note that, at the core of all these functions, the loop as shown above captures the core of the work. All of these abstractions are built on the 7 basis operations specified in [[#design-low-level-encodings]]. Actually getting additional optimizations is, of course, left to the readers and implementers through the use of [[#design-speed]].
 
 
 ### Eager Free Functions ### {#design-high-level-free}
@@ -1398,7 +1415,7 @@ namespace std::text {
 	template <typename Input, typename Encoding>
 	constexpr bool validate_encodable_as(Input&& input, Encoding&& encoding);
 
-	template <typename_Input>
+	template <typename Input>
 	constexpr bool validate_encodable_as(Input&& input);
 
 }
@@ -1406,9 +1423,11 @@ namespace std::text {
 
 The order of arguments is chosen based on what users are likely to specify first. In many cases, all that is needed is the input: the encoding can be chosen automatically for the user based on such. For `validate_encodable_as`, the `std::text::default_code_point_encoding_t<std::ranges::range_value_t<Input>>` encoding type is picked (see [[#design-low-level-encodings-default]]).
 
-#### Free Functions `count_code_points` and `count_code_units` #### {#design-high-level-free-count}
+#### Free Functions `count_as_decoded`, `count_as_encoded`, `count_as_transcoded` #### {#design-high-level-free-count}
 
-It's exactly the same as above, except instead of validating it does counting of the `code_unit`s/`code_point`s that come out of the function.
+It's exactly the same as above, except instead of validating it does counting of the `code_point`s (`_as_decoded`) / `code_unit`s (`_as_encoded`) that come out of the function. `count_as_transcoded` counts the data that comes out after doing the typical decode-to-re-encode dance, giving the final code unit count.
+
+Each of these functions returns a whole `count_result`, which shows the number of characters that were consumed.
 
 
 ### Safety with the Free Functions ### {#design-high-level-safety}
@@ -1593,7 +1612,7 @@ The following is a complete example of this customization point.
 ```cpp
 using ascii_to_utf8_result = std::text::transcode_result<
 	std::span<char>, std::span<char8_t>,
-	std::text::ascii::state, std::text::utf8::state>;
+	std::text::ascii_t::state, std::text::utf8_t::state>;
 
 template <typename FromErrorHandler, typename ToErrorHandler>
 ascii_to_utf8_result text_transcode_one(std::span<char> input, std::text::ascii& from,
@@ -1673,16 +1692,16 @@ Each of these is the customization hook that a user can write in a namespace to 
 ```cpp
 template <typename FromErrorHandler, typename ToErrorHandler>
 std::text::transcode_result<std::span<char>, std::span<char16_t>,
-	decode_state_t<win_wrap::windows_1252>, encode_state_t<std::text::utf8>>
+	decode_state_t<win_wrap::windows_1252>, encode_state_t<std::text::utf8_t>>
 text_transcode(
 	std::span<char> input, const win_wrap::windows_1252& encoding,
 	std::span<char16_t> output, const std::text::utf16& to_encoding,
 	decode_state_t<win_wrap::windows_1252>& from_state,
-	encode_state_t<std::text::utf8>& to_state,
+	encode_state_t<std::text::utf8_t>& to_state,
 	FromErrorHandler&& from_error_handler, ToErrorHandler&& to_error_handler) {
 
 	using result_t = std::text::transcode_result<std::span<char>, std::span<char16_t>,
-		decode_state_t<win_wrap::windows_1252>, encode_state_t<std::text::utf8>>;
+		decode_state_t<win_wrap::windows_1252>, encode_state_t<std::text::utf8_t>>;
 
 	if (input.empty()) {
 		// do nothing
@@ -1725,7 +1744,7 @@ This does not show all the error handling, but it is a full explanation/demonstr
 
 Note: Like in [[#design-speed-customization-transcode_one]], the function `std::text::propagate_transcode_error` takes care of calling the `from_error_handler`. The `to_error_handler` is not used because the `to_error_handler` would require intermediate code points to be passed as the "unread characters" range for the last parameter to the error handler. The whole point of customization points would be skipping the intermediaries and performing direct conversions in the first place. Still, if one needs to call the `to_error_handler` for some reason, they can simply call it.
 
-There does exist some concern for individuals who may want to do specializations for the standard's encodings. The specification will permit someone to write their own `std::text::utf8` ⇌ `std::text::utf16` optimization, which will take precedent. This does not let the implementation off the hook for performance: this is only expected to be done for cases where the end-user knows their target architecture better than the standard could (small embedded devices with obscure chipsets and ISAs, and platforms with custom compilers, and similar). Common environments can and absolutely should be optimized by the implementation because there is a bounded set of only 9 possible encodings that the C++ Standard will include at first if this proposal progresses all the way.
+There does exist some concern for individuals who may want to do specializations for the standard's encodings. The specification will permit someone to write their own `std::text::utf8_t` ⇌ `std::text::utf16_t` optimization, which will take precedent. This does not let the implementation off the hook for performance: this is only expected to be done for cases where the end-user knows their target architecture better than the standard could (small embedded devices with obscure chipsets and ISAs, and platforms with custom compilers, and similar). Common environments can and absolutely should be optimized by the implementation because there is a bounded set of only 9 possible encodings that the C++ Standard will include at first if this proposal progresses all the way.
 
 Advisement: Even if this is possible, it is absolutely expected for implementations to optimize common Unicode encoding pairs with OS or library-internal specific algorithms. If a vendor fails to do this, please file a bug against their implementation.<br/>Loudly.
 
@@ -1790,7 +1809,7 @@ The thought of connecting encodings together through shared code points is a pro
 
 ## Current Work ## {#implementation-visible}
 
-A publicly-available form of this implementation can be found [[ztd_text|here, in the Shepherd's Oasis repository]].
+A publicly-available form of this implementation can be found [[ztd_text|here, in the Shepherd's Oasis repository]]. The deep documentation can be found [[ztd_text_docs|here, available online]]. The docs can also be built from the source repository: see the instructions and build for details.
 
 
 
@@ -1961,6 +1980,15 @@ And thank you to those of you who grew tired of an ASCII-only world and supporte
 		"title": "ztd::text",
 		"publisher": "Shepherd's Oasis, LLC",
 		"date": "April 15th, 2021"
+	},
+	"ztd_text_docs": {
+		"authors": [
+			"JeanHeyd Meneide"
+		],
+		"href": "https://ztdtext.rtfd.io",
+		"title": "Documentation: ztd::text",
+		"publisher": "Shepherd's Oasis, LLC",
+		"date": "September 1st, 2022"
 	},
 	"icu": {
 		"authors": [
