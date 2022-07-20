@@ -35,11 +35,13 @@ path: resources/css/bikeshed-wording.html
 
 ## Revision 9 - July 19<sup>th</sup>, 2022 ## {#changelog-r9}
 
+- All <diff-ins>insertions</diff-ins> and,<diff-del>deletions</diff-del> are highlighted specially so they can be observed, as well as being listed below this bullet in this part of the changelog.
 - Wording changes:
-	- Add a note to ensure users understand that .
-	- Fix a grammar mistake for a sentence discussing code points.
-	- Use "initial shift state" over "initial conversion sequence"
-- These functions need not be present in Freestanding. (They can be added back in a later revision of the standard if individuals feel like ti is necessary.)
+	- Add a new sentence for properly writing out the null character AND any preceding shift state.
+	- Add a new paragraph to directly explain what states are valid to place into the functions.
+	- Change the wording for when `state` is a null pointer, saying that it "invented automatic storage duration object of type `mbstate_t` is created unique to the current invocation".
+	- Add 1 new footnote to ensure users understand that they may lose shift state data for restarting a conversion if the `mbstate_t* state` parameter is not provided.
+	- Add 1 new footnote to make it clear using the object while it is an unspecified state can provoke undefined behavior.
 
 
 
@@ -973,7 +975,7 @@ The *narrow execution encoding* is the implementation-defined, `LC_CTYPE`, (7.11
 
 <div class="wording-numbered">
 
-An *unrecorded encoding error* is when a sequence of code units or code points being processed by an encoding, decoding, or transcoding function does not form a valid sequence according to the encoding of the function<diff-ins>, or if the converted sequence is not representable in the encoding, decoding, or transcoding output</diff-ins>.
+An *unrecorded encoding error* is when a sequence of code units or code points being processed by an encoding, decoding, or transcoding <diff-del>function</diff-del><diff-ins>conversion</diff-ins> does not form a valid sequence according to the encoding of the <diff-del>function</diff-del><diff-ins>conversion, or if the converted sequence is not representable in the encoding, decoding, or transcoding conversion's output</diff-ins>.
 </div>
 
 <div class="wording-numbered">
@@ -1063,7 +1065,7 @@ For the UTF-8, UTF-16, and UTF-32 encodings, collectively referred to as the *Un
 
 <div class="wording-numbered">
 
-For all functions in this clause, when the equivalent of a `'\0'` (a code unit value of 0) is encountered in the input, the `mbstate_t` object in use for the transcoding operation is set to the initial conversion state. <diff-ins>Any write operations necessary to leave the output in its initial shift state are performed preceding the null code unit or code point value that is written</diff-ins>, provided that the output is writable according to the specification of the functions in this clause.
+For all functions in this clause, when the equivalent of a `'\0'` (a code unit value of 0) is encountered in the input, the `mbstate_t` object in use for the transcoding operation is set to the initial conversion state. <diff-ins>The appropriate null character is written to the output, and any necessary values for a transition to the initial shift state are also written preceding the null character</diff-ins>, provided that the output is writable according to the specification of the functions in this clause.
 </div>
 
 <div class="wording-numbered">
@@ -1196,6 +1198,9 @@ Beyond just the Unicode encodings mentioned above, implementations are encourage
 
 <blockquote>
 <ins>
+
+
+### Create a new section §7.S✨.1 Single Unit, Sized Conversion Functions ### {#wording-specification-7.S✨.1}
 
 <div class="wording-clause-header">
 <span class="wording-clause-number">7.S✨.1</span> <span class="wording-clause-title">Single Unit, Sized Conversion Functions</span>
@@ -1345,10 +1350,21 @@ The transcoding functions take an input buffer and an output buffer of the assoc
 </div>
 
 <div class="wording-numbered">
+<diff-ins>
+
+If `state` is not a null pointer, then:
+
+:: — `*state` must be initialized to the initial conversion state; or,
+:: — `*state` was used previously with a conversion function in this code and is not in an unspecified state, as described below.
+
+</diff-ins>
+</div>
+
+<div class="wording-numbered">
 
 The transcoding functions convert from code units of type `charX` interpreted according to encoding X to code units of type `charY` according to encoding Y given a conversion state of value `*state`. This function only performs a single indivisible unit of work. It returns `mcerr_ok` if the input is empty. The input is considered empty if `input_size` is a null pointer, or `*input_size` is zero if `input_size` is not a null pointer. The behavior of the transcoding functions is as follows.
 
-:: — If `state` is a null pointer, then an automatic storage duration object of type `mbstate_t` is created. It is initialized to the initial conversion state and a pointer to this object is used wherever `state` is used in this paragraph.
+:: — If `state` is a null pointer, then an <diff-ins>invented automatic storage duration object of type</diff-ins> `mbstate_t` is created <diff-ins>unique to the current invocation</diff-ins>. It is initialized to the initial conversion state and a pointer to this object is used wherever `state` is used in this paragraph<diff-ins><span class="footnote-ref">FN✨3)</span></diff-ins>.
 :: — If `input` is a null pointer or `*input` is a null pointer, then `*state` is set to the initial conversion state. If `output` and `*output` are not null pointers, and if `*state` is not in the initial conversion state, it writes any necessary output to return the output sequence to the initial shift state, unless `output_size` is not a null pointer and there is not enough space to write that output. In the case where the output sequence is not written to because there is not enough space, `mcerr_insufficient_output` is returned. Otherwise, the function returns `mcerr_ok` and if `output_size` is not a null pointer then `*output_size` is decremented by the amount of output written. If `output_size` is a null pointer and `output` and `*output` are not null pointers, then enough space to perform the write out is assumed; the behavior is undefined if the output buffer is not large enough for the transcoding operation in this case.
 :: — The function reads code units from `*input` if `*input_size` is large enough to produce an indivisible unit of work. If no encoding errors have occurred but the input is exhausted before an indivisible unit of work can be computed, the function returns `mcerr_incomplete_input`. If an unrecorded encoding error occurs, then the function returns `mcerr_invalid`.
 :: — If `output_size` is not a null pointer, then `*output_size` will be decremented the amount of code units that would have been written to `*output` (even if `output` is a null pointer). If the output would be exhausted (`*output_size` will be decremented below zero by the write out of the indivisible unit of work), the function returns `mcerr_insufficient_output` and does not decrement `*output_size`.
@@ -1363,7 +1379,7 @@ Returns
 
 <div class="wording-numbered">
 
-On success or failure, the transcoding functions shall return one of the above error codes (7.S✨). If `state` is not a null pointer and `*state` is not initialized to the initial conversion state for the function on first use, or is used after being input into a function whose result is not one of `mcerr_ok`, `mcerr_incomplete_input`, or `mcerr_insufficient_output`, the behavior of the functions is unspecified. If `input` is a null pointer or `*input` is a null pointer, then `*state` is set to the initial conversion state as described below and no other work is performed.
+On success or failure, the transcoding functions shall return one of the above error codes (7.S✨). <diff-del>If `state` is not a null pointer and `*state` is not initialized to the initial conversion state for the function on first use, or is used after being input into a function whose result is not one of `mcerr_ok`, `mcerr_incomplete_input`, or `mcerr_insufficient_output`, the behavior of the functions is unspecified.</diff-del> If `input` is a null pointer or `*input` is a null pointer, then `*state` is set to the initial conversion state as described below and no other work is performed.
 </div>
 
 <div class="wording-numbered">
@@ -1376,8 +1392,24 @@ If the function returns `mcerr_ok`, then all of the following is true:
 :: — if `output_size` is not a null pointer, `*output_size` is decremented by the number of code units written to the output.
 
 
-Otherwise, if an error is returned then none of the above occurs. If the return value is `mcerr_invalid`, then `*state` is in an unspecified state. If the return value is `mcerr_incomplete_input` or `mcerr_insufficient_output`, then `*state` is not changed.
+Otherwise, if an error is returned then none of the above occurs. If the return value is `mcerr_invalid`, then `*state` is in an unspecified state<diff-ins><span class="footnote-ref">FN✨4)</span></diff-ins>. If the return value is `mcerr_incomplete_input` or `mcerr_insufficient_output`, then `*state` is not changed.
 </div>
+
+<div>
+<diff-ins>
+<span class="footnote-ref">FN✨3)</span><span><sub>
+If `state` is a null pointer, and the function uses the created automatic storage duration object that is discarded by the end of the invocation, then any potential shift state embodied in the read code may be lost.</sub></span>
+</diff-ins>
+</div>
+
+<div>
+<diff-ins>
+<span class="footnote-ref">FN✨4)</span><span><sub>
+If the object is used after it is put into an unspecified state, it is undefined behavior.</sub></span>
+</diff-ins>
+</div>
+
+<br/>
 
 <div class="wording-clause-section-title">
 Recommended Practice
@@ -1396,6 +1428,8 @@ Implementations should prefer returning an error for an incomplete input sequenc
 </div>
 </ins>
 </blockquote>
+
+### Create a new subsection §7.S✨.2 Multi Unit, Sized Conversion Functions ### {#wording-specification-7.S✨.2}
 
 <blockquote>
 <ins>
