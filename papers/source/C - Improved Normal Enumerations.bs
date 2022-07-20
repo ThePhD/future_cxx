@@ -1,10 +1,10 @@
 <pre class='metadata'>
 Title: Improved Normal Enumerations
-Shortname: 2997
-Revision: 2
-!Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2964.htm">N2964 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2908.htm">N2908 (r0)</a>, Derived from <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2575.pdf">N2575 (r2)</a>
+Shortname: 3029
+Revision: 3
+!Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2997.htm">N2997 (r2)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2964.htm">N2964 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2908.htm">N2908 (r0)</a>, Derived from <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2575.pdf">N2575 (r2)</a>
 Status: P
-Date: 2022-06-17
+Date: 2022-07-19
 Group: WG14
 !Proposal Category: Feature Request
 !Target: C23
@@ -17,7 +17,7 @@ Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
 Metadata Order: Previous Revisions, Editor, Latest, Paper Source, Issue Tracking, Project, Audience, Proposal Category, Target
 Markup Shorthands: markdown yes
 Toggle Diffs: no
-Abstract: Enumerations should allow values greater than <code>INT_MAX</code> and smaller than <code>INT_MIN</code>.
+Abstract: Enumerations should allow values greater than <code>INT_MAX</code> and smaller than <code>INT_MIN</code>, in order to provide a <b>value-preserved</b> set of integer constants.
 </pre>
 
 <pre class="include-raw">
@@ -30,6 +30,17 @@ path: resources/css/bikeshed-wording.html
 
 
 # Changelog # {#changelog}
+
+
+
+## Revision 3 - July 19<sup>th</sup>, 2022 ## {#changelog-r3}
+
+- All <diff-ins>insertions</diff-ins> and,<diff-del>deletions</diff-del> are highlighted specially so they can be observed, as well as being listed below this bullet in this part of the changelog.
+- Minor/editorial wording changes:
+	- Removed implementation-defined from Paragraph 5. (Paragraph 6 already explains that the enumerated type is compatible with some implementation-defined integer type.)
+	- Typo fix: `enumeration member types` -> `enumeration member type`.
+	- Editorial fixes to FN✨1).
+- Wrote down additional motivation for why we have the long explanation of type/math computation for the values in [[#design-preservation]].
 
 
 
@@ -79,10 +90,16 @@ The design of this feature is to enable what has been existing practice on imple
 
 This is a very small change that only makes previously ill-formed code now well-formed. It does not provide any other guarantees from the new wording besides allowing constants larger than `int` to be used with enumerations. Better enumerated types and values are better left with the sister paper [on Enhanced Enumerations](https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Improved%20Normal%20Enumerations.html).
 
+
+
+## Type-preserving, Value-Preserving ## {#design-preservation}
+
 More specifically:
 
 - values for enumerators that are outside of the range `[INT_MIN, INT_MAX]` are allowed and change the type of the enumerators from `int`;
-- and, the underlying type for enumerations with such types may be larger than `int`.
+- and, the underlying type for enumerations with such types may be larger than `int`, but is still implementation-defined for backwards compatibility.
+
+As put more eloquently by Aaron Ballman, this paper aims to be **value-preserving** wherever possible for enumeration constants without breaking backwards compatibility. The sister paper aims to provide **type-preserving** properties, and both papers are meant to complement the existing ecosystem.
 
 Particularly, this code:
 
@@ -231,6 +248,29 @@ Therefore, this proposal is not - insofar as understood by the author and the va
 
 
 
+## "Why not use the C++ Wording?" (Or: How We Ended Up With a Very Big ¶5 of Steps) ## {#design-enumeration-steps}
+
+During the July 2022 Virtual C Meeting, it was repeatedly asked why we did not use the C++ wording, or just used the words "adds one to the previous enumerator" and left all the type computation of the intermediate values to the implementation. This was what the original wording in [Revision 0](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2908.htm) did. Unfortunately, this is not compatible with
+
+- (a) how math and operations are performed in C, wherein you need a type to determine the properties of a given operation; and,
+- (b) what implementers were comfortable with when they read the wording.
+
+While I personally am glad C++ was able to achieve an unspoken consensus on how that worked for their compilers and everyone has more or less solved that problem in their compilers in a portable fashion with untyped enumerations, that is not where C is between its implementations. Given C enjoys a far wider number of implementations and many (several dozens) more implementations than C++, in some cases we need to be more strict and more explicit. This is especially true for cases like the following:
+
+```cpp
+#include <limits.h>
+
+enum big_enum {
+	a = LONG_MAX,
+	b = a + 1,
+	c = ULLONG_MAX
+}
+```
+
+The implementation needs to know, definitively, how to handle what `a + 1` means, and given that C has a much more restricted constant expression apparatus than C++ the type semantics of such an operation matter much more for standards-compliant code.
+
+
+
 
 # Proposed Wording # {#wording}
 
@@ -320,7 +360,7 @@ Constraints
 
 <div class="wording-numbered">
 
-The expression that defines the value of an enumeration constant shall be an integer constant expression.<del> that has a value representable as an `int`.</del><ins> For all the integer constant expressions which make up the values of the enumeration constant, there shall be an implementation-defined signed or unsigned integer type (excluding the bit-precise integer types) capable of representing all of the values.</ins>
+The expression that defines the value of an enumeration constant shall be an integer constant expression.<del> that has a value representable as an `int`.</del><ins> For all the integer constant expressions which make up the values of the enumeration constant, there shall be <diff-del>an implementation-defined</diff-del><diff-ins>a</diff-ins> signed or unsigned integer type (excluding the bit-precise integer types) capable of representing all of the values.</ins>
 </div>
 
 <div class="wording-clause-section-title">
@@ -335,7 +375,7 @@ The identifiers in an enumerator list are declared as constants and may appear w
 <div class="wording-numbered">
 <ins>
 
-The type for the members of an enumeration is called the *enumeration member types*.
+The type for the members of an enumeration is called the <diff-del>*enumeration member types*</diff-del><diff-ins>*enumeration member type*</diff-ins>.
 </ins>
 </div>
 
@@ -367,7 +407,7 @@ The enumerated type is incomplete until immediately after the **}** that termina
 <ins>
 
 :: — `int` if all the values of the enumeration are representable as an `int`; or,
-:: — the enumerated type.<span class="footnote-ref">FN1✨)</span>
+:: — the enumerated type<span class="footnote-ref">FN1✨).</span>
 
 </ins>
 </div>
@@ -394,12 +434,14 @@ makes hue the tag of an enumeration, and then declares col as an object that has
 <div>
 <span class="footnote-ref">139)</span><span class="footnote">An implementation can delay the choice of which integer type until all enumeration constants have been seen.</span>
 </div>
+<ins>
 <div>
 <span class="footnote-ref">FN0✨)</span><span class="footnote">Therefore, a constraint has been violated.</span>
 </div>
+</ins>
 <div>
 <ins>
-<span class="footnote-ref">FN1✨)</span><span class="footnote">The type selected during processing of the enumerator list (before completion) of the enumeration may be incompatible from the type selected after the enumeration is completed.</span>
+<span class="footnote-ref">FN1✨)</span><span class="footnote">The integer type selected during processing of the enumerator list (before completion) of the enumeration may not be the same as the selected compatible implementation-defined integer type selected for the completed enumeration.</span>
 </ins>
 </div>
 </blockquote>
