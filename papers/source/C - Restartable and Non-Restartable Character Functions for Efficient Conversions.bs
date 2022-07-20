@@ -35,14 +35,17 @@ path: resources/css/bikeshed-wording.html
 
 ## Revision 9 - July 19<sup>th</sup>, 2022 ## {#changelog-r9}
 
-- All <diff-ins>insertions</diff-ins> and,<diff-del>deletions</diff-del> are highlighted specially so they can be observed, as well as being listed below this bullet in this part of the changelog.
+- All <diff-ins>insertions</diff-ins> and,<diff-del>deletions</diff-del> are highlighted specially so they can be observed, as well as being listed below this bullet in this part of the changelog (with the exception of 1 change, listed below).
+- Removed the `stdc_` prefix in all of the prose.
 - Wording changes:
+	- Removed the `stdc_` prefix for the transcoding functions and `mcerr_*`. (This particular change is not highlighted because it is a find-and-replace and would turn much of the paper a different color over what is a mechanical/editorial name change.)
 	- Remove freestanding changes.
-	- Add a new sentence for properly writing out the null character AND any preceding shift state.
+	- Add a new sentence for properly writing out the null character AND any preceding conversion state.
 	- Add a new paragraph to directly explain what states are valid to place into the functions.
-	- Change the wording for when `state` is a null pointer, saying that it "invented automatic storage duration object of type `mbstate_t` is created unique to the current invocation".
-	- Add 1 new footnote to ensure users understand that they may lose shift state data for restarting a conversion if the `mbstate_t* state` parameter is not provided.
+	- Change the wording for when `state` is a null pointer, saying instead: "automatic storage duration object of type `mbstate_t` is created unique to the current invocation".
+	- Add 1 new footnote to ensure users understand that they may lose conversion state data for restarting a conversion if the `mbstate_t* state` parameter is not provided.
 	- Add 1 new footnote to make it clear using the object while it is an unspecified state can provoke undefined behavior.
+	- Add 1 new footnote to make it clear that the state can be reset by using `mbstate_t s = {0};` with `s = (mbstate_t){0};`, as described in §7.30.6 (Extended multibyte/wide character conversion utilities).
 
 
 
@@ -884,7 +887,7 @@ Form (3) is simply a re-visitation of form (2), but using pointers to indicate t
 Finally, form (4) was the most attractive simplification. By keeping the indirect sizes but removing the double indirection from the input and output parameters, it presented a tempting bit of functionality that seemed to keep all of the benefits of form (1) but none of the drawbacks. That, unfortunately, does not apply in this one specific case for "unbounded writing":
 
 ```cpp
-std_mcerr err = c8srntoc32sn(NULL, some_utf32_buffer, &input_sz, some_utf8_input, &state);
+mcerr err = c8srntoc32sn(NULL, some_utf32_buffer, &input_sz, some_utf8_input, &state);
 ```
 
 The above seems okay, until it becomes clear that you have no idea how many characters were written out into `some_utf32_buffer`. By passing `NULL` for the size but having no pointer to update, the information is lost entirely. One could argue that someone should call the version which does the counting first and THEN pass `NULL` for the size, but this is overly restrictive. For example, a maximally-sized buffer can be prepared before hand when doing a UTF-8 to UTF-32 by simply assuming every code unit of input will result in one code point of output (e.g., everything input is ASCII). One could guarantee the fastest possible writing speed by creating such a maximally-sized buffer and then using `NULL` for the size, but it would be impossible to know **exactly** how much output was written in that case. One could compromise the return value to return that information, but that brings up the same API design issues mentioned above. Therefore, we keep the double-pointer form to retain the information properly.
@@ -1046,28 +1049,40 @@ For the multi unit functions, the process acts as if it completes one indivisibl
 Functions in `<stdmchar.h>` which use `char` and `wchar_t`, or their qualified forms, derive their implementation-defined encodings from the narrow execution encoding or the wide execution encoding (6.2.9), respectively. The other encodings are UTF-8, associated with `char8_t`, UTF-16, associated with `char16_t`, and UTF-32, associated with `char32_t`.<span class="footnote-ref">FN✨0)</span>
 </div>
 
+<div>
+<span class="footnote-ref">FN✨0)</span>
+<span class="footnote">Each value is treated as code units and not as a container of octets. This means that the decision of, for example, UTF-16 in big or little endian encoding scheme is decided by the endianness of the code unit type. Only whole code unit values are used, i.e., a UTF-32 code point value of U+0001F377 represents a value identical to how `U'\U0001F377'` is stored by the implementation. This may not apply to the implementation-defined literal, wide literal, narrow execution, and wide execution encodings, but shall apply to the Unicode encodings.</span>
+</div>
+<br/>
+
 <div class="wording-numbered">
 
 For the UTF-8, UTF-16, and UTF-32 encodings, collectively referred to as the *Unicode encodings*, an indivisible unit of work for a read operation shall be the sequence of code units that corresponds to one code point. If input is exhausted before a sequence of code units corresponding to one code point can be reached, then `mcerr_incomplete_input` shall be returned. If there is an illegal code unit sequence, then `mcerr_invalid` shall be returned.<span class="footnote-ref">FN✨1)</span> For the implementation-defined execution and wide execution encodings, they have the same aforementioned requirement if the implementation defines it to be one of the Unicode encodings.<span class="footnote-ref">FN✨2)</span>
 </div>
 
-<div>
-<span class="footnote-ref">FN✨0)</span>
-<span class="footnote">Each value is treated as code units and not as a container of octets. This means that the decision of, for example, UTF-16 in big or little endian encoding scheme is decided by the endianness of the code unit type. Only whole code unit values are used, i.e., a UTF-32 code point value of U+0001F377 represents a value identical to how `U'\U0001F377'` is stored by the implementation. This may not apply to the implementation-defined literal, wide literal, narrow execution, and wide execution encodings, but shall apply to the Unicode encodings.</span>
-</div>
-<div>
-<span class="footnote-ref">FN✨1)</span>
-<span class="footnote"> For example, if an implementation chooses to provide a UTF-8 execution encoding as the input encoding, then it is required to read one full complete code point's worth of code units. If it cannot, it shall return `mcerr_incomplete_input` (if the input sequence is not long enough) or `mcerr_invalid` (if the input sequence is not a proper UTF-8 code unit sequence).</span>
-</div>
-<div>
-<span class="footnote-ref">FN✨2)</span>
-<span class="footnote">This may not apply to derivative encodings defined by the implementation. For example, an implementation may define a "partial UTF-8" execution encoding where it stores every read UTF-8 code unit in the state and, rather than returning `mcerr_incomplete_input`, returns `mcerr_ok` and produces no output. It may accumulate code units and write out a code point when it accumulated enough code units in its internal state. However, this encoding is distinct and separate from the UTF-8 encoding used in the `c8` prefixed and suffixed functions.</span>
-<div>
-
 <div class="wording-numbered">
 
-For all functions in this clause, when the equivalent of a `'\0'` (a code unit value of 0) is encountered in the input, the `mbstate_t` object in use for the transcoding operation is set to the initial conversion state. <diff-ins>The appropriate null character is written to the output, and any necessary values for a transition to the initial shift state are also written preceding the null character</diff-ins>, provided that the output is writable according to the specification of the functions in this clause.
+For all functions in this clause, when the equivalent of a `'\0'` (a code unit value of 0) is encountered in the input, the `mbstate_t` object in use for the transcoding operation is set to the initial conversion state<diff-ins><span class="footnote-ref">FN✨3)</span></diff-ins>. <diff-ins>The appropriate null character is written to the output, and any necessary values for a transition to the initial conversion state are also written preceding the null character</diff-ins>, provided that the output is writable according to the specification of the functions in this clause.
 </div>
+
+<div>
+<span class="footnote-ref">FN✨1)</span><span class="footnote">
+For example, if an implementation chooses to provide a UTF-8 execution encoding as the input encoding, then it is required to read one full complete code point's worth of code units. If it cannot, it shall return `mcerr_incomplete_input` (if the input sequence is not long enough) or `mcerr_invalid` (if the input sequence is not a proper UTF-8 code unit sequence).</span>
+</div>
+<br/>
+<div>
+<span class="footnote-ref">FN✨2)</span><span class="footnote">
+This may not apply to derivative encodings defined by the implementation. For example, an implementation may define a "partial UTF-8" execution encoding where it stores every read UTF-8 code unit in the state and, rather than returning `mcerr_incomplete_input`, returns `mcerr_ok` and produces no output. It may accumulate code units and write out a code point when it accumulated enough code units in its internal state. However, this encoding is distinct and separate from the UTF-8 encoding used in the `c8` prefixed and suffixed functions.</span>
+</div>
+<br/>
+<div>
+<diff-ins>
+<span class="footnote-ref">FN✨3)</span><span class="footnote">
+As described in 7.30.6, an object of type `mbstate_t` may always be set to the initial conversion sequence by initializing it with `= {0};` or `= {};`. An existing `mbstate_t` object may always be set to the initial conversion sequence by assigning to it from `(mbstate_t){0}` or `(mbstate_t){}`.</span>
+</diff-ins>
+<div>
+
+<br/>
 
 <div class="wording-numbered">
 
@@ -1342,7 +1357,7 @@ mcerr XnrtoYn(size_t*restrict output_size,
 
 with the following properties:
 
-:: — *X* and *Y* be one of the prefixes in the table from 7.S✨;
+:: — *X* and *Y* be one of the prefixes/suffixes in the table from 7.S✨;
 :: — <i>`charX`</i> and <i>`charY`</i> be the associated code unit types for *X* and *Y* in the table from 7.S✨; and
 :: — *encoding X* and *encoding Y* be the associated encoding types for *X* and *Y* in the table from 7.S✨.
 
@@ -1356,8 +1371,9 @@ The transcoding functions take an input buffer and an output buffer of the assoc
 If `state` is not a null pointer, then:
 
 :: — `*state` must be initialized to the initial conversion state; or,
-:: — `*state` was used previously with a conversion function in this code and is not in an unspecified state, as described below.
+:: — `*state` must have been used previously with a transcoding conversion function in this clause and is not in an unspecified state, as described below.
 
+If `*state` is in an unspecified state or a representation not understood by the transcoding functions, the behavior is undefined.
 </diff-ins>
 </div>
 
@@ -1365,8 +1381,8 @@ If `state` is not a null pointer, then:
 
 The transcoding functions convert from code units of type `charX` interpreted according to encoding X to code units of type `charY` according to encoding Y given a conversion state of value `*state`. This function only performs a single indivisible unit of work. It returns `mcerr_ok` if the input is empty. The input is considered empty if `input_size` is a null pointer, or `*input_size` is zero if `input_size` is not a null pointer. The behavior of the transcoding functions is as follows.
 
-:: — If `state` is a null pointer, then an <diff-ins>invented automatic storage duration object of type</diff-ins> `mbstate_t` is created <diff-ins>unique to the current invocation</diff-ins>. It is initialized to the initial conversion state and a pointer to this object is used wherever `state` is used in this paragraph<diff-ins><span class="footnote-ref">FN✨3)</span></diff-ins>.
-:: — If `input` is a null pointer or `*input` is a null pointer, then `*state` is set to the initial conversion state. If `output` and `*output` are not null pointers, and if `*state` is not in the initial conversion state, it writes any necessary output to return the output sequence to the initial shift state, unless `output_size` is not a null pointer and there is not enough space to write that output. In the case where the output sequence is not written to because there is not enough space, `mcerr_insufficient_output` is returned. Otherwise, the function returns `mcerr_ok` and if `output_size` is not a null pointer then `*output_size` is decremented by the amount of output written. If `output_size` is a null pointer and `output` and `*output` are not null pointers, then enough space to perform the write out is assumed; the behavior is undefined if the output buffer is not large enough for the transcoding operation in this case.
+:: — If `state` is a null pointer, then an <diff-ins>automatic storage duration object of type</diff-ins> `mbstate_t` is created <diff-ins>which is unique to the current invocation</diff-ins>. It is initialized to the initial conversion state and a pointer to this object is used wherever `state` is used in this paragraph<diff-ins><span class="footnote-ref">FN✨4)</span></diff-ins>.
+:: — If `input` is a null pointer or `*input` is a null pointer, then `*state` is set to the initial conversion state. If `output` and `*output` are not null pointers, and if `*state` is not in the initial conversion state, it writes any necessary output to return the output sequence to the initial conversion state, unless `output_size` is not a null pointer and there is not enough space to write that output. In the case where the output sequence is not written to because there is not enough space, `mcerr_insufficient_output` is returned. Otherwise, the function returns `mcerr_ok` and if `output_size` is not a null pointer then `*output_size` is decremented by the amount of output written. If `output_size` is a null pointer and `output` and `*output` are not null pointers, then enough space to perform the write out is assumed; the behavior is undefined if the output buffer is not large enough for the transcoding operation in this case.
 :: — The function reads code units from `*input` if `*input_size` is large enough to produce an indivisible unit of work. If no encoding errors have occurred but the input is exhausted before an indivisible unit of work can be computed, the function returns `mcerr_incomplete_input`. If an unrecorded encoding error occurs, then the function returns `mcerr_invalid`.
 :: — If `output_size` is not a null pointer, then `*output_size` will be decremented the amount of code units that would have been written to `*output` (even if `output` is a null pointer). If the output would be exhausted (`*output_size` will be decremented below zero by the write out of the indivisible unit of work), the function returns `mcerr_insufficient_output` and does not decrement `*output_size`.
 :: — If `output` or `*output` is a null pointer, then no output will be written. If applicable, `*input` is still read and incremented. If `output_size` is not a null pointer and both `output` and `*output` is not a null pointer, then `*output` shall point to at least `*output_size` *charY* code units.
@@ -1393,20 +1409,20 @@ If the function returns `mcerr_ok`, then all of the following is true:
 :: — if `output_size` is not a null pointer, `*output_size` is decremented by the number of code units written to the output.
 
 
-Otherwise, if an error is returned then none of the above occurs. If the return value is `mcerr_invalid`, then `*state` is in an unspecified state<diff-ins><span class="footnote-ref">FN✨4)</span></diff-ins>. If the return value is `mcerr_incomplete_input` or `mcerr_insufficient_output`, then `*state` is not changed.
+Otherwise, if an error is returned then none of the above occurs. If the return value is `mcerr_invalid`, then `*state` is in an unspecified state<diff-ins><span class="footnote-ref">FN✨5)</span></diff-ins>. If the return value is `mcerr_incomplete_input` or `mcerr_insufficient_output`, then `*state` is not changed.
 </div>
 
 <div>
 <diff-ins>
-<span class="footnote-ref">FN✨3)</span><span><sub>
-If `state` is a null pointer, and the function uses the created automatic storage duration object that is discarded by the end of the invocation, then any potential shift state embodied in the read code may be lost.</sub></span>
+<span class="footnote-ref">FN✨4)</span><span class="footnote">
+If `state` is a null pointer, and the function uses the created automatic storage duration `mbstate_t` object that is discarded by the end of the invocation, then any potential conversion state embodied in the created `mbstate_t` object may be lost.</span>
 </diff-ins>
 </div>
 
 <div>
 <diff-ins>
-<span class="footnote-ref">FN✨4)</span><span><sub>
-If the object is used after it is put into an unspecified state, it is undefined behavior.</sub></span>
+<span class="footnote-ref">FN✨5)</span><span class="footnote">
+If the object is used after it is put into an unspecified state, it is undefined behavior.</span>
 </diff-ins>
 </div>
 
@@ -1574,7 +1590,7 @@ mcerr XsnrtoYsn(size_t*restrict output_size,
 
 with the following properties:
 
-:: — *X* and *Y* be one of the prefixes in the table from 7.S✨;
+:: — *X* and *Y* be one of the prefixes/suffixes in the table from 7.S✨;
 :: — <i>`charX`</i> and <i>`charY`</i> be the associated code unit types for *X* and *Y* in the table from 7.S✨; and
 :: — *encoding X* and *encoding Y* be the associated encoding types for *X* and *Y* in the table from 7.S✨.
 
