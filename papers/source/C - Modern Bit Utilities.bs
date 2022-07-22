@@ -1,7 +1,7 @@
 <pre class='metadata'>
 Title: Modern Bit Utilities
-Shortname: 3022
-Revision: 4
+Shortname: 3XXX
+Revision: 5
 !Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3001.htm">n3001 (r3)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2965.htm">n2965 (r2)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2827.htm">n2903 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2827.htm">n2827 (r0)</a>
 Status: P
 Date: 2022-07-06
@@ -38,6 +38,15 @@ path: resources/css/bikeshed-wording.html
 
 # Changelog # {#changelog}
 
+
+
+## Revision 5 - July 21<sup>st</sup>, 2022 ## {#changelog-r5}
+
+- Wording improvements:
+	- Revised `generic_count_type` (again) to not require anything of the input except that it's an integer type.
+	- The Endian-Aware Load functions needed their bounds for the summation expression tweaked, and subsequently have the computation of the pointer indices changed.
+	- The Endian-Aware Store functions needed to have the mask expression done properly (before the shit with `0xFF`, not after the shift).
+	- Typo: "… be suitably large …" -> "… be a suitably large …" fixed in 5 places.
 
 
 ## Revision 4 - July 6<sup>th</sup>, 2022 ## {#changelog-r4}
@@ -981,7 +990,7 @@ The type-generic function (marked by its `generic_value_type` argument) returns 
 :: — extended unsigned integer type;
 :: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
 
-The `generic_return_type` type shall be suitably large unsigned integer type capable of representing the width of the computed result. The `generic_count_type` shall be a signed integer type.
+The `generic_return_type` type shall <diff-del>be suitably large</diff-del><diff-ins>be a suitably large</diff-ins> unsigned integer type capable of representing the width of the computed result. The `generic_count_type` shall be <diff-del>a signed</diff-del><diff-ins>an unsigned</diff-ins> integer type.
 </div>
 </div>
 </ins>
@@ -1021,7 +1030,7 @@ If the answer to this question is "Yes", then the following mechanical changes a
 	- Change the last sentence for both functions concerning the types of the generic count and returns from:
 		:: <del>The `generic_return_type` type shall be a suitably large signed integer type capable of representing the width of the computed. The `generic_count_type` type shall be a signed integer type.</del>
 		:: … to …
-		:: <ins>The `generic_return_type` type shall be a suitably large unsigned integer type capable of representing the width of the computed result. The `generic_count_type` type shall be an unsigned integer type.</ins>
+		:: <ins>The `generic_return_type` type shall be a suitably large unsigned integer type capable of representing the width of the computed result. The `generic_count_type` type shall be an <diff-del>unsigned</diff-del> integer type.</ins>
 
 
 NOTE: #3 does not apply if [[#wording-decisions-q0]] is accepted, because then the rotate must have a sign. This is captured in the wording shown above.
@@ -1168,9 +1177,9 @@ Description
 
 The `stdc_memreverse8` function provides an interface to reverse the order of a given sequence of bytes by treating them as sequences of 8 bits at a time. The function is only present if `CHAR_BIT` is a multiple of 8. It is equivalent to the following algorithm:
 
+
 ```cpp
-for (size_t index = 0, limit = ((n * CHAR_BIT) / 2); index < limit;) {
-	const size_t ptr_index         = index / CHAR_BIT;
+for (size_t ptr_index = 0, ptr_limit = n / 2; ptr_index < ptr_limit; ++ptr_index) {
 	const size_t rev_ptr_index     = n - 1 - ptr_index;
 	unsigned char* p               = ptr + ptr_index;
 	unsigned char* rev_p           = ptr + rev_ptr_index;
@@ -1185,7 +1194,6 @@ for (size_t index = 0, limit = ((n * CHAR_BIT) / 2); index < limit;) {
 		const unsigned char rev_bit_mask = ((unsigned char)0xFF) << rev_bit_index;
 		*p |= (((rev_b_temp & rev_bit_mask) >> rev_bit_index) << bit_index);
 		*rev_p |= (((b_temp & bit_mask) >> bit_index) << rev_bit_index);
-		index += 8;
 	}
 }
 ```
@@ -1284,15 +1292,18 @@ Returns
 </div>
 
 <div class="wording-numbered">
+<diff-ins>
 
 Let the computed value $result$ be:
 
-$$\sum_{index = 0}^{(N \div{} CHAR\_{}BIT) - 1} b_{index} \times{} 2^{8 \times{} index}$$
+$$\sum_{index = 0}^{(N \div{} 8) - 1} b_{index} \times{} 2^{8 \times{} index}$$
 
 where $b_{index}$ is:
 
-:: — `(ptr[index / (CHAR_BIT / 8)] >> ((index % (CHAR_BIT / 8)) * 8)) & 0xFF`, if the function is the  little-endian variant;
-:: — otherwise, `(ptr[(((N / CHAR_BIT) - 1) - index) / (CHAR_BIT / 8)] >> (((((N / CHAR_BIT) - 1) - index) % (CHAR_BIT / 8)) * 8))) & 0xFF`, if the function is the the big-endian variant.
+:: — `(ptr[(index * 8) / CHAR_BIT] >> ((index * 8) % CHAR_BIT)) & 0xFF`, if the function is the little-endian variant;
+:: — otherwise, `(ptr[((N - (index * 8)) - 8) / CHAR_BIT] >> (((N - (index * 8)) - 8) % CHAR_BIT)) & 0xFF`, if the function is the the big-endian variant.
+
+</diff-ins>
 
 If the function is an unsigned variant, return $result$. Otherwise, if the function is a signed variant, return:
 
@@ -1360,7 +1371,7 @@ Let `index` be an integer in a sequence that
 Let `ptr_bit_index` be an integer that starts from 0. Let `byte_index8` be `index % CHAR_BIT`. For each `index` in the order of the above-specified sequence:
 
 :: 1. Let `byte_mask8` be an object of value `(0xFF << byte_index8)` of a suitably large unsigned type.
-:: 2. Sets the 8 bits in `ptr[ptr_bit_index / CHAR_BIT]` at offset `byte_index8` to `(value_unsigned >> index) & byte_mask8`.
+:: 2. Sets the 8 bits in `ptr[ptr_bit_index / CHAR_BIT]` at offset `byte_index8` <diff-del>to `(value_unsigned >> index) & byte_mask8`</diff-del><diff-ins>to `(value_unsigned & byte_mask8) >> index`</diff-ins>.
 :: 3. Increments `ptr_bit_index` by 8.
 
 </div>
@@ -1783,7 +1794,7 @@ The type-generic function (marked by its `generic_value_type` argument) returns 
 :: — extended unsigned integer type;
 :: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
 
-The `generic_return_type` type shall be suitably large unsigned integer type capable of representing the width of the computed result. The `generic_count_type` shall be a signed integer type.
+The `generic_return_type` type shall <diff-del>be suitably large</diff-del><diff-ins>be a suitably large</diff-ins> unsigned integer type capable of representing the width of the computed result. The `generic_count_type` shall be <diff-del>a signed</diff-del><diff-ins>an</diff-ins> integer type.
 </div>
 </div>
 
@@ -1841,7 +1852,7 @@ The type-generic function (marked by its `generic_value_type` argument) returns 
 :: — an extended unsigned integer type;
 :: — or, a bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
 
-The `generic_return_type` type shall be suitably large unsigned integer type capable of representing the width of the computed result. The `generic_count_type` shall be a signed integer type.
+The `generic_return_type` type shall <diff-del>be suitably large</diff-del><diff-ins>be a suitably large</diff-ins> unsigned integer type capable of representing the width of the computed result. The `generic_count_type` shall be <diff-del>a signed</diff-del><diff-ins>an</diff-ins> integer type.
 </div>
 </div>
 
@@ -1930,7 +1941,7 @@ The type-generic function (marked by its `generic_value_type` argument) returns 
 :: — extended unsigned integer type;
 :: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
 
-The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large unsigned integer type capable of representing the computed result.
+The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall <diff-del>be suitably large</diff-del><diff-ins>be a suitably large</diff-ins> unsigned integer type capable of representing the computed result.
 </div>
 </div>
 </ins>
@@ -2033,7 +2044,7 @@ The type-generic function (marked by its `generic_value_type` argument) returns 
 :: — extended unsigned integer type;
 :: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
 
-The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall be suitably large signed integer type capable of representing the computed result.
+The `generic_return_type` type for the type-generic function need not be the same as the type of `value`. It shall <diff-del>be suitably large</diff-del><diff-ins>be a suitably large</diff-ins> signed integer type capable of representing the computed result.
 </div>
 </div>
 
