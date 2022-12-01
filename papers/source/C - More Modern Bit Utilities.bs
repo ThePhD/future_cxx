@@ -1,0 +1,1036 @@
+<pre class='metadata'>
+Title: More Modern Bit Utilities
+Shortname: 3XXX
+Revision: 1
+!Previous Revisions: None
+!Predecessor: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3022.htm">n3022 (r4)</a>
+Status: P
+Date: 2022-12-14
+Group: WG14
+!Proposal Category: Feature Request
+!Target: C2Y
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20More%20Moder%20Bit%20Utilities.html
+!Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20More%20Moder%20Bit%20Utilities.html">https://thephd.dev/_vendor/future_cxx/papers/C - More Modern Bit Utilities.html</a>
+!Paper Source: <a href="https://github.com/ThePhD/future_cxx/blob/main/papers/source/C%20-%20More%20Modern%20Bit%20Utilities.bs">github.com/ThePhD/future_cxx</a>
+Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
+Metadata Order: Previous Revisions, Predecessor, Editor, Latest, Paper Source, Implementation, Issue Tracking, Proposal Category, Target, Project
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+Abstract: Byte swapping, big endian / little endian load and store, and bit rotate functions widely implemented and optimized by existing compiler infrastructure today.
+</pre>
+
+
+<script>
+MathJax = {
+	tex: {inlineMath: [['$', '$'], ['\\(', '\\)']]}
+};
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<div class="pagebreak"></div>
+
+
+
+
+# Changelog # {#changelog}
+
+
+
+## Revision 5 - December 14<sup>th</sup>, 2022 ## {#changelog-r0}
+
+- Initial release. ✨
+- Removed all of the components from [[n3022]] that were accepted, and migrated all of the non-accepted parts to this in response to feedback from many individuals.
+- Changed the conditions on the 8-bit memory reversal functions to be `CHAR_BIT == 8`, rather than a multiple of 8. This excludes many DSP, FPGA, ASIC, and other specialized processors and hardware and implementations on that hardware.
+	- Users who want this functionality on those platforms should begin to converge on a design that works for them, preferably in the fashion as described by this paper and its predecessors.
+	- That designs should be implemented by those users on those platforms and brought forward for standardization at another point in time.
+
+
+
+
+# Polls # {#polls}
+
+No polls except for the ones noted in the older version of this paper for C23 was taken ([[n3022]]).
+
+
+
+
+# Introduction & Motivation # {#motivation}
+
+There is a lot of proposals and work that goes into figuring out the "byte order" of integer values that occupy more than 1 octet (8 bits). This is nominally important when dealing with data that comes over network interfaces and is read from files, where the data can be laid out in various orders of octets for 2-, 3-, 4-, 6-, or 8-tuples of octets. The most well-known endian structures on existing architectures include "Big Endian", where the least significant bit comes "last" and is featured prominently in network protocols and file protocols; and, "Little Endian", where the least significant bit comes "first" and is typically the orientation of data for processor and user architectures most prevalent today.
+
+In more legacy architectures (Honeywell, PDP), there also exists other orientations called "mixed" or "middle" endian. The uses of such endianness are of dubious benefit and are vanishingly rare amongst commodity and readily available hardware today, but nevertheless still represent an applicable ordering of octets.
+
+In other related programming interfaces, the C functions/macros `ntoh` ("network to host") and `hton` ("host to network") (usually suffixed with `l` or `ul` or others to specify which native data type it was being performed on such as `long`) were used to change the byte order of a value ([[ntohl]]). This became such a common operation that many compilers - among them Clang and GCC - optimized the code down to use an intrinsic `__builtin_bytewap(...)`/`__builtin_bswap(...)` ([[msvc-builtins|for MSVC]], [[clang-builtins|for Clang]], and [[gcc-builtins|for GCC]]). These intrinsics often compiled into binary code representing cheap, simple, and fast byte swapping instructions available on many CPUs for 16, 32, 64, and sometimes 128 bit numbers. The `bswap`/`byteswap` intrinsics were used as the fundamental underpinning for the `ntoh` and `hton` functions, where a check for the translation-time endianness of the program determined if the byte order would be flipped or not.
+
+This proposal puts forth the fundamentals that make a homegrown implementation of `htonl`, `ntoh`, and other endianness-based functions possible in Standard C code. It also addresses many of the compiler-based intrinsics found to generate efficient machine code, with a few simpler utilities layered on top of it.
+
+
+
+
+# Design # {#design}
+
+This is a library addition. It is meant to expose both macros and functions that can be used for translation time-suitable checks. It provides a way to check endianness within the preprocessor, and gives definitive names that allow for knowing whether the endianness is big, little, or neither. We state big, little, or neither, because there is no settled-upon name for the legacy endianness of "middle" or "mixed", nor any agreed upon ordering for such a "middle" or "mixed" endianness between architectures. This is not the case for big endian or little endian, where one is simply the reverse of the other, always, in every case, across architectures, file protocols, and network specifications.
+
+The next part of the design is functions for working with groupings of 8 bits. They are meant to communicate with network or file protocols and formats that have become ubiquitous in computing for the last 30 years.
+
+Finally, this design adds new left/right bit rotation functions, all within the `#include <stdbit.h>` header.
+
+
+
+## Preliminary: Why the `stdc_` prefix? ## {#design-stdc}
+
+We use the `stdc_` prefix for these functions so that we do not have to struggle with taking common words away from the end user. Because we now have 31 bytes of linker name significance, we can afford to have some sort of prefix rather than spend all of our time carving out reserved words or header-specific extensions. This will let us have good names that very clearly map to industry practice, without replacing industry code or being forced to be compatible with existing code that already has taken the name with sometimes-conflicting argument conventions.
+
+
+
+## Charter: `unsigned char const ptr[static sizeof(uintN_t)]` and More? ## {#design-static.size}
+
+There are 2 choices on how to represent sized pointer arguments. The first is a `void* ptr` convention for functions arguments in this proposal. The second is an `unsigned char ptr[static n]`/`unsigned char ptr[sizeof(uintN_t)]` convention.
+
+To start, we still put any `size` + `ptr` arguments in the proper "size first, pointer second" configuration so that implementation extensions which allow `void [static n]` can exist no matter what choice is made here. That part does not change. The `void*` argument convention mean that pointers to structures, or similar, can be passed to these functions without needing a cast. This represents the totality of the ease of use argument. The `unsigned char ptr[static n]` argument convention can produce both better compile-time safety and articulate requirements using purely the function declaration, without needing to look up prose from the C Standard or implementation documentation. The cost is that any use of the function will require a cast in strictly conforming code.
+
+One of the tipping arguments in favor of our choice of `unsigned char ptr[static n]` is that `void*` can be dangerous, especially since we still do not have a `nullptr` constant in the language and `0` can be used for both the size and the pointer argument. (Which is, very sadly, an actual bug that happens in existing code. Especially when users mix `memset` and `memcpy` calls and use the wrong `0` argument because of writing one and meaning the other, and copying values over a large part of their 0-pointer in their low-level driver code.) Using an `unsigned char*` (or its statically-sized array function argument form) means that usage of the functions below would require explicit casting on the part of the user. This is, in fact, the way it is presented in [[portable-endianness]]: as far as existing practice is concerned, users of the code would rather cast and preserve safety rather than easily use something like `stdc_memreverse8` with the guts of their structure.
+
+
+
+## Signed vs. Unsigned ## {#design-signed.vs.unsigned}
+
+This paper has gone back and forth between signed vs. unsigned `count` offsets for the `rotl`/`rotr` instruction-based functions, and similarly the return types for many of the types which return purely a "count"-style value. Some important properties and facts follow:
+
+- All of the values returned from the functions here return conceptually unsigned/natural numbers (0 to potentially infinity, but not negative).
+- Some existing practice — e.g., C++ — has in recent years struggled against unsigned integers and tried to move towards signed. "Anything that is a count should just be an `int`", and similar guidance, grows from these functions and their types.
+- Conversely, some of C's most fierce proponents use unsigned numbers almost exclusively until they have a proper justification for a signed number. For them, `unsigned`/`size_t` is the default.
+- Whatever decision we make for one (e.g., for the argument type of `rotate_left` or `rotate_right`), we must make the identical decision for the return values of other functions (e.g., `count_ones`/`popcount`, or similar).
+
+This brings up a lot of questions about whether or not the functions here should be signed or unsigned. We will analyze this primarily from the standpoint of `rotate_left` and `rotate_right`, as that has the greatest impacts for the portability and semantics of the code presented here.
+
+
+### In Defense of Signed Integers ### {#design-signed.vs.unsigned-signed}
+
+Let us consider a universe where `stdc_rotate_left` and friends take a signed `count`. This allows negative numbers to be passed to the count value for the rotate left. So, when `stdc_rotate_left_uc(1, -1)` is called, it will call itself again with `stdc_rotate_right_uc(value, -count)`; if (e.g.) `stdc_rotate_right_uc(1, -1)` is called, it will call itself again with `stdc_rotate_left_uc(value, -count)`. This is because, specification-wise, these functions are symmetric and cyclical in what they are meant to do. This matches the behavior from C++ and avoids undefined behavior for negative numbers, while also avoiding too-large shift errors from signed-to-unsigned conversions.
+
+SDCC and several other compilers optimize for left and right shifts ([[sdcc]]). Texas Instruments and a handful of other specialist architectures also have "variable shift" instructions (SSHVL), which uses the sign of the argument to shift in one direction or the other ([[ti-tms320c64x]]). Having a `rotate_left` where the a negative number produces the opposite `rotate_right` cyclic operation (and vice-versa) means that both of these architectures can optimize efficiently in the case of hardcoded constants, and still produce well-defined behavior otherwise (`SSHVL` instructions just deploy a "negated by default" for the count value or not, depending on whether the `left` or `right` variant is called, other architectures propagate the information to shift left or right). This also follows existing practice with analogous functions from the C++ standard library.
+
+To test code generation for using a signed integer and 2's complement arithmetic, we used both C++ and C code samples. The C++ code is based on its accepted C++20 proposal, [[p0463]]. It's a fairly accurate predictor of how notable compilers handle this kind of specification. The generated assembly for the compilers turns out to be optimal, so long as an implementation does not do a literal copy-paste of the specification's text
+
+[Using non-constant offset, with generated x86_64 assembly](https://godbolt.org/z/xxbxbrdj1):
+
+```cpp
+#include <bit>
+
+extern unsigned int x;
+extern int offset;
+
+int main () {
+    int l = std::rotl(x, offset);
+    int r = std::rotr(x, offset);
+    return l + r;
+}
+```
+
+```s
+main: # @main
+	mov     eax, dword ptr [rip + x]
+	mov     cl, byte ptr [rip + offset]
+	mov     edx, eax
+	rol     edx, cl
+	ror     eax, cl
+	add     eax, edx
+	ret
+```
+
+— And, [using constant offset, with generated x86_64 assembly](https://godbolt.org/z/z6vTqWoTj).
+
+```cpp
+#include <bit>
+
+extern unsigned int x;
+
+int main () {
+    int l = std::rotl(x, -13);
+    int r = std::rotr(x, -13);
+    return l + r;
+}
+```
+
+```s
+main: # @main
+	mov     eax, dword ptr [rip + x]
+	mov     ecx, eax
+	rol     ecx, 19
+	rol     eax, 13
+	add     eax, ecx
+	ret
+```
+
+The generated code shows that the compiler understands the symmetric nature of the operations (from the constant code) and also shows that it will appropriately handle it even when it cannot see through constant values. The same can be shown when writing C code using a variety of styles, [as shown here](https://godbolt.org/z/f7zEaTsoc):
+
+```cpp
+#if UNSIGNED_COUNT == 1
+
+static unsigned int rotate_right(unsigned int value, unsigned int count);
+
+inline static unsigned int rotate_left(unsigned int value, unsigned int count) {
+	unsigned int c = count % 32;
+	return value >> c 
+		| value << (32 - c);
+}
+
+inline static unsigned int rotate_right(unsigned int value, unsigned int count) {
+	unsigned int c = count % 32;
+	return value << c
+		| value >> (32 - c);
+}
+
+#elif TWOS_COMPLEMENT_CAST == 1
+
+static unsigned int rotate_right(unsigned int value, int count);
+
+inline static unsigned int rotate_left(unsigned int value, int count) {
+	unsigned int c = (unsigned int)count;
+	c = c % 32;
+	return value >> c
+		| value << (32 - c);
+}
+
+inline static unsigned int rotate_right(unsigned int value, int count) {
+	unsigned int c = (unsigned int)count;
+	c = c % 32;
+	return value << c
+		| value >> (32 - c);
+}
+
+#else
+
+static unsigned int rotate_right(unsigned int value, int count);
+
+inline static unsigned int rotate_left(unsigned int value, int count) {
+	int c = count % 32;
+	if (c < 0)  {
+		return rotate_right(value, -c);
+	}
+	return value >> c
+		| value << (32 - c);
+}
+
+	inline static unsigned int rotate_right(unsigned int value, int count) {
+	int c = count % 32;
+	if (c < 0)  {
+		return rotate_left(value, -c);
+	}
+	return value << c
+		| value >> (32 - c);
+}
+
+#endif
+
+#if UNSIGNED_COUNT == 1
+unsigned int f (unsigned int x, unsigned int offset) {
+#else
+unsigned int f (unsigned int x, int offset) {
+#endif
+	unsigned int l = rotate_left(x, offset);
+	unsigned int r = rotate_right(x, offset);
+	return l + r;
+}
+```
+
+When using the various definitions, we find that the generated assembly for `f` is identically good using either the internal unsigned "two's complement" cast, or by just using an unsigned number. Because of how poorly basic mathematics with unsigned numbers happens, we want to avoid a situation where negation or subtraction with unsigned qualities may yield undesirable results or promotions. Therefore, we used signed integers for both the offset count and the return values of these functions. Note that even in purely standard C, converting from a signed integer to an unsigned integer is perfectly well-defined behavior and does not raise any signals:
+
+> <sup>2</sup> &emsp; Otherwise, if the new type is unsigned, the value is converted by repeatedly adding or subtracting one more than the maximum value that can be represented in the new type until the value is in the range of the new type.
+>
+> — §6.3.1.3, ¶2, ISO/IEC 9899:202x "C2x" Standard
+
+Finally, the vast majority of existing practice takes the offset value in as a signed integer, and all the return types are also still some form of signed integer (unless the intrinsic is returning the exact same unsigned value put in that was manipulated). It also allows "plain math" being done on the type to naturally manifest negative numbers without accidentally having roundtripping or signed/unsigned conversion issues.
+
+
+### In Defense of Unsigned ### {#design-signed.vs.unsigned-unsigned}
+
+Unsigned, on the other hand, has existing practice **in hardware**. While the intrinsics defined by glibc, C++'s standard libraries, and many more use signed integers, they are conceptually **unsigned** in their implementations. For example, for a 32-bit rotate, most standard libraries taking an `int` offset parameter perform:
+
+```cpp
+count = count & 31;
+```
+
+This is **critical** for optimization here. Note that, if we were to provide a specification using a `signed` offset, our specification has to very deliberately specify that we are going to negate the value and then pass it to the rotate of the opposite direction. This is, effectively, the same as obliterating the sign value and then calling the (symmetrical, cyclical) rotate: a 32-bit rotate therefore can get identical codegen as a signed variant by using the a bit `AND` (NOT a normal `% 32`, as that preserves the sign as we do NOT want that). For an unsigned variant, no such trickery is necessary. Simply truncating the value using:
+
+```cpp
+count = count % 32;
+```
+
+produces optimal code generation for most compilers, as they understand that bit `AND` for hexadecimal `0x1F` (decimal `31`) is identical to modulus of decimal `32`. This means that, by default, unsigned values are the same here. Abusing 2's complement, one can save this by simply doing `unsigned u_count = (unsigned)count;` and then perform modulus to get the same behavior as performing bit `AND` with `31`. The "obvious" code is the efficient code here, as shown by the example of the assembly above.
+
+Rust is one of the few languages that provides optimal versions of this code using `unsigned` [[rust-rotate_left]]. Their code is optimal under both optimizations and a lack thereof, compared to C and C++ code which struggles with function call elision and similar. This may be aided in the future by having this paper put into the C standard, which would allow compilers to treat standard-specific rotate calls as intrinsics to be replaced with the instructions directly.
+
+All in all, unsigned naturally optimizes better and matches the size type of C. It has no undefined behavior on overflow and produces better assembly in-general when it comes to bit intrinsics. Shifting behavior is also well-defined for unsigned types and not signed types, further compounding unsigned types as far better than their signed counterparts.
+
+
+### Which Does This Paper Choose? ### {#design-signed.vs.unsigned-choice}
+
+Ultimately, this paper chooses unsigned integer types. The core of the reasoning is that this avoids undefined behavior in the specification and is also morally and spiritually what architectures expect (at least for 2's complement). Since C23 embraces 2's complement, using unsigned here would work more or less identically to a signed integer anyways and therefore it just does not matter enough to want to write an exception for `INT_MIN`/`INT_MAX` into the specification for handling e.g. the `count` parameter of `stdc_rotate_left` or `stdc_rotate_right`.
+
+
+
+## Generic 8-bit Memory Reverse and Exact-width 8-bit Memory Reverse ## {#design-memreverse}
+
+In order to accommodate both a wide variety of architectures but also support minimum-width integer optimized intrinsics, this proposal takes from the industry 2 forms of byteswap:
+
+- one generic `mem_` version which takes a pointer and the number of bytes to perform a reverse operation; and,
+- a sequence of exact-width byte swapping instructions which (typically) map directly to intrinsics available in compilers and instructions in hardware.
+
+These end up inhabiting the `stdbit.h` header and have the following interface:
+
+```cpp
+#include <stdbit.h>
+#include <limits.h>
+#include <stdint.h>
+
+#if (CHAR_BIT % 8 == 0)
+void stdc_memreverse8(size_t n, unsigned char ptr[static n]);
+uintN_t stdc_memreverse8uN(uintN_t value);
+#endif
+```
+
+where `N` is one of the minimum-width integer types such as `8`, `24`, `16`, `32`, `64`, `128`, and others. On most architectures, this matches the builtins ([[msvc-builtins|MSVC]], [[clang-builtins|Clang]], [[gcc-builtins|GCC]]) and the result of compiler optimizations that produce instructions for many existing architectures as shown in the [[portable-endianness|README of this portable endianness function implementation]]. We use the exact-width values for the `uN`-suffixed functions because we **expect** that C compilers would want to lower the `stdc_memreverse8uN` call to existing practice of `byteswapN` instructions and compiler intrinsics. Using `uint_leastN_t` reduces the ability to match these existing optimizations in the case where `uintN_t` functions are not defined.
+
+```cpp
+const uint32_t normal = 0xAABBCCDDu;
+const uint32_t reversed = 0xDDCCBBAAu;
+assert(stdc_memreverse8u32(normal) == reversed);
+```
+
+
+### But Memory Reverse Is Dangerous? ### {#design-memreverse-danger}
+
+Byte swapping, by itself, is absolutely dangerous in terms of code portability. Users often program strictly for their own architecture when doing serialization, and do not take into consideration that their endianness can change. This means that, while `stdc_memreverse` functions can compile down to intrinsics, those intrinsics get employed to change "little endian" to "big endian" without performing the necessary "am I already in the right endianness" check. Values that are *already* in the proper byte order for their target serialization get swapped, resulting in an incorrect byte order for the target network protocol, file format, or other binary serialization target.
+
+The inclusion of the `<stdbit.h>` header reduces this problem by giving access to the `__STDC_NATIVE_ENDIAN__` macro definition, but does not fully eliminate it. This is why many Linux and BSDs include functions which directly transcribe from one endianness to another. This is why the [[endian-fallacy|Byte Order Fallacy]] has spread so far in Systems Programming communities, and why many create their own versions of this both in official widespread vendor code ([[linux-endian]]) and in more personal code used for specific distributions ([[portable-endianness]]). Thusly, this proposal includes some endianness functions, specified just below.
+
+
+### Vetting the Implementation / Algorithm for `memreverse` ### {#design-memreverse-implementation}
+
+In previous iterations of the paper, there were various off-by-one errors in transcribing the algorithm used to get the job done. Therefore, we more directly lifted the code for the algorithm from [the example implementation here](https://github.com/soasis/idk/blob/main/include/ztd/idk/detail/bit.memreverse.impl.h#L55-L75). To further prove that it works on "bytes" that may be larger than 8 bits, we also took the following steps.
+
+- Implemented it as a macro (as shown from the link above).
+- Use that macro implementation in the normal `unsigned char`-based [implementation](https://github.com/soasis/idk/blob/main/source/ztd/idk/bit.memreverse.c#L54);
+- Use that macro implementation all unsigned integer types that are larger than `unsigned char` to [test if it deals with sub-8-bit-groups correctly](https://github.com/soasis/idk/blob/main/tests/idk/basic_run_time_c%2B%2B/source/bit.memreverse.8.no-alias.cpp#L44-L65);
+- Apply `-fno-strict-alias` or [equivalent flag to the compiler](https://github.com/soasis/idk/blob/main/tests/idk/basic_run_time_c%2B%2B/CMakeLists.txt#L62) and test across platforms.
+
+All of the tests pass across the three major compilers (MSVC, GCC, and Clang) and across platforms (Windows, Linux, Mac OS). We find this to be compelling enough to ensure that the implementation and the algorithm in the wording is suitably correct. Nevertheless, any wording failures present here represent the authors' collective inability to properly serialize wording, not that an implementation is not possible or too inventive.
+
+
+
+## `stdc_load8_*`/`stdc_store8_*` Endian-Aware Functions ## {#design-endianness}
+
+Functions meant to transport bytes to a specific endianness need 3 pieces of information:
+
+- the sign of the input/output;
+- the byte order of the input; and,
+- the desired byte order of the output.
+
+To represent any operation that goes from/to the byte order that things like `long long`s are kept in, the Linux/BSD/etc. APIs use the term "host", represented by `h`. Every other operation is represented by explicitly naming it, particularly as `be` or `le` for "big endian" or "little endian". Again, because of the severe confusion that comes from what the exact byte order a "mixed endian" multi byte scalar is meant to be in, there seems not to exist any widely available practice regarding what to call a PDP/Honeywell endian configuration. Therefore, mixed/bi/middle-endian is not included in this proposal. It can be added at a later date if the community ever settles on a well-defined naming convention that can be shared between codebases, standards, and industries.
+
+The specification for the endianness functions borrows from many different sources listed above, and is as follows:
+
+```cpp
+#include <stdbit.h>
+#include <limits.h>
+#include <stdint.h>
+
+#if ((N % CHAR_BIT) == 0 && (CHAR_BIT % 8 == 0))
+void stdc_store8_leuN(uint_leastN_t value,
+	unsigned char ptr[static (N / CHAR_BIT)]);
+void stdc_store8_beuN(uint_leastN_t value,
+	unsigned char ptr[static (N / CHAR_BIT)]);
+uint_leastN_t stdc_load8_leuN(
+	const unsigned char ptr[static (N / CHAR_BIT)]);
+uint_leastN_t stdc_load8_beuN(
+	const unsigned char ptr[static (N / CHAR_BIT)]);
+void stdc_store8_aligned_leuN(uint_leastN_t value,
+	unsigned char ptr[static (N / CHAR_BIT)]);
+void stdc_store8_aligned_beuN(uint_leastN_t value,
+	unsigned char ptr[static (N / CHAR_BIT)]);
+uint_leastN_t stdc_load8_aligned_leuN(
+	const unsigned char ptr[static (N / CHAR_BIT)]);
+uint_leastN_t stdc_load8_aligned_beuN(
+	const unsigned char ptr[static (N / CHAR_BIT)]);
+
+void stdc_store8_lesN(int_leastN_t value,
+	unsigned char ptr[static (N / CHAR_BIT)]);
+void stdc_store8_besN(int_leastN_t value,
+	unsigned char ptr[static (N / CHAR_BIT)]);
+int_leastN_t stdc_load8_lesN(
+	const unsigned char ptr[static (N / CHAR_BIT)]);
+int_leastN_t stdc_load8_besN(
+	const unsigned char ptr[static (N / CHAR_BIT)]);
+void stdc_store8_aligned_lesN(int_leastN_t value,
+	unsigned char ptr[static (N / CHAR_BIT)]);
+void stdc_store8_aligned_besN(int_leastN_t value,
+	unsigned char ptr[static (N / CHAR_BIT)]);
+int_leastN_t stdc_load8_aligned_lesN(
+	const unsigned char ptr[static (N / CHAR_BIT)]);
+int_leastN_t stdc_load8_aligned_besN(
+	const unsigned char ptr[static (N / CHAR_BIT)]);
+#endif
+```
+
+Thanks to some feedback from implementers and librarians, this first implementation would also need an added signed variant to the load and store functions as well as aligned and unaligned loads and stores. While C23 will mandate a two's complement representation for integers, because we are using the `uint_leastN_t` functions (which may be larger than the intended `N == 24` or `N == 32` specification), it is important for the sign bit to be properly serialized an transported. Therefore, during `stdc_load8_(le/be)sN`/`stdc_load8_(le/be)uN` operations, the sign bit will be directly serialized into resulting signed value or byte array where necessary.
+
+This specification is marginally more complicated than the `stdc_memreverseuN` functions because they operate on `uint_leastN_t`, where `N` is the minimum-width bit value. These functions, on most normal implementations, will just fill in the exact number of 8, 16, 32, 64, etc. bits.
+
+We are fine with not making these precisely `uintN_t`/`intN_t` because the upcoming C23 Standard includes a specific requirement that if `uintN_t`/`intN_t` exist, then `uint_leastN_t`/`int_leastN_t` must match their exact-width counterparts exactly, which has been existing practice on almost all implementations for quite some time now.
+
+
+### Vetting the Implementation / Algorithm for 8-bit loads and stores ### {#design-endianness-implementation}
+
+In previous iterations of the paper, getting the algorithm written down properly in a way that does not rely on any kind of implementation-defined behavior for signed and unsigned endian-aware loads and stores was tough and resulted in many errors in the wording. Still, we know that the implementation is solid because we have tested it (both theoretically and factually) by writing implementations which base "unit" for writing into has a width greater than `CHAR_BIT`. It is similar to the design
+
+- Implemented the core bodies of the functions as macros whose base unit is not necessarily `unsigned char` (as [shown here](https://github.com/soasis/idk/blob/main/include/ztd/idk/detail/bit.load_store.impl.h#L54-L122)).
+- Use that macro implementation in the normal `unsigned char`-based [implementation](https://github.com/soasis/idk/blob/main/source/ztd/idk/bit.load_store.c);
+- Use that macro implementation all unsigned integer types that are larger than `unsigned char` to [test if it deals with sub-8-bit-groups correctly](https://github.com/soasis/idk/blob/main/tests/idk/basic_run_time_c%2B%2B/source/bit.load_store.8.no-alias.cpp#L126-L445);
+- Apply `-fno-strict-alias` or [equivalent flag to the compiler](https://github.com/soasis/idk/blob/main/tests/idk/basic_run_time_c%2B%2B/CMakeLists.txt#L62) and test across platforms.
+
+All of the tests pass across the three major compilers (MSVC, GCC, and Clang) and across platforms (Windows, Linux, Mac OS). We find this to be compelling enough to ensure that the implementation is suitably correct, even if the wording may not be proper or ideal. Therefore, we hope this can serve as a good basis in establishing that, at the very least, this is both implementable and usable. This also corroborates additional materials outside of compilers who always target `CHAR_BIT == 8`, such as the F2838x/F28069 series, and C28x series, of chips from Texas Instruments. For example, [the TMS320C28x reference guide](https://www.ti.com/lit/ug/spru430f/spru430f.pdf) gives a listing for how to properly and effectively swap 8-bit bytes of a 32-bit integer, despite being a 16-bit architecture (Page 292). It is, at least in some cases, important enough to include in reference material and programming guides for these chips, even if the authors could not personally find implementations of publicly-discussable compilers which provided a C-style intrinsic for a `CHAR_BIT == 16/32/64` platform.
+
+
+
+## Additional Modern Bit Utilities ## {#design-bit}
+
+Additionally to this, upon first pre_review of the paper there was a strong supporting groundswell for bit operations that have long been present in both hardware and as compiler intrinsics. This idea progressed naturally from the `bswap` and `__builtin_bswap` discussion. As indicated in [[p0553]] (merged into C++20 already), here's a basic rundown of some common architectures and their support for various bit functionality:
+
+<table>
+  <tr><th>operation</th> <th>Intel/AMD</th> <th>ARM</th>      <th>PowerPC</th></tr> 
+  <tr><td>`rotl`</td>      <td>ROL</th>       <td>-</td>        <td>rldicl</td></tr>
+  <tr><td>`rotr`</td>      <td>ROR</th>       <td>ROR, EXTR</td><td>-</td></tr>
+</table>
+
+Many of the below bit functions are defined below to ease portability to these architectures. For places where specific compiler idioms and automatic detection are not possible, similar assembly tricks or optimized implementations can be provided by C. Further bit functions were also merged into C++, resulting in the current state of the [C++ bit header](https://en.cppreference.com/w/cpp/header/bit).
+
+There is further a bit of an "infamous" page amongst computer scientists [[anderson-bit-hacks|for Bit Twiddling Hacks]]. These may not all map directly to instructions but they provide a broad set of useful functionality commonly found in not only CPU-based programming libraries, but GPU-based programming libraries and other high performance computing resources as well.
+
+We try to take the most useful subset of these functions that most closely represent functionality on both old and new CPU architectures as well as common, necessary operations that have been around in the last 25 years for various industries. We have left out operations such as sign extension, parity computation, bit merging, clear/setting bits, fast negation, bit swaps, lexicographic next bit permutation, and bit interleaving. The rest are more common and appear across a wide range of industries from cryptography to graphics to simulation to efficient property lookup and kernel scheduling.
+
+
+### Type-Generic Macros and Counts for Types ### {#design-bit-generic}
+
+All of the functions below have type generic macros associated with them. This can bring up an interesting question: if the return value depends on the type of the argument going into the function (i.e. for `rotate_left`, and `rotate_right`), is it bad for literal arguments? The answer to this question, however, is the same as its always been when dealing with literal values in C: use the suffix for the appropriate type, or cast, or put it in a `const` variable so that it can be used with the expected semantics. We cannot sink macro-based generic code use cases in the off-chance that someone calls `stdc_rotate_left(0b01100, 2)` and thinks it returns a dependable answers. Integers (and their literals) are the least portable part of Standard C code: use the exact-width types if you are expecting exact-width semantics. Or, call the fundamental-type suffixed versions to get answers dependable for that given fundamental type (e.g., `stdc_rotate_left_ui(0b01100, 2)`), even if it means the size of that fundamental type might change.
+
+
+### Argument Types ### {#design-bit-arguments}
+
+Many of the functions below are defined over the fundamental unsigned integer types, rather than their minimum width or exact width counterparts. This is done to provide maximum portability: users can combine information from the recently-introduced `(S/U)CHAR/(U)SHRT/(U)INT/(U)LONG/(U)LLONG_WIDTH` macros to determine the width of the sizes at translation time as well as enjoy a disjoint and distinct set of fundamental types over which generic selection will **always** work.
+
+The `(u)int_leastN_t` types also have `WIDTH` macros, but those macros are not exactly guaranteed to cover a wide range of actual bit sizes either (if the `uintN_t` types do not exist, then a conforming implementation can simply just name all of the types as typedefs for `(unsigned) long long` and call it a day). While an implementation could also define each of the distinct fundamental types from `(unsigned) char` to `(unsigned) long long` to all be the same width as well, we are at the very least guaranteed that they are, in fact, distinct types. This makes selection over types in `_Generic` predictable and usable (i.e. `_Generic(x, uint_least32_t: 0, uint_least64_t: 1)` is not guaranteed to compile since those types are not required to form a mutually exclusive or disjoint set).
+
+The exact-width types suffer from non-availability on specific platforms, which makes little sense for functions which do not depend on a no-padding bits requirement. As long as the values read from the array only involve `N` bits (including the sign bit), and the rest are zero-initialized, we can have predictable semantics.
+
+Extended integer types, least-width integer types, and exact-width integer types, can all be used with the type-generic macros since the type-generic macros are required to work over all standard (unsigned) integer types and extended (unsigned) integer types, while excluding `bool` and bit-precise (`_BitInt(N)`) integer types that do not match pre-existing type widths. This provides a complete set of functionality that is maximally portable while also allowing for precise semantic control with exact or least-width types.
+
+Finally, in general `bool` objects are disallowed from the above functions. There is just not a meaningful body of functionality that can be provided, and there is a fundamental difference between something that is expected to be a boolean value and something that is expected to be a 1-bit number (even if they can both serve similar purposes). It is also questionable to compute things such as rotation for `bool` objects. If we can grow a consistent set of answers for these operations across the industry, than we can weaken the requirements and add the behavior in. (Note that if we put it in now and choose a behavior, we cut off any improvements made in the future, so it is best to be conservative here.)
+
+
+### Return Types ### {#design-bit-returns}
+
+Ostensibly, part of the motivation to capture here should be that the types used to do things such as rotations should be identical to the return type used to do things like count zeros, e.g. `stdc_rotate_left(value, stdc_count_zeros(value));`. This is mostly non-problematic until someone uses `_BitInt`: Clang already supports several megabyte-large `_BitInt`. On platforms where `unsigned int` is actually 16 bits, this is far too small to accommodate even a 1 MB `_BitInt`.
+
+At the moment, the functions do not accept **all** bit-precise integer types (just ones that are bit-width equivalent to the existing standard and extended integer types), so this is **technically** a non-issue. But, if and when bit-precise integer types are given better handling in `_Generic` macros or similar features that make them more suitable for type-generic macro implementations, this could become a problem. At the moment, we use wording to defer the issue by saying that type generic macros return a type suitably large for the range of the computed value. This allows us forward compatibility while fixing non-type-generic macro return types to `unsigned int`. The type-generic macros will have the flexibility from the specification to return larger signed integer types to aid in a smooth transition once bit-precise integer types sees more standard support.
+
+
+### `stdc_rotate_left`/`stdc_rotate_right` ### {#design-bit-stdc_rotate_left.stdc_rotate_right}
+
+`stdc_rotate_left`/`stdc_rotate_right` are common CPU instructions and the forms of the commonly-used circular shifts. They are common operations with applications in cyclic codes. They are commonly expressed (for 32-bit numbers) as `value <​< count | value >​> (32 - count)` (rotate left) or `value >> count | value << (32 - count)` (rotate right).
+
+```cpp
+#include <stdbit.h>
+
+unsigned char stdc_rotate_left_uc(unsigned char value, unsigned int count);
+unsigned short stdc_rotate_left_us(unsigned short value, unsigned int count);
+unsigned int stdc_rotate_left_ui(unsigned int value, unsigned int count);
+unsigned long stdc_rotate_left_ul(unsigned long value, unsigned int count);
+unsigned long long stdc_rotate_left_ull(unsigned long long value, unsigned int count);
+
+unsigned char stdc_rotate_right_uc(unsigned char value, unsigned int count);
+unsigned short stdc_rotate_right_us(unsigned short value, unsigned int count);
+unsigned int stdc_rotate_right_ui(unsigned int value, unsigned int count);
+unsigned long stdc_rotate_right_ul(unsigned long value, unsigned int count);
+unsigned long long stdc_rotate_right_ull(unsigned long long value, unsigned int count);
+
+// type-generic macro
+generic_value_type stdc_rotate_left(
+	generic_value_type value, generic_count_type count);
+generic_value_type stdc_rotate_right(
+	generic_value_type value, generic_count_type count);
+```
+
+They cover all of the built-in unsigned integer types. A discussion of signed vs. unsigned integer types for the count type and the return type can be found in a previous section, here [[#design-signed.vs.unsigned]].
+
+As for choosing a single function like `stdc_rotate(unsigned-integer-type value, some-integer-type count);` that chooses left / right based on the value, it unfortunately imposes the worst code generation properties of all the options. When using entirely runtime values, unless you have a deliberately have a variable-rotate/shift instruction, you are **required** to emit a branch in order to handle the two cases, as rotate left / right - despite being symmetric - need some help. Here is the [assembly for a technically optimal left/right rotate](https://godbolt.org/z/4TbPfhj1o):
+
+```s
+f:	# @f
+	mov     r8d, edi
+	mov     ecx, esi
+	rol     r8d, cl
+	mov     edx, edi
+	ror     edx, cl
+	mov     ecx, esi
+	neg     ecx
+	mov     eax, edi
+	rol     eax, cl
+	ror     edi, cl
+	test    esi, esi
+	cmovs   edx, r8d
+	cmovle  eax, edi
+	add     eax, edx
+	ret
+```
+
+This is more than double the size of the rotates found using left/right directly in [[#design-signed.vs.unsigned]]. Due to this, we decided that it was not advantageous to have a signed count with an unknown left/right: it is important to be capable of biasing the optimizer to whether a given rotate is left/right oriented.
+
+
+
+
+# Wording # {#wording}
+
+The following wording is [[N3054|relative to N3054]]. For the rotate functions, wording is attached for all permutations of the polls taken, which are listed just below.
+
+
+
+## Add a new §7.18.✨17 and §7.18.✨18 sub-sub-clauses for "8-bit Memory Reversal" in §7.18 ## {#wording-7.18.✨17.18.memory-reversal}
+
+<blockquote>
+<ins>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.18.✨17</span> <span class="wording-clause-title">8-bit Memory Reversal</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
+<div class="wording-numbered">
+
+> ```cpp
+> #include <stdbit.h>
+> #include <limit.h>
+>
+> #if (CHAR_BIT) == 8
+> void stdc_memreverse8(size_t n, unsigned char ptr[static n]);
+> #endif
+> ```
+</div>
+
+<div class="wording-clause-section-title">
+Description
+</div>
+
+<div class="wording-numbered">
+
+The `stdc_memreverse8` function reverses the order of the bytes pointed to by `ptr`. For every byte at offset `index` in the range `[0, n/2]`, inclusive, swap the values at `ptr[index]` and `ptr[n - index - 1]`.
+</div>
+
+<div class="wording-clause-section-title">
+Recommended Practice
+</div>
+
+<div class="wording-numbered">
+
+An implementation with a `CHAR_BIT` that is a multiple of 8 can still perform an 8-bit swap using the following algorithm for a memory-equivalent swap to an 8-bit swap:
+
+```cpp
+for (size_t ptr_index = 0, ptr_limit = n / 2; ptr_index < ptr_limit; ++ptr_index) {
+	const size_t rev_ptr_index     = n - 1 - ptr_index;
+	unsigned char* p               = ptr + ptr_index;
+	unsigned char* rev_p           = ptr + rev_ptr_index;
+	const unsigned char b_temp     = *p;
+	const unsigned char rev_b_temp = *rev_p;
+	*p                             = 0;
+	*rev_p                         = 0;
+	const size_t bit_limit         = CHAR_BIT;
+	for (size_t bit_index = 0; bit_index < bit_limit; bit_index += 8) {
+		const size_t rev_bit_index = CHAR_BIT - 8 - bit_index;
+		const unsigned char bit_mask = ((unsigned char)0xFF) << bit_index;
+		const unsigned char rev_bit_mask = ((unsigned char)0xFF) << rev_bit_index;
+		*p |= (((rev_b_temp & rev_bit_mask) >> rev_bit_index) << bit_index);
+		*rev_p |= (((b_temp & bit_mask) >> bit_index) << rev_bit_index);
+	}
+}
+```
+</div>
+</div>
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">§7.18.✨18</span> <span class="wording-clause-title">Exact-width 8-bit Memory Reversal</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
+<div class="wording-numbered">
+
+> ```cpp
+> #include <stdbit.h>
+> #include <limits.h>
+> #include <stdint.h>
+> 
+> #if (CHAR_BIT == 8)
+> uintN_t stdc_memreverse8uN(uintN_t value);
+> #endif
+> ```
+</div>
+
+<div class="wording-clause-section-title">
+Description
+</div>
+
+<div class="wording-numbered">
+
+The <code>stdc_memreverse8u<i>N</i></code> functions provide an interface to swap the bytes of a corresponding <code>uint<i>N</i>_t</code> object, where <i>N</i> matches one of the exact-width integer types (7.20.1.1). If an implementation provides the corresponding <code>uint<i>N</i>_t</code> typedef, it shall define the corresponding exact-width memory reversal function for that value of <code><i>N</i></code>.
+</div>
+
+<div class="wording-clause-section-title">
+Returns
+</div>
+
+<div class="wording-numbered">
+
+The <code>stdc_memreverse8u<i>N</i></code> functions returns the 8-bit memory reversed <code>uint<i>N</i>_t</code> value, as if by invoking `stdc_memreverse8(sizeof(value), (unsigned char*)&value)`.
+</div>
+</div>
+</ins>
+</blockquote>
+
+
+## Add a new §7.18.✨19 sub-sub-clause for "Endian-Aware" functions in §7.18 ## {#wording-§7.18.✨19.endian.aware.load.store}
+
+<blockquote>
+<ins>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.18.✨19</span> <span class="wording-clause-title">Endian-Aware 8-bit Load</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
+<div class="wording-numbered">
+
+> ```cpp
+> #include <stdbit.h>
+>
+> #if ((N % CHAR_BIT) == 0) && (CHAR_BIT  == 8)
+> uint_leastN_t stdc_load8_leuN(const unsigned char ptr[static (N / CHAR_BIT)]);
+> uint_leastN_t stdc_load8_beuN(const unsigned char ptr[static (N / CHAR_BIT)]);
+> uint_leastN_t stdc_load8_aligned_leuN(const unsigned char ptr[static (N / CHAR_BIT)]);
+> uint_leastN_t stdc_load8_aligned_beuN(const unsigned char ptr[static (N / CHAR_BIT)]);
+> 
+> int_leastN_t stdc_load8_lesN(const unsigned char ptr[static (N / CHAR_BIT)]);
+> int_leastN_t stdc_load8_besN(const unsigned char ptr[static (N / CHAR_BIT)]);
+> int_leastN_t stdc_load8_aligned_lesN(const unsigned char ptr[static (N / CHAR_BIT)]);
+> int_leastN_t stdc_load8_aligned_besN(const unsigned char ptr[static (N / CHAR_BIT)]);
+> #endif
+> ```
+</div>
+
+<div class="wording-clause-section-title">
+Description
+</div>
+
+<div class="wording-numbered">
+
+The 8-bit load family of functions functions read an <code>int_least<i>N</i>_t</code> or <code>uint_least<i>N</i>_t</code> object from the provided `ptr` in an endian-aware (7.✨.2) manner, where <i>N</i> matches an existing minimum-width integer type (7.20.1.2). If this function is present, <i>N</i> shall be a multiple of 8 and `CHAR_BIT` shall be 8. The functions containing `_aligned` in the name shall assume that `ptr` is suitably aligned to access a signed or unsigned integer of width <i>N</i> for a signed or unsigned variant of the function, respectively. If the function name contains the <code>s<i>N</i></code> suffix in the name, it is a <i>signed variant</i>. Otherwise, the function is an <i>unsigned variant</i>. If the function name contains the <code>les<i>N</i></code> or <code>leu<i>N</i></code> suffix, it is a <i>little-endian variant</i>. Otherwise, if the function name contains the <code>bes<i>N</i></code> or <code>beu<i>N</i></code> suffix, it is a <i>big-endian variant</i>.
+</div>
+
+<div class="wording-clause-section-title">
+Returns
+</div>
+
+<div class="wording-numbered">
+
+Let the computed value $result$ be:
+
+$$\sum_{index = 0}^{(N \div{} 8) - 1} b_{index} \times{} 2^{8 \times{} index}$$
+
+where $b_{index}$ is:
+
+:: — `(ptr[(index * 8) / CHAR_BIT] >> ((index * 8) % CHAR_BIT)) & 0xFF`, if the function is the little-endian variant;
+:: — otherwise, `(ptr[((N - (index * 8)) - 8) / CHAR_BIT] >> (((N - (index * 8)) - 8) % CHAR_BIT)) & 0xFF`, if the function is the the big-endian variant.
+
+If the function is an unsigned variant, return $result$. Otherwise, if the function is a signed variant, return:
+
+:: - $result$, if $result$ is less than $2^{N-1}$;
+:: - otherwise, $result - 2^{N}$.
+
+</div>
+
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.18.✨20</span> <span class="wording-clause-title">Endian-Aware 8-bit Store</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
+<div class="wording-numbered">
+
+> ```cpp
+> #include <stdbit.h>
+>
+> #if ((N % (CHAR_BIT)) == 0) && ((CHAR_BIT) == 8)
+> void stdc_store8_leuN(uint_leastN_t value,
+> 	unsigned char ptr[static (N / CHAR_BIT)]);
+> void stdc_store8_beuN(uint_leastN_t value,
+> 	unsigned char ptr[static (N / CHAR_BIT)]);
+> void stdc_store8_aligned_leuN(uint_leastN_t value,
+> 	unsigned char ptr[static (N / CHAR_BIT)]);
+> void stdc_store8_aligned_beuN(uint_leastN_t value,
+> 	unsigned char ptr[static (N / CHAR_BIT)]);
+> 
+> void stdc_store8_lesN(int_leastN_t value,
+> 	unsigned char ptr[static (N / CHAR_BIT)]);
+> void stdc_store8_besN(int_leastN_t value,
+> 	unsigned char ptr[static (N / CHAR_BIT)]);
+> void stdc_store8_aligned_lesN(int_leastN_t value,
+> 	unsigned char ptr[static (N / CHAR_BIT)]);
+> void stdc_store8_aligned_besN(int_leastN_t value,
+> 	unsigned char ptr[static (N / CHAR_BIT)]);
+> #endif
+> ```
+</div>
+
+<div class="wording-clause-section-title">
+Description
+</div>
+
+<div class="wording-numbered">
+
+The 8-bit store family of functions functions write a <code>int_least<i>N</i>_t</code> or <code>uint_least<i>N</i>_t</code> object into the provided `ptr` in an endian-aware (7.✨.2) manner, where <i>N</i> matches an existing minimum-width integer type (7.20.1.2). If this function is present, <i>N</i> shall be a multiple of 8 and `CHAR_BIT` shall be 8. The functions containing `_aligned` in the name shall assume that `ptr` is suitably aligned to access a signed or unsigned integer of width <i>N</i>. If the function name contains the <code>s<i>N</i></code> suffix in the name, it is a <i>signed variant</i>. Otherwise, the function is an <i>unsigned variant</i>. If the function name contains the <code>les<i>N</i></code> or <code>leu<i>N</i></code> suffix, it is a <i>little-endian variant</i>. Otherwise, if the function name contains the <code>bes<i>N</i></code> or <code>beu<i>N</i></code> suffix, it is a <i>big-endian variant</i>.
+</div>
+
+<div class="wording-numbered">
+
+Let `value_unsigned` be `value` if the function is a unsigned variant. Otherwise, let `value_unsigned` be the conversion of `value` to its corresponding unsigned type, if the function is a signed variant.
+
+Let `index` be an integer in a sequence that
+
+:: — starts from 0 and increments by 8 in the range of [0, N), if the function is a little-endian variant;
+:: — starts from `N - 8` and decrements by 8 in the range of [0, N), if the function is a big-endian variant.
+
+Let `ptr_bit_index` be an integer that starts from 0. Let `byte_index8` be `index % CHAR_BIT`. For each `index` in the order of the above-specified sequence:
+
+:: 1. Let `byte_mask8` be an object of value `(0xFF << byte_index8)` of a suitably large unsigned type.
+:: 2. Sets the 8 bits in `ptr[ptr_bit_index / CHAR_BIT]` at offset `byte_index8` to `(value_unsigned & byte_mask8) >> index`.
+:: 3. Increments `ptr_bit_index` by 8.
+
+</div>
+</div>
+</ins>
+</blockquote>
+
+
+## Add a new §7.18.✨21 sub-sub-clause for Rotate Left and Rotate Right Bit Utilities in §7.18 ## {#wording-7.18.✨21.22.rotate_left.rotate_right}
+
+<blockquote>
+<ins>
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.18.✨21</span> <span class="wording-clause-title">Rotate Left</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
+<div class="wording-numbered">
+
+> ```cpp
+> unsigned char stdc_rotate_left_uc(unsigned char value, unsigned int count);
+> unsigned short stdc_rotate_left_us(unsigned short value, unsigned int count);
+> unsigned int stdc_rotate_left_ui(unsigned int value, unsigned int count);
+> unsigned long stdc_rotate_left_ul(unsigned long value, unsigned int count);
+> unsigned long long stdc_rotate_left_ull(unsigned long long value, unsigned int count);
+> 
+> generic_value_type stdc_rotate_left(
+> 	generic_value_type value, generic_count_type count);
+> ```
+</div>
+
+<div class="wording-clause-section-title">
+Description
+</div>
+
+<div class="wording-numbered">
+The `stdc_rotate_left` functions perform a bitwise rotate left. This operation is typically known as a left circular shift.
+</div>
+
+<div class="wording-clause-section-title">
+Returns
+</div>
+
+<div class="wording-numbered">
+
+Let *N* be the width corresponding to the type of the input `value`. Let `r` be `count % N`.
+
+:: — If r is 0, returns `value`;
+:: — otherwise, returns `(value <​< r) | (value >> (N - r))`;
+
+</div>
+<div class="wording-numbered">
+
+The type-generic function (marked by its `generic_value_type` argument) returns the above described result for a given input value so long as the `generic_value_type` is an
+
+:: — standard unsigned integer type, excluding `bool`;
+:: — extended unsigned integer type;
+:: — or, bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
+
+The `generic_count_type` shall be an integer type whose value is non-negative.
+</div>
+</div>
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.18.✨22</span> <span class="wording-clause-title">Rotate Right</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
+<div class="wording-numbered">
+
+> ```cpp
+> unsigned char stdc_rotate_right_uc(unsigned char value, unsigned int count);
+> unsigned short stdc_rotate_right_us(unsigned short value, unsigned int count);
+> unsigned int stdc_rotate_right_ui(unsigned int value, unsigned int count);
+> unsigned long stdc_rotate_right_ul(unsigned long value, unsigned int count);
+> unsigned long long stdc_rotate_right__ull(unsigned long long value, unsigned int count);
+> 
+> generic_value_type stdc_rotate_right(
+> 	generic_value_type value, generic_count_type count);
+> ```
+</div>
+
+<div class="wording-clause-section-title">
+Description
+</div>
+
+<div class="wording-numbered">
+The `stdc_rotate_right` functions perform a bitwise rotate right. This operation is typically known as a right circular shift.
+</div>
+
+<div class="wording-clause-section-title">
+Returns
+</div>
+
+<div class="wording-numbered">
+
+Let *N* be the width corresponding to the type of the input `value`. Let r be `count % N`.
+
+:: — If r is 0, returns `value`;
+:: — otherwise, returns `(value >> r) | (value << (N - r))`;
+
+</div>
+
+<div class="wording-numbered">
+
+The type-generic function (marked by its `generic_value_type` argument) returns the above described result for a given input value so long as the `generic_value_type` is
+
+:: — a standard unsigned integer type, excluding `bool`;
+:: — an extended unsigned integer type;
+:: — or, a bit-precise unsigned integer type whose width matches a standard or extended integer type, excluding `bool`.
+
+The `generic_count_type` shall be an integer type whose value is non-negative.
+</div>
+</div>
+
+</ins>
+</blockquote>
+
+
+
+# Appendix # {#appendix}
+
+A collection of miscellaneous and helpful bits of information and implementation.
+
+
+
+## Example Implementations in Publicly-Available Libraries ## {#appendix-implementations}
+
+Optimized routines following the naming conventions present in this paper can be found in the [Shepherd's Oasis Industrial Development Kit (IDK) library](https://github.com/soasis/idk), compilable with a conforming C11 compiler and tested on MSVC, GCC, and Clang on Windows, Mac, and Linux:
+
+- [Bit Intrinsics](https://ztdidk.readthedocs.io/en/latest/c_api/bit.intrinsic.html) ([Declarations](https://github.com/soasis/idk/blob/main/include/ztd/idk/detail/bit.intrinsic.h#L53)) ([Source](https://github.com/soasis/idk/blob/main/source/ztd/idk/bit.intrinsic.c#L49))
+- [Memory Reverse](https://ztdidk.readthedocs.io/en/latest/c_api/bit.memreverse.html) ([Declarations](https://github.com/soasis/idk/blob/main/include/ztd/idk/detail/bit.memreverse.h#L52)) ([Source](https://github.com/soasis/idk/blob/main/source/ztd/idk/bit.memreverse.c#L46))
+- [Endian Load/Store](https://ztdidk.readthedocs.io/en/latest/c_api/bit.store_load.html) ([Declarations](https://github.com/soasis/idk/blob/main/include/ztd/idk/detail/bit.load_store.h#L52)) ([Sources](https://github.com/soasis/idk/blob/main/source/ztd/idk/bit.load_store.c#L45))
+
+Optimized routines following the basic principles present in this paper and used as motivation to improve several C++ Standard Libraries can be found in the Itsy Bitsy Bit Libraries, compilable with a conforming C++17 and tested on MSVC, GCC, and Clang on Windows, Mac, and Linux:
+
+- Bit Intrinsics ([Declarations](https://github.com/ThePhD/itsy_bitsy/blob/main/include/itsy/bit_operations.hpp#L63)) ([Sources](https://github.com/ThePhD/itsy_bitsy/blob/main/include/itsy/detail/bit_operations.hpp#L31))
+
+Endianness routines and original motivation that spawned this proposal came from [David Seifert's Portable Endianness library](https://github.com/SoapGentoo/portable-endianness) and its deep dive into compiler optimizations and efficient code generation when alignment came into play:
+
+- Endian Load/Store ([Declarations](https://github.com/SoapGentoo/portable-endianness/blob/main/include/portable-endianness.h#L11)) ([Sources](https://github.com/SoapGentoo/portable-endianness/blob/main/src/portable-endianness.c#L5))
+
+
+# Acknowledgements # {#acknowledgements}
+
+Many thanks to David Seifert, Aaron Bachmann, Jens Gustedt, Tony Finch, Erin AO Shepherd, and many others who helped fight to get the semantics and wording into the right form, providing motivation, giving example code, pointing out existing libraries, and helping to justify this proposal.
+
+
+<pre class="biblio">
+{
+	"N3022": {
+		"authors": [
+			"JeanHeyd Meneide"
+		],
+		"title": "N3022 - Modern Bit Utilities",
+		"href": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3022.htm",
+		"date": "July 6th, 2022"
+	},
+	"N3054": {
+		"authors": [
+			"ISO/IEC JTC1 SC22 WG14 - Programming Languages, C",
+			"JeanHeyd Meneide",
+			"Freek Wiedijk"
+		],
+		"title": "N3054: ISO/IEC 9899:202x - Programming Languages, C",
+		"href": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/N3054.pdf",
+		"date": "June 8th, 2022"
+	},
+	"gcc-builtins": {
+		"authors": [
+			"GCC Contributors"
+		],
+		"title": "Other Built-in Functions Provided by GCC",
+		"publisher": "GCC",
+		"href": "https://gcc.gnu.org/onlinedocs/gcc/Other-Builtins.html",
+		"date": "September 1st, 2021"
+	},
+	"msvc-builtins": {
+		"authors": [
+			"Microsoft"
+		],
+		"title": "_byteswap_uint64, _byteswap_ulong, _byteswap_ushort",
+		"publisher": "Microsoft",
+		"href": "https://docs.microsoft.com/en-us/cpp/c-runtime-library/reference/byteswap-uint64-byteswap-ulong-byteswap-ushort?view=msvc-160",
+		"date": "November 4th, 2016"
+	},
+	"clang-builtins": {
+		"authors": [
+			"LLVM Foundation",
+			"Clang Contributors"
+		],
+		"title": "Clang Language Extensions: Clang Documentation",
+		"publisher": "LLVM Foundation",
+		"href": "https://clang.llvm.org/docs/LanguageExtensions.html#intrinsics-support-within-constant-expressions",
+		"date": "September 1st, 2021"
+	},
+	"endian-fallacy": {
+		"authors": [
+			"Rob Pike"
+		],
+		"title": "The Byte Order Fallacy",
+		"href": "https://commandcenter.blogspot.com/2012/04/byte-order-fallacy.html",
+		"date": "April 3rd, 2012"
+	},
+	"portable-endianness": {
+		"authors": [
+			"David Seifert"
+		],
+		"title": "portable-endianness",
+		"publisher": "GitHub",
+		"href": "https://github.com/SoapGentoo/portable-endianness",
+		"date": "May 16th, 2021"
+	},
+	"linux-endian": {
+		"authors": [
+			"Linux",
+			"BSD"
+		],
+		"title": "endian(3)",
+		"publisher": "die.net",
+		"href": "https://linux.die.net/man/3/endian",
+		"date": "September 1st, 2021"
+	},
+	"ntohl": {
+		"authors": [
+			"Linux"
+		],
+		"title": "ntohl(3)",
+		"publisher": "die.net",
+		"href": "https://linux.die.net/man/3/ntohl",
+		"date": "September 30th, 2021"
+	},
+	"p0553": {
+		"authors": [
+			"Jens Maurer"
+		],
+		"title": "Bit operations",
+		"publisher": "ISO/IEC JTC1 SC22 WG21 - Programming Language, C++",
+		"href": "https://wg21.link/p0553",
+		"date": "March 1st, 2019"
+	},
+	"p0463": {
+		"authors": [
+			"Howard E. Hinnant"
+		],
+		"title": "endian. Just endian.",
+		"publisher": "ISO/IEC JTC1 SC22 WG21 - Programming Language, C++",
+		"href": "https://wg21.link/p0463",
+		"date": "July 13th, 2017"
+	},
+	"ti-tms320c64x": {
+		"authors": [
+			"Texas Instruments"
+		],
+		"title": "TMS320C64x/C64x+ DSP: CPU and Instruction Set",
+		"publisher": "Texas Instruments",
+		"href": "https://www.ti.com/lit/ug/spru732j/spru732j.pdf",
+		"date": "July 31st, 2010"
+	},
+	"sdcc": {
+		"authors": [
+			"Dr. Philipp K. Krause"
+		],
+		"title": "SDCC Manual §8.1.9 - Bit Rotations",
+		"publisher": "SourceForge",
+		"href": "http://sdcc.sourceforge.net/doc/sdccman.pdf",
+		"date": "September 25th, 2021"
+	},
+	"rust-rotate_left": {
+		"authors": [
+			"Rust Standard Library Collaborators"
+		],
+		"title": "u32 methods: rotate_left",
+		"publisher": "Rust Foundation",
+		"href": "https://doc.rust-lang.org/std/primitive.u32.html#method.rotate_left",
+		"date": "November 10th, 2021"
+	},
+	"anderson-bit-hacks": {
+		"authors": [
+			"Sean Eron Anderson"
+		],
+		"title": "Bit Twiddling Hacks",
+		"publisher": "Standard University, Computer Graphics Department",
+		"href": "https://graphics.stanford.edu/~seander/bithacks.html",
+		"date": "May 5th, 2005"
+	}
+}
+</pre>
