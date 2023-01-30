@@ -1,11 +1,11 @@
 <pre class='metadata'>
 Title: More Modern Bit Utilities
-Shortname: 3074
-Revision: 0
-!Previous Revisions: None
+Shortname: 3094
+Revision: 1
+!Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3074.htm">n3074 (r0)</a>
 !Predecessor: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3022.htm">n3022 (r4)</a>
 Status: P
-Date: 2023-01-05
+Date: 2023-01-31
 Group: WG14
 !Proposal Category: Feature Request
 !Target: C23/C2y/C3a
@@ -41,7 +41,15 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 5 - December 14<sup>th</sup>, 2022 ## {#changelog-r0}
+## Revision 1 - January 31<sup>st</sup>, 2023 ## {#changelog-r1}
+
+- Change specification for `stdc_rotate_left`/`stdc_rotate_right` to account for potential integer promotion issues.
+	- Add footnote about preventing promotion issues from using `unsigned char`/`unsigned short` being promoted to `int`.
+	- Make sure constraints on `generic_count_type` are applied to the *value*, not the type.
+
+
+
+## Revision 0 - December 14<sup>th</sup>, 2022 ## {#changelog-r0}
 
 - Initial release. ✨
 - Removed all of the components from [[n3022]] that were accepted, and migrated all of the non-accepted parts to this in response to feedback from many individuals.
@@ -296,7 +304,7 @@ uintN_t stdc_memreverse8uN(uintN_t value);
 #endif
 ```
 
-where `N` is one of the minimum-width integer types such as `8`, `24`, `16`, `32`, `64`, `128`, and others. On most architectures, this matches the builtins ([[msvc-builtins|MSVC]], [[clang-builtins|Clang]], [[gcc-builtins|GCC]]) and the result of compiler optimizations that produce instructions for many existing architectures as shown in the [[portable-endianness|README of this portable endianness function implementation]]. We use the exact-width values for the `uN`-suffixed functions because we **expect** that C compilers would want to lower the `stdc_memreverse8uN` call to existing practice of `byteswapN` instructions and compiler intrinsics. Using `uint_leastN_t` reduces the ability to match these existing optimizations in the case where `uintN_t` functions are not defined.
+where `N` is one of the exact-width integer types such as `8`, `24`, `16`, `32`, `64`, `128`, and others. On most architectures, this matches the builtins ([[msvc-builtins|MSVC]], [[clang-builtins|Clang]], [[gcc-builtins|GCC]]) and the result of compiler optimizations that produce instructions for many existing architectures as shown in the [[portable-endianness|README of this portable endianness function implementation]]. We use the exact-width values for the `uN`-suffixed functions because we **expect** that C compilers would want to lower the `stdc_memreverse8uN` call to existing practice of `byteswapN` instructions and compiler intrinsics. Using `uint_leastN_t` reduces the ability to match these existing optimizations in the case where `uintN_t` functions are not defined.
 
 ```cpp
 const uint32_t normal = 0xAABBCCDDu;
@@ -573,7 +581,7 @@ Synopsis
 > ```
 </div>
 
-<div class="wording-clause-section-title">
+<div class="wording-clause-section-ti tle">
 Description
 </div>
 
@@ -588,7 +596,7 @@ Returns
 
 <div class="wording-numbered">
 
-The <code>stdc_memreverse8u<i>N</i></code> functions returns the 8-bit memory reversed <code>uint<i>N</i>_t</code> value, as if by invoking `stdc_memreverse8(sizeof(value), (unsigned char*)&value)`.
+The <code>stdc_memreverse8u<i>N</i></code> functions returns the 8-bit memory reversed <code>uint<i>N</i>_t</code> value, as if by invoking `stdc_memreverse8(sizeof(value), (unsigned char*)&value)` and then returning `value`.
 </div>
 </div>
 </ins>
@@ -769,21 +777,25 @@ Returns
 
 <div class="wording-numbered">
 
-Let *N* be the width corresponding to the type of the input `value`. Let `r` be `count % N`.
+Let *N* be the width corresponding to the type of the input `value`. Let `no_promote_value` be `(unsigned _BitInt(sizeof(value) * CHAR_BIT))value`. Let `r` be `count % N`.
 
 :: — If r is 0, returns `value`;
-:: — otherwise, returns `(value <​< r) | (value >> (N - r))`;
+:: — otherwise, returns `(no_promote_value <​< r) | (no_promote_value >> (N - r))`<span class="footnote-ref">FN0✨)</span>.
 
 </div>
 <div class="wording-numbered">
 
-The type-generic function (marked by its `generic_value_type` argument) returns the above described result for a given input value so long as the `generic_value_type` is an
+The type-generic function (marked by its `generic_value_type` argument) returns the above described result for a given input value so long as the `generic_value_type` is
 
-:: — standard unsigned integer type, excluding `bool`;
-:: — extended unsigned integer type;
-:: — or, bit-precise unsigned integer type whose width matches any standard or extended integer type excluding `bool`.
+:: — a standard unsigned integer type, excluding `bool`;
+:: — an extended unsigned integer type;
+:: — or, a bit-precise unsigned integer type whose width matches any standard or extended integer type excluding `bool`.
 
-The `generic_count_type` shall be an integer type whose value is non-negative.
+The `generic_count_type count` argument shall be a non-negative value of signed or unsigned integer type, or `char`.
+</div>
+
+<div>
+<span class="footnote-ref">FN0✨)</span><span class="footnote"> Bit-precise integer types do not perform integer promotion in these expressions and therefore prevent potential undefined behavior from a literal implementation which would use `value` in place of `no_promote_value` (e.g., from a function call such as `stdc_rotate_left_us(0xFFFF, 15)` with an `unsigned short` width of 16 with an `int` width of 32).</span>
 </div>
 </div>
 
@@ -825,11 +837,15 @@ Returns
 
 <div class="wording-numbered">
 
-Let *N* be the width corresponding to the type of the input `value`. Let r be `count % N`.
+Let *N* be the width corresponding to the type of the input `value`. Let `no_promote_value` be `(unsigned _BitInt(sizeof(value) * CHAR_BIT))value`. Let r be `count % N`.3
 
 :: — If r is 0, returns `value`;
-:: — otherwise, returns `(value >> r) | (value << (N - r))`;
+:: — otherwise, returns `(no_promote_value >> r) | (no_promote_value << (N - r))`<span class="footnote-ref">FN1✨)</span>;
 
+</div>
+
+<div>
+<span class="footnote-ref">FN1✨)</span><span class="footnote"> Bit-precise integer types do not perform integer promotion in these expressions and therefore prevent potential undefined behavior from a literal implementation which would use `value` in place of `no_promote_value` (e.g., from a function call such as `stdc_rotate_right_us(0xFFFF, 15)` with an `unsigned short` width of 16 with an `int` width of 32).</span>
 </div>
 
 <div class="wording-numbered">
@@ -840,12 +856,13 @@ The type-generic function (marked by its `generic_value_type` argument) returns 
 :: — an extended unsigned integer type;
 :: — or, a bit-precise unsigned integer type whose width matches any standard or extended integer type excluding `bool`.
 
-The `generic_count_type` shall be an integer type whose value is non-negative.
+The `generic_count_type count` argument shall be a non-negative value of signed or unsigned integer type, or `char`.
 </div>
 </div>
 
 </ins>
 </blockquote>
+
 
 
 
