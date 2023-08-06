@@ -1,0 +1,732 @@
+<pre class='metadata'>
+Title: typeof and typeof_unqual for C++
+H1: <code>typeof</code> and <code>typeof_unqual</code> for C++
+Shortname: P2958
+Revision: 0
+Audience: EWG
+Status: P
+Group: WG21
+URL: https://thephd.dev/_vendor/future_cxx/papers/d2958.html
+!Target: C++26
+!Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/d2958.html">https://thephd.dev/_vendor/future_cxx/papers/d2958.html</a>
+Repository: ThePhD/future_cxx
+Editor: JeanHeyd Meneide (https://thephd.dev), phdofthehouse@gmail.com
+Date: 2023-08-05
+Markup Shorthands: markdown yes, biblio yes, markup yes
+Abstract: The long-anticipated type features from C have been integrated into C23, and should be ported to WG21 for harmony.
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-color-fix.html
+</pre>
+
+
+
+
+# Revision History # {#changelog}
+
+
+
+## Revision 0 - August 5th, 2023 ## {#changelog-r0}
+
+	- Initial Release! 🎉
+
+
+
+
+# Introduction and Motivation # {#intro}
+
+In the oldest proposals for `decltype(...)`, the proposal authors noted how the construct would produce a reference under common situations involving declarations and usage of C code inside of it. This was part of a sincere argument to leave `typeof` alone as a keyword and instead pivot to the `decltype` keyword instead, with some authors directly pointing out serious flaws with trying to take the `typeof` keyword from the existing vendor extension and C implementation space [[n2343]] [[n1978]].
+
+The intention was that keyword differed enough from the existing practice from C and C++ compilers with the `typeof` and `__typeof__` extensions that they should leave it alone, and let C standardize it at its own pace. C23 added `typeof` and, at the request of users working on the Linux Kernel and within the GCC bug tracker, `typeof_unqual` to solve the distinct issues with C [[n2927]]. Furthermore, it keeps with the existing practice that allows both expressions and type names to go into the `typeof` operator in a way that `decltype` chose not to.
+
+Critically, this means that `typeof` and `__typeof__` cannot be fully approximated with `decltype` alone, or even a macro such as `#define typeof(...) ::std::remove_reference_t<decltype(__VA_ARGS__)>`. C and C++ implementations the `typeof` extension can already take a type specifier (or, more specifically for the case of C++ grammar, a *type-id*). This is exceptionally important for `typeof` usage in macros: often times, rather than inventing an expression with which to provide the right type to a macro, it can be expedient to just pass a type in directly where possible to control the eventual cast or type inside of particularly complex macros. This is done a handful of times in C world. This is not as important for C++, but macros live tend to live in a shared world for C and C++.
+
+Some thought was given whether for this proposal to allow `decltype( type-id )` in the grammar as a type-based pass-through. An earlier revisions of [[n1978]] (N1607, to be precise) states, it was left untouched so to let it potentially be used as a "meta"-type value. That paper even casually references the idea of doing `decltype(SomeType).is_reference()`. We believe it is highly unlikely this will ever happen given the direction reflection has gone in for its facilities (e.g. preferring a sigil/operator or the keyword `reflexpr`). Furthermore, the overall direction of C++ with `<type_traits>` has eschewed the idea that there would ever be a used for `decltype(SomeType)` as a `constexpr object`-producing object. It could be safe to take `decltype ( type-id )` for C++ to just act as a placeholder for `type-id` to harmonize its version of `typeof` with C's, even if it might not provide any essential value.
+
+But, we do **NOT** propose it here and consider it outside the scope of this proposal as there is no existing practice for `decltype ( type-id )`.
+
+This proposal adds `typeof` and `typeof_unqual` to C++ to harmonize the 2 languages and close the loophole left from 20 years ago (for C++) and 30 years ago (from C), now that C has finally standardized its long-implemented keyword extensions.
+
+
+
+
+# Specification # {#wording}
+
+The specification is relative to the latest C++ Working Draft, [[n4950]].
+
+
+
+## Language Wording ## {#wording-language}
+
+
+### Add to Table 5: Keywords (`[tab:lex.key]`) 2 new keywords ### {#wording-language-tab:lex.key}
+
+<blockquote>
+<div class="wording-section">
+
+<div id="lex.key" class="wording-section-header">
+<span class="wording-clause-number">5.11</span>
+<span class="wording-clause-title">Keywords</span>
+<span class="wording-clause-stable-tag">[<b>lex.key</b>]</span>
+</div>
+
+<div class="wording-numbered">
+
+…
+
+<table>
+	<tbody>
+		<tr id="tab:lex.key-row-1">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-1-column-1-sentence-1" class="sentence"><span id=":alignas"><span
+								class="texttt"><span class="keyword">alignas</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-1-column-2-sentence-1" class="sentence"><span id=":constinit"><span
+								class="texttt"><span class="keyword">constinit</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-1-column-3-sentence-1" class="sentence"><span id=":false"><span
+								class="texttt"><span class="literal">false</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-1-column-4-sentence-1" class="sentence"><span id=":public"><span
+								class="texttt"><span class="keyword">public</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-1-column-5-sentence-1" class="sentence"><span id=":true"><span
+								class="texttt"><span class="literal">true</span></span></span></div>
+				</div>
+			</td>
+		</tr>
+		<tr id="tab:lex.key-row-2">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-2-column-1-sentence-1" class="sentence"><span id=":alignof"><span
+								class="texttt"><span class="keyword">alignof</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-2-column-2-sentence-1" class="sentence"><span id=":const_cast"><span
+								class="texttt"><span class="keyword">const_<span
+										class="shy"></span>cast</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-2-column-3-sentence-1" class="sentence"><span id=":float"><span
+								class="texttt"><span class="keyword">float</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-2-column-4-sentence-1" class="sentence"><span id=":register_"><span
+								class="texttt"><span class="keyword">register</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-2-column-5-sentence-1" class="sentence"><span id=":try"><span
+								class="texttt"><span class="keyword">try</span></span></span></div>
+				</div>
+			</td>
+		</tr>
+		<tr id="tab:lex.key-row-3">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-3-column-1-sentence-1" class="sentence"><span id=":asm"><span
+								class="texttt"><span class="keyword">asm</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-3-column-2-sentence-1" class="sentence"><span id=":continue"><span
+								class="texttt"><span class="keyword">continue</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-3-column-3-sentence-1" class="sentence"><span id=":for"><span
+								class="texttt"><span class="keyword">for</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-3-column-4-sentence-1" class="sentence"><span
+							id=":reinterpret_cast"><span class="texttt"><span class="keyword">reinterpret_<span
+										class="shy"></span>cast</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-3-column-5-sentence-1" class="sentence"><span id=":typedef"><span
+								class="texttt"><span class="keyword">typedef</span></span></span></div>
+				</div>
+			</td>
+		</tr>
+		<tr id="tab:lex.key-row-4">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-4-column-1-sentence-1" class="sentence"><span id=":auto"><span
+								class="texttt"><span class="keyword">auto</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-4-column-2-sentence-1" class="sentence"><span id=":co_await"><span
+								class="texttt"><span class="keyword">co_<span
+										class="shy"></span>await</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-4-column-3-sentence-1" class="sentence"><span id=":friend"><span
+								class="texttt"><span class="keyword">friend</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-4-column-4-sentence-1" class="sentence"><span id=":requires"><span
+								class="texttt"><span class="keyword">requires</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-4-column-5-sentence-1" class="sentence"><span id=":typeid"><span
+								class="texttt"><span class="keyword">typeid</span></span></span></div>
+				</div>
+			</td>
+		</tr>
+		<tr id="tab:lex.key-row-5">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-5-column-1-sentence-1" class="sentence"><span id=":bool"><span
+								class="texttt"><span class="keyword">bool</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-5-column-2-sentence-1" class="sentence"><span id=":co_return"><span
+								class="texttt"><span class="keyword">co_<span
+										class="shy"></span>return</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-5-column-3-sentence-1" class="sentence"><span id=":goto"><span
+								class="texttt"><span class="keyword">goto</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-5-column-4-sentence-1" class="sentence"><span id=":return"><span
+								class="texttt"><span class="keyword">return</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-5-column-5-sentence-1" class="sentence"><span id=":typename"><span
+								class="texttt"><span class="keyword">typename</span></span></span></div>
+				</div>
+			</td>
+		</tr>
+		<tr id="tab:lex.key-row-6">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-6-column-1-sentence-1" class="sentence"><span id=":break"><span
+								class="texttt"><span class="keyword">break</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-6-column-2-sentence-1" class="sentence"><span id=":co_yield"><span
+								class="texttt"><span class="keyword">co_<span
+										class="shy"></span>yield</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-6-column-3-sentence-1" class="sentence"><span id=":if"><span
+								class="texttt"><span class="keyword">if</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-6-column-4-sentence-1" class="sentence"><span id=":short"><span
+								class="texttt"><span class="keyword">short</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-6-column-5-sentence-1" class="sentence"><span id=":typeof"><span
+								class="texttt"><span class="keyword"><ins>typeof</ins></span></span></span></div>
+				</div>
+			</td>
+		</tr>
+		<tr id="tab:lex.key-row-7">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-7-column-1-sentence-1" class="sentence"><span id=":case"><span
+								class="texttt"><span class="keyword">case</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-7-column-2-sentence-1" class="sentence"><span id=":decltype"><span
+								class="texttt"><span class="keyword">decltype</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-7-column-3-sentence-1" class="sentence"><span id=":inline"><span
+								class="texttt"><span class="keyword">inline</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-7-column-4-sentence-1" class="sentence"><span id=":signed"><span
+								class="texttt"><span class="keyword">signed</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-7-column-5-sentence-1" class="sentence"><span id=":typeof_unqual"><span
+								class="texttt"><span class="keyword"><ins>typeof_unqual</ins></span></span></span></div>
+				</div>
+			</td>
+		</tr>
+		<tr id="tab:lex.key-row-8">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-8-column-1-sentence-1" class="sentence"><span id=":catch"><span
+								class="texttt"><span class="keyword">catch</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-8-column-2-sentence-1" class="sentence"><span id=":default"><span
+								class="texttt"><span class="keyword">default</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-8-column-3-sentence-1" class="sentence"><span id=":int"><span
+								class="texttt"><span class="keyword">int</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-8-column-4-sentence-1" class="sentence"><span id=":sizeof"><span
+								class="texttt"><span class="keyword">sizeof</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-8-column-5-sentence-1" class="sentence"><span id=":…"><span
+								class="texttt"><span class="keyword">…</span></span></span></div>
+				</div>
+			</td>
+		</tr>
+		<tr id="tab:lex.key-row-9">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-9-column-1-sentence-1" class="sentence"><span id=":char"><span
+								class="texttt"><span class="keyword">char</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-9-column-2-sentence-1" class="sentence"><span id=":delete"><span
+								class="texttt"><span class="keyword">delete</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-9-column-3-sentence-1" class="sentence"><span id=":long"><span
+								class="texttt"><span class="keyword">long</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-9-column-4-sentence-1" class="sentence"><span id=":static"><span
+								class="texttt"><span class="keyword">static</span></span></span></div>
+				</div>
+			</td>
+		</tr>
+		<tr id="tab:lex.key-row-10">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-10-column-1-sentence-1" class="sentence"><span id=":char8_t"><span
+								class="texttt"><span class="keyword">char8_<span
+										class="shy"></span>t</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-10-column-2-sentence-1" class="sentence"><span id=":do"><span
+								class="texttt"><span class="keyword">do</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-10-column-3-sentence-1" class="sentence"><span id=":mutable"><span
+								class="texttt"><span class="keyword">mutable</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-10-column-4-sentence-1" class="sentence"><span
+							id=":static_assert"><span class="texttt"><span class="keyword">static_<span
+										class="shy"></span>assert</span></span></span></div>
+				</div>
+			</td>
+		</tr>
+		<tr id="tab:lex.key-row-11">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-11-column-1-sentence-1" class="sentence"><span id=":char16_t"><span
+								class="texttt"><span class="keyword">char16_<span
+										class="shy"></span>t</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-11-column-2-sentence-1" class="sentence"><span id=":double"><span
+								class="texttt"><span class="keyword">double</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-11-column-3-sentence-1" class="sentence"><span id=":namespace"><span
+								class="texttt"><span class="keyword">namespace</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-11-column-4-sentence-1" class="sentence"><span id=":static_cast"><span
+								class="texttt"><span class="keyword">static_<span
+										class="shy"></span>cast</span></span></span></div>
+				</div>
+			</td>
+		</tr>
+		<tr id="tab:lex.key-row-12">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-12-column-1-sentence-1" class="sentence"><span id=":char32_t"><span
+								class="texttt"><span class="keyword">char32_<span
+										class="shy"></span>t</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-12-column-2-sentence-1" class="sentence"><span
+							id=":dynamic_cast"><span class="texttt"><span class="keyword">dynamic_<span
+										class="shy"></span>cast</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-12-column-3-sentence-1" class="sentence"><span id=":new"><span
+								class="texttt"><span class="keyword">new</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-12-column-4-sentence-1" class="sentence"><span id=":struct"><span
+								class="texttt"><span class="keyword">struct</span></span></span></div>
+				</div>
+			</td>
+		</tr>
+		<tr id="tab:lex.key-row-13">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-13-column-1-sentence-1" class="sentence"><span id=":class"><span
+								class="texttt"><span class="keyword">class</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-13-column-2-sentence-1" class="sentence"><span id=":else"><span
+								class="texttt"><span class="keyword">else</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-13-column-3-sentence-1" class="sentence"><span id=":noexcept"><span
+								class="texttt"><span class="keyword">noexcept</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-13-column-4-sentence-1" class="sentence"><span id=":switch"><span
+								class="texttt"><span class="keyword">switch</span></span></span></div>
+				</div>
+			</td>
+		</tr>
+		<tr id="tab:lex.key-row-14">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-14-column-1-sentence-1" class="sentence"><span id=":concept"><span
+								class="texttt"><span class="keyword">concept</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-14-column-2-sentence-1" class="sentence"><span id=":enum"><span
+								class="texttt"><span class="keyword">enum</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-14-column-3-sentence-1" class="sentence"><span id=":nullptr"><span
+								class="texttt"><span class="literal">nullptr</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-14-column-4-sentence-1" class="sentence"><span id=":template"><span
+								class="texttt"><span class="keyword">template</span></span></span></div>
+				</div>
+			</td>
+			<td class="empty left"></td>
+		</tr>
+		<tr id="tab:lex.key-row-15">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-15-column-1-sentence-1" class="sentence"><span id=":const"><span
+								class="texttt"><span class="keyword">const</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-15-column-2-sentence-1" class="sentence"><span id=":explicit"><span
+								class="texttt"><span class="keyword">explicit</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-15-column-3-sentence-1" class="sentence"><span id=":operator"><span
+								class="texttt"><span class="keyword">operator</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-15-column-4-sentence-1" class="sentence"><span id=":this"><span
+								class="texttt"><span class="keyword">this</span></span></span></div>
+				</div>
+			</td>
+			<td class="empty left"></td>
+		</tr>
+		<tr id="tab:lex.key-row-16">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-16-column-1-sentence-1" class="sentence"><span id=":consteval"><span
+								class="texttt"><span class="keyword">consteval</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-16-column-2-sentence-1" class="sentence"><span id=":export"><span
+								class="texttt"><span class="keyword">export</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-16-column-3-sentence-1" class="sentence"><span id=":private"><span
+								class="texttt"><span class="keyword">private</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-16-column-4-sentence-1" class="sentence"><span
+							id=":thread_local"><span class="texttt"><span class="keyword">thread_<span
+										class="shy"></span>local</span></span></span></div>
+				</div>
+			</td>
+			<td class="empty left"></td>
+		</tr>
+		<tr id="tab:lex.key-row-17">
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-17-column-1-sentence-1" class="sentence"><span id=":constexpr"><span
+								class="texttt"><span class="keyword">constexpr</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-17-column-2-sentence-1" class="sentence"><span id=":extern"><span
+								class="texttt"><span class="keyword">extern</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-17-column-3-sentence-1" class="sentence"><span id=":protected"><span
+								class="texttt"><span class="keyword">protected</span></span></span></div>
+				</div>
+			</td>
+			<td class="left">
+				<div class="texpara">
+					<div id="tab:lex.key-row-17-column-4-sentence-1" class="sentence"><span id=":throw"><span
+								class="texttt"><span class="keyword">throw</span></span></span></div>
+				</div>
+			</td>
+			<td class="empty left"></td>
+		</tr>
+	</tbody>
+</table>
+
+</div>
+</blockquote>
+
+
+### Modify "Decltype specifiers" [<a href="https://eel.is/c++draft/dcl.type.decltype">dcl.type.decltype</a>] ### {#wording-language-dcl.type.decltype}
+
+<blockquote>
+<div class="wording-section">
+
+<div id="dcl.type.decltype" class="wording-section-header">
+<span class="wording-clause-number">9.2.9.5</span>
+<span class="wording-clause-title">Decltype specifiers</span>
+<span class="wording-clause-stable-tag">[<b>dcl.type.decltype</b>]</span>
+</div>
+
+*decltype-specifier*:
+:: `decltype` `(` *expression* `)`
+:: <ins>`typeof` `(` *expression* `)`</ins>
+:: <ins>`typeof` `(` *type-id* `)`</ins>
+:: <ins>`typeof_unqual` `(` *expression* `)`</ins>
+:: <ins>`typeof_unqual` `(` *type-id* `)`</ins>
+
+<div class="wording-numbered">
+
+For an `expression` *E*, the type denoted by `decltype(E)` is defined as follows:
+
+<div class="wording-numbered-list">
+<ul>
+	<li>if E is an unparenthesized *id-expression* naming a structured binding ([[dcl.struct.bind](http://eel.is/c++draft/dcl.struct.bind)]), `decltype(E)` is the referenced type as given in the specification of the structured binding declaration;</li>
+	<li>otherwise, if *E* is an unparenthesized *id-expression* naming a non-type template-parameter ([[temp.param](http://eel.is/c++draft/temp.param)]), `decltype(E)` is the type of the template-parameter after performing any necessary type deduction ([[dcl.spec.auto](http://eel.is/c++draft/dcl.spec.auto)], [[dcl.type.class.deduct](http://eel.is/c++draft/dcl.type.class.deduct)]);</li>
+	<li>otherwise, if *E* is an unparenthesized *id-expression* or an unparenthesized class member access ([[expr.ref](http://eel.is/c++draft/expr.ref)]), `decltype(E)` is the type of the entity named by *E*.</li>
+	If there is no such entity, the program is ill-formed;</li>
+	<li>otherwise, if *E* is an xvalue, `decltype(E)` is `T&&`, where `T` is the type of *E*;</li>
+	<li>otherwise, if *E* is an lvalue, `decltype(E)` is `T&`, where `T` is the type of *E*;</li>
+	<li>otherwise, `decltype(E)` is the type of *E*.</li>
+</ul>
+</div>
+
+The operand of the `decltype`<ins>, `typeof`, or `typeof_unqual`</ins> specifier is an unevaluated operand.
+
+</div>
+
+<div>
+…
+</div>
+
+
+<div class="wording-newnumbered wording-numbered-3">
+<ins>
+
+For an expression *E*, the type denoted by `typeof(E)` is formed by removing reference qualifiers, if any, from the type denoted by `decltype(E)`. The type denoted by `typeof_unqual(E)` is formed by removing reference qualifiers, if any, as well as top-level cv-qualifiers from the type denoted by `decltype(E)`.
+</ins>
+</div>
+
+<div class="wording-newnumbered">
+<ins>
+
+For a *type-id* `T`, the type denoted by `typeof(T)` is formed by removing reference qualifiers, if any, from `T`. The type denoted by `typeof_unqual(T)` is formed by removing reference qualifiers, if any, as well as top-level cv-qualifiers from `T`.
+</ins>
+</div>
+
+</div>
+</blockquote>
+
+
+### Modify `decltype` mention in Template Deduction's General Clause [<a href="http://eel.is/c++draft/temp.deduct.general">temp.deduct.general</a>] to include `typeof` and `typeof_unqual` ### {#wording-language-temp.deduct.general}
+
+<blockquote>
+<div class="wording-section">
+
+<div id="temp.deduct.general" class="wording-section-header">
+<span class="wording-clause-number">13.10.3.1</span>
+<span class="wording-clause-title">General</span>
+<span class="wording-clause-stable-tag">[<b>temp.deduct.general</b>]</span>
+</div>
+
+<div>
+…
+</div>
+
+<div class="wording-numbered wording-numbered-6">
+
+The deduction substitution loci are
+
+<div class="wording-numbered-list">
+<ul>
+	<li>the function type outside of the *noexcept-specifier*,</li>
+	<li>the *explicit-specifier*, and</li>
+	<li>the template parameter declarations.</li>
+</ul>
+</div>
+
+The substitution occurs in all types and expressions that are used in the deduction substitution loci.
+The expressions include not only constant expressions such as those that appear in array bounds or as nontype template arguments but also general expressions (i.e., non-constant expressions) inside `sizeof`, `decltype`,<ins>`typeof`, `typeof_unequal`,</ins> and other contexts that allow non-constant expressions. The substitution proceeds in lexical order and stops when a condition that causes deduction to fail is encountered. If substitution into different declarations of the same function template would cause template instantiations to occur in a different order or not at all, the program is ill-formed; no diagnostic required.
+</div>
+
+<div>
+…
+</div>
+
+</div>
+</blockquote>
+
+<pre class=biblio>
+{
+	"n1978": {
+		"title": "N1978 - Decltype (revision 5)",
+		"authors": [
+			"Jakko Järvi",
+			"Bjarne Stroustrup",
+			"Gabriel Dos Reis"
+		],
+		"href": "https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2006/n1978.pdf",
+		"publisher": "ISO/IEC JTC1 SC22 WG21 - Programming Language, C++",
+		"date": "April 24th, 2006"
+	},
+	"n2343": {
+		"title": "N2343 - Decltype (revision 7)",
+		"authors": [
+			"Jakko Järvi",
+			"Bjarne Stroustrup",
+			"Gabriel Dos Reis"
+		],
+		"href": "https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2007/n2343.pdf",
+		"publisher": "ISO/IEC JTC1 SC22 WG21 - Programming Language, C++",
+		"date": "July 18th, 2007"
+	},
+	"n2927": {
+		"title": "N2927 - Not-so-magic - typeof for C",
+		"authors": [
+			"JeanHeyd Meneide",
+			"Shepherd's Oasis, LLC"
+		],
+		"href": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2927.htm",
+		"publisher": "ISO/IEC JTC1 SC22 WG14 - Programming Language, C",
+		"date": "July 18th, 2007"
+	}
+	
+}
+</pre>
