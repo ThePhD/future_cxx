@@ -1,7 +1,7 @@
 <pre class='metadata'>
 Title: Integer Constant Expression Initialized const Integer Declarations are Implicitly constexpr
 H1: Integer Constant Expression-Initialized <code>const</code> Integer Declarations are Implicitly <code>constexpr</code>
-Shortname: XXXX
+Shortname: XXX1
 Revision: 0
 !Previous Revisions: None
 Status: P
@@ -18,7 +18,7 @@ Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
 Metadata Order: Previous Revisions, Editor, Latest, Paper Source, Issue Tracking, Project, Audience, Proposal Category, Target
 Markup Shorthands: markdown yes
 Toggle Diffs: no
-Abstract: Block scope <code>const</code> integer type declarations initialized with constant expressions have been a fairly important staple of C programs both large and small over the last 30 years. Attempts to make such declarations ineligible as constant expressions and e.g. force an array declared with them to be a Variable-Length Array (VLA) type failed due to overwhelming existing practice in the opposite direction. This proposal therefore swings with said opposite direction now that we have <code>constexpr</code>. It asks that such <code>const</code> integer type declarations that are both declared and initialized in the same statement are implicitly made <code>constexpr</code>, thereby fulfilling the expectations of users.  
+Abstract: <code>const</code> integer type declarations initialized with constant expressions have been a fairly important staple of C programs both large and small over the last 30 years. Attempts to make such declarations ineligible as constant expressions and e.g. force an array declared with them to be a Variable-Length Array (VLA) type failed due to overwhelming existing practice in the opposite direction. This proposal therefore swings with said opposite direction now that we have <code>constexpr</code>. It asks that such <code>const</code> integer type declarations that are both declared and initialized in the same statement are implicitly made <code>constexpr</code>, thereby fulfilling the expectations of users.  
 </pre>
 
 <pre class="include-raw">
@@ -57,7 +57,7 @@ Does this create a VLA type all the time, or is this a valid constant expression
 
 However, during National Body (NB) comment processing, an NB comment pointed out that there was a lot of code relying on the fact that this was being treated -- not just by the backend with its optimizations -- but by the frontend of many compilers to be a plain, compile-time C array. This was formalized in [n3138](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3138.pdf), which presented cases similar to the above. It also presented various other constant expressions to make it clear that there is a wide berth of existing practice beyond just MSVC, GCC, and Clang that accept many additional forms of constant expressions in many different situations. However, the array case remains of very significant impact that affects the most existing code. n3138 promised that a potential future version of C should look into the impact of changing constant expressions one way or another again.
 
-This paper introduces a change for a portion of constant expressions in the opposite direction of N2713, by asking that block scope (non-file scope) `const` integer type declarations that are also immediately initialized with an integer constant expression are implicitly declared `constexpr`.
+This paper introduces a change for a portion of constant expressions in the opposite direction of N2713, by asking that `const` integer type declarations that are also immediately initialized with an integer constant expression are implicitly declared `constexpr`.
 
 
 
@@ -74,7 +74,7 @@ Furthermore, C++ has a similar feature for all `const`-declared integer types. H
 
 # Design # {#design}
 
-The design of this feature is such that it requires a declaration that is immediately initialized. The declarations eligible for this, unlike C++, are only for block scope declarations (that is, declarations within the body of a function call). It also only applies to declarations whose *storage-class specifier* is `const` and, optionally, `static` or `auto`. (If the storage-class is already `constexpr`, then this proposal affects no change to the declaration at all.) This means that, under this proposal, of the following declarations:
+The design of this feature is such that it requires a declaration that is the first declaration of its kind, without external linkage, and is immediately initialized. It also only applies to declarations whose only qualifier is `const` and, optionally, has `static`, `auto` or `register` for its *storage-class specifiers*. (If the storage-class is already `constexpr`, then this proposal affects no change to the declaration at all.) This means that, under this proposal, of the following declarations:
 
 ```cpp
 int file_d0 = 1;
@@ -112,7 +112,7 @@ int main (int argc, char* argv[]) {
 int block_d1 = 1;
 ```
 
-A handful of these variables at block scope become `constexpr`, as indicated by the table below which explains the changes for the above code snippet:
+A handful of these declarations become `constexpr`, as indicated by the table below which explains the changes for the above code snippet:
 
 <!--- Data Source:
 | Declaration |  `constexpr` Before ? |    `constexpr` After ? | Comment                                                     |
@@ -124,7 +124,7 @@ A handful of these variables at block scope become `constexpr`, as indicated by 
 | file_d4     | ❌                    | ❌                   | no change; `_Thread_local`, non-`const`                      |
 | file_d5     | ❌                    | ❌                   | no change; `extern` implicitly                               |
 | file_d6     | ✅                    | ✅                   | no change; `constexpr` explicitly                            |
-| file_d7     | ❌                    | ❌                   | no change; file-scope `static`                               |
+| file_d7     | ❌                    | ✅                   | `static` and `const`, initialized by constant expression     |
 | block_d0    | ❌                    | ❌                   | no change; non-`const`                                       |
 | block_d1    | ❌                    | ❌                   | no change; `extern` explicitly, non-`const`                  |
 | block_d2    | ❌                    | ❌                   | no change; non-`const`, `static`                             |
@@ -147,8 +147,8 @@ A handful of these variables at block scope become `constexpr`, as indicated by 
 <thead>
 <tr>
 <th>Declaration</th>
-<th>`constexpr` Before?</th>
-<th>`constexpr` After?</th>
+<th>`constexpr` Before ?</th>
+<th>`constexpr` After ?</th>
 <th>Comment</th>
 </tr>
 </thead>
@@ -198,8 +198,8 @@ A handful of these variables at block scope become `constexpr`, as indicated by 
 <tr>
 <td>file_d7</td>
 <td>❌</td>
-<td>❌</td>
-<td>no change; file-scope `static`</td>
+<td>✅</td>
+<td>`static` and `const`, initialized by constant expression</td>
 </tr>
 <tr>
 <td>block_d0</td>
@@ -229,37 +229,37 @@ A handful of these variables at block scope become `constexpr`, as indicated by 
 <td>block_d4</td>
 <td>❌</td>
 <td>✅</td>
-<td>`const`; initialized by constant expression thus `constexpr` implicitly</td>
+<td>`const`; initialized with literal</td>
 </tr>
 <tr>
 <td>block_d5</td>
 <td>❌</td>
 <td>✅</td>
-<td>`const`; initialized by constant expression thus `constexpr` implicitly</td>
+<td>`const`; initialized with other `constexpr` variable</td>
 </tr>
 <tr>
 <td>block_d6</td>
 <td>❌</td>
 <td>✅</td>
-<td>`const`, initialized by constant expression thus `constexpr` implicitly</td>
+<td>`const`, initialized by other constant expression</td>
 </tr>
 <tr>
 <td>block_d7</td>
 <td>❌</td>
 <td>✅</td>
-<td>`static` and `const`, initialized by constant expression thus `constexpr` implicitly</td>
+<td>`static` and `const`, initialized with literal</td>
 </tr>
 <tr>
 <td>block_d8</td>
 <td>❌</td>
 <td>❌</td>
-<td>no change; initializer is non-constant expression</td>
+<td>no change; non-constant expression initializer</td>
 </tr>
 <tr>
 <td>block_d9</td>
 <td>❌</td>
 <td>✅</td>
-<td>`static` and `const`, initialized by constant expression thus `constexpr` implicitly</td>
+<td>`static` and `const`, initialized by constant expression</td>
 </tr>
 <tr>
 <td>block_d10</td>
@@ -277,19 +277,19 @@ A handful of these variables at block scope become `constexpr`, as indicated by 
 <td>block_d12</td>
 <td>❌</td>
 <td>❌</td>
-<td>no change; non-`const`, initializer is non-constant expression</td>
+<td>no change; non-`const`, non-constant expression initializer</td>
 </tr>
 <tr>
 <td>block_d13</td>
 <td>❌</td>
 <td>❌</td>
-<td>no change; initializer is non-constant expression</td>
+<td>no change; non-constant expression initializer</td>
 </tr>
 <tr>
 <td>block_d14</td>
 <td>❌</td>
 <td>❌</td>
-<td>no change; initializer is non-constant expression</td>
+<td>no change; non-constant expression initializer</td>
 </tr>
 <tr>
 <td>block_d15</td>
@@ -304,32 +304,17 @@ This matches the existing practice that occurs today.
 
 
 
-## What about the `static` Declarations? ## {#design-static}
-
-`static` implies internal linkage at file scope. At block scope, however, it makes the declaration is a "global" of sorts (albeit one still with internal linkage). This means that, since it would not impact or change any semantics in an untoward manner, this proposal could also promote `static const` (with no other storage-class specifiers) variables at block-scope to have this feature. This proposal therefore commits to such a change.
-
-This cannot be done at file-scope because file-scope variables can have their linkages rewritten or changed in unpredictable ways by existing compilers. For example, this program marks a `static const` file-scope `int` type variable definition, after its declarations and initialization, as `extern`, and produces no warnings:
-
-```cpp
-static const int x = 1;
-extern const int x;
-
-int main(){
-	return x;
-}
-```
-
-(See it live [here](https://godbolt.org/z/j8rPMT44n) under strict compilation settings for GCC and Clang.) While we personally cannot attest to the required visibility of specific linkers symbols or otherwise in the final executable / library, we cannot rule out that this may be used in the wild as it is currently accepted by existing compilers and the symbol name may be reachable with default-compiled programs. It may represent values that can be logically "read only" at execution time, but manipulated at e.g. link-time and after `constexpr`/compile-time.
-
-Furthermore, C++ allows for the above to be used at compile-time with e.g. `static_assert(x == 1, "👍")`. We have no idea what this would mean if this became a potentially link-time overridden read-only value, and how that would impact the evaluation according to the semantics of the abstract machine.
-
-For all the aforementioned reasons, file-scope statics are not included in this proposal. If there is clarity that can be provided around these semantics, a future proposal should look into expanding the rights of their proposal where applicable.
-
-
-
 ## What if Someone Takes the Address of a `const` Declaration that has been Promoted to `constexpr`? ## {#design-address.of}
 
 This is fine. Naked `constexpr` variables are already implicitly `const`, and taking the address of one produces an `int const*` consistent with having a pointer to a variable that cannot be modified. A compiler may be robbed of a constant expression optimization (e.g., doing literal computation replacement and removing the existence of the variable inside of the program) by such a move, but it is fine and behaves perfectly in-line with the expected semantics of having a `const` integer. Modification of such an object by casting away its `const`-ness is, as it is throughout the C standard, Undefined Behavior and it should not be done. If it is done, the same rules apply as ever; undefined behavior. This proposal does not change anything in the way these values were being used to-date in either C or C++.
+
+
+
+## Why Not More Than Integer Types? ## {#design-integers}
+
+We limit this proposal to integer types because that is the widest-spread existing practice and easiest to compute. `constexpr` serves as not just a marker, but as a way to let an implementation know that no matter how complex the initializer or its contained expressions become, it must be evaluated at compile-time. This represents a contract between the user and the compiler, and also serves as a courtesy so that the compiler can be appropriate prepared when processing the declaration.
+
+Conversely, this is an implicit promotion. To ensure compilers are not unduly burdened, we capture what is already existing practice on the vast majority of existing compilers: integer types. If, in the future, implementations process many more declarations at compile-time, then such expansions can be made easily.
 
 
 
@@ -355,16 +340,19 @@ A declaration such that the declaration specifiers contain no type specifier or 
 <div class="wording-newnumbered wording-newnumbered-13">
 <ins>
 
-If a declaration with the second form of an init declarator (a declarator with an equal sign `=` and an initializer) meets the following criteria:
+If one of a declaration's init declarator matches the second form (a declarator followed by an equal sign `=` and an initializer) meets the following criteria:
 
-:: — it is declared with the `const` storage class specifier (6.7.1) and has no other storage-class specifiers except `static` or `auto`;
-:: — its type is an integer type;
-:: — it is at block scope;
-:: — and, its initializer is an integer constant expression;
+:: — it is the first visible declaration of the identifier;
+:: — it contains no other storage-class specifiers except `static`, `auto`, or `register`;
+:: — it does not declare the identifier with external linkage;
+:: — its type is an integer type, is `const`-qualified but not otherwise qualified, and is non-atomic;
+:: — and, its initializer is an integer constant expression (6.6);
 
-then that declaration's storage-class specifiers will implicitly include `constexpr` and such integer type declarations will be suitable for use as integer constant expressions.
+then it behaves as if a `constexpr` storage-class specifier is implicitly added. The declared identifier is then a named constant and is valid in all contexts where a named constant of the corresponding type is valid to form a constant expression of that specific kind (6.6).
 </ins>
 </div>
+
+
 
 </div>
 </blockquote>
