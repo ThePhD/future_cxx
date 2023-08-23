@@ -1,10 +1,10 @@
 <pre class='metadata'>
 Title: Transparent Aliases
-Shortname: 2970
-Revision: 2
-!Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2901.htm">N2901 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2729.htm">N2729 (r0)</a>
+Shortname: XXX2
+Revision: 3
+!Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2970.htm">N2970 (r2)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2901.htm">N2901 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2729.htm">N2729 (r0)</a>
 Status: P
-Date: 2022-06-17
+Date: 2023-08-23
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y/C3a
@@ -34,6 +34,12 @@ path: resources/css/bikeshed-color-fix.html
 
 
 # Changelog # {#changelog}
+
+
+
+## Revision 3 - August 22<sup>md</sup>, 2023 ## {#changelog-r3}
+
+- Completely clean up redeclarations and other interactions.
 
 
 
@@ -225,41 +231,41 @@ void function_decl(void) __attribute__ ((alias ("__real_function")));
 
 This code will set up `function_decl` to match the address of `__real_function`. It is common implementation practice amongst compilers that are GCC-compatible and that focus on binary size reduction and macro-less, transparent, zero-cost indirection. It has the small caveat that it requires the target of the attribute to be fully defined before this happens, so it can definitively insert the address. For example, here is documentation from the Keil's armcc compiler ([[keil-attribute]]):
 
-> ```cpp
-> static int oldname(int x, int y) {
->      return x + y;
-> }
-> static int newname(int x, int y) __attribute__((alias("oldname")));
-> int caller(int x, int y) {
->      return oldname(x,y) + newname(x,y);
-> }
-> ```
-> 
-> This code compiles to:
-> 
-> ```cpp
-> AREA ||.text||, CODE, READONLY, ALIGN=2
-> newname                  ; Alternate entry point
-> oldname PROC
->      MOV      r2,r0
->      ADD      r0,r2,r1
->      BX       lr
->      ENDP
-> caller PROC
->      PUSH     {r4,r5,lr}
->      MOV      r3,r0
->      MOV      r4,r1
->      MOV      r1,r4
->      MOV      r0,r3
->      BL       oldname
->      MOV      r5,r0
->      MOV      r1,r4
->      MOV      r0,r3
->      BL       oldname
->      ADD      r0,r0,r5
->      POP      {r4,r5,pc}
->      ENDP
-> ```
+```cpp
+static int oldname(int x, int y) {
+	return x + y;
+}
+static int newname(int x, int y) __attribute__((alias("oldname")));
+int caller(int x, int y) {
+	turn oldname(x,y) + newname(x,y);
+}
+```
+
+This code compiles to:
+
+```cpp
+AREA ||.text||, CODE, READONLY, ALIGN=2
+newname                  ; Alternate entry point
+oldname PROC
+	MOV      r2,r0
+	ADD      r0,r2,r1
+	BX       lr
+	ENDP
+caller PROC
+	PUSH     {r4,r5,lr}
+	MOV      r3,r0
+	MOV      r4,r1
+	MOV      r1,r4
+	MOV      r0,r3
+	BL       oldname
+	MOV      r5,r0
+	MOV      r1,r4
+	MOV      r0,r3
+	BL       oldname
+	ADD      r0,r0,r5
+	POP      {r4,r5,pc}
+	ENDP
+```
 
 There are many compilers which implement exactly this behavior with exactly this GCC-extension syntax such as Oracle's C Compiler, the Intel C Compiler, the Tiny C Compiler, and Clang ([[oracle-attribute]], [[intel-attribute]]). Clang also features its own `asm`-style attribute, where the function's name is "mangled" to exactly the name given ([[clang-attribute]]). Microsoft Visual C uses a (slightly more complex) stateful pragma mechanisms and external compiler markup ([[msvc-attribute]]).
 
@@ -313,10 +319,10 @@ The test suite also outputs a version number while doing a comparison test. A ne
 #include <stdio.h>
 
 int main() {
-  intmax_t abi_is_hard = -(intmax_t)sizeof(intmax_t);
-  intmax_t but_not_that_hard = maxabs(abi_is_hard);
-  printf("%d\n", my_libc_magic_number());
-  return ((int)(but_not_that_hard) == sizeof(intmax_t)) ? 0 : 1;
+	intmax_t abi_is_hard = -(intmax_t)sizeof(intmax_t);
+	intmax_t but_not_that_hard = maxabs(abi_is_hard);
+	printf("%d\n", my_libc_magic_number());
+	return ((int)(but_not_that_hard) == sizeof(intmax_t)) ? 0 : 1;
 }
 ```
 
@@ -740,7 +746,7 @@ Constraints
 </div>
 <div class="wording-numbered">
 
-A transparent alias target shall be a preceding and visible identifier. A transparent alias being redeclared shall refer to the same target identifier as in its defintion<sup>FN0✨</sup> and the type of that identifier shall be compatible with all visible declarations of the declared transparent alias.
+A transparent alias target shall be a preceding and visible identifier. A transparent alias being redeclared shall refer to the same object or function as in its definition<sup>FN0✨)</sup> and the type of that identifier shall be compatible with all visible declarations of the declared transparent alias.
 </div>
 
 <div class="wording-clause-section-title">
@@ -768,118 +774,118 @@ The optional attribute specifier sequence before the **ALIAS-TOKEN** appertains 
 
 **EXAMPLE 1** The following program contains no constraint violations and does not call `abort`:
 
-> ```cpp
-> #include <assert.h>
->
-> void do_work(void);
-> void take_nap(void);
-> 
-> ALIAS-TOKEN work_alias = do_work;
-> ALIAS-TOKEN nap_alias = take_nap;
-> ALIAS-TOKEN alias_of_work_alias = work_alias;
-> ALIAS-TOKEN alias_of_nap_alias = nap_alias;
-> 
-> int main () {
-> 	assert(&do_work == &work_alias);
-> 	assert(&do_work == &alias_of_work_alias);
-> 	assert(&work_alias == &alias_of_work_alias);
-> 
-> 	assert(&take_nap == &nap_alias);
-> 	assert(&take_nap == &alias_of_nap_alias);
-> 	assert(&nap_alias == &alias_of_nap_alias);
-> 
-> 	assert(&take_nap != &work_alias);
-> 	assert(&do_work != &alias_of_nap_alias);
-> 
-> 	ALIAS-TOKEN local_work_alias = alias_of_work_alias;
-> 	assert(&local_work_alias == &alias_of_work_alias);
-> 
-> 	do_work();
-> 	work_alias(); // calls do_work
-> 	alias_of_work_alias(); // calls do_work
-> 	local_work_alias(); // calls do_work
-> 
-> 	take_nap();
-> 	nap_alias(); // calls take_nap
-> 	alias_of_nap_alias(); // calls take_nap
-> 
-> 	return 0;
-> }
-> ```
+```cpp
+#include <assert.h>
+
+void do_work(void);
+void take_nap(void);
+
+ALIAS-TOKEN work_alias = do_work;
+ALIAS-TOKEN nap_alias = take_nap;
+ALIAS-TOKEN alias_of_work_alias = work_alias;
+ALIAS-TOKEN alias_of_nap_alias = nap_alias;
+
+int main () {
+	assert(&do_work == &work_alias);
+	assert(&do_work == &alias_of_work_alias);
+	assert(&work_alias == &alias_of_work_alias);
+
+	assert(&take_nap == &nap_alias);
+	assert(&take_nap == &alias_of_nap_alias);
+	assert(&nap_alias == &alias_of_nap_alias);
+
+	assert(&take_nap != &work_alias);
+	assert(&do_work != &alias_of_nap_alias);
+
+	ALIAS-TOKEN local_work_alias = alias_of_work_alias;
+	assert(&local_work_alias == &alias_of_work_alias);
+
+	do_work();
+	work_alias(); // calls do_work
+	alias_of_work_alias(); // calls do_work
+	local_work_alias(); // calls do_work
+
+	take_nap();
+	nap_alias(); // calls take_nap
+	alias_of_nap_alias(); // calls take_nap
+
+	return 0;
+}
+```
 
 </div>
 <div class="wording-numbered">
 
 **EXAMPLE 2** Valid redeclarations:
 
-> ```cpp
-> int zzz(int requested_sleep_time);
-> 
-> ALIAS-TOKEN sleep_alias = zzz;
-> ALIAS-TOKEN sleep_alias = sleep_alias;
-> ALIAS-TOKEN sleep_alias_alias = zzz;
-> ALIAS-TOKEN sleep_alias = sleep_alias_alias;
->
-> void func(void);
-> int main () {
-> 	// Inner scope: no constraint violation
-> 	_Alias func = func;
-> }
-> ```
+```cpp
+int zzz(int requested_sleep_time);
+
+ALIAS-TOKEN sleep_alias = zzz;
+ALIAS-TOKEN sleep_alias = sleep_alias;
+ALIAS-TOKEN sleep_alias_alias = zzz;
+ALIAS-TOKEN sleep_alias = sleep_alias_alias;
+
+void func(void);
+int main () {
+	// Inner scope: no constraint violation
+	_Alias func = func;
+}
+```
 </div>
 
 <div class="wording-numbered">
 
 **EXAMPLE 3** Invalid redeclarations:
 
-> ```cpp
-> int zzz(int requested_sleep_time);
-> int truncated_zzz(int requested_sleep_time);
-> 
-> ALIAS-TOKEN sleep_alias = sleep_alias; // constraint violation: sleep_alias does
->                                        // not exist until the
->                                        // semicolon is reached
-> ALIAS-TOKEN zzz = truncated_zzz; // constraint violation: cannot hide
->                                  // existing declaration
-> ALIAS-TOKEN truncated_zzz = truncated_zzz; // constraint violation: cannot change 
->                                            // function declaration
->                                            // to transparent alias
-> 
-> ALIAS-TOKEN valid_sleep_alias = zzz;
-> double valid_sleep_alias(double requested_sleep_time); // constraint violation:
->                                                        // redeclaring a
->                                                        // transparent alias with
->                                                        // non-compatible type
-> ```
+```cpp
+int zzz(int requested_sleep_time);
+int truncated_zzz(int requested_sleep_time);
+
+ALIAS-TOKEN sleep_alias = sleep_alias; // constraint violation: sleep_alias does
+	                               // not exist until the
+	                               // semicolon is reached
+ALIAS-TOKEN zzz = truncated_zzz; // constraint violation: cannot hide
+	                         // existing declaration
+ALIAS-TOKEN truncated_zzz = truncated_zzz; // constraint violation: cannot change 
+	                                   // function declaration
+	                                   // to transparent alias
+
+ALIAS-TOKEN valid_sleep_alias = zzz;
+double valid_sleep_alias(double requested_sleep_time); // constraint violation:
+	                                               // redeclaring a
+	                                               // transparent alias with
+	                                               // non-compatible type
+```
 </div>
 
 <div class="wording-numbered">
 
 **EXAMPLE 4** An alias can be redeclared as either an alias or a function declaration so long as it is compatible:
 
-> ```cpp
-> double purr(void) { return 1.0; }
-> ALIAS-TOKEN meow = purr;
-> double meow(void); // compatible redeclaration, still calls "purr"
-> ALIAS-TOKEN meow = purr; // compatible redeclaration
->
-> int main () {
-> 	double x = meow(); // calls purr
-> 	return (int)(v); // returns 1
-> }
-> ```
+```cpp
+double purr(void) { return 1.0; }
+ALIAS-TOKEN meow = purr;
+double meow(void); // compatible redeclaration, still calls "purr"
+ALIAS-TOKEN meow = purr; // compatible redeclaration
+
+int main () {
+	double x = meow(); // calls purr
+	return (int)(v); // returns 1
+}
+```
 </div>
 
 <div class="wording-numbered">
 
 **EXAMPLE 5** Compatible and completed types through aliases:
 
-> ```cpp
-> void otter(int (*)[]);
-> ALIAS-TOKEN water_noodle = otter;
-> void otter(int (*)[2]);
-> // water_noodle has type void (int (*)[2])
-> ```
+```cpp
+void otter(int (*)[]);
+ALIAS-TOKEN water_noodle = otter;
+void otter(int (*)[2]);
+// water_noodle has type void (int (*)[2])
+```
 
 </div>
 
@@ -887,22 +893,22 @@ The optional attribute specifier sequence before the **ALIAS-TOKEN** appertains 
 
 **EXAMPLE 6** Shadowing and compatible types through aliases:
 
-> ```cpp
-> void cookie(int (*)[2]);
-> 
-> int main () {
-> 	ALIAS-TOKEN biscuit = cookie;
-> 	{
-> 		int cookie; // Shadow outer declaration.
-> 		{
-> 			void cookie(int (*)[]);
-> 			// biscuit has type void (int (*)[2])
-> 			// due to shadowing
-> 		}
-> 	}
-> 	return 0;
-> }
-> ```
+```cpp
+void cookie(int (*)[2]);
+
+int main () {
+	ALIAS-TOKEN biscuit = cookie;
+	{
+		int cookie; // Shadow outer declaration.
+		{
+			void cookie(int (*)[]);
+			// biscuit has type void (int (*)[2])
+			// due to shadowing
+		}
+	}
+	return 0;
+}
+```
 
 </div>
 
@@ -910,23 +916,23 @@ The optional attribute specifier sequence before the **ALIAS-TOKEN** appertains 
 
 **EXAMPLE 7** Composite and compatible types through aliases:
 
-> ```cpp
-> void otter(int (*)[], int (*)[2]);
-> int main () {
-> 	ALIAS-TOKEN water_sausage = otter;
-> 	{
-> 		void otter(int (*)[2], int (*)[]);
-> 		// water_sausage and otter have
-> 		// composite type void (int (*)[2], int (*)[2])
-> 	}
-> }
-> ```
+```cpp
+void otter(int (*)[], int (*)[2]);
+int main () {
+	ALIAS-TOKEN water_sausage = otter;
+	{
+		void otter(int (*)[2], int (*)[]);
+		// water_sausage and otter have
+		// composite type void (int (*)[2], int (*)[2])
+	}
+}
+```
 
 </div>
 
 <div class="wording-numbered">
 
-**EXAMPLE 8** Composite and compatible types through aliases:
+**EXAMPLE 8** Equivalence of object and address through an alias:
 
 ```cpp
 int f (int value) { return value + value; }
@@ -944,10 +950,12 @@ int main () {
 
 <div class="wording-numbered">
 
-**EXAMPLE 9** Composite and compatible types through aliases:
+**EXAMPLE 9** Aliasing object declarations and adding attributes to aliases:
 
 ```cpp
 #include <stdio.h>
+
+#define V0_DEPRECATED 1
 
 const char* v1_name = "treehouse.systems!";
 
@@ -966,7 +974,7 @@ int main () {
 </div>
 
 <div class="wording-footnote">
-<sup>FN0✨)</sup> <sub>If the transparent alias target points to another transparent alias, then the alias target is first resolved. The resolution occurs recursively until a function declaration is the alias target. Resolution of a transparent alias target happens before the synonym is declared or redeclared, meaning a transparent alias name may refer to itself when it is being redeclared, but not when it is first declared.</sub>
+<sup>FN0✨)</sup> <sub>If the transparent alias target points to another transparent alias, then the alias target is first resolved. The resolution occurs recursively until the function or object is the alias target. Resolution of a transparent alias target happens before the synonym is declared or redeclared, meaning a transparent alias name may refer to itself when it is being redeclared, but not when it is first declared.</sub>
 </div>
 
 <b>Recommended Practice</b>
@@ -978,24 +986,24 @@ Implementations and programs may use aliases as a way to produce stability for t
 
 **EXAMPLE 10** Versioning of a function call `imaxabs` while keeping old externally-defined function definitions available within the program.
 
-> ```cpp
-> extern intmax_t __imaxabs_32ish(__int32 value);
-> extern intmax_t __imaxabs_64ish(__int64 value);
-> extern intmax_t __imaxabs_128ish(__int128 value);
->
-> #if VER0
-> 	typedef __int32 intmax_t;
-> 	ALIAS-TOKEN imaxabs = __imaxabs_32ish;
-> #elif VER1
-> 	typedef __int64 intmax_t;
-> 	ALIAS-TOKEN imaxabs = __imaxabs_64ish;
-> #elif VER2
-> 	typedef __int128_t intmax_t;
-> 	ALIAS-TOKEN imaxabs = __imaxabs_128ish;
-> #else
-> #error "Unknown version - unable to declare imaxabs"
-> #endif
-> ```
+```cpp
+extern intmax_t __imaxabs_32ish(__int32 value);
+extern intmax_t __imaxabs_64ish(__int64 value);
+extern intmax_t __imaxabs_128ish(__int128 value);
+
+#if VER0
+	typedef __int32 intmax_t;
+	ALIAS-TOKEN imaxabs = __imaxabs_32ish;
+#elif VER1
+	typedef __int64 intmax_t;
+	ALIAS-TOKEN imaxabs = __imaxabs_64ish;
+#elif VER2
+	typedef __int128_t intmax_t;
+	ALIAS-TOKEN imaxabs = __imaxabs_128ish;
+#else
+#error "Unknown version - unable to declare imaxabs"
+#endif
+```
 </div>
 
 </div>
