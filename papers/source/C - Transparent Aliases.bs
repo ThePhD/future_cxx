@@ -39,7 +39,8 @@ path: resources/css/bikeshed-color-fix.html
 
 ## Revision 3 - August 22<sup>md</sup>, 2023 ## {#changelog-r3}
 
-- Completely clean up redeclarations and other interactions.
+- Rewrote large parts of the wording based on feedback from Joseph Myers.
+- Completely clean up redeclarations and other interactions (redeclarations of existing functions do not matter to this feature, as explained in [[#design-compatibility-redeclaration]]).
 
 
 
@@ -55,7 +56,7 @@ path: resources/css/bikeshed-color-fix.html
 
 ## Revision 1 - September 15<sup>th</sup>, 2021 ## {#changelog-r1}
 
-- Adjust motivation / explanation of `__attribute__((alias()))` and how it relates to this proposal.
+- Adjust motivation / explanation of `__attribute__((alias(…)))` and how it relates to this proposal.
 
 
 
@@ -167,11 +168,9 @@ _Alias alias_func = real_func;
 /* a function alias with an incompatible signature. */
 //void alias_func(void);
 
-/* The is fine. You can redeclare a transparent alias, so long as */
-/* the redeclaration is of compatible type. */
-/* This, in particular, solves the Standard Library's issue with */
-/* §7.1.4's permission to redeclare (Standard) Library symbols. */
-void alias_func(double d, int i);
+/* Constraint violation: */
+/* the redeclaration of an ordinary identifier into a different entity. */
+//void alias_func(double d, int i);
 
 
 /* No Constraint Violation: redeclaration of an alias pointing
@@ -184,7 +183,7 @@ _Alias alias_func = real_func;
 //_Alias alias_func = other_func;
 
 int main ([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
-	assert(&alias_func == &real_func); // no Constraint Violation
+	assert(&alias_func == &real_func); // no constraint Violation
 
 	typedef int(real_func_t)(double, int);
 	real_func_t* real_func_ptr = alias_func; // decays to function pointer of real_func
@@ -199,7 +198,6 @@ int main ([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
 	assert(real_func_ptr == &alias_func); // no constraint violation
 	assert(real_func_ptr2 == &real_func); // no constraint violation
 	assert(real_func_ptr2 == &alias_func); // no constraint violation
-	return 0;
 }
 ```
 
@@ -220,7 +218,7 @@ It also serves as a layer of indirection to the "real function", which means fun
 
 ## Inspiration: Existing Practice ## {#design-existing}
 
-It is not a coincidence in the initial example that we are using `__glibc` prefixes for the 2 `imaxabs` function calls. Tying a function to a name it does not normally "mangle" to in the linker is a common implementation technique among more advanced C Standard Library Implementations, such as musl-libc and glibc. It is also a common technique deployed in many allocators to override symbols found in downstream binary artefacts, albeit this proposal does not cover the "weak symbol" portion of the alias techniques deployed by these libraries since that is sometimes limited to specific link-time configurations, binary artefact distributions, and platform architecture.
+It is not a coincidence that, in the initial example in [[#design]], we are using `__glibc…` prefixes for the 2 `imaxabs` function calls. Tying a function to a name it does not normally "mangle" to in the linker is a common implementation technique among more advanced C Standard Library Implementations, such as musl-libc and glibc. It is also a common technique deployed in many allocators to override symbols found in downstream binary artefacts, albeit this proposal does not cover the "weak symbol" portion of the alias techniques deployed by these libraries since that is sometimes limited to specific link-time configurations, binary artefact distributions, and platform architecture.
 
 Particularly, this proposal is focusing on the existing GCC-style attribute and a Clang-style attribute. The GCC attribute ([[gcc-attribute]]) provides the behavioral inspiration (but not exactly)  for this proposal in its requirements, by effectively allowing for an existing function declaration to have its address made identical to the function it is aliasing:
 
@@ -229,7 +227,7 @@ void __real_function (void) { /* real work here... */; }
 void function_decl(void) __attribute__ ((alias ("__real_function")));
 ```
 
-This code will set up `function_decl` to match the address of `__real_function`. It is common implementation practice amongst compilers that are GCC-compatible and that focus on binary size reduction and macro-less, transparent, zero-cost indirection. It has the small caveat that it requires the target of the attribute to be fully defined before this happens, so it can definitively insert the address. For example, here is documentation from the Keil's armcc compiler ([[keil-attribute]]):
+This code will set up `function_decl` to contain an **addtional** (potentially external) entry point for the address of `__real_function`. It is common implementation practice amongst compilers that are GCC-compatible and that focus on binary size reduction and macro-less, transparent, zero-cost indirection. It has the small caveat that it requires the target of the attribute to be fully defined before this happens, so it can definitively insert the address of the new entry point. For example, here is documentation from the Keil's armcc compiler ([[keil-attribute]]):
 
 ```cpp
 static int oldname(int x, int y) {
@@ -269,7 +267,9 @@ caller PROC
 
 There are many compilers which implement exactly this behavior with exactly this GCC-extension syntax such as Oracle's C Compiler, the Intel C Compiler, the Tiny C Compiler, and Clang ([[oracle-attribute]], [[intel-attribute]]). Clang also features its own `asm`-style attribute, where the function's name is "mangled" to exactly the name given ([[clang-attribute]]). Microsoft Visual C uses a (slightly more complex) stateful pragma mechanisms and external compiler markup ([[msvc-attribute]]).
 
-Intermediate object files may still carry the name "`function_decl`", as well as an "alternate" name for the chosen functionality. This very closely matches the desired behavior: we want to create an entity that, ultimately, has no linkage and is specified in such a way that it will almost always disappear in both intermediate objects and final artefacts, wherever possible, while still providing a level of compile-time indirection. In this way this feature departs from how `alias` in GCC's attribute syntax works, but we find this departure to be worth the effort.
+Intermediate object files may still carry the name "`function_decl`", as well as an "alternate" name for the chosen functionality. This gets up fairly close to the desired behavior but not quite: we want to create an entity that, ultimately, has no linkage and is specified in such a way that it will almost always disappear in both intermediate objects and final artefacts, wherever possible, while still providing a level of compile-time indirection. In this way this feature departs from how `alias` in GCC's attribute syntax works, but we find this departure to be worth the effort.
+
+In order to clean away the minor issue of always creating a secondary external declaration that produces a "second name" in final artefacts with `__attribute__((alias(…)))` and similar, we then turn to another existing practice that does such renaming transparently, but does not require a second function declaration to map to a first one and does not always produce a secondary external name: `asm(…)` labels and `#pragma` definitions.
 
 
 
@@ -280,9 +280,9 @@ There are 3 other proofs of practice in the industry today. One was an MSVC-like
 - the function entity/entities the end-user must interact with from a given library; and,
 - valid interpretations of the directive in a world where the implementation does not produce binary artefacts.
 
-Clang's `asm(...)`, MSVC's `#pragma`-based approach, and Oracle's `#pragma redefine_extname` ([[oracle-pragma]]), are harder to standardize because each mechanism relies too heavily on the linker and the details of binary artefacts. The GCC-style attribute is tied to a front-end entity and, therefore, abstracts away binary changes as a means left to the implementation, Clang and MSVC's approaches are not tied to any entity that exists in the program in general. Export `#pragma`s and `asm(...)` attributes can be used to reference any symbol, by unchecked string, that can be resolved at any later stage of compilation (possibly during linking and code generation). There is no good way to standardize such behavior because there are no meaningful semantic constraints that can be placed on their designs that are enforceable within the boundaries of the Abstract Machine.
+Clang and GCC's `asm(...)`, MSVC's `#pragma`-based approach, and Oracle's `#pragma redefine_extname` ([[oracle-pragma]]), are harder to standardize because each mechanism relies too heavily on the linker and the details of binary artefacts. The GCC-style attribute is tied to a front-end entity and, therefore, abstracts away binary changes as a means left to the implementation, Clang and MSVC's approaches are not tied to any entity that exists in the program in general. Export `#pragma`s and `asm(...)` attributes can be used to reference any symbol, by unchecked string, that can be resolved at any later stage of compilation (possibly during linking and code generation). There is no good way to standardize such behavior because there are no meaningful semantic constraints that can be placed on their designs that are enforceable within the boundaries of the Abstract Machine.
 
-Contrast this to GCC's attribute. It **requires** that a previous, in-language definition exists. If that definition does not exist, the program has a constraint violation:
+Contrast this to GCC's alias attribute; it **requires** that a previous, in-language definition exists. If that definition does not exist, the program has a constraint violation:
 
 ```cpp
 #if 0
@@ -300,9 +300,9 @@ int main () {
 ```
 
 
-GCC's design is more suitable for Standard C, since we do not want to specify this in terms of effects on a binary artefact or "symbols". GCC's design makes no imposition on what may or may not happen to the exported symbols, only ties one entity to another in what is typically known as an implementation's "front end". Whether or not final binary artefacts do the right thing is still up to an implementation (and always will be, because the Standard cannot specify such). This gives us proper semantics without undue burden on either specification or implementation.
+`__attribute((alias(…)))`'s entity-checking constraints are more suitable for Standard C, since we do not want to specify this in terms of effects on a binary artefact or "symbols" (e.g., by using stringly-typed `asm("…")` blocks). Therefore, we gear our design to make no imposition on what may or may not happen to the exported symbols. It only ties one entity to another in what is typically known as an implementation's "front end". Whether or not final binary artefacts do the right thing is still up to an implementation (and always will be, because the Standard cannot specify such). This gives us proper semantics without undue burden on either specification or implementation.
 
-Unfortunately, GCC's definition of an alias requires that there exists a definition. We see no reason to keep that constraint as present, and therefore remove that constraint in the design of this feature.
+In short, as with `typedef`s, we want to focus on creating an entity that **has no linkage** but for functions/variables (objects).
 
 
 ### Implementation Experience ### {#design-existing-implementation}
@@ -457,7 +457,7 @@ This is a restriction that is special to C. Thankfully, we are not particularly 
 
 These are types which are controlled exclusively by the standard library and are known to change on 32-bit and 64-bit systems as well as transition based on locale and other compile-time settings. A single DLL can be distributed on a system and accommodate a variety of preprocessor-based switches or other compile-time information and allow an information to accommodate and/or upgrade a given system's symbol table (or DLL/SO's symbol table) without breaking old, original code.
 
-Nevertheless, it is a common practice to redeclare standard library symbols after they are defined by a header. While we do not touch the strong/weak declaration portion of previous existing practice, we do provide wording which allows for a redeclaration of an `_Alias` as a function declaration. This allows for a common use case in code, even if the standard does not explicitly support redeclaring e.g. `imaxabs` or `strtoimax`.
+Therefore, we do not do anything to support or inhibit such declarations. Implementations looking to keep such declarations working from older versions of code should consider leaving those old symbols within their binary artefacts (system tables, shared/static libraries, etc.) to continue supporting such a use case; this proposal is not going to address it or the myriad of other issues around this (such as strong/weak symbols and other attributes/aliasing issues).
 
 
 
@@ -471,7 +471,17 @@ extern void b(int w, double x, struct yy* y, struct zz* z);
 void a(int w, double x, struct yy* y, struct zz* z) = b;
 ```
 
-This gave the "function" and "redeclaration" feeling to `a`, but it required that all arguments essentially be reproduced exactly (or risk constraint violations). This introduces fault-intolerance, where function arguments could change and cause breakage in downstream code. This could result in a lot of unnecessary maintenance work for end-users and package maintainers alike responding to library developers and their change in type definitions or similar. It might end up tying future developer's hands not for binary stability reasons, but for source breakage reasons. While source breaks are preferred over binary breaks, we want to avoid this being a problem altogether. This is an improvement over the GCC alias attribute, where two identical function declarations, differing only in the name, were required.
+This gave the "function" and "redeclaration" feeling to `a`, but it required that all arguments essentially be reproduced exactly (or risk constraint violations). This introduces fault-intolerance, where function arguments could change and cause breakage in downstream code. This could result in a lot of unnecessary maintenance work for end-users and package maintainers alike responding to library developers and their change in type definitions or similar. It might end up tying future developer's hands not for binary stability reasons, but for source breakage reasons.
+
+Now that `typeof` is in C23, we can write the above as the following:
+
+```cpp
+extern void b(int w, double x, struct yy* y, struct zz* z);
+
+typeof(b) a = b;
+```
+
+This is much more palatable, but violates the rule of "don't repeat yourself". Repeating ourselves leaves the potential, still, for slight mispellings between what is inside of `typeof` and what is at the other end of the equal (`=`) sign. We would like to replace this potential redunancy with a simple token instead, as this would also allow us to avoid ambiguity or figure out how to work such syntax into the "declarator" grammar construction (which is not impossible, just less palatable). Therefore, we do not pursue this option for the syntax of this feature.
 
 
 
@@ -481,7 +491,7 @@ This gave the "function" and "redeclaration" feeling to `a`, but it required tha
 
 C++ took the keyword `using`, and so far it seems to have made most C and C++ developers stay away from the keyword altogether. Nevertheless, the wording uses a stand-in `ALIAS-TOKEN`. The suggestions we have for the token are as follows, based on not being findable in publicly available codebase sets (either on [isocpp.org](https://isocpp.org)'s code search of package manager code for Linux Distributions, GitHub's dataset for code, and similar sources):
 
-- `using` (made safer by C++ using it as a keyword) (however, C++ uses this as a type definition)
+- `using` (made safer by C++ using it as a keyword) (however, C++ uses this as a type definition and does NOT include this for the ability to reference an existing function)
 - `using_alternate` (long, pretty good name)
 - `alternate_alias` (long, pretty good name)
 - `_Alias`, with a `<stdalias.h>` header and a `#define alias _Alias` in it (trying to avoid the underscore-capital keywords since some folk do not appreciate it)
@@ -501,7 +511,7 @@ Various names were also thought of and unfortunately discarded because they exis
 - `func_def`/`funcdef`
 - `func_decl`/`funcdecl`
 
-While we use the word `_Alias` right now as a stand-in for some of the prose above and below, we would appreciate feedback on what name to pick. The specification working has `ALIAS-TOKEN` to signify that we have not settled on a specific token (or token sequence) for the name at the moment.
+While we use the word `_Alias` right now as a stand-in for some of the prose above and below, we would appreciate feedback on what name to pick. The specification working has `ALIAS-TOKEN` to signify that we have not settled on a specific token (or token sequence) for the name at the moment. This does not preclude a more thorough
 
 
 
@@ -534,8 +544,7 @@ _Alias v0_name = v1_name;
 
 int main () {
 	printf("v1: %s\n", v1_name);
-	printf("v0: %s\n", v0_name); // Diagnostic encouraged
-	return 0;
+	printf("v0: %s\n", v0_name); // diagnostic encouraged
 }
 ```
 
@@ -546,7 +555,9 @@ This can help migrate users to newer APIs that may change names or evolve over t
 
 # Future Directions # {#future}
 
-There were further suggestions to have the ability to make "`_Weak`" aliases: that is, the ability to be able to define a compile-time alias, but be able to redeclare over it and completely erase the old declaration with an entirely incompatible/new declaration, at compile-time, with a new (and potentially incompatible) declaration. This is actually implemented in the current implementation, and it works as expected, but it is not provided in this paper. There is, thankfully, plenty of room in the grammar to allow for this as an extension, and if users voice strong concern for it we may move in that direction.
+There were further suggestions to have the ability to make "`_Weak`" aliases: that is, the ability to be able to define a compile-time alias, but be able to redeclare over it and completely erase the old declaration with an entirely incompatible/new declaration, at compile-time, with a new (and potentially incompatible) declaration. This is actually implemented in the current implementation, and it works as expected, but it is not provided in this paper.
+
+There is, thankfully, plenty of room in the grammar to allow for this as an extension, and if users voice strong concern for it a follow-on paper may add it to the standard.
 
 
 
@@ -719,7 +730,7 @@ An external definition is an external declaration that is also a definition of a
 <blockquote>
 <ins>
 <div class="wording-clause-header">
-<span class="wording-clause-number">6.7.12</span><span class="wording-clause-title">Transparent alias</span>
+<span class="wording-clause-number">6.7.12</span><span class="wording-clause-title">Transparent aliases</span>
 </div>
 
 <div class="wording-section">
@@ -746,7 +757,7 @@ Constraints
 </div>
 <div class="wording-numbered">
 
-A transparent alias target shall be a preceding and visible identifier. A transparent alias being redeclared shall refer to the same object or function as in its definition<sup>FN0✨)</sup> and the type of that identifier shall be compatible with all visible declarations of the declared transparent alias.
+A transparent alias target shall be a preceding and visible identifier. A transparent alias being redeclared shall refer to the same object or function as in its initial declaration<sup>FN0✨)</sup> and the type of that identifier shall be compatible with all visible declarations of the declared transparent alias.
 </div>
 
 <div class="wording-clause-section-title">
@@ -754,15 +765,11 @@ Semantics
 </div>
 
 <div class="wording-numbered">
-A transparent alias refers to an existing visible entity named by the transparent alias target. A transparent alias does not produce a new declaration; it is only a synonym for the transparent alias target specified. If the transparent alias target is another transparent alias, it is translated, recursively, until a non-transparent alias is determined.
+A transparent alias refers to an existing visible entity named by the transparent alias target. A transparent alias does not produce a new declaration; it is only a synonym for the transparent alias target specified. If the transparent alias target is another transparent alias, it is translated, recursively, until a non-transparent alias target is determined.
 </div>
 
 <div class="wording-numbered">
 A transparent alias may be used in any context where the target may be used. A transparent alias has the same type as the transparent alias target it refers to.
-</div>
-
-<div class="wording-numbered">
-A transparent alias name being redeclared in a function declaration shall still be considered a transparent alias after the redeclaration. The type of a transparent alias declaration is the type of the transparent alias target or of the function declaration, respectively. When used in an expression, a transparent alias name stands in for the transparent alias target of its definition and the type is the composite type of all its visible declarations.
 </div>
 
 <div class="wording-numbered">
@@ -772,7 +779,7 @@ The optional attribute specifier sequence before the **ALIAS-TOKEN** appertains 
 
 <div class="wording-numbered">
 
-**EXAMPLE 1** The following program contains no constraint violations and does not call `abort`:
+**EXAMPLE 1** The following program contains no constraint violations:
 
 ```cpp
 #include <assert.h>
@@ -843,19 +850,19 @@ int zzz(int requested_sleep_time);
 int truncated_zzz(int requested_sleep_time);
 
 ALIAS-TOKEN sleep_alias = sleep_alias; // constraint violation: sleep_alias does
-	                               // not exist until the
-	                               // semicolon is reached
+	                                     // not exist until the
+	                                     // semicolon is reached
 ALIAS-TOKEN zzz = truncated_zzz; // constraint violation: cannot hide
-	                         // existing declaration
+	                               // existing declaration
 ALIAS-TOKEN truncated_zzz = truncated_zzz; // constraint violation: cannot change 
-	                                   // function declaration
-	                                   // to transparent alias
+	                                         // function declaration
+	                                         // to transparent alias
 
 ALIAS-TOKEN valid_sleep_alias = zzz;
 double valid_sleep_alias(double requested_sleep_time); // constraint violation:
-	                                               // redeclaring a
-	                                               // transparent alias with
-	                                               // non-compatible type
+	                                                     // redeclaring a
+	                                                     // transparent alias with
+	                                                     // non-compatible type
 ```
 </div>
 
@@ -966,8 +973,7 @@ ALIAS-TOKEN v0_name = v1_name;
 
 int main () {
 	printf("v1: %s\n", v1_name);
-	printf("v0: %s\n", v0_name); // Diagnostic encouraged
-	return 0;
+	printf("v0: %s\n", v0_name); // diagnostic encouraged
 }
 ```
 
