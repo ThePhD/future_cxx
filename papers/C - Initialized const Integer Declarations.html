@@ -1503,10 +1503,10 @@ Possible extra rowspan handling
       text-align: center;
     }
   </style>
-  <meta content="Bikeshed version b3a4ecf2c, updated Tue Jul 18 14:02:54 2023 -0700" name="generator">
+  <meta content="Bikeshed version d29f71adb, updated Wed Jul 19 11:08:56 2023 -0700" name="generator">
   <link href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Initialized%20const%20Integer%20Declarations.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="afa5b56198b0c2d45630d0fb398ad97b303260fc" name="document-revision">
+  <meta content="f2ed396d94dbcc9dfe8b35dc59c07f03d9aa770a" name="document-revision">
 <style>
 
 :root {
@@ -2367,8 +2367,9 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
     <li>
      <a href="#design"><span class="secno">4</span> <span class="content">Design</span></a>
      <ol class="toc">
-      <li><a href="#design-address.of"><span class="secno">4.1</span> <span class="content">What if Someone Takes the Address of a <code class="highlight"><c- k>const</c-></code> Declaration that has been Promoted to <code class="highlight"><c- n>constexpr</c-></code>?</span></a>
-      <li><a href="#design-integers"><span class="secno">4.2</span> <span class="content">Why Not More Than Integer Types?</span></a>
+      <li><a href="#design-changes"><span class="secno">4.1</span> <span class="content">Changes in Existing Code</span></a>
+      <li><a href="#design-address.of"><span class="secno">4.2</span> <span class="content">What if Someone Takes the Address of a <code class="highlight"><c- k>const</c-></code> Declaration that has been Promoted to <code class="highlight"><c- n>constexpr</c-></code>?</span></a>
+      <li><a href="#design-integers"><span class="secno">4.3</span> <span class="content">Why Not More Than Integer Types?</span></a>
      </ol>
     <li>
      <a href="#wording"><span class="secno">5</span> <span class="content">Wording</span></a>
@@ -2566,9 +2567,18 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
       <td>no change; <code class="highlight"><c- k>volatile</c-></code>
    </table>
    <p>This matches the existing practice that occurs today.</p>
-   <h3 class="heading settled" data-level="4.1" id="design-address.of"><span class="secno">4.1. </span><span class="content">What if Someone Takes the Address of a <code class="highlight"><c- k>const</c-></code> Declaration that has been Promoted to <code class="highlight"><c- n>constexpr</c-></code>?</span><a class="self-link" href="#design-address.of"></a></h3>
+   <h3 class="heading settled" data-level="4.1" id="design-changes"><span class="secno">4.1. </span><span class="content">Changes in Existing Code</span><a class="self-link" href="#design-changes"></a></h3>
+   <p>Besides what is enumerated above for given declarations, some typical consequences on existing code are:</p>
+   <ul>
+    <li data-md>
+     <p>Implementation-defined variable-Length Arrays (VLAs) in many cases are promoted to standard-guaranteed Fixed-Length Arrays (typical "C arrays"). This change is anticipated and wanted, and is part of the original motivation for this proposal.</p>
+    <li data-md>
+     <p>Some manner of <code class="highlight"><c- k>_Generic</c-><c- p>(</c->…<c- p>)</c-></code> expressions are not constant expressions. This is a natural addendum from the concrete rules about generic selection, where if the selected expression is a constant expression, then the <code class="highlight"><c- k>_Generic</c-></code> expression itself is a constant expression. A small class of these become guaranteed to be constant expressions now since the use of such integer type declarations now counts. This is intended, and simply a side-effect of the pass-through nature of <code class="highlight"><c- k>_Generic</c-></code>’s selection process. It does not negatively impact existing code in any appreciable way.</p>
+   </ul>
+   <p>Otherwise, all the effects of this proposal are for newly written code that can confidently take advantage of such now rather than leave it implementation-defined.</p>
+   <h3 class="heading settled" data-level="4.2" id="design-address.of"><span class="secno">4.2. </span><span class="content">What if Someone Takes the Address of a <code class="highlight"><c- k>const</c-></code> Declaration that has been Promoted to <code class="highlight"><c- n>constexpr</c-></code>?</span><a class="self-link" href="#design-address.of"></a></h3>
    <p>This is fine. Naked <code class="highlight"><c- n>constexpr</c-></code> variables are already implicitly <code class="highlight"><c- k>const</c-></code>, and taking the address of one produces an <code class="highlight"><c- b>int</c-> <c- k>const</c-><c- o>*</c-></code> consistent with having a pointer to a variable that cannot be modified. A compiler may be robbed of a constant expression optimization (e.g., doing literal computation replacement and removing the existence of the variable inside of the program) by such a move, but it is fine and behaves perfectly in-line with the expected semantics of having a <code class="highlight"><c- k>const</c-></code> integer. Modification of such an object by casting away its <code class="highlight"><c- k>const</c-></code>-ness is, as it is throughout the C standard, Undefined Behavior and it should not be done. If it is done, the same rules apply as ever; undefined behavior. This proposal does not change anything in the way these values were being used to-date in either C or C++.</p>
-   <h3 class="heading settled" data-level="4.2" id="design-integers"><span class="secno">4.2. </span><span class="content">Why Not More Than Integer Types?</span><a class="self-link" href="#design-integers"></a></h3>
+   <h3 class="heading settled" data-level="4.3" id="design-integers"><span class="secno">4.3. </span><span class="content">Why Not More Than Integer Types?</span><a class="self-link" href="#design-integers"></a></h3>
    <p>We limit this proposal to integer types because that is the widest-spread existing practice and easiest to compute. <code class="highlight"><c- n>constexpr</c-></code> serves as not just a marker, but as a way to let an implementation know that no matter how complex the initializer or its contained expressions become, it must be evaluated at compile-time. This represents a contract between the user and the compiler, and also serves as a courtesy so that the compiler can be appropriate prepared when processing the declaration.</p>
    <p>Conversely, this is an implicit promotion. To ensure compilers are not unduly burdened, we capture what is already existing practice on the vast majority of existing compilers: integer types. If, in the future, implementations process many more declarations at compile-time, then such expansions can be made easily.</p>
    <h2 class="heading settled" data-level="5" id="wording"><span class="secno">5. </span><span class="content">Wording</span><a class="self-link" href="#wording"></a></h2>
