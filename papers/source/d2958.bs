@@ -2,7 +2,7 @@
 Title: typeof and typeof_unqual for C++
 H1: <code>typeof</code> and <code>typeof_unqual</code> for C++
 Shortname: P2958
-Revision: 0
+Revision: 1
 Audience: EWG
 Status: P
 Group: WG21
@@ -11,7 +11,7 @@ URL: https://thephd.dev/_vendor/future_cxx/papers/d2958.html
 !Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/d2958.html">https://thephd.dev/_vendor/future_cxx/papers/d2958.html</a>
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide (https://thephd.dev), phdofthehouse@gmail.com
-Date: 2023-08-05
+Date: 2023-11-04
 Markup Shorthands: markdown yes, biblio yes, markup yes
 Abstract: The long-anticipated type features from C have been integrated into C23, and should be ported to WG21 for harmony.
 </pre>
@@ -31,6 +31,13 @@ path: resources/css/bikeshed-color-fix.html
 
 
 
+## Revision 1 - November 4th, 2023 ## {#changelog-r1}
+
+	- Update wording as per suggestions (thanks, Jens Maurer).
+	- Clarify existing practice.
+
+
+
 ## Revision 0 - August 5th, 2023 ## {#changelog-r0}
 
 	- Initial Release! 🎉
@@ -46,11 +53,17 @@ The intention was that keyword differed enough from the existing practice from C
 
 Critically, this means that `typeof` and `__typeof__` cannot be fully approximated with `decltype` alone, or even a macro such as `#define typeof(...) ::std::remove_reference_t<decltype(__VA_ARGS__)>`. C and C++ implementations the `typeof` extension can already take a type specifier (or, more specifically for the case of C++ grammar, a *type-id*). This is exceptionally important for `typeof` usage in macros: often times, rather than inventing an expression with which to provide the right type to a macro, it can be expedient to just pass a type in directly where possible to control the eventual cast or type inside of particularly complex macros. This is done a handful of times in C world. This is not as important for C++, but (some) macros tend to live in a shared world for C and C++.
 
-Some thought was given whether for this proposal to allow `decltype( type-id )` in the grammar as a type-based pass-through. An earlier revisions of [[n1978]] (N1607, to be precise) states, it was left untouched so to let it potentially be used as a "meta"-type value. That paper even casually references the idea of doing `decltype(SomeType).is_reference()`. We believe it is highly unlikely this will ever happen given the direction reflection has gone in for its facilities (e.g. preferring a sigil/operator or the keyword `reflexpr`). Furthermore, the overall direction of C++ with `<type_traits>` has eschewed the idea that there would ever be a used for `decltype(SomeType)` as a `constexpr object`-producing object. It could be safe to take `decltype ( type-id )` for C++ to just act as a placeholder for `type-id` to harmonize its version of `typeof` with C's, even if it might not provide any essential value.
+Some thought was given whether for this proposal to allow `decltype( type-id )` in the grammar as a type-based pass-through. An earlier revisions of [[n1978]] (N1607, to be precise) states, it was left untouched so to let it potentially be used as a "meta"-type value. That paper even casually references the idea of doing `decltype(SomeType).is_reference()`. We believe it is highly unlikely this will ever happen given the direction reflection has gone in for its facilities (e.g. preferring a sigil/operator or the keyword `reflexpr`). Furthermore, the overall direction of C++ with `<type_traits>` has eschewed the idea that there would ever be a used for `decltype(SomeType)` as a `constexpr object`-producing expression. It could be safe to take `decltype ( type-id )` for C++ to just act as a placeholder for `type-id` to harmonize its version of `typeof` with C's, even if it might not provide any essential value.
 
 But, we do **NOT** propose it here and consider it outside the scope of this proposal as there is no existing practice for `decltype ( type-id )`.
 
 This proposal adds `typeof` and `typeof_unqual` to C++ to harmonize the 2 languages and close the loophole left from 20 years ago (for C++) and 30 years ago (from C), now that C has finally standardized its long-implemented keyword extensions.
+
+
+
+## What About Typical Language Differences for C and C++ with `typeof` & friends? ## {#intro-c.vs.c++}
+
+The behavior of `typeof` is intended to be exactly identical to `dectlype`, just without references. This includes allowing bitfields and similar C++-isms capable from `decltype`. [This follows existing practice, modulo bugs in GCC around the name of destructors (https://godbolt.org/z/v1W5hGdYz)](https://godbolt.org/z/v1W5hGdYz).
 
 
 
@@ -640,14 +653,14 @@ The operand of the `decltype`<ins>, `typeof`, or `typeof_unqual`</ins> specifier
 <div class="wording-newnumbered wording-numbered-3">
 <ins>
 
-For an expression *E*, the type denoted by `typeof(E)` is formed by removing reference qualifiers, if any, from the type denoted by `decltype(E)`. The type denoted by `typeof_unqual(E)` is formed by removing reference qualifiers, if any, as well as top-level cv-qualifiers from the type denoted by `decltype(E)`.
+For an expression *E*, the type denoted by `typeof(E)` is the type of `E`. The type denoted by `typeof_unqual(E)` is formed by removing top-level cv-qualifiers from the type denoted by `typeof(E)`.
 </ins>
 </div>
 
 <div class="wording-newnumbered">
 <ins>
 
-For a *type-id* `T`, the type denoted by `typeof(T)` is formed by removing reference qualifiers, if any, from `T`. The type denoted by `typeof_unqual(T)` is formed by removing reference qualifiers, if any, as well as top-level cv-qualifiers from `T`.
+For a *type-id* `T`, the type denoted by `typeof(T)` is formed by removing top-level reference qualifiers, if any, from `T`. The type denoted by `typeof_unqual(T)` is formed by removing top-level cv-qualifiers and then reference qualifiers from `T`.
 </ins>
 </div>
 
@@ -655,7 +668,7 @@ For a *type-id* `T`, the type denoted by `typeof(T)` is formed by removing refer
 </blockquote>
 
 
-### Modify `decltype` mention in Template Deduction's General Clause [<a href="http://eel.is/c++draft/temp.deduct.general">temp.deduct.general</a>] to include `typeof` and `typeof_unqual` ### {#wording-language-temp.deduct.general}
+### Modify `decltype` mention in Template Deduction's "General" Clause [<a href="http://eel.is/c++draft/temp.deduct.general">temp.deduct.general</a>] to include `typeof` and `typeof_unqual` ### {#wording-language-temp.deduct.general}
 
 <blockquote>
 <div class="wording-section">
@@ -692,6 +705,112 @@ The expressions include not only constant expressions such as those that appear 
 
 </div>
 </blockquote>
+
+
+### Modify `decltype` mention in Template's "Type equivalence" Clause [<a href="http://eel.is/c++draft/temp.type">temp.type</a>] to include `typeof` and `typeof_unqual` ### {#wording-language-temp.type}
+
+<blockquote>
+<div class="wording-section">
+
+<div id="temp.type" class="wording-section-header">
+<span class="wording-clause-number">13.6</span>
+<span class="wording-clause-title">Type equivalence</span>
+<span class="wording-clause-stable-tag">[<b>temp.type</b>]</span>
+</div>
+
+<div>
+…
+</div>
+
+<div class="wording-numbered wording-numbered-4">
+
+If an expression *e* is type-dependent, `decltype(e)`<ins>, `typeof_unqual(e)`, or `typeof(e)`</ins> <del>denotes</del><ins>denote</ins> a unique dependent type. Two such *decltype-specifiers* refer to the same type only if their *expression*s are equivalent ([<a href="http://eel.is/c++draft/temp.over.link">temp.over.link</a>]).
+</div>
+
+<div>
+…
+</div>
+
+</div>
+</blockquote>
+
+
+### Modify `decltype` mentions in Template's "Dependent types" Clause [<a href="http://eel.is/c++draft/temp.dep.type">temp.dep.type</a>] to include `typeof` and `typeof_unqual` ### {#wording-language-temp.dep.type}
+
+<blockquote>
+<div class="wording-section">
+
+<div id="temp.dep.type" class="wording-section-header">
+<span class="wording-clause-number">13.8.3.2</span>
+<span class="wording-clause-title">Dependent types</span>
+<span class="wording-clause-stable-tag">[<b>temp.dep.type</b>]</span>
+</div>
+
+<div>
+…
+</div>
+
+<div class="wording-numbered wording-numbered-7">
+
+A type is dependent if it is
+
+<ul>
+	<li>a template parameter,</li>
+	<li>denoted by a dependent (qualified) name,</li>
+	<li>a nested class or enumeration that is a direct member of a class that is the current instantiation,</li>
+	<li>a cv-qualified type where the cv-unqualified type is dependent,</li>
+	<li>a compound type constructed from any dependent type,</li>
+	<li>an array type whose element type is dependent or whose bound (if any) is value-dependent,</li>
+	<li>a function type whose parameters include one or more function parameter packs,</li>
+	<li>a function type whose exception specification is value-dependent,</li>
+	<li>denoted by a simple-template-id in which either the template name is a template parameter or any of the template arguments is a dependent type or an expression that is type-dependent or value-dependent or is a pack expansion, <del>or</del></li>
+	<li>denoted by `decltype(expression)`<ins>, `typeof(expression)`, or `typeof_unqual(expression)`</ins>, where *expression* is type-dependent<del>.</del><ins>, or</ins></li>
+	<li><ins>denoted by `typeof(type-id)` or `typeof_unqual(type-id)`, where *type-id* is type-dependent.</ins></li>
+</ul>
+</div>
+
+<div>
+…
+</div>
+
+</div>
+</blockquote>
+
+
+### Modify `decltype` mentions in Template's "Dependent types" Clause [<a href="http://eel.is/c++draft/temp.deduct.type">temp.dep.type</a>] to include `typeof` and `typeof_unqual` ### {#wording-language-temp.deduct.type}
+
+<blockquote>
+<div class="wording-section">
+
+<div id="temp.deduct.type" class="wording-section-header">
+<span class="wording-clause-number">13.10.3.6</span>
+<span class="wording-clause-title">Deducing template arguments from a type</span>
+<span class="wording-clause-stable-tag">[<b>temp.deduct.type</b>]</span>
+</div>
+
+<div>
+…
+</div>
+
+<div class="wording-numbered wording-numbered-5">
+
+The non-deduced contexts are:
+
+<ul>
+	<li>The *nested-name-specifier* of a type that was specified using a *qualified-id*.</li>
+	<li>The *expression*<ins> or *type-id*</ins> of a *decltype-specifier*.</li>
+	<li>…</li>
+</ul>
+
+</div>
+
+<div>
+…
+</div>
+
+</div>
+</blockquote>
+
 
 <pre class=biblio>
 {
