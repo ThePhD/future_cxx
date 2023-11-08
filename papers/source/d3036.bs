@@ -1,0 +1,143 @@
+<pre class='metadata'>
+Title: Stepanov is Correct: Output Ranges for std::format_to
+H1: Stepanov is Correct: Output Ranges for <code>std::format_to</code>
+Shortname: P3036
+Revision: 0
+Audience: LEWG, SG9
+Status: P
+Group: WG21
+URL: https://thephd.dev/_vendor/future_cxx/papers/d3036.html
+!Target: C++26
+!Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/d3036.html">https://thephd.dev/_vendor/future_cxx/papers/d3036.html</a>
+Repository: ThePhD/future_cxx
+Editor: JeanHeyd Meneide (https://thephd.dev), phdofthehouse@gmail.com
+Date: 2023-11-04
+Markup Shorthands: markdown yes, biblio yes, markup yes
+Abstract: This proposal adds a new range type to the standard library and provides a practical example of adding an output range into an existing C++ interface for both improved safety and better performance.
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-color-fix.html
+</pre>
+
+
+
+
+# Revision History # {#changelog}
+
+
+
+## Revision 0 - November 5th, 2023 ## {#changelog-r0}
+
+	- Initial Release! 🎉
+
+
+
+
+# Introduction and Motivation # {#intro}
+
+Recently, the issue of security has been brought up for C and C++. While C++ has proven to show great resource safety with its general-purpose undo mechanism in the RAII idiom, it has failed spectacularly to take advantage of concepts already present in the C++ standard library to provide operational safety to C++ programs in a meaningful way beyond C. Large classes of output-writing algorithms — such as `std::ranges::copy` — still take an `OutputIterator` and will happily overwrite beyond the boundaries of an array with no standard-provided, guaranteed safety alternative above `memcpy`. Users frequently have to pad their own usage of the algorithms with safety checks in order to achieve their own safety, and the standard library in a wide variety of cases remains completely silent on whether or not we should be providing 
+
+In this proposal, we look at a recently added C++20 interface — std::format_to — and provide a meaningful improvement to its API that prevents a wide class of stack and heap linear buffer overruns. This is accomplished by taking advantage of statically-deducible size and type information that can be gleaned from the use of a [pre-existing C++20 concept — `std::ranges::output_range` — in the function template definition]().
+
+We also propose a new range type — `std::unbounded_view<OutputIterator>` — that enables an explicit, grep-able, searchable, and type-system-optimizable pathway to preserve the same performance characters are prior. We provide a demonstration about how fast this is by using an existing library that takes advantage of the same type mechanisms as a proof-of-concept, building on top of Alexander Stepanov's and Eric Niebler's ideals for iterator and ranges.
+
+
+
+# Motivating Example # {#}
+
+As pointed out by Olaf van der Spek, this code, unacceptably, will overwrite your stack:
+
+> This snippet overflows the destination buffer. Is format_to too easy to misuse?
+> Shouldn't it requires an iterator to the end so it could avoid this issue?
+> It seems like a modern equivalent of fgets()
+> 
+> ```cpp
+> 
+> #include <format>
+> #include <iostream>
+> 
+> int main()
+> {
+>   char d[10] = {};
+>   std::format_to(d, "0123456789 {}", 42);
+>   std::cout << std::string_view(d, 10) << std::endl;
+> } 
+> ```
+>
+> — [Olaf van der Spek, Sunday October 2022](https://lists.isocpp.org/std-discussion/2022/10/1795.php)
+
+There is no reason for this code to behave in this fashion, but it can, will, and does despite the protestations of many both at the time of its standardization and those outside the Committee who have, for years, overrun hundreds of buffers and produced vulnerability after denial of service after privilege escalation with exactly these interfaces. While non-executable stack mitigations and stack cookies/canaries can prevent the worst of this from propagating the damage too far, this discounts the ability to write the exact same code using an incorrectly sized `std::vector`, `std::array`, or similar and relies on the user to perform size checking.
+
+We can – and should — do better than this.
+
+
+
+# Behavior Delta Tables ("Tony Tables") # {#intro-tables}
+
+The first table in this section lists the old behaviors and their properties, and the second table lists the new, desired behaviors and their properties.
+
+
+
+
+
+
+# Design # {#design}
+
+The design of this feature is not particularly new or spectacular in its usage. It simply follows a core set of principles for both predictable and 
+
+
+
+
+# Specification # {#wording}
+
+The specification is relative to the latest C++ Working Draft, [[n4950]].
+
+
+
+## Language Wording ## {#wording-language}
+
+
+
+
+<pre class=biblio>
+{
+	"n1978": {
+		"title": "N1978 - Decltype (revision 5)",
+		"authors": [
+			"Jakko Järvi",
+			"Bjarne Stroustrup",
+			"Gabriel Dos Reis"
+		],
+		"href": "https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2006/n1978.pdf",
+		"publisher": "ISO/IEC JTC1 SC22 WG21 - Programming Language, C++",
+		"date": "April 24th, 2006"
+	},
+	"n2343": {
+		"title": "N2343 - Decltype (revision 7)",
+		"authors": [
+			"Jakko Järvi",
+			"Bjarne Stroustrup",
+			"Gabriel Dos Reis"
+		],
+		"href": "https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2007/n2343.pdf",
+		"publisher": "ISO/IEC JTC1 SC22 WG21 - Programming Language, C++",
+		"date": "July 18th, 2007"
+	},
+	"n2927": {
+		"title": "N2927 - Not-so-magic - typeof for C",
+		"authors": [
+			"JeanHeyd Meneide",
+			"Shepherd's Oasis, LLC"
+		],
+		"href": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2927.htm",
+		"publisher": "ISO/IEC JTC1 SC22 WG14 - Programming Language, C",
+		"date": "July 18th, 2007"
+	}
+	
+}
+</pre>

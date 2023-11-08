@@ -2,9 +2,9 @@
 Title: #embed - a scannable, tooling-friendly binary resource inclusion mechanism
 H1: <code>#embed</code> - a scannable, tooling-friendly binary resource inclusion mechanism
 Shortname: P1967
-Revision: 11
+Revision: 12
 Status: D
-Date: 2023-1-15
+Date: 2023-11-08
 Group: WG21
 Audience: CWG
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
@@ -33,6 +33,18 @@ path: resources/css/bikeshed-color-fix.html
 
 
 # Changelog # {#changelog}
+
+
+## Revision 12 - November 8<sup>th</sup>, 2023 ## {#changelog-r12}
+
+- Monday, November 6th, 2023: WG21's Core Working Group reviewed the paper.
+	- Remove *embed-element-width* and replace with `CHAR_BIT` with appropriate. Change notes/examples that talk about potentially changing the *embed-element-width*. Core explicitly does not care about forward-looking/future-proofing the wording.
+	- Change how expansion is being done by using a different technique to form expansion. The goal is to have the same 3 forms as prior:
+		- `#embed quoted-header-name embed-parameter-seq(opt)`
+		- `#embed chevron-header-name embed-parameter-seq(opt)`
+		- `#embed pp-tokens`
+	
+	but state that the first two will also process the tokens in the `embed-parameter-seq(opt)` at least once. The second does not need such, and we use a `Note:` to indicate this fact and remind readers that it should already have satisfied the requirement. We then state any constant expressions are evaluated according to `[cpp.cond]`'s rules, but **without** any additional expansion. This should hopefully solve the problem.
 
 
 
@@ -356,7 +368,7 @@ All of these recommendations were incorporated below.
 </tbody>
 </table>
 
-This vote gained the most consensus in the Committee. While there were some individuals who wanted to be able to specify a type, there was stronger interest in not specifying a type at all and always producing a list of integer literals suitable to be used anywhere an `comma-separated list` was valid.
+This vote gained the most consensus in the Committee. While there were some individuals who wanted to be able to specify a type, there was stronger interest in not specifying a type at all and always producing a list of integer constant expressions suitable to be used anywhere an `comma-separated list` was valid.
 
 "We want to explore allowing an optional sequence of tokens to specify a type to `#embed`."
 
@@ -496,7 +508,7 @@ The above expansion ends up being nonsense that does not do what the user wants 
 <ins>
 
 — `__STDC_EMBED_NOT_FOUND__`, `__STDC_EMBED_FOUND__`, and `__STDC_EMBED_EMPTY__`
-:: The integer literals 0, 1, and 2. [*Note*: These represent values expanded from *has-embed-expression*s ([<a href="#cpp.res">cpp.cond</a>]). – *end Note*]
+:: The integer literals 0, 1, and 2. [*Note*: These represent values expanded from *has-embed-expression*s ([[[#wording-specification-cpp.cond|cpp.cond]]]). – *end Note*]
 
 </ins>
 </blockquote>
@@ -655,7 +667,7 @@ A preprocessing directive of the form
 
 :: `#embed <` *h-char-sequence* `>` *embed-parameter-seq*<sub>*opt*</sub> *new-line*
 
-searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the `<` and `>` delimiters, and causes the replacement of that directive by a comma-delimited list of integer literals as specified below. It is implementation-defined how the places or how the resource is identified.
+searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the `<` and `>` delimiters, and causes the replacement of that directive by a comma-delimited list of integer constant expressions as specified below. It is implementation-defined how the places or how the resource is identified.
 
 </div>
 
@@ -680,7 +692,7 @@ with the identical contained sequence (including " characters, if any) from the 
 
 <div class="wording-numbered">
 
-A `#embed` directive shall identify a resource that can be processed into a comma-delimited list of integer literals ([<a href="http://eel.is/c++draft/lex.icon">lex.icon</a>]). A *resource* is a source of data accessible from the translation environment. A resource has an *implementation-resource-width*, which is the implementation-defined size in bits of the located resource. It also has a *resource-width*, which is:
+<diff-ins>Either form of the `#embed` directive shall process the text of the *embed-parameter-seq*, if present, as in normal text.</diff-ins> A *resource* is a source of data accessible from the translation environment. A resource has an *implementation-resource-width*, which is the implementation-defined size in bits of the located resource. It also has a *resource-width*, which is:
 
 <div class="wording-numbered-list">
 
@@ -693,31 +705,20 @@ A `#embed` directive shall identify a resource that can be processed into a comm
 
 <div class="wording-numbered">
 
-Let *embed-element-width* be:
-
-<div class="wording-numbered-list">
-
-- a value greater than zero determined by some *embed-prefixed-parameter*, if present.
-- Otherwise, `CHAR_BIT`.
-
-</div>
-
-If the *resource-width* is not an integral multiple of the *embed-element-width*, the program is ill-formed.
+If the *resource-width* is not an integral multiple of the `CHAR_BIT`, the program is ill-formed.
 
 [*Example*:
 
 ```cpp
 int main (int, char*[]) {
 	const unsigned char coeffs[] = {
-// ill-formed if the resource-width is 6 bits and
-// the embed-element-width is CHAR_BIT
-// (which is, at minimum, 8 bits)
+// ill-formed if the resource-width is 6 bits
 #embed "6_bits.bin"
 	};
 
 	const unsigned char fac[] = {
 // can be ill-formed:
-// (resource-width) % (embed-element-width)
+// (resource-width) % (CHAR_BIT)
 // cannot be 0 on an implementation
 // where the resource-width is 12
 #embed "12_bits.bin"
@@ -729,14 +730,16 @@ int main (int, char*[]) {
 </div>
 
 <div class="wording-numbered">
+<diff-ins>
 
-Either form of the `#embed` directive expands to a comma-separated list of integral constant expression, where each element is cast ([<a href="http://eel.is/c++draft/expr.cast">expr.cast</a>]) to `unsigned char`. Each integer literal ([<a href="http://eel.is/c++draft/lex.icon">lex.icon</a>]) shall have an implementation-defined value between `0` and <code>2^<sup>embed-element-width</sup>-1</code>, inclusive. If that list is used to initialize a contiguous sequence of objects of type `unsigned char`, or `char` if it is unsigned, the elements of the sequence from the comma-separated list shall contain values as if read by `std::fread` ([<a href="http://eel.is/c++draft/library.c">library.c</a>]) from the resource as a file during program execution.
+Let *resource-count* be *resource-width* divided by `CHAR_BIT`. The integral constant expressions for each element of the comma-separated list shall contain values as if read by *resource-count* consecutive calls to `std::fgetc` ([<a href="http://eel.is/c++draft/library.c">library.c</a>]) from the resource as a file. If `std::fgetc` returns `EOF` then the directive is ill-formed. Otherwise, the integral constant expression is the value of `std::fgetc`'s return is cast to `unsigned char`.
 
+</diff-ins>
 </div>
 
 <div class="wording-numbered">
 
-*Recommended Practice*: Each integer literal produced should closely represent the bit stream of the resource unmodified. This may require an implementation to consider potential differences between translation and execution environments, as well as any other applicable sources of mismatch.
+*Recommended Practice*: Each integral constant expression produced should closely represent the bit stream of the resource unmodified. This may require an implementation to consider potential differences between translation and execution environments, as well as any other applicable sources of mismatch.
 
 [*Example*:
 
@@ -784,7 +787,7 @@ A preprocessing directive of the form
 
 :: `#` `embed` *pp-tokens* *new-line*
 
-(that does not match one of the two previous forms) is permitted. The preprocessing tokens after `embed` in the directive are processed just as in normal text (i.e., each identifier currently defined as a macro name is replaced by its replacement list of preprocessing tokens). The directive resulting after all replacements shall match one of the two previous forms [*Note*: Note that adjacent *string-literal*s are not concatenated into a single *string-literal* (see the translation phases in [<a href="http://www.eel.is/c++draft/lex.phases">lex.phases</a>]); thus, an expansion that results in two *string-literal*s is an invalid directive. — *end Note*]. The method by which a sequence of preprocessing tokens between a `<` and a `>` preprocessing token pair or a pair of `"` characters is combined into a single resource name preprocessing token is implementation-defined.
+(that does not match one of the two previous forms) is permitted. The preprocessing tokens after `embed` in the directive are processed just as in normal text (i.e., each identifier currently defined as a macro name is replaced by its replacement list of preprocessing tokens). The directive resulting after all replacements shall match one of the two previous forms [*Note*: Note that adjacent *string-literal*s are not concatenated into a single *string-literal* (see the translation phases in [<a href="http://www.eel.is/c++draft/lex.phases">lex.phases</a>]); thus, an expansion that results in two *string-literal*s is an invalid directive. — *end Note*]. <diff-ins>If the directive matches one of the two previous forms after the directive is processed as in normal text, any further processing as in normal text described for the two previous forms is not performed [*Note*: That is, processing as in normal text happens once and only once for the entire directive. — *end Note*].</diff-ins> The method by which a sequence of preprocessing tokens between a `<` and a `>` preprocessing token pair or a pair of `"` characters is combined into a single resource name preprocessing token is implementation-defined.
 
 [*Example*:
 
@@ -840,14 +843,8 @@ int main () {
 
 <div class="wording-numbered">
 
-*Embed-parameter*s can modify the result of the replacement for `#embed` preprocessing directives. The effect of *embed-standard-parameter*s are defined in this document. The effects of *embed-prefixed-parameters* are implementation-defined. [*Note*: For example, `*embed-element-width*` might be modified by a hypothetical `vendor::element_width(32)` *embed-prefix-parameter* which could change the maximum value (2^<sup>32</sup>-1) with each entry cast to `unsigned long` instead of `unsigned char`. — *end Note*]
+*Embed-parameter*s can modify the result of the replacement for `#embed` preprocessing directives. The effect of *embed-standard-parameter*s are defined in this document. The effects of *embed-prefixed-parameters* are implementation-defined. [*Note*: For example, the `CHAR_BIT` used to compute the value of each element might be modified by a hypothetical `vendor::element_width(32)` *embed-prefix-parameter* which could change the maximum value to <code>2^<sup>32</sup>-1</code>, with each entry cast to `unsigned long` instead of `unsigned char`. — *end Note*]
 </div>
-
-<div class="wording-numbered">
-
-`*embed-element-width*` can be modified by an *embed-prefix-parameter* to change how large the values .
-</div>
-
 </div>
 
 <div id="cpp.res.param.limit" class="wording-section">
@@ -864,7 +861,7 @@ An *embed-parameter* of the form `limit ( pp-balanced-token-seq )` denotes the m
 
 <div class="wording-numbered">
 
-The *pp-balanced-token-seq* is used to compute the resource width. Independently of any macro replacement done previously (e.g., when matching the form of `#embed`), the *pp-balanced-token-seq* is evaluated as a *constant-expression* after the balanced preprocessing token sequence has been processed at least once as in normal text, using the rules as described in conditional inclusion ([<a href="http://eel.is/c++draft/cpp.cond">cpp.cond</a>]) but with the exception that the token `defined` shall not appear in the *constant-expression*. [*Note*: If an implementation matches the third form of `#embed` and processes the tokens of the directive as in normal text before reaching the `limit` *embed-parameter*, it need not process the balanced preprocessing token sequence inside of the `limit` *embed-parameter* as in normal text an additional time. — *end Note*]
+The *pp-balanced-token-seq* is used to compute the *resource-width*. The *pp-balanced-token-seq* is evaluated as a *constant-expression* using the rules as described in conditional inclusion ([<a href="http://eel.is/c++draft/cpp.cond">cpp.cond</a>])<diff-ins>, but with the exceptions that the tokens are not processed as in normal text a second time.</diff-ins>
 </div>
 
 <div class="wording-numbered">
@@ -902,7 +899,7 @@ The resource-width is:
 <div class="wording-numbered-list">
 
 - `0`, if the integral constant expression evaluates to `0`.
-- Otherwise, the minimum between *embed-element-width* multiplied by the value of the integral constant expression and the *implementation-resource-width*.
+- Otherwise, the minimum between either `CHAR_BIT` multiplied by the value of the integral constant expression or the *implementation-resource-width*.
 
 </div>
 
