@@ -1,5 +1,5 @@
 <pre class='metadata'>
-Title: Variable-Length Array (VLA) Allocator Control
+Title: Variable-Length Array (VLA) Allocation Control
 Shortname: XX10
 Revision: 0
 !Previous Revisions: None
@@ -34,6 +34,10 @@ path: resources/css/bikeshed-color-fix.html
 
 # Changelog # {#changelog}
 
+
+
+## Revision 0 ## {#changelog-r0}
+
 - Initial release. ✨
 
 
@@ -41,32 +45,387 @@ path: resources/css/bikeshed-color-fix.html
 
 # Introduction and Motivation # {#intro}
 
-	Meow. :3
+Variable Length Arrays (VLAs) are a feature for potentially accessing an implementation-detail of where memory is stored to generate more efficient programs by utilizing a variable amount of stack space. The feature was conceived in the early 1990s with inspiration from Fortran, and eventually brought to C standardization by Tom MacDonald of the Cray Supercomputing group[[N317]]. Despite getting multiple implementations from 1993 onwards and achieving all of the necessary details for C standardization — including a detailed rationale answering open questions during its standardization process in subsequent N-documents — the feature went into the standard in C99 and received deeply mixed response.
 
-	Bark. :3
+Many numerical communities and other processing groups found VLAs to be of great use; kernel communities and application programmers found it fraught with peril as user-controlled variables snuck into the VLAs and threatened to blow out their stacks or — when paired with logic errors — much worse. Others still found their performance characteristics hard to control and inaccessible, and others could not get their compilers to provide them with the kind of memory guarantees that they wanted[[making-c-less-dangerous]].
+
+Implementations withdrew support for even implementing Variable-Length Arrays, citing its several unspecified corners and its total silence on how to handle memory errors or other issues. This resulted in Variable-Length Arrays being made optional — along with many other features — in C11, and since then VLAs have been in a state of flux. It took until 2020 for the GNU Compiler Collection (GCC) to implement "stack probing" (checking the size of the stack and potentially failing on overflow) rather than just blindly blowing out the stack. Other implementations just aliased VLA usage as closely as possible to `alloca(…)` and stack pointer manipulation as they could before phoning the effort in. Others still simply decided to call `malloc` for every VLA declared, and simply crash/`abort` if such an allocation failed.
+
+It is clear now that there is a wide variety of implementation techniques and ways of handling VLAs, but in every attempt this has always been tackled from an implementer perspective. In this paper, we propose allowing the **user** to control the semantics of the the allocation and deallocation of a VLA. It is much more likely that the user knows the memory profile, binary footprint, and performance characteristics they would like to target, as opposed to the implementation. There are thousands — sometimes, hundreds of thousands — of developers as opposed to compiler developers; it makes sense for users to have control of the feature where they deem it important to their code.
+
+Similarly, we do not infringe upon an implementation's right to refuse implementing a VLA: `__STDC_NO_VLA__` can still be defined by an implementation, and an implementation can still outright reject VLAs **if** the opt-in extension mechanisms are not defined by the user. This allows implementers to implement VLAs in terms of a quick code rewrite rather than needing to worry about stack probing, a source of memory, or any of the other things implementations have cited as problematic for the last 20 years.
+
 
 
 
 # Design # {#design}
+
+The design of this feature is simple; we need to provide users with the ultimate level of control so that implementations need not concern themselves with the details of allocation and deallocation of Variable-Length Arrays. This eliminates the sole reason that VLAs were made optional in C11 to begin with; implementations of varying sizes struggled with the ability to compute the allocation. If the user is able to control how a VLA is allocated, then all of the most serious technical concerns for the implementation and proliferation of VLAs disappears as the user is stating they will be responsible. This means that even implementations that have `__STDC_NO_VLA__` defined and set to `1` will still be able to access the feature, provided the user declares 2 functions visible at the point of the creation of the VLA:
 
 ```cpp
 void* stdc_vla_alloc(size_t n, size_t align, size_t* out_n);
 void stdc_vla_free(void* p, size_t n, size_t align);
 ```
 
+The way this feature works is simple. If both function declarations are present, the compiler is required to use those as the source of memory for the VLA. The initial memory comes from the return value from `stdc_vla_alloc`. The memory is freed at the **end of the scope** (or equivalent) by a matching call to `stdc_vla_free`, as was done before by the implementation. Every exit of the scope, including use of `goto` to a label that is outside of the scope, shall be preceded by a matching call to `stdc_vla_free` if a `stdc_vla_alloc` was hit. Similarly, the behavior is undefined if the scope is left by using `longjmp`/`setjmp` or similar constructs.
 
+If only one of the two functions is visible, then it is a constraint violation.
 
-## Spelled ## {#design-with.aliases}
-
-With [Transparent Aliases](https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Transparent%20Aliases.html), the VLA allocation can be locally-scoped to avoid several different libraries potentially clobbering things:
+If none of the two functions are visible, then the behavior is implementation-defined/unspecified (subject to `__STDC_NO_VLA__`, and the location from where the data comes from is unspecified as it is in today's C standard). Therefore, even if `__STDC_NO_VLA__` is defined, the following program will evaluate and execute:
 
 ```cpp
+#include <stddef.h>
+#include <string.h>
+#include <stdlib.h>
+
+void* stdc_vla_alloc(size_t n, size_t align, size_t* out_n) {
+	(void)align;
+	void* p = malloc(n);
+	if (!p) abort();
+	*out_n = n;
+	return p;
+}
+void stdc_vla_free(void* p, size_t n, size_t align) {
+	free(p);
+	return p;
+}
+
+int main (int argc, char* argv[]) {
+	// works even if __STDC_NO_VLA__ is defined and non-zero.
+	int vla[argc];
+}
+```
+
+
+
+
+## Can we return a null pointer value from `stdc_vla_alloc`? ## {#design-fallible}
+
+The pointer returned by the function is **always** non-null. This is why the `[static 1]` annotation is used on the function call, but it can just as easily and compatibly be written as:
+
+```cpp
+void stdc_vla_alloc(size_t n, size_t align, size_t* out_n)[static 1];
+void stdc_vla_free(void p[static 1], size_t n, size_t align);
+```
+
+Unfortunately, this syntax is **not** allowed for `void*` pointers. We do not solve this problem for this paper, but would note that such a fix would be of general interest to make these annotations more useful to a wide variety of functions, especially infallible (impossible to fail) memory and allocation functions.
+
+If someone wishes to handle an error, they must do so inside of the function and handle it by either aborting or jumping out before the function returns. Once the function returns, the program is entirely valid in assuming that the returned pointer is a valid address for the purposes of the VLA. Any error reporting or error checking must be done exclusively by the user. This is because there is simply no syntax when working with a Variable-Length Array to check for success, as e.g.:
+
+```cpp
+int main (int argc, char* argv[]) {
+	int vla[argc];
+	if (vla) {
+		return 0;
+	}
+	return 1;
+}
+```
+
+will always create a program that returns `0` as the `vla` check can never fail if execution reaches that point. There is simply no post-facto way to handle a failed VLA allocation in the language today, and that is a oversight we will have to live with for the rest of the duration of the existence of VLAs.
+
+
+
+## Allocation Size? ## {#design-allocation.size}
+
+The size passed to the allocation is implementation defined. This is because the implementation controls the ABI for its VLA; it may ask for more memory and different alignment than may be implied by the declaration of the variable-length array. For example, given the following program:
+
+```cpp
+#include <stddef.h>
+#include <string.h>
+
+void* stdc_vla_alloc(size_t n, size_t align, size_t* out_n);
+void stdc_vla_free(void* p, size_t n, size_t align);
+
+int compute_sum(size_t data_size, int* data);
+
+int main (int argc, char* argv[]) {
+	/* 0. … */
+	int vla[argc];
+	/* 1. use `vla` here … */
+	for (int i = 0; i < (sizeof(vla) / sizeof(vla[0])); ++i) {
+		vla[i] = strlen(argv[i]);
+		if (vla[i] > 255) {
+			return -1;
+		}
+	}
+	int sum = compute_sum((sizeof(vla) / sizeof(vla[0])), vla);
+	/* 2. … */
+	return sum;
+}
+```
+
+The equivalent de-sugared program may look as follows:
+
+```cpp
+#include <stddef.h>
+#include <string.h>
+
+void* stdc_vla_alloc(size_t n, size_t align, size_t* out_n);
+void stdc_vla_free(void* p, size_t n, size_t align);
+
+int compute_sum(size_t data_size, int* data);
+
+int main (int argc, char* argv[]) {	
+	/* 0. … */
+	int $__vla_size;
+	int (*vla)[argc];
+	vla = (typeof(vla))stdc_vla_alloc(
+		sizeof(vla) + sizeof(size_t) /* implementation-defined */,
+		alignof(size_t) /* implementation-defined */,
+		&$__vla_size
+	);
+	/* 1. use `vla` here … */
+	for (int i = 0; i < (sizeof((vla[0])) / sizeof((vla[0])[0])); ++i) {
+		vla[i] = strlen(argv[i]);
+		if ((vla[0])[i] > 255) {
+			stdc_vla_free(vla, $__vla_size, alignof(size_t));
+			return -1;
+		}
+	}
+	int sum = compute_sum((sizeof((vla[0])) / sizeof(*(vla[0]))), (vla[0]));
+	/* 2. … */
+	stdc_vla_free(vla, $__vla_size, alignof(size_t));
+	return sum;
+}
+```
+
+As shown in this de-sugared program, the VLA may have a size that is, practically and conceptually, different from the length of the variable-length array retrieved by `sizeof(…)`. Therefore, it is important that there is an output parameter for `$__vla_size` that can adequately track such information if necessary.
+
+
+
+## What If A VLA Is Lowered To A C Array? ## {#design-vla.optimizations}
+
+A frequent question in the face of this proposal is "what happens if an implementation is smart enough to lower the VLA to a C-style, fixed-size array?". The answer here is simple: it is already implementation-defined if an array is considered a VLA or not, due to the nature of the rules of Constant Expressions. This was clarified in C23[[n3138]] that such arrays may or may not be VLAs. Implementations can continue to lower VLAs into fixed-size, C-style arrays and declare them non-VLAs and thus avoid needing to invoke any of this infrastructure. This proposal does not prevent any class of optimizations, as the implementation is still within full control when it needs to be.
+
+
+
+
+# Interaction with Other (Potential) Language Features / Implementations # {#interaction}
+
+There are many other (future) language features and implementation-specific features that can allow this feature to really blossom. Below are a select sampling of such techniques and a brief discussion of each such.
+
+
+
+## `alloca` and stack-probing ## {#interaction-alloca.stack.probing}
+
+Below is an implementation of stack probing that works on MSVC-based platforms as well as GCC and Clang-based platforms with the [pthreads](https://www.man7.org/linux/man-pages/man7/pthreads.7.html) library (with `_np` (non-portable) extensions present).
+
+```cpp
+///////////////////////
+// platform boilerplate
+///////////////////////
+
+#define _GNU_SOURCE
+#define WIN32_LEAN_AND_MEAN
+
+#if defined(_MSC_VER)
+#define MY_FLATTEN __forceinline
+#define MY_OUTLINE __declspec(noinline)
+#include <malloc.h>
+#include <windows.h>
+#elif defined(__clang__) || defined(__GNUC__)
+#define MY_FLATTEN [[gnu::flatten]]
+#define MY_OUTLINE [[gnu::noinline]]
+#else
+#define MY_FLATTEN
+#define MY_OUTLINE
+#error "unsupported platform: do not how to inline " \
+	"function call into parent function call on this vendor"
+#endif
+
+#if defined(_REENTRANT) && (_REENTRANT == 1) && \
+	__has_include(<pthread.h>)
+#define MY_PTHREAD_H 1
+#include <pthread.h>
+#else
+#define MY_PTHREAD_H 0
+#endif
+
+#include <stddef.h>
+#include <stdint.h>
+
+MY_OUTLINE
+bool my_is_stack_available(size_t amount, size_t alignment)
+{
+	// TODO: support alignment
+#if defined(_MSVC_VER)
+	// https://devblogs.microsoft.com/oldnewthing/20200610-00/?p=103855
+	ULONG_PTR low = 0, high = 0;
+	GetCurrentThreadStackLimits(&low, &high);
+	ptrdiff_t remaining = reinterpret_cast<ULONG_PTR>(&low) - low;
+	ptrdiff_t available = high - low;
+	if (remaining > available) {
+		// Ssssshhhooould not be possible?!
+		// Something is horrifically wrong here...!
+		__fastfail(FAST_FAIL_INCORRECT_STACK);
+	}
+	return remaining >= amount;
+#elif MY_PTHREAD_H
+	char* low_stack_addr;
+	size_t stack_size;
+	pthread_attr_t attr;
+
+	int getattr_res = pthread_getattr_np(pthread_self(), &attr);
+	if (getattr_res != 0) {
+		return false;
+	}
+	int getstack_res = pthread_attr_getstack(&attr,
+		(void**)&low_stack_addr,
+		&stack_size);
+	if (getstack_res != 0 {
+		return false;
+	}
+	// some nerd will scream about provenance or whatever, I'm sure
+	char* local_address_guess = ((char*)(void*)&low_stack_addr);
+	ptrdiff_t remaining = local_address_guess - low_stack_addr;
+	if (remaining > stack_size) {
+		// Absolutely should NOT be possible?!
+		abort();
+	}
+	return remaining >= amount;
+#else
+#	error "cannot determine current stack size: insufficient hacks"
+#endif
+}
+
+#include <stddef.h>
+#include <stdlib.h>
+
+///////////////////////////
+// User-Defined VLA Control
+///////////////////////////
+MY_FLATTEN inline void* stdc_vla_alloc(size_t size,
+	size_t alignment,
+	size_t* actual_size)
+{
+	if (!my_is_stack_available(size, alignment)) {
+		abort();
+		return nullptr;
+	}
+	*actual_size = size;
+#if defined(_MSC_VER)
+	return __alloca(size);
+#elif defined(__clang__) || defined(__GNUC__)
+	return __builtin_alloca_with_align(size, alignment);
+#endif
+}
+
+MY_FLATTEN inline void stdc_vla_free(void* ptr,
+	size_t size,
+	size_t alignment)
+{
+	// nothing, it's alloca
+}
+
+///////////////
+// main program
+///////////////
+extern int n;
+
+int main () {
+	// we are in compiler that doesn't support VLAs (e.g., MSVC)
+	static_assert(__STDC_NO_VLA__ != 0,
+		"this will work even if VLAs are not present");
+
+	// because both stdc_vla_alloc and stdc_vla_free are available,
+	// VLA will use that to retrieve memory
+	// and ignore whatever implementation does
+	int vla[n] = {};
+
+	// use as normal...
+	/* … */
+
+	return 0;
+}
+```
+
+
+
+## With Transparent Aliases ## {#interaction-with.transparent.aliases}
+
+This feature can be used in multiple different ways with different 
+
+With [Transparent Aliases](https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Transparent%20Aliases.html), a future feature that is not yet in Standard C, the VLA allocation can provide a locally-specific allocation function that is not visible to other scopes. For example:
+
+```cpp
+static_assert(__STDC_NO_VLA__ != 0,
+	"this will work even if VLAs are not present");
+
 void* my_vla_alloc(size_t n, size_t align, size_t* out_n);
 void my_vla_free(void* p, size_t n, size_t align);
 
 int main (int argc, char* argv[]) {
-  _Alias stdc_alloc_vla = my_alloc_vla;
-  _Alias stdc_free_vla = my_free_vla;
-  int meow[argc];
+
+	// aliases the 2 required function calls
+	_Alias stdc_alloc_vla = my_alloc_vla;
+	_Alias stdc_free_vla = my_free_vla;
+	// uses my_vla_alloc
+	int meow[argc];
+	// calls my_vla_free
+	return 0;
+}
+
+int f (int n) {
+	// Constraint violation: implementation does not support VLAs.
+	int meow[argc];
+	return 0;
 }
 ``` 
+
+The VLA in `main` will compile, link, and run (provided a definition of `my_vla_alloc` and `my_vla_free` are in the final program). Conversely, `f` is a constraint violation and thus the program may not compile, link, or run.
+
+
+
+
+# Wording # {#wording}
+
+Wording is relative to [[N3096]].
+
+NOTE: The wording is not yet present and won't be for a while; this draft is for the approval of the overall design by both like- and unlike-minded individuals.
+
+
+<pre class="biblio">
+{
+	"N3096": {
+		"authors": [
+			"ISO/IEC JTC1 SC22 WG14 - Programming Languages, C",
+			"JeanHeyd Meneide",
+			"Freek Wiedijk"
+		],
+		"title": "N2596: ISO/IEC 9899:2023 - Programming Languages, C",
+		"href": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3096.pdf",
+		"date": "April 2nd, 2023"
+	},
+	"n3138": {
+		"authors": [
+			"Aaron Ballman"
+		],
+		"title": "N3138: Rebuttal to N2713 Integer Constant Expressions",
+		"publisher": "Intel",
+		"href": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3138.pdf",
+		"date": "June 21st, 2023"
+	},
+	"n317": {
+		"authors": [
+			"Tom MacDonald"
+		],
+		"title": "N317: Arrays of Variable Length",
+		"publisher": "Cray Supercomputing",
+		"href": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n317.pdf",
+		"date": "January 2nd, 1994"
+	},
+	"making-c-less-dangerous":
+	{
+		"authors": [
+			"Kees Cook",
+			"Google"
+		],
+		"title": "Making C Less Dangerous",
+		"publisher": "The Linux Foundation",
+		"href": "https://www.youtube.com/watch?v=XfNt6MsLj0E&t=310s",
+		"date": "September 1st, 2018"
+		
+	}
+}
+</pre>
