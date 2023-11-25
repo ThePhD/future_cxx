@@ -67,7 +67,7 @@ void* stdc_vla_alloc(size_t n, size_t align, size_t* out_n);
 void stdc_vla_free(void* p, size_t n, size_t align);
 ```
 
-The way this feature works is simple. If both function declarations are present, the compiler is required to use those as the source of memory for the VLA. The initial memory comes from the return value from `stdc_vla_alloc`. The memory is freed at the **end of the scope** (or equivalent) by a matching call to `stdc_vla_free`, as was done before by the implementation. Every exit of the scope, including use of `goto` to a label that is outside of the scope, shall be preceded by a matching call to `stdc_vla_free` if a `stdc_vla_alloc` was hit. Similarly, the behavior is undefined if the scope is left by using `longjmp`/`setjmp` or similar constructs.
+The way this feature works is simple. If both function declarations are present, the compiler is required to use those as the source of memory for the VLA. The initial memory comes from the return value from `stdc_vla_alloc`. The memory is freed at the **end of the scope** (or later) by a matching call to `stdc_vla_free`, as was done before by the implementation. Every exit of the scope, including use of `goto` to a label that is outside of the scope, shall be preceded by a matching call to `stdc_vla_free` if a `stdc_vla_alloc` was hit. Similarly, the behavior is undefined if the scope is left by using `longjmp`/`setjmp` or similar constructs.
 
 If only one of the two functions is visible, then it is a constraint violation.
 
@@ -95,6 +95,8 @@ int main (int argc, char* argv[]) {
 	int vla[argc];
 }
 ```
+
+Importantly (for the purposes of optimization), the only hard semantic requirement is that for everyone call to `stdc_vla_alloc`, there is a matching call to `stdc_vla_free`. There does not have to be a call for each VLA, if the implementation wants to e.g. re-use the memory of a previous allocation. See [[#design-memory.reuse]] for more details.
 
 
 
@@ -171,7 +173,7 @@ int main (int argc, char* argv[]) {
 	int $__vla_size;
 	int (*vla)[argc];
 	vla = (typeof(vla))stdc_vla_alloc(
-		sizeof(vla) + sizeof(size_t) /* implementation-defined */,
+		sizeof(vla[0]) + sizeof(size_t) /* implementation-defined */,
 		alignof(size_t) /* implementation-defined */,
 		&$__vla_size
 	);
@@ -200,6 +202,52 @@ A frequent question in the face of this proposal is "what happens if an implemen
 
 
 
+## Memory Reuse ## {#design-memory.reuse}
+
+It is important to note that, for this feature, the only hard requirement is that for every call to `stdc_vla_alloc`, there is a matching call to `stdc_vla_free`. It does not mean there must be one call to `stdc_vla_alloc` for the start and end of every VLA's object lifetime. For example, given the for loop in the below program:
+
+```cpp
+const int vla_n = 30;
+
+int main () {
+	const int n = 50;
+	for (int i = 0; i < n; ++i) {
+		double vla[vla_n] = {};
+		/* use VLA */
+	}
+	return 0;
+}
+```
+
+The program may opt to only allocate the VLA once, resulting in a de-sugaring that looks something close to:
+
+```cpp
+const int vla_n = 30;
+
+int main () {
+	const int n = 50;
+	size_t $__vla_size;
+	double (*vla)[vla_n];
+	vla = (typeof(vla))stdc_vla_alloc(
+		sizeof(vla[0]) + sizeof(size_t) /* implementation-defined */,
+		alignof(size_t) /* implementation-defined */,
+		&$__vla_size
+	);
+	for (int i = 0; i < n; ++i) {
+		for (size_t __init_vla = 0; __init_vla < sizeof((vla[0])); ++__init_vla) {
+			(vla[0])[__init_vla] = (double){};
+		}
+		/* use VLA */
+	}
+	stdc_vla_free(vla, $__vla_size, alignof(size_t));
+	return 0;
+}
+```
+
+This results in a single call to `stdc_vla_alloc` paired with a single call to `stdc_vla_free`, instead of 30 paired function calls. This is legal so long as the semantics remain identical. Users are subject to unspecified behavior if they attempt to rely on the number of times `stdc_vla_alloc` is called, as the compiler may unroll, fuse, or otherwise reuse memory allocations for whatever purposes it sees fit.
+
+
+
 
 # Interaction with Other (Potential) Language Features / Implementations # {#interaction}
 
@@ -209,7 +257,7 @@ There are many other (future) language features and implementation-specific feat
 
 ## `alloca` and stack-probing ## {#interaction-alloca.stack.probing}
 
-Below is an implementation of stack probing that works on MSVC-based platforms as well as GCC and Clang-based platforms with the [pthreads](https://www.man7.org/linux/man-pages/man7/pthreads.7.html) library (with `_np` (non-portable) extensions present).
+Below is an implementation of stack probing that works on MSVC-based platforms as well as GCC and Clang-based platforms with the [pthreads](https://www.man7.org/linux/man-pages/man7/pthreads.7.html) library (with `*_np` (non-portable) extensions present).
 
 ```cpp
 ///////////////////////

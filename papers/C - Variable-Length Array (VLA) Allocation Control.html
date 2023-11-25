@@ -1506,7 +1506,7 @@ Possible extra rowspan handling
   <meta content="Bikeshed version 82ce88815, updated Thu Sep 7 16:33:55 2023 -0700" name="generator">
   <link href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Variable-Length%20Array%20(VLA)%20Allocation%20Control.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="141a3c1c73d669a3bb11deb946e895c98f02b81c" name="document-revision">
+  <meta content="22c32edaa184b2e330b129333df97fdaaabd7311" name="document-revision">
 <style>
 
 :root {
@@ -2515,6 +2515,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
       <li><a href="#design-fallible"><span class="secno">3.1</span> <span class="content">Can we return a null pointer value from <code class="highlight"><c- n>stdc_vla_alloc</c-></code>?</span></a>
       <li><a href="#design-allocation.size"><span class="secno">3.2</span> <span class="content">Allocation Size?</span></a>
       <li><a href="#design-vla.optimizations"><span class="secno">3.3</span> <span class="content">What If A VLA Is Lowered To A C Array?</span></a>
+      <li><a href="#design-memory.reuse"><span class="secno">3.4</span> <span class="content">Memory Reuse</span></a>
      </ol>
     <li>
      <a href="#interaction"><span class="secno">4</span> <span class="content">Interaction with Other (Potential) Language Features / Implementations</span></a>
@@ -2549,7 +2550,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 <pre class="language-cpp highlight"><c- b>void</c-><c- o>*</c-> <c- nf>stdc_vla_alloc</c-><c- p>(</c-><c- b>size_t</c-> <c- n>n</c-><c- p>,</c-> <c- b>size_t</c-> <c- n>align</c-><c- p>,</c-> <c- b>size_t</c-><c- o>*</c-> <c- n>out_n</c-><c- p>);</c->
 <c- b>void</c-> <c- nf>stdc_vla_free</c-><c- p>(</c-><c- b>void</c-><c- o>*</c-> <c- n>p</c-><c- p>,</c-> <c- b>size_t</c-> <c- n>n</c-><c- p>,</c-> <c- b>size_t</c-> <c- n>align</c-><c- p>);</c->
 </pre>
-   <p>The way this feature works is simple. If both function declarations are present, the compiler is required to use those as the source of memory for the VLA. The initial memory comes from the return value from <code class="highlight"><c- n>stdc_vla_alloc</c-></code>. The memory is freed at the <strong>end of the scope</strong> (or equivalent) by a matching call to <code class="highlight"><c- n>stdc_vla_free</c-></code>, as was done before by the implementation. Every exit of the scope, including use of <code class="highlight"><c- k>goto</c-></code> to a label that is outside of the scope, shall be preceded by a matching call to <code class="highlight"><c- n>stdc_vla_free</c-></code> if a <code class="highlight"><c- n>stdc_vla_alloc</c-></code> was hit. Similarly, the behavior is undefined if the scope is left by using <code class="highlight"><c- n>longjmp</c-></code>/<code class="highlight"><c- n>setjmp</c-></code> or similar constructs.</p>
+   <p>The way this feature works is simple. If both function declarations are present, the compiler is required to use those as the source of memory for the VLA. The initial memory comes from the return value from <code class="highlight"><c- n>stdc_vla_alloc</c-></code>. The memory is freed at the <strong>end of the scope</strong> (or later) by a matching call to <code class="highlight"><c- n>stdc_vla_free</c-></code>, as was done before by the implementation. Every exit of the scope, including use of <code class="highlight"><c- k>goto</c-></code> to a label that is outside of the scope, shall be preceded by a matching call to <code class="highlight"><c- n>stdc_vla_free</c-></code> if a <code class="highlight"><c- n>stdc_vla_alloc</c-></code> was hit. Similarly, the behavior is undefined if the scope is left by using <code class="highlight"><c- n>longjmp</c-></code>/<code class="highlight"><c- n>setjmp</c-></code> or similar constructs.</p>
    <p>If only one of the two functions is visible, then it is a constraint violation.</p>
    <p>If none of the two functions are visible, then the behavior is implementation-defined/unspecified (subject to <code class="highlight"><c- n>__STDC_NO_VLA__</c-></code>, and the location from where the data comes from is unspecified as it is in today’s C standard). Therefore, even if <code class="highlight"><c- n>__STDC_NO_VLA__</c-></code> is defined, the following program will evaluate and execute:</p>
 <pre class="language-cpp highlight"><c- cp>#include</c-> &lt;stddef.h>
@@ -2573,6 +2574,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
   <c- b>int</c-> <c- n>vla</c-><c- p>[</c-><c- n>argc</c-><c- p>];</c->
 <c- p>}</c->
 </pre>
+   <p>Importantly (for the purposes of optimization), the only hard semantic requirement is that for everyone call to <code class="highlight"><c- n>stdc_vla_alloc</c-></code>, there is a matching call to <code class="highlight"><c- n>stdc_vla_free</c-></code>. There does not have to be a call for each VLA, if the implementation wants to e.g. re-use the memory of a previous allocation. See <a href="#design-memory.reuse">§ 3.4 Memory Reuse</a> for more details.</p>
    <h3 class="heading settled" data-level="3.1" id="design-fallible"><span class="secno">3.1. </span><span class="content">Can we return a null pointer value from <code class="highlight"><c- n>stdc_vla_alloc</c-></code>?</span><a class="self-link" href="#design-fallible"></a></h3>
    <p>The pointer returned by the function is <strong>always</strong> non-null. This is why the <code class="highlight"><c- p>[</c-><c- k>static</c-> <c- mi>1</c-><c- p>]</c-></code> annotation <strong>should</strong> be used on the function call:</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>stdc_vla_alloc</c-><c- p>(</c-><c- b>size_t</c-> <c- n>n</c-><c- p>,</c-> <c- b>size_t</c-> <c- n>align</c-><c- p>,</c-> <c- b>size_t</c-><c- o>*</c-> <c- n>out_n</c-><c- p>)[</c-><c- k>static</c-> <c- mi>1</c-><c- p>];</c->
@@ -2628,7 +2630,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
   <c- b>int</c-> <c- n>$__vla_size</c-><c- p>;</c->
   <c- b>int</c-> <c- p>(</c-><c- o>*</c-><c- n>vla</c-><c- p>)[</c-><c- n>argc</c-><c- p>];</c->
   <c- n>vla</c-> <c- o>=</c-> <c- p>(</c-><c- n>typeof</c-><c- p>(</c-><c- n>vla</c-><c- p>))</c-><c- n>stdc_vla_alloc</c-><c- p>(</c->
-    <c- k>sizeof</c-><c- p>(</c-><c- n>vla</c-><c- p>)</c-> <c- o>+</c-> <c- k>sizeof</c-><c- p>(</c-><c- b>size_t</c-><c- p>)</c-> <c- d>/* implementation-defined */</c-><c- p>,</c->
+    <c- k>sizeof</c-><c- p>(</c-><c- n>vla</c-><c- p>[</c-><c- mi>0</c-><c- p>])</c-> <c- o>+</c-> <c- k>sizeof</c-><c- p>(</c-><c- b>size_t</c-><c- p>)</c-> <c- d>/* implementation-defined */</c-><c- p>,</c->
     <c- k>alignof</c-><c- p>(</c-><c- b>size_t</c-><c- p>)</c-> <c- d>/* implementation-defined */</c-><c- p>,</c->
     <c- o>&amp;</c-><c- n>$__vla_size</c->
   <c- p>);</c->
@@ -2649,10 +2651,46 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    <p>As shown in this de-sugared program, the VLA may have a size that is, practically and conceptually, different from the length of the variable-length array retrieved by <code class="highlight"><c- k>sizeof</c-><c- p>(</c->…<c- p>)</c-></code>. Therefore, it is important that there is an output parameter for <code class="highlight"><c- n>$__vla_size</c-></code> that can adequately track such information if necessary.</p>
    <h3 class="heading settled" data-level="3.3" id="design-vla.optimizations"><span class="secno">3.3. </span><span class="content">What If A VLA Is Lowered To A C Array?</span><a class="self-link" href="#design-vla.optimizations"></a></h3>
    <p>A frequent question in the face of this proposal is "what happens if an implementation is smart enough to lower the VLA to a C-style, fixed-size array?". The answer here is simple: it is already implementation-defined if an array is considered a VLA or not, due to the nature of the rules of Constant Expressions. This was clarified in C23<a data-link-type="biblio" href="#biblio-n3138" title="N3138: Rebuttal to N2713 Integer Constant Expressions">[n3138]</a> that such arrays may or may not be VLAs. Implementations can continue to lower VLAs into fixed-size, C-style arrays and declare them non-VLAs and thus avoid needing to invoke any of this infrastructure. This proposal does not prevent any class of optimizations, as the implementation is still within full control when it needs to be.</p>
+   <h3 class="heading settled" data-level="3.4" id="design-memory.reuse"><span class="secno">3.4. </span><span class="content">Memory Reuse</span><a class="self-link" href="#design-memory.reuse"></a></h3>
+   <p>It is important to note that, for this feature, the only hard requirement is that for every call to <code class="highlight"><c- n>stdc_vla_alloc</c-></code>, there is a matching call to <code class="highlight"><c- n>stdc_vla_free</c-></code>. It does not mean there must be one call to <code class="highlight"><c- n>stdc_vla_alloc</c-></code> for the start and end of every VLA’s object lifetime. For example, given the for loop in the below program:</p>
+<pre class="language-cpp highlight"><c- k>const</c-> <c- b>int</c-> <c- n>vla_n</c-> <c- o>=</c-> <c- mi>30</c-><c- p>;</c->
+
+<c- b>int</c-> <c- nf>main</c-> <c- p>()</c-> <c- p>{</c->
+  <c- k>const</c-> <c- b>int</c-> <c- n>n</c-> <c- o>=</c-> <c- mi>50</c-><c- p>;</c->
+  <c- k>for</c-> <c- p>(</c-><c- b>int</c-> <c- n>i</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c-> <c- n>i</c-> <c- o>&lt;</c-> <c- n>n</c-><c- p>;</c-> <c- o>++</c-><c- n>i</c-><c- p>)</c-> <c- p>{</c->
+    <c- b>double</c-> <c- n>vla</c-><c- p>[</c-><c- n>vla_n</c-><c- p>]</c-> <c- o>=</c-> <c- p>{};</c->
+    <c- d>/* use VLA */</c->
+  <c- p>}</c->
+  <c- k>return</c-> <c- mi>0</c-><c- p>;</c->
+<c- p>}</c->
+</pre>
+   <p>The program may opt to only allocate the VLA once, resulting in a de-sugaring that looks something close to:</p>
+<pre class="language-cpp highlight"><c- k>const</c-> <c- b>int</c-> <c- n>vla_n</c-> <c- o>=</c-> <c- mi>30</c-><c- p>;</c->
+
+<c- b>int</c-> <c- nf>main</c-> <c- p>()</c-> <c- p>{</c->
+  <c- k>const</c-> <c- b>int</c-> <c- n>n</c-> <c- o>=</c-> <c- mi>50</c-><c- p>;</c->
+  <c- b>size_t</c-> <c- n>$__vla_size</c-><c- p>;</c->
+  <c- b>double</c-> <c- p>(</c-><c- o>*</c-><c- n>vla</c-><c- p>)[</c-><c- n>vla_n</c-><c- p>];</c->
+  <c- n>vla</c-> <c- o>=</c-> <c- p>(</c-><c- n>typeof</c-><c- p>(</c-><c- n>vla</c-><c- p>))</c-><c- n>stdc_vla_alloc</c-><c- p>(</c->
+    <c- k>sizeof</c-><c- p>(</c-><c- n>vla</c-><c- p>[</c-><c- mi>0</c-><c- p>])</c-> <c- o>+</c-> <c- k>sizeof</c-><c- p>(</c-><c- b>size_t</c-><c- p>)</c-> <c- d>/* implementation-defined */</c-><c- p>,</c->
+    <c- k>alignof</c-><c- p>(</c-><c- b>size_t</c-><c- p>)</c-> <c- d>/* implementation-defined */</c-><c- p>,</c->
+    <c- o>&amp;</c-><c- n>$__vla_size</c->
+  <c- p>);</c->
+  <c- k>for</c-> <c- p>(</c-><c- b>int</c-> <c- n>i</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c-> <c- n>i</c-> <c- o>&lt;</c-> <c- n>n</c-><c- p>;</c-> <c- o>++</c-><c- n>i</c-><c- p>)</c-> <c- p>{</c->
+    <c- k>for</c-> <c- p>(</c-><c- b>size_t</c-> <c- n>__init_vla</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c-> <c- n>__init_vla</c-> <c- o>&lt;</c-> <c- k>sizeof</c-><c- p>((</c-><c- n>vla</c-><c- p>[</c-><c- mi>0</c-><c- p>]));</c-> <c- o>++</c-><c- n>__init_vla</c-><c- p>)</c-> <c- p>{</c->
+      <c- p>(</c-><c- n>vla</c-><c- p>[</c-><c- mi>0</c-><c- p>])[</c-><c- n>__init_vla</c-><c- p>]</c-> <c- o>=</c-> <c- p>(</c-><c- b>double</c-><c- p>){};</c->
+    <c- p>}</c->
+    <c- d>/* use VLA */</c->
+  <c- p>}</c->
+  <c- n>stdc_vla_free</c-><c- p>(</c-><c- n>vla</c-><c- p>,</c-> <c- n>$__vla_size</c-><c- p>,</c-> <c- k>alignof</c-><c- p>(</c-><c- b>size_t</c-><c- p>));</c->
+  <c- k>return</c-> <c- mi>0</c-><c- p>;</c->
+<c- p>}</c->
+</pre>
+   <p>This results in a single call to <code class="highlight"><c- n>stdc_vla_alloc</c-></code> paired with a single call to <code class="highlight"><c- n>stdc_vla_free</c-></code>, instead of 30 paired function calls. This is legal so long as the semantics remain identical. Users are subject to unspecified behavior if they attempt to rely on the number of times <code class="highlight"><c- n>stdc_vla_alloc</c-></code> is called, as the compiler may unroll, fuse, or otherwise reuse memory allocations for whatever purposes it sees fit.</p>
    <h2 class="heading settled" data-level="4" id="interaction"><span class="secno">4. </span><span class="content">Interaction with Other (Potential) Language Features / Implementations</span><a class="self-link" href="#interaction"></a></h2>
    <p>There are many other (future) language features and implementation-specific features that can allow this feature to really blossom. Below are a select sampling of such techniques and a brief discussion of each such.</p>
    <h3 class="heading settled" data-level="4.1" id="interaction-alloca.stack.probing"><span class="secno">4.1. </span><span class="content"><code class="highlight"><c- n>alloca</c-></code> and stack-probing</span><a class="self-link" href="#interaction-alloca.stack.probing"></a></h3>
-   <p>Below is an implementation of stack probing that works on MSVC-based platforms as well as GCC and Clang-based platforms with the <a href="https://www.man7.org/linux/man-pages/man7/pthreads.7.html">pthreads</a> library (with <code class="highlight"><c- n>_np</c-></code> (non-portable) extensions present).</p>
+   <p>Below is an implementation of stack probing that works on MSVC-based platforms as well as GCC and Clang-based platforms with the <a href="https://www.man7.org/linux/man-pages/man7/pthreads.7.html">pthreads</a> library (with <code class="highlight"><c- o>*</c-><c- n>_np</c-></code> (non-portable) extensions present).</p>
 <pre class="language-cpp highlight"><c- c1>///////////////////////</c->
 <c- c1>// platform boilerplate</c->
 <c- c1>///////////////////////</c->
@@ -2781,7 +2819,6 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 <c- p>}</c->
 </pre>
    <h3 class="heading settled" data-level="4.2" id="interaction-with.transparent.aliases"><span class="secno">4.2. </span><span class="content">With Transparent Aliases</span><a class="self-link" href="#interaction-with.transparent.aliases"></a></h3>
-   <p>This feature can be used in multiple different ways with different</p>
    <p>With <a href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Transparent%20Aliases.html">Transparent Aliases</a>, a future feature that is not yet in Standard C, the VLA allocation can provide a locally-specific allocation function that is not visible to other scopes. For example:</p>
 <pre class="language-cpp highlight"><c- k>static_assert</c-><c- p>(</c-><c- n>__STDC_NO_VLA__</c-> <c- o>!=</c-> <c- mi>0</c-><c- p>,</c->
   <c- s>"this will work even if VLAs are not present"</c-><c- p>);</c->
