@@ -1506,7 +1506,7 @@ Possible extra rowspan handling
   <meta content="Bikeshed version 82ce88815, updated Thu Sep 7 16:33:55 2023 -0700" name="generator">
   <link href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Improved%20__attribute__((cleanup))%20Through%20defer.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="bf03641b48841fd321cfa4667fc43c60f550fb3e" name="document-revision">
+  <meta content="2ec27694278f86b4ee6e4f3384e4b1493265a861" name="document-revision">
 <style>
 
 :root {
@@ -2528,7 +2528,8 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
         <li><a href="#design-ordering-return"><span class="secno">3.5.1</span> <span class="content"><code class="highlight"><c- n>defer</c-></code> interleaved with <code class="highlight"><c- k>return</c-></code> ?</span></a>
         <li><a href="#design-ordering-jump.out"><span class="secno">3.5.2</span> <span class="content">Flow Control / Jumps out of <code class="highlight"><c- n>defer</c-></code></span></a>
         <li><a href="#design-ordering-jump.over"><span class="secno">3.5.3</span> <span class="content"><code class="highlight"><c- k>goto</c-></code> and other Flow Control <strong>over</strong> an existing <code class="highlight"><c- n>defer</c-></code></span></a>
-        <li><a href="#design-ordering-longjmp"><span class="secno">3.5.4</span> <span class="content">What about <code class="highlight"><c- n>longjmp</c-></code>?</span></a>
+        <li><a href="#design-ordering-jump.into"><span class="secno">3.5.4</span> <span class="content"><code class="highlight"><c- k>goto</c-></code> and other Flow Control <strong>into</strong> an existing <code class="highlight"><c- n>defer</c-></code></span></a>
+        <li><a href="#design-ordering-longjmp"><span class="secno">3.5.5</span> <span class="content">What about <code class="highlight"><c- n>longjmp</c-></code>?</span></a>
        </ol>
      </ol>
     <li><a href="#cpp.compat"><span class="secno">4</span> <span class="content">C++ Compatibility: Why Not Member Functions + Constructors/Destructors?</span></a>
@@ -3078,8 +3079,26 @@ allocating 0x7f7e14000b70 !!
   <c- n>defer</c-> <c- p>{</c-> <c- n>printf</c-><c- p>(</c-><c- s>" meow"</c-><c- p>);</c-> <c- p>}</c->
 <c- p>}</c->
 </pre>
-   <p>Do we still print <code class="highlight"><c- s>"cat says meow"</c-></code> here? The conclusion this paper comes to is "no". While <code class="highlight"><c- n>defer</c-></code> provides code motion at compile-time, there is still the mental model of the programmer to consider and the tooling of the compiler to consider. In almost every case that anyone looks at this code, the <code class="highlight"><c- n>defer</c-></code> looks like it is part of an unreachable set of code; if it were mandated to run, this would be problematic. Therefore, <code class="highlight"><c- n>defer</c-></code>s cannot be jumped over by <code class="highlight"><c- k>return</c-></code>s or <code class="highlight"><c- k>goto</c-></code>s, similar to how Variable-Length Arrays cannot be jumped over by similar control flow constructs when the compiler can know about it.</p>
-   <h4 class="heading settled" data-level="3.5.4" id="design-ordering-longjmp"><span class="secno">3.5.4. </span><span class="content">What about <code class="highlight"><c- n>longjmp</c-></code>?</span><a class="self-link" href="#design-ordering-longjmp"></a></h4>
+   <p>Do we still print <code class="highlight"><c- s>"cat says meow"</c-></code> here? The conclusion this paper comes to is "no". While <code class="highlight"><c- n>defer</c-></code> provides code motion at compile-time, there is still the mental model of the programmer to consider and the tooling of the compiler to consider. In almost every case that anyone looks at this code, the <code class="highlight"><c- n>defer</c-></code> looks like it is part of an unreachable set of code; if it were mandated to run, this would be problematic.</p>
+   <p>For this case specifically, <code class="highlight"><c- k>return</c-></code> before a <code class="highlight"><c- n>defer</c-></code> in the same scope simply means it is not run. Therefore, <code class="highlight"><c- n>defer</c-></code>s cannot be jumped over by <code class="highlight"><c- k>goto</c-></code>s, similar to how Variable-Length Arrays cannot be jumped over by similar control flow constructs when the compiler can know about it. But, one can <code class="highlight"><c- k>return</c-></code> early before a <code class="highlight"><c- n>defer</c-></code> is ever reached.</p>
+   <h4 class="heading settled" data-level="3.5.4" id="design-ordering-jump.into"><span class="secno">3.5.4. </span><span class="content"><code class="highlight"><c- k>goto</c-></code> and other Flow Control <strong>into</strong> an existing <code class="highlight"><c- n>defer</c-></code></span><a class="self-link" href="#design-ordering-jump.into"></a></h4>
+   <p>This case has to be banned. Under no circumstances can we allow <code class="highlight"><c- k>goto</c-></code> or similar into a <code class="highlight"><c- n>defer</c-></code> statement. Consider the following code, which has 2 potential exit branches (however contrived):</p>
+<pre class="language-cpp highlight"><c- b>int</c-> <c- nf>main</c-> <c- p>(</c-><c- b>int</c-> <c- n>argc</c-><c- p>,</c-> <c- b>char</c-><c- o>*</c-> <c- n>argv</c-><c- p>[])</c-> <c- p>{</c->
+  <c- b>void</c-><c- o>*</c-> <c- n>p</c-> <c- o>=</c-> <c- n>malloc</c-><c- p>(</c-><c- mi>1</c-><c- p>);</c->
+  <c- n>defer</c-> <c- p>{</c->
+    <c- nl>my_label</c-><c- p>:</c->
+    <c- n>free</c-><c- p>(</c-><c- n>p</c-><c- p>);</c->
+  <c- p>}</c->
+  <c- k>goto</c-> <c- n>my_label</c-><c- p>;</c->
+  <c- k>if</c-> <c- p>(</c-><c- n>argc</c-> <c- o>&lt;</c-> <c- mi>2</c-><c- p>)</c-> <c- p>{</c->
+    <c- k>return</c-> <c- mi>1</c-><c- p>;</c->
+  <c- p>}</c->
+  <c- d>/* … */</c->
+  <c- k>return</c-> <c- mi>0</c-><c- p>;</c->
+<c- p>}</c->
+</pre>
+   <p>If the <code class="highlight"><c- n>defer</c-></code> is leapt into, which "branch" of <code class="highlight"><c- n>defer</c-></code> are we running? The one in <code class="highlight"><c- n>argc</c-> <c- o>&lt;</c-> <c- mi>2</c-></code>, or the one at the other end at <code class="highlight"><c- k>return</c-> <c- mi>0</c-></code>? Furthermore, defer runs <em>after</em>, not before, things like return expressions are evaluated. What is the return value from <code class="highlight"><c- n>main</c-></code>? What does this function end up doing? All of these make <strong>absolutely</strong> no sense. Any flow control into a <code class="highlight"><c- n>defer</c-></code> is 110% banned, and for good reason.</p>
+   <h4 class="heading settled" data-level="3.5.5" id="design-ordering-longjmp"><span class="secno">3.5.5. </span><span class="content">What about <code class="highlight"><c- n>longjmp</c-></code>?</span><a class="self-link" href="#design-ordering-longjmp"></a></h4>
    <p>Unfortunately, <code class="highlight"><c- n>longjmp</c-></code> is non-local, runtime-controlled control flow. It can easily defy all of C’s typical static analysis. Therefore, we cannot form any reasonable Constraint Violations (compile-time errors) for this category of behavior. Still, we enumerate several cases of execution-time behavior where, so long as the non-local jump does not put execution outside of the current <code class="highlight"><c- n>defer</c-></code> block, the behavior remains well-defined (modulo other issues with jumping into/over/etc. things that may be within the <code class="highlight"><c- n>defer</c-></code> block). If the non-local jump escapes the <code class="highlight"><c- n>defer</c-></code>, though, we say the behavior is utterly undefined.</p>
    <h2 class="heading settled" data-level="4" id="cpp.compat"><span class="secno">4. </span><span class="content">C++ Compatibility: Why Not Member Functions + Constructors/Destructors?</span><a class="self-link" href="#cpp.compat"></a></h2>
    <p>As will be asked one hundred thousand times throughout the course of this proposal’s life:</p>
@@ -3241,6 +3260,9 @@ allocating 0x7f7e14000b70 !!
        <p>Jumps by means of <code class="highlight"><c- k>goto</c-></code> shall not jump over a defer statement in the scope <em>E</em>.</p>
       </div>
       <div class="wording-numbered">
+       <p>Jumps by means of <code class="highlight"><c- k>goto</c-></code> shall not jump into any defer statement.</p>
+      </div>
+      <div class="wording-numbered">
        <p>Jumps by means of <code class="highlight"><c- k>return</c-></code>, <code class="highlight"><c- k>goto</c-></code>, <code class="highlight"><c- k>break</c-></code>, or <code class="highlight"><c- k>continue</c-></code> shall not exit the scope <em>B</em>.</p>
       </div>
       <div class="wording-clause-section-title"> Semantics </div>
@@ -3279,6 +3301,9 @@ allocating 0x7f7e14000b70 !!
       <p><sup>FN✨0)</sup><sub>This is because the "execution" of a defer statement only lets the program know that <em>S</em> will be run. There is no observable side effect to repeat from reaching <em>D</em>, as the manifestation of any of the effects of <em>S</em> will happen when if and only if scope is exited or terminated as previously specified.</sub></p>
       <div class="wording-numbered">
        <p>If a non-local jump (such as <code class="highlight"><c- n>longjmp</c-></code>) is executed within <em>S</em> and control leaves scope <em>B</em>, the behavior is undefined.</p>
+      </div>
+      <div class="wording-numbered">
+       <p>If a non-local jump (such as <code class="highlight"><c- n>longjmp</c-></code>) is executed within <em>E</em> and it jumps into any <em>D</em>, the behavior is undefined.</p>
       </div>
       <div class="wording-numbered">
        <p><strong>EXAMPLE 1</strong>: Defer statements cannot be jumped over or jumped out of.</p>
@@ -3337,6 +3362,16 @@ allocating 0x7f7e14000b70 !!
   <c- n>printf</c-><c- p>(</c-><c- s>"cat says"</c-><c- p>);</c->
   <c- k>return</c-> <c- mi>1</c-><c- p>;</c->
 <c- p>}</c->
+
+<c- b>int</c-> <c- nf>j</c-> <c- p>()</c-> <c- p>{</c->
+  <c- n>defer</c-> <c- p>{</c->
+    <c- nl>b</c-><c- p>:</c->
+    <c- n>printf</c-><c- p>(</c-><c- s>" meow"</c-><c- p>);</c->
+  <c- p>}</c->
+  <c- k>goto</c-> <c- n>b</c-><c- p>;</c-> <c- c1>// constraint violation</c->
+  <c- n>printf</c-><c- p>(</c-><c- s>"cat says"</c-><c- p>);</c->
+  <c- k>return</c-> <c- mi>1</c-><c- p>;</c->
+<c- p>}</c->
 </pre>
       </div>
       <div class="wording-numbered">
@@ -3385,25 +3420,25 @@ allocating 0x7f7e14000b70 !!
   <c- b>int</c-> <c- n>r</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c->
   <c- p>{</c->
     <c- n>defer</c-> <c- p>{</c->
-      <c- n>defer</c-> <c- n>r</c-> <c- o>*=</c-> <c- mi>5</c-><c- p>;</c->
-      <c- n>r</c-> <c- o>*=</c-> <c- mi>3</c-><c- p>;</c->
+      <c- n>defer</c-> <c- n>r</c-> <c- o>*=</c-> <c- mi>4</c-><c- p>;</c->
+      <c- n>r</c-> <c- o>*=</c-> <c- mi>2</c-><c- p>;</c->
       <c- n>defer</c-> <c- p>{</c->
-        <c- n>r</c-> <c- o>+=</c-> <c- mi>1</c-><c- p>;</c->
+        <c- n>r</c-> <c- o>+=</c-> <c- mi>3</c-><c- p>;</c->
       <c- p>}</c->
     <c- p>}</c->
-    <c- n>defer</c-> <c- n>r</c-> <c- o>+=</c-> <c- mi>2</c-><c- p>;</c->
+    <c- n>defer</c-> <c- n>r</c-> <c- o>+=</c-> <c- mi>1</c-><c- p>;</c->
   <c- p>}</c->
-  <c- k>return</c-> <c- n>r</c-><c- p>;</c-> <c- c1>// return 35;</c->
+  <c- k>return</c-> <c- n>r</c-><c- p>;</c-> <c- c1>// return 20;</c->
 <c- p>}</c->
 </pre>
        <p>is equivalent to:</p>
 <pre class="language-cpp highlight"><c- b>int</c-> <c- nf>main</c-> <c- p>()</c-> <c- p>{</c->
   <c- b>int</c-> <c- n>r</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c->
-  <c- n>r</c-> <c- o>+=</c-> <c- mi>2</c-><c- p>;</c->
-  <c- n>r</c-> <c- o>*=</c-> <c- mi>3</c-><c- p>;</c->
   <c- n>r</c-> <c- o>+=</c-> <c- mi>1</c-><c- p>;</c->
-  <c- n>r</c-> <c- o>*=</c-> <c- mi>5</c-><c- p>;</c->
-  <c- k>return</c-> <c- n>r</c-><c- p>;</c-> <c- c1>// return 35;</c->
+  <c- n>r</c-> <c- o>*=</c-> <c- mi>2</c-><c- p>;</c->
+  <c- n>r</c-> <c- o>+=</c-> <c- mi>3</c-><c- p>;</c->
+  <c- n>r</c-> <c- o>*=</c-> <c- mi>4</c-><c- p>;</c->
+  <c- k>return</c-> <c- n>r</c-><c- p>;</c-> <c- c1>// return 20;</c->
 <c- p>}</c->
 </pre>
       </div>
