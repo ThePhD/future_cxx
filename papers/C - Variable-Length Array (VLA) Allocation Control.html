@@ -1506,7 +1506,7 @@ Possible extra rowspan handling
   <meta content="Bikeshed version 82ce88815, updated Thu Sep 7 16:33:55 2023 -0700" name="generator">
   <link href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Variable-Length%20Array%20(VLA)%20Allocation%20Control.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="22c32edaa184b2e330b129333df97fdaaabd7311" name="document-revision">
+  <meta content="7a1ff9cb8411a611c55089eb97a17a79cd468c30" name="document-revision">
 <style>
 
 :root {
@@ -2541,8 +2541,8 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    </ul>
    <h2 class="heading settled" data-level="2" id="intro"><span class="secno">2. </span><span class="content">Introduction and Motivation</span><a class="self-link" href="#intro"></a></h2>
    <p>Variable Length Arrays (VLAs) are a feature for potentially accessing an implementation-detail of where memory is stored to generate more efficient programs by utilizing a variable amount of stack space. The feature was conceived in the early 1990s with inspiration from Fortran, and eventually brought to C standardization by Tom MacDonald of the Cray Supercomputing group<a data-link-type="biblio" href="#biblio-n317" title="N317: Arrays of Variable Length">[N317]</a>. Despite getting multiple implementations from 1993 onwards and achieving all of the necessary details for C standardization — including a detailed rationale answering open questions during its standardization process in subsequent N-documents — the feature went into the standard in C99 and received deeply mixed response.</p>
-   <p>Many numerical communities and other processing groups found VLAs to be of great use; kernel communities and application programmers found it fraught with peril as user-controlled variables snuck into the VLAs and threatened to blow out their stacks or — when paired with logic errors — much worse. Others still found their performance characteristics hard to control and inaccessible, and others could not get their compilers to provide them with the kind of memory guarantees that they wanted<a data-link-type="biblio" href="#biblio-making-c-less-dangerous" title="Making C Less Dangerous">[making-c-less-dangerous]</a>.</p>
-   <p>Implementations withdrew support for even implementing Variable-Length Arrays, citing its several unspecified corners and its total silence on how to handle memory errors or other issues. This resulted in Variable-Length Arrays being made optional — along with many other features — in C11, and since then VLAs have been in a state of flux. It took until 2020 for the GNU Compiler Collection (GCC) to implement "stack probing" (checking the size of the stack and potentially failing on overflow) rather than just blindly blowing out the stack. Other implementations just aliased VLA usage as closely as possible to <code class="highlight"><c- n>alloca</c-><c- p>(</c->…<c- p>)</c-></code> and stack pointer manipulation as they could before phoning the effort in. Others still simply decided to call <code class="highlight"><c- n>malloc</c-></code> for every VLA declared, and simply crash/<code class="highlight"><c- n>abort</c-></code> if such an allocation failed.</p>
+   <p>Many numerical communities and other processing groups found VLAs to be of great use; kernel communities and application programmers found it fraught with peril as user-controlled variables snuck into the VLAs and threatened to blow out their stacks or — when paired with logic errors — much worse. Others still found their performance characteristics hard to control and inaccessible; dofferemt individuals could not get their compilers to provide them with the kind of memory guarantees that they wanted<a data-link-type="biblio" href="#biblio-making-c-less-dangerous" title="Making C Less Dangerous">[making-c-less-dangerous]</a>.</p>
+   <p>Implementations withdrew support for even implementing Variable-Length Arrays, citing its several unspecified corners and its total silence on how to handle memory errors or other issues. This resulted in Variable-Length Arrays being made optional — along with many other features — in C11, and since then VLAs have been in a state of flux. The GNU Compiler Collection (GCC) implemented "stack probing" (checking the size of the stack and letting the operating system fail where possible) rather than just blindly blowing out the stack in 2017 (its <code class="highlight"><c- o>-</c-><c- n>fstack</c-><c- o>-</c-><c- n>clash</c-><c- o>-</c-><c- n>protection</c-></code> option, a much improved version of its initial support). It took until 2020 for the Clang C compiler to support stack probing with their VLAs. Other implementations just aliased VLA usage as closely as possible to <code class="highlight"><c- n>alloca</c-><c- p>(</c->…<c- p>)</c-></code> and stack pointer manipulation as they could before phoning the effort in. Others still simply decided to call <code class="highlight"><c- n>malloc</c-></code> for every VLA declared, with a simple crash/<code class="highlight"><c- n>abort</c-></code> if such an allocation failed.</p>
    <p>It is clear now that there is a wide variety of implementation techniques and ways of handling VLAs, but in every attempt this has always been tackled from an implementer perspective. In this paper, we propose allowing the <strong>user</strong> to control the semantics of the the allocation and deallocation of a VLA. It is much more likely that the user knows the memory profile, binary footprint, and performance characteristics they would like to target, as opposed to the implementation. There are thousands — sometimes, hundreds of thousands — of developers as opposed to compiler developers; it makes sense for users to have control of the feature where they deem it important to their code.</p>
    <p>Similarly, we do not infringe upon an implementation’s right to refuse implementing a VLA: <code class="highlight"><c- n>__STDC_NO_VLA__</c-></code> can still be defined by an implementation, and an implementation can still outright reject VLAs <strong>if</strong> the opt-in extension mechanisms are not defined by the user. This allows implementers to implement VLAs in terms of a quick code rewrite rather than needing to worry about stack probing, a source of memory, or any of the other things implementations have cited as problematic for the last 20 years.</p>
    <h2 class="heading settled" data-level="3" id="design"><span class="secno">3. </span><span class="content">Design</span><a class="self-link" href="#design"></a></h2>
@@ -2566,7 +2566,6 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 <c- p>}</c->
 <c- b>void</c-> <c- nf>stdc_vla_free</c-><c- p>(</c-><c- b>void</c-><c- o>*</c-> <c- n>p</c-><c- p>,</c-> <c- b>size_t</c-> <c- n>n</c-><c- p>,</c-> <c- b>size_t</c-> <c- n>align</c-><c- p>)</c-> <c- p>{</c->
   <c- n>free</c-><c- p>(</c-><c- n>p</c-><c- p>);</c->
-  <c- k>return</c-> <c- n>p</c-><c- p>;</c->
 <c- p>}</c->
 
 <c- b>int</c-> <c- nf>main</c-> <c- p>(</c-><c- b>int</c-> <c- n>argc</c-><c- p>,</c-> <c- b>char</c-><c- o>*</c-> <c- n>argv</c-><c- p>[])</c-> <c- p>{</c->
@@ -2690,7 +2689,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    <h2 class="heading settled" data-level="4" id="interaction"><span class="secno">4. </span><span class="content">Interaction with Other (Potential) Language Features / Implementations</span><a class="self-link" href="#interaction"></a></h2>
    <p>There are many other (future) language features and implementation-specific features that can allow this feature to really blossom. Below are a select sampling of such techniques and a brief discussion of each such.</p>
    <h3 class="heading settled" data-level="4.1" id="interaction-alloca.stack.probing"><span class="secno">4.1. </span><span class="content"><code class="highlight"><c- n>alloca</c-></code> and stack-probing</span><a class="self-link" href="#interaction-alloca.stack.probing"></a></h3>
-   <p>Below is an implementation of stack probing that works on MSVC-based platforms as well as GCC and Clang-based platforms with the <a href="https://www.man7.org/linux/man-pages/man7/pthreads.7.html">pthreads</a> library (with <code class="highlight"><c- o>*</c-><c- n>_np</c-></code> (non-portable) extensions present).</p>
+   <p>Below is an implementation of manual stack checking that works on MSVC-based platforms as well as GCC and Clang-based platforms with the <a href="https://www.man7.org/linux/man-pages/man7/pthreads.7.html">pthreads</a> library (with <code class="highlight"><c- o>*</c-><c- n>_np</c-></code> (non-portable) extensions present).</p>
 <pre class="language-cpp highlight"><c- c1>///////////////////////</c->
 <c- c1>// platform boilerplate</c->
 <c- c1>///////////////////////</c->
@@ -2732,7 +2731,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
   <c- c1>// https://devblogs.microsoft.com/oldnewthing/20200610-00/?p=103855</c->
   <c- n>ULONG_PTR</c-> <c- n>low</c-> <c- o>=</c-> <c- mi>0</c-><c- p>,</c-> <c- n>high</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c->
   <c- n>GetCurrentThreadStackLimits</c-><c- p>(</c-><c- o>&amp;</c-><c- n>low</c-><c- p>,</c-> <c- o>&amp;</c-><c- n>high</c-><c- p>);</c->
-  <c- b>ptrdiff_t</c-> <c- n>remaining</c-> <c- o>=</c-> <c- k>reinterpret_cast</c-><c- o>&lt;</c-><c- n>ULONG_PTR</c-><c- o>></c-><c- p>(</c-><c- o>&amp;</c-><c- n>low</c-><c- p>)</c-> <c- o>-</c-> <c- n>low</c-><c- p>;</c->
+  <c- b>ptrdiff_t</c-> <c- n>remaining</c-> <c- o>=</c-> <c- p>(</c-><c- n>ULONG_PTR</c-><c- p>)(</c-><c- o>&amp;</c-><c- n>low</c-><c- p>)</c-> <c- o>-</c-> <c- n>low</c-><c- p>;</c->
   <c- b>ptrdiff_t</c-> <c- n>available</c-> <c- o>=</c-> <c- n>high</c-> <c- o>-</c-> <c- n>low</c-><c- p>;</c->
   <c- k>if</c-> <c- p>(</c-><c- n>remaining</c-> <c- o>></c-> <c- n>available</c-><c- p>)</c-> <c- p>{</c->
     <c- c1>// Ssssshhhooould not be possible?!</c->
@@ -2768,12 +2767,12 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 <c- cp>#endif</c->
 <c- p>}</c->
 
-<c- cp>#include</c-> &lt;stddef.h>
-<c- cp>#include</c-> &lt;stdlib.h>
-
 <c- c1>///////////////////////////</c->
 <c- c1>// User-Defined VLA Control</c->
 <c- c1>///////////////////////////</c->
+<c- cp>#include</c-> &lt;stddef.h>
+<c- cp>#include</c-> &lt;stdlib.h>
+
 <c- n>MY_FLATTEN</c-> <c- kr>inline</c-> <c- b>void</c-><c- o>*</c-> <c- n>stdc_vla_alloc</c-><c- p>(</c-><c- b>size_t</c-> <c- n>size</c-><c- p>,</c->
   <c- b>size_t</c-> <c- n>alignment</c-><c- p>,</c->
   <c- b>size_t</c-><c- o>*</c-> <c- n>actual_size</c-><c- p>)</c->
@@ -2827,7 +2826,6 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 <c- b>void</c-> <c- nf>my_vla_free</c-><c- p>(</c-><c- b>void</c-><c- o>*</c-> <c- n>p</c-><c- p>,</c-> <c- b>size_t</c-> <c- n>n</c-><c- p>,</c-> <c- b>size_t</c-> <c- n>align</c-><c- p>);</c->
 
 <c- b>int</c-> <c- nf>main</c-> <c- p>(</c-><c- b>int</c-> <c- n>argc</c-><c- p>,</c-> <c- b>char</c-><c- o>*</c-> <c- n>argv</c-><c- p>[])</c-> <c- p>{</c->
-
   <c- c1>// aliases the 2 required function calls</c->
   <c- n>_Alias</c-> <c- n>stdc_alloc_vla</c-> <c- o>=</c-> <c- n>my_alloc_vla</c-><c- p>;</c->
   <c- n>_Alias</c-> <c- n>stdc_free_vla</c-> <c- o>=</c-> <c- n>my_free_vla</c-><c- p>;</c->

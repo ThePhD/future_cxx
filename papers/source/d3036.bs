@@ -40,36 +40,38 @@ path: resources/css/bikeshed-color-fix.html
 
 # Introduction and Motivation # {#intro}
 
-Recently, the issue of security has been brought up for C and C++. While C++ has proven to show great resource safety with its general-purpose undo mechanism in the RAII idiom, it has failed spectacularly to take advantage of concepts already present in the C++ standard library to provide operational safety to C++ programs in a meaningful way beyond C. Large classes of output-writing algorithms — such as `std::ranges::copy` — still take an `OutputIterator` and will happily overwrite beyond the boundaries of an array with no standard-provided, guaranteed safety alternative above `memcpy`. Users frequently have to pad their own usage of the algorithms with safety checks in order to achieve their own safety, and the standard library in a wide variety of cases remains completely silent on whether or not we should be providing 
+Recently, the issue of security has been brought up for C and C++. While C++ has proven to show great resource safety with its general-purpose undo mechanism in the RAII idiom, it has failed spectacularly to take advantage of concepts already present in the C++ standard library to provide operational safety to C++ programs in a meaningful way beyond C. Large classes of output-writing algorithms — such as `std::ranges::copy` — still take an `OutputIterator` and will happily overwrite beyond the boundaries of an array with no standard-provided, guaranteed safety alternative. Users frequently have to pad their own usage of the algorithms with safety checks in order to achieve their own safety, and the standard library in a wide variety of cases remains completely silent on whether or not we should be providing better functionality.
 
-In this proposal, we look at a recently added C++20 interface — std::format_to — and provide a meaningful improvement to its API that prevents a wide class of stack and heap linear buffer overruns. This is accomplished by taking advantage of statically-deducible size and type information that can be gleaned from the use of a [pre-existing C++20 concept — `std::ranges::output_range` — in the function template definition]().
+In this proposal, we look at a recently added C++20 interface — `std::format_to` — and provide a meaningful improvement to its API that prevents a wide class of stack and heap linear buffer overruns. This is accomplished by taking advantage of statically-deducible size and type information that can be gleaned from the use of a [pre-existing C++20 concept — `std::ranges::output_range` — in the function template definition](http://eel.is/c++draft/range.refinements).
 
-We also propose a new range type — `std::unbounded_view<OutputIterator>` — that enables an explicit, grep-able, searchable, and type-system-optimizable pathway to preserve the same performance characters are prior. We provide a demonstration about how fast this is by using an existing library that takes advantage of the same type mechanisms as a proof-of-concept, building on top of Alexander Stepanov's and Eric Niebler's ideals for iterator and ranges.
+We also propose a new view alias template — `std::ranges::unbounded<OutputIterator>` — that enables an explicit, grep-able, searchable, and type-system-optimizable pathway to preserve the same performance characters are prior. We provide a demonstration about how fast this is by using an existing library that takes advantage of the same type mechanisms as a proof-of-concept, building on top of Alexander Stepanov's and Eric Niebler's ideals for iterator and ranges.
 
 
 
-# Motivating Example # {#}
+## Motivating Example ## {#intro-example}
 
 As pointed out by Olaf van der Spek, this code, unacceptably, will overwrite your stack:
 
-> This snippet overflows the destination buffer. Is format_to too easy to misuse?
-> Shouldn't it requires an iterator to the end so it could avoid this issue?
-> It seems like a modern equivalent of fgets()
-> 
-> ```cpp
-> 
-> #include <format>
-> #include <iostream>
-> 
-> int main()
-> {
->   char d[10] = {};
->   std::format_to(d, "0123456789 {}", 42);
->   std::cout << std::string_view(d, 10) << std::endl;
-> } 
-> ```
->
-> — [Olaf van der Spek, Sunday October 2022](https://lists.isocpp.org/std-discussion/2022/10/1795.php)
+<blockquote>
+
+This snippet overflows the destination buffer. Is format_to too easy to misuse?
+Shouldn't it requires an iterator to the end so it could avoid this issue?
+It seems like a modern equivalent of `fgets()`
+
+```cpp
+#include <format>
+#include <iostream>
+
+int main()
+{
+	char d[10] = {};
+	std::format_to(d, "0123456789 {}", 42);
+	std::cout << std::string_view(d, 10) << std::endl;
+}
+```
+
+— [Olaf van der Spek, Sunday October 2022](https://lists.isocpp.org/std-discussion/2022/10/1795.php)
+</blockquote>
 
 There is no reason for this code to behave in this fashion, but it can, will, and does despite the protestations of many both at the time of its standardization and those outside the Committee who have, for years, overrun hundreds of buffers and produced vulnerability after denial of service after privilege escalation with exactly these interfaces. While non-executable stack mitigations and stack cookies/canaries can prevent the worst of this from propagating the damage too far, this discounts the ability to write the exact same code using an incorrectly sized `std::vector`, `std::array`, or similar and relies on the user to perform size checking.
 
@@ -77,66 +79,558 @@ We can – and should — do better than this.
 
 
 
-# Behavior Delta Tables ("Tony Tables") # {#intro-tables}
+## Problem Statement Tables ## {#intro-tables}
 
-The first table in this section lists the old behaviors and their properties, and the second table lists the new, desired behaviors and their properties.
+The first table in this section lists the old behaviors and their properties. The preamble code is listed here for both tables, to show the starting point of all of the snippets that will be discussed:
+
+```cpp
+#include <vector>
+#include <list>
+#include <string>
+#include <array>
+#include <span>
+
+int main () {
+
+	std::array<char, 4> tiny_arr;
+	std::array<char, 50> arr;
+	std::array<char, 0> empty_arr;
+
+	char tiny_c_arr[4];
+	char c_arr[50];
+	// cannot have zero-sized C array
+
+	std::vector<char> tiny_vec(size_t(4), '\0');
+	std::vector<char> vec(size_t(50), '\0');
+	std::vector<char> empty_vec{};
+
+	std::span<char> tiny_arr_span(tiny_c_arr);
+	std::span<char> arr_span(c_arr);
+	std::span<char> empty_span{};
+
+	std::list<char> tiny_llist(size_t(4), '\0');
+	std::list<char> llist(size_t(50), '\0');
+	std::list<char> empty_llist{};
+
+	/* … */
+	// Below Table Code Here!
+	/* … */
+	return 0;
+}
+```
+
+The "Properties" uses the following legend, with a numeric marker for each line of code it is referencing in the snippet. The properties are as follows:
+
+- ✔️ Compiles, links, and runs without issue.
+- ❌ Does not compile.
+- ☢️1 Stack buffer overrun.
+- ☢️2 Heap buffer overrun.
+- †: Mitigation for ☢️; Stopped by Undefined Behavior Sanitizer / Address Sanitizer.
+- ‡: Mitigation for ☢️; Implementation-specific iterator debugging will stop (unsafe in typical 'Release"-mode software).
+
+<table>
+<thead>
+<tr>
+<th>Used Ranges/Views</th>
+<th>Properties</th>
+<th>Code Snippet</th>
+</tr>
+</thead>
+<tbody>
+
+<tr>
+<td>
+
+`std::array<char, …>`  
+`std::span<char…>`
+</td>
+<td>
+0. ❌
+1. ☢️1†
+2. ☢️1‡
+3. ❌
+
+4. ✔️
+5. ✔️
+6. ❌
+7. ☢️1†
+
+8. ❌
+9. ☢️1‡
+10. ☢️1‡
+11. ❌
+
+</td>
+<td>
+
+```cpp
+	/* … */
+	// 0.
+	std::format_to(tiny_view, "Big: {}", 2234561011);
+	// 1.
+	std::format_to(tiny_view.data(), "Big: {}", 2234561011);
+	// 2.
+	std::format_to(tiny_view.begin(), "Big: {}", 2234561011);
+	// 3.
+	std::format_to(std::ranges::unbounded_view(view),
+		"Big: {}", 2234561011);
+	// 4.
+	std::format_to(view, "Big: {}", 2234561011);
+	// 5.
+	std::format_to(view.data(), "Big: {}", 2234561011);
+	// 6.
+	std::format_to(view.begin(), "Big: {}", 2234561011);
+	// 7.
+	std::format_to(std::ranges::unbounded_view(view),
+		"Big: {}", 2234561011);
+	// 8.
+	std::format_to(empty_view, "Big: {}", 2234561011);
+	// 9.
+	std::format_to(empty_view.data(), "Big: {}", 2234561011);
+	// 10.
+	std::format_to(empty_view.begin(), "Big: {}", 2234561011);
+	// 11.
+	std::format_to(std::ranges::unbounded_view(empty_view),
+		"Big: {}", 2234561011);
+	/* … */
+```
+</td>
+</tr>
 
 
+<tr>
+<td>
+
+`char[…]`
+</td>
+<td>
+0. ☢️1†
+1. ☢️1†
+2. ☢️1‡
+
+3. ✔️
+4. ✔️
+5. ✔️
+
+</td>
+<td>
+
+```cpp
+	/* … */
+	// 0.
+	std::format_to(tiny_arr, "Big: {}", 2234561011);
+	// 1.
+	std::format_to(std::data(tiny_arr), "Big: {}", 2234561011);
+	// 2.
+	std::format_to(std::begin(tiny_arr), "Big: {}", 2234561011);
+	// 3.
+	std::format_to(arr, "Big: {}", 2234561011);
+	// 4.
+	std::format_to(std::data(arr), "Big: {}", 2234561011);
+	// 5.
+	std::format_to(std::begin(arr), "Big: {}", 2234561011);
+	/* … */
+```
+</td>
+</tr>
+
+
+<tr>
+<td>
+
+`std::vector<char>`  
+`std::list<char>`
+</td>
+<td>
+0. ❌
+1. ☢️2†
+2. ☢️2‡
+3. ☢️2†
+4. ❌
+
+5. ✔️
+6. ✔️
+7. ✔️
+8. ❌
+9. ☢️2‡
+
+10. ✔️
+11. ❌
+12. 
+13. 
+14. 
+
+</td>
+<td>
+
+```cpp
+	/* … */
+	// 0.
+	std::format_to(tiny_rng, "Big: {}", 2234561011);
+	// 1.
+	std::format_to(tiny_rng.begin(), "Big: {}", 2234561011);
+	// 2.
+	std::format_to(std::ranges::unbounded_view(tiny_rng),
+		"Big: {}", 2234561011);
+	// 3.
+	std::format_to(std::inserter(tiny_rng, tiny_rng.begin()),
+		"Big: {}", 2234561011);
+	// 4.
+	std::format_to(std::ranges::unbounded_view(
+		std::inserter(tiny_rng, tiny_rng.begin())
+		),
+		"Big: {}", 2234561011);
+	
+	// 5.
+	std::format_to(tiny_rng, "Big: {}", 2234561011);
+	// 6.
+	std::format_to(tiny_rng.begin(), "Big: {}", 2234561011);
+	// 7.
+	std::format_to(std::ranges::unbounded_view(tiny_rng),
+		"Big: {}", 2234561011);
+	// 8.
+	std::format_to(std::inserter(tiny_rng, tiny_rng.begin()),
+		"Big: {}", 2234561011);
+	// 9.
+	std::format_to(std::ranges::unbounded_view(
+		std::inserter(tiny_rng, tiny_rng.begin())
+		),
+		"Big: {}", 2234561011);
+	
+	// 0.
+	std::format_to(empty_rng, "Big: {}", 2234561011);
+	// 1.
+	std::format_to(empty_rng.begin(), "Big: {}", 2234561011);
+	// 2.
+	std::format_to(std::ranges::unbounded_view(empty_rng),
+		"Big: {}", 2234561011);
+	// 3.
+	std::format_to(std::inserter(empty_rng, tiny_rng.begin()),
+		"Big: {}", 2234561011);
+	// 4.
+	std::format_to(std::ranges::unbounded_view(
+		std::inserter(empty_rng, empty_rng.begin())
+		),
+		"Big: {}", 2234561011);
+	/* … */
+```
+</td>
+</tr>
+
+</tbody>
+</table>
+
+The above is the status quo. Notably, for C-style arrays, what should not compile like the rest of the examples falls into a case of buffer overrun (on the stack). The other examples are not really all that helpful either, with the container-like ranges still existing undefined behavior for too-small or empty ranges rather than having any sort of sensible stopping behavior. As noted, mitigations such as UBSan, ASan, or iterator debugging / standard library debugging can stop these, but there is no way to stop such errors in release mode software.
+
+It is also more difficult to mandate certain safety macro definitions or force the use of undefined behavior/address sanitization as a library author, leaving library problems to percolate up to users if library authors do not aggressively check inputs and outputs. Arguably, library authors should already be aggressively checking inputs and making sure things do not fall outside the range of expected values, but as much as we would like to be perfect the people who are reading this are (we assume) fallible creatures such as human beings. Expecting perfection is not a tractable task, as has been proven over the course of security issues from the last 40 years of C and C++. Even with the rise of stringent code review, heavier testing, heavier fuzzing, and more, sincere vulnerabilities still make it through.
+
+Therefore, we should start entertaining writing more safe-by-default range algorithms and functionality, and consider integrating the whole standard library with these principles. Rather than simply write a Policy Paper, this proposal takes the approach of using a much-loved piece of functionality — `std::format_to` — and directly enhancing its interface to handle ranges to make the shortest code (the one that passes the range directly) compile as well as have completely memory-safe and exception-resistant behavior.
 
 
 
 
 # Design # {#design}
 
-The design of this feature is not particularly new or spectacular in its usage. It simply follows a core set of principles for both predictable and 
+The design of this feature is not particularly new or spectacular in its usage. It simply follows a core set of principles for both predictable and well-defined behavior, and prevents a wide class of undefined behavior unless **explicitly** opted into using a new range alias that takes advantage of `unreachable_sentinel_t` to explicitly mark the case where a range wants iterate infinitely.
+
+
+## Table of Changed Behaviors ## {#design.tables}
+
+Taking the table from the above section and taking into account the changes made, we can show the changes that these new APIs would enable:
+
+<table>
+<thead>
+<tr>
+<th>Used Ranges/Views</th>
+<th>Properties</th>
+<th>Code Snippet</th>
+</tr>
+</thead>
+<tbody>
+
+<tr>
+<td>
+
+`std::array<char, …>`  
+`std::span<char…>`
+</td>
+<td>
+0. ❌ ⇒ ✔️
+1. ☢️1† ⇒ ✔️
+2. ☢️1‡ ⇒ ✔️
+
+3. ❌ ⇒ ✔️
+4. ✔️
+5. ✔️
+
+6. ❌ ⇒ ✔️
+7. ☢️1† ⇒ ✔️
+8. ☢️1‡ ⇒ ✔️
+
+</td>
+<td>
+
+```cpp
+	/* … */
+	// 0.
+	std::format_to(tiny_view, "Big: {}", 2234561011);
+	// 1.
+	std::format_to(tiny_view.data(), "Big: {}", 2234561011);
+	// 2.
+	std::format_to(tiny_view.begin(), "Big: {}", 2234561011);
+	// 3.
+	std::format_to(view, "Big: {}", 2234561011);
+	// 4.
+	std::format_to(view.data(), "Big: {}", 2234561011);
+	// 5.
+	std::format_to(view.begin(), "Big: {}", 2234561011);
+	// 6.
+	std::format_to(empty_view, "Big: {}", 2234561011);
+	// 7.
+	std::format_to(empty_view.data(), "Big: {}", 2234561011);
+	// 8.
+	std::format_to(empty_view.begin(), "Big: {}", 2234561011);
+	/* … */
+```
+</td>
+</tr>
+
+
+<tr>
+<td>
+
+`char[…]`
+</td>
+<td>
+0. ☢️1† ⇒ ✔️
+1. ☢️1† ⇒ ✔️
+2. ☢️1† ⇒ ✔️
+
+3. ✔️
+4. ✔️
+5. ✔️
+
+</td>
+<td>
+
+```cpp
+	/* … */
+	// 0.
+	std::format_to(tiny_arr, "Big: {}", 2234561011);
+	// 1.
+	std::format_to(std::data(tiny_arr), "Big: {}", 2234561011);
+	// 2.
+	std::format_to(std::begin(tiny_arr), "Big: {}", 2234561011);
+	// 3.
+	std::format_to(arr, "Big: {}", 2234561011);
+	// 4.
+	std::format_to(std::data(arr), "Big: {}", 2234561011);
+	// 5.
+	std::format_to(std::begin(arr), "Big: {}", 2234561011);
+	/* … */
+```
+</td>
+</tr>
+
+
+<tr>
+<td>
+
+`std::vector<char>`  
+`std::list<char>`
+</td>
+<td>
+0. ❌ ⇒ ✔️
+1. ☢️2†
+2. ☢️2‡
+3. ☢️2†
+
+4. ❌ ⇒ ✔️
+5. ✔️ ⇒ ✔️
+6. ✔️ ⇒ ✔️
+7. ✔️ ⇒ ✔️
+
+8. ❌ ⇒ ✔️
+9. ☢️2‡
+10. ☢️2‡
+11. ☢️2‡ ⇒ ✔️
+
+</td>
+<td>
+
+```cpp
+	/* … */
+	// 0.
+	std::format_to(tiny_rng, "Big: {}", 2234561011);
+	// 1.
+	std::format_to(tiny_rng.begin(), "Big: {}", 2234561011);
+	// 2.
+	// 4.
+	std::format_to(std::inserter(tiny_rng, tiny_rng.begin()),
+		"Big: {}", 2234561011);
+	// 4.
+	std::format_to(rng, "Big: {}", 2234561011);
+	// 5.
+	std::format_to(rng.begin(), "Big: {}", 2234561011);
+	// 6.
+	// 7.
+	std::format_to(std::inserter(rng, rng.begin()),
+		"Big: {}", 2234561011);
+	// 8.
+	std::format_to(empty_rng, "Big: {}", 2234561011);
+	// 9.
+	std::format_to(empty_rng.begin(), "Big: {}", 2234561011);
+	// 10.
+	// 11.
+	std::format_to(std::inserter(empty_rng, empty_rng.begin()),
+		"Big: {}", 2234561011);
+	/* … */
+```
+</td>
+</tr>
+
+</tbody>
+</table>
+
+
+
+## Why not `.insert`/`.push_back`/etc. by-default? ## {#design-insertable}
+
+The way this proposal handles ranges of all types is to simply consider the range between their `std::ranges::begin()` and their `std::ranges::end()` as the full set of values to work with. One of the immediate questions that comes from this interface is "how come we do not immediately invoke `rng.push_back(value)` or `rng.insert(rng.end(), value)` when capable containers are passed to these algorithms?".
+
+This is merely the most conservative choice. `std::ranges::to` has cleared the way for allowing for such algorithms to use the many exposition-only concepts to automatically determine container-alike types that may be reserved, pushed back into, inserted into, and otherwise. Those concepts may need to be elevated from exposition-only concepts to instead be more dependable concepts so that they can be depended upon better by users who do not want to "silently" fall back to just working with the `[begin, end)` set of values.
+
+We do note that taking the `std::ranges::to` approach to such algorithms may add the additional failure condition where allocations from the underlying container may trigger exceptions. None of the `std::ranges` algorithms that write out are marked as `noexcept`, though, so while the exception may not be expected it will thankfully not trigger a full collapse. However, it will prove more difficult, in the future, to appropriately mark any algorithm as `noexcept`.
+
+We leave this question in the hands of SG9 and LEWG, noting that -- at least in one library that uses output ranges thoroughly[[ztd.text]] -- we take the conservative approach and use a separate function to indicate the intent to `push_back`/`insert`/etc.
 
 
 
 
 # Specification # {#wording}
 
-The specification is relative to the latest C++ Working Draft, [[n4950]].
+The specification is relative to the latest C++ Working Draft.
 
 
 
-## Language Wording ## {#wording-language}
+## Library Wording ## {#wording-library}
 
 
+### Feature Test Macros ### {#wording-library-feature.test}
 
+The feature test macro for this should be `__cpp_lib_ranges_unbounded`, with an appropriate date provided. The other feature test macros related to the ranges library should also be updated:
+
+```cpp
+#define __cpp_lib_ranges           202504L /* 📝 EDITOR'S NOTE: APPROPRIATE VALUE HERE */
+	// also in <algorithm>, <functional>, <iterator>, <memory>, <ranges>
+#define __cpp_lib_ranges_unbounded 202504L /* 📝 EDITOR'S NOTE: APPROPRIATE VALUE HERE */
+#define __cpp_lib_ranges_output_algorithms 202504L /* 📝 EDITOR'S NOTE: APPROPRIATE VALUE HERE */
+	// also in <algorithm>
+```
+
+
+### Update Synopsis [range.syn] ### {#wording-library-range.syn}
+
+<blockquote>
+<div class="wording-section">
+
+<div id="ranges.syn" class="wording-section-header">
+<span class="wording-clause-number">26.2</span>
+<span class="wording-clause-title">Header `<ranges>` synopsis</span>
+<span class="wording-clause-stable-tag">[<b>ranges.syn</b>]</span>
+</div>
+
+```cpp
+namespace std::ranges {
+	// …
+```
+<ins>
+```cpp
+	template<input_or_output_iterator I>
+	class unbounded_view;                               // freestanding
+```
+</ins>
+```cpp
+	// …
+}
+```
+
+</div>
+</ins>
+</blockquote>
+
+
+### Add a new section [range.unbounded] in [ranges] ### {#wording-library-range.unbounded}
+
+<blockquote>
+<ins>
+<div class="wording-section">
+
+<div id="range.unbounded_view" class="wording-section-header">
+<span class="wording-clause-number">26.5.8</span>
+<span class="wording-clause-title">Unbounded view</span>
+<span class="wording-clause-stable-tag">[<b>range.unbounded_view</b>]</span>
+</div>
+
+<div class="wording-numbered">
+
+An `unbounded_view` is a view that pairs an iterator and an `unreachable_sentinel_t` together, implying that the iterator will never reach its end.
+
+```cpp
+namespace std::ranges {
+
+	template<input_or_output_iterator I>
+	using base-subrange = subrange<I, unreachable_sentinel_t>; /* exposition-only */
+
+
+	template<input_or_output_iterator I>
+	class unbounded_view
+		/* exposition-only: inheritance not required */
+		: private base-subrange<I> {
+	public:
+		unbounded_view(I it)
+			: base-range(std::move(it), unreachable_sentinel_t{}) {}
+		unbounded_view(I it, unreachable_sentinel_t end)
+			: base-range(std::move(it), end) {}
+		template <different-from<subrange> R>
+			requires borrowed_range<R> &&
+				convertible-to-non-slicing<iterator_t<R>, I>
+		unbounded_view(R&& r)
+			: base-range(ranges::begin(::std::forward<R>(r)), unreachable_sentinel_t{}) {}
+
+		using base-range::begin;
+		using base-range::end;
+		using base-range::next;
+		using base-range::prev;
+		using base-range::advance;
+
+	private:
+		using base-range = base-subrange<I>; /* exposition-only */
+	};
+
+	template<borrowed_range R>
+	unbounded_view(R&&) ->
+		unbounded_view<iterator_t<R>>;
+}
+```
+
+</div>
+
+</div>
+</ins>
+</blockquote>
 
 <pre class=biblio>
 {
-	"n1978": {
-		"title": "N1978 - Decltype (revision 5)",
-		"authors": [
-			"Jakko Järvi",
-			"Bjarne Stroustrup",
-			"Gabriel Dos Reis"
-		],
-		"href": "https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2006/n1978.pdf",
-		"publisher": "ISO/IEC JTC1 SC22 WG21 - Programming Language, C++",
-		"date": "April 24th, 2006"
-	},
-	"n2343": {
-		"title": "N2343 - Decltype (revision 7)",
-		"authors": [
-			"Jakko Järvi",
-			"Bjarne Stroustrup",
-			"Gabriel Dos Reis"
-		],
-		"href": "https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2007/n2343.pdf",
-		"publisher": "ISO/IEC JTC1 SC22 WG21 - Programming Language, C++",
-		"date": "July 18th, 2007"
-	},
-	"n2927": {
-		"title": "N2927 - Not-so-magic - typeof for C",
+	"ztd.text": {
+		"title": "ztd.text",
 		"authors": [
 			"JeanHeyd Meneide",
 			"Shepherd's Oasis, LLC"
 		],
-		"href": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2927.htm",
-		"publisher": "ISO/IEC JTC1 SC22 WG14 - Programming Language, C",
-		"date": "July 18th, 2007"
+		"href": "https://ztdtext.readthedocs.io/",
+		"publisher": "Shepherd's Oasis, LLC",
+		"date": "November 25th, 2023"
 	}
 	
 }

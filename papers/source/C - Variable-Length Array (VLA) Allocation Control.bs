@@ -47,9 +47,9 @@ path: resources/css/bikeshed-color-fix.html
 
 Variable Length Arrays (VLAs) are a feature for potentially accessing an implementation-detail of where memory is stored to generate more efficient programs by utilizing a variable amount of stack space. The feature was conceived in the early 1990s with inspiration from Fortran, and eventually brought to C standardization by Tom MacDonald of the Cray Supercomputing group[[N317]]. Despite getting multiple implementations from 1993 onwards and achieving all of the necessary details for C standardization — including a detailed rationale answering open questions during its standardization process in subsequent N-documents — the feature went into the standard in C99 and received deeply mixed response.
 
-Many numerical communities and other processing groups found VLAs to be of great use; kernel communities and application programmers found it fraught with peril as user-controlled variables snuck into the VLAs and threatened to blow out their stacks or — when paired with logic errors — much worse. Others still found their performance characteristics hard to control and inaccessible, and others could not get their compilers to provide them with the kind of memory guarantees that they wanted[[making-c-less-dangerous]].
+Many numerical communities and other processing groups found VLAs to be of great use; kernel communities and application programmers found it fraught with peril as user-controlled variables snuck into the VLAs and threatened to blow out their stacks or — when paired with logic errors — much worse. Others still found their performance characteristics hard to control and inaccessible; dofferemt individuals could not get their compilers to provide them with the kind of memory guarantees that they wanted[[making-c-less-dangerous]].
 
-Implementations withdrew support for even implementing Variable-Length Arrays, citing its several unspecified corners and its total silence on how to handle memory errors or other issues. This resulted in Variable-Length Arrays being made optional — along with many other features — in C11, and since then VLAs have been in a state of flux. It took until 2020 for the GNU Compiler Collection (GCC) to implement "stack probing" (checking the size of the stack and potentially failing on overflow) rather than just blindly blowing out the stack. Other implementations just aliased VLA usage as closely as possible to `alloca(…)` and stack pointer manipulation as they could before phoning the effort in. Others still simply decided to call `malloc` for every VLA declared, and simply crash/`abort` if such an allocation failed.
+Implementations withdrew support for even implementing Variable-Length Arrays, citing its several unspecified corners and its total silence on how to handle memory errors or other issues. This resulted in Variable-Length Arrays being made optional — along with many other features — in C11, and since then VLAs have been in a state of flux. The GNU Compiler Collection (GCC) implemented "stack probing" (checking the size of the stack and letting the operating system fail where possible) rather than just blindly blowing out the stack in 2017 (its `-fstack-clash-protection` option, a much improved version of its initial support). It took until 2020 for the Clang C compiler to support stack probing with their VLAs. Other implementations just aliased VLA usage as closely as possible to `alloca(…)` and stack pointer manipulation as they could before phoning the effort in. Others still simply decided to call `malloc` for every VLA declared, with a simple crash/`abort` if such an allocation failed.
 
 It is clear now that there is a wide variety of implementation techniques and ways of handling VLAs, but in every attempt this has always been tackled from an implementer perspective. In this paper, we propose allowing the **user** to control the semantics of the the allocation and deallocation of a VLA. It is much more likely that the user knows the memory profile, binary footprint, and performance characteristics they would like to target, as opposed to the implementation. There are thousands — sometimes, hundreds of thousands — of developers as opposed to compiler developers; it makes sense for users to have control of the feature where they deem it important to their code.
 
@@ -87,7 +87,6 @@ void* stdc_vla_alloc(size_t n, size_t align, size_t* out_n) {
 }
 void stdc_vla_free(void* p, size_t n, size_t align) {
 	free(p);
-	return p;
 }
 
 int main (int argc, char* argv[]) {
@@ -257,7 +256,7 @@ There are many other (future) language features and implementation-specific feat
 
 ## `alloca` and stack-probing ## {#interaction-alloca.stack.probing}
 
-Below is an implementation of stack probing that works on MSVC-based platforms as well as GCC and Clang-based platforms with the [pthreads](https://www.man7.org/linux/man-pages/man7/pthreads.7.html) library (with `*_np` (non-portable) extensions present).
+Below is an implementation of manual stack checking that works on MSVC-based platforms as well as GCC and Clang-based platforms with the [pthreads](https://www.man7.org/linux/man-pages/man7/pthreads.7.html) library (with `*_np` (non-portable) extensions present).
 
 ```cpp
 ///////////////////////
@@ -301,7 +300,7 @@ bool my_is_stack_available(size_t amount, size_t alignment)
 	// https://devblogs.microsoft.com/oldnewthing/20200610-00/?p=103855
 	ULONG_PTR low = 0, high = 0;
 	GetCurrentThreadStackLimits(&low, &high);
-	ptrdiff_t remaining = reinterpret_cast<ULONG_PTR>(&low) - low;
+	ptrdiff_t remaining = (ULONG_PTR)(&low) - low;
 	ptrdiff_t available = high - low;
 	if (remaining > available) {
 		// Ssssshhhooould not be possible?!
@@ -337,12 +336,12 @@ bool my_is_stack_available(size_t amount, size_t alignment)
 #endif
 }
 
-#include <stddef.h>
-#include <stdlib.h>
-
 ///////////////////////////
 // User-Defined VLA Control
 ///////////////////////////
+#include <stddef.h>
+#include <stdlib.h>
+
 MY_FLATTEN inline void* stdc_vla_alloc(size_t size,
 	size_t alignment,
 	size_t* actual_size)
@@ -402,7 +401,6 @@ void* my_vla_alloc(size_t n, size_t align, size_t* out_n);
 void my_vla_free(void* p, size_t n, size_t align);
 
 int main (int argc, char* argv[]) {
-
 	// aliases the 2 required function calls
 	_Alias stdc_alloc_vla = my_alloc_vla;
 	_Alias stdc_free_vla = my_free_vla;
@@ -426,23 +424,13 @@ The VLA in `main` will compile, link, and run (provided a definition of `my_vla_
 
 # Wording # {#wording}
 
-Wording is relative to [[N3096]].
+Wording is relative to the latest draft of the C standard.
 
 NOTE: The wording is not yet present and won't be for a while; this draft is for the approval of the overall design by both like- and unlike-minded individuals.
 
 
 <pre class="biblio">
 {
-	"N3096": {
-		"authors": [
-			"ISO/IEC JTC1 SC22 WG14 - Programming Languages, C",
-			"JeanHeyd Meneide",
-			"Freek Wiedijk"
-		],
-		"title": "N2596: ISO/IEC 9899:2023 - Programming Languages, C",
-		"href": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3096.pdf",
-		"date": "April 2nd, 2023"
-	},
 	"n3138": {
 		"authors": [
 			"Aaron Ballman"

@@ -17,7 +17,7 @@ Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
 Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
 Markup Shorthands: markdown yes
 Toggle Diffs: no
-Abstract: Many compilers's "cleanup" attribute has long-since provided scope-based, compile-time deterministic, well-known mechanism for the C language to clean up resources of all kinds (not just memory). This propoal attempts to standardize something as close to existing practice as possible while providing a select and measured few set of behaviors to ensure greater portability and usability in the C ecosystem.
+Abstract: Many compilers's "cleanup" attribute has long-since provided scope-based, compile-time deterministic, well-known mechanism for the C language to clean up resources of all kinds (not just memory). This proposal attempts to standardize something as close to existing practice as possible while providing a select and measured few set of behaviors to ensure greater portability and usability in the C ecosystem.
 </pre>
 
 <pre class="include-raw">
@@ -40,8 +40,1010 @@ path: resources/css/bikeshed-color-fix.html
 
 
 
-# Introduction and Motivation # {#intro}
+# Introduction, Motivation, and Prior Art # {#intro}
 
-	Purr. :3
+> `defer` in C would have avoided probably half of the issues ever caught by the Clang Static Analyzer’s malloc/free and retain/release checking, at least ten years ago when I worked on it.
+>
+> — [Jordan Rose, Formerly Swift @ Apple, Currently Signal, December 1st, 2023](https://social.belkadan.com/@jrose/statuses/01HGKXQQAM9H4DSZ4S9FCV6P4C)
 
-	Wrf. :3
+The need to clean up resources, undo partially-successful function invocations, and perform actions upon early return has been a computing need since we started having computers that were capable of calculation. This need intensified with the introduction of resources that work with the boundaries of a system, from sockets and files to memory allocations and parallelism primitives.
+
+We have also had a large variety of failures related to `goto cleanup;` or `goto fail;`-style of programming. It becomes incredibly precarious to balance such code correctly, and sometimes individuals even opt out of `goto` entirely and simply repeat necessary cleanup on exit of each scope:
+
+<blockquote>
+So this isn't as ... "nice" ... as those "goto err1; ... goto err2;" style solutions, this is my own little piece of hell :)
+
+It's the result of retrofitting freeing memory in error situations to an application which used to not care about that because it was a one-shot thing.
+
+<pre class="include">
+path: assets/C - defer/mort96 code.bs
+</pre>
+
+— Martin Dørum, with code from: [Housecat](https://github.com/mortie/housecat/blob/6a1b76a8b41c5ad0fea2698f8559f171feb43c72/src/build/plugins.c)
+</blockquote>
+
+
+As stated by the code author, this is not more robust code. In fact, this sort of idiom — while explicit — has the user repeating themselves multiple times over and over again. Each nested scope, each conditional, is a chance to potentially forget to free an element, or free too many elements too many times.
+
+Conversely, there is the opposite idiom where — in an attempt to reduce the sort of code as shown above — the author deploys a series of outside-in, inside-out `goto`s and labels to handle failure. Other times, there is only one failure and the use of sentinel values (such as `INVALID_HANDLE` or the null pointer constant or `0`) are used to effectively have no-op `free`/`DestroyHandle`/`ReleaseResource`/etc. calls. But, even a simple set of conditionals with only one `goto fail;` and be error-prone in conjunction with formatting failures and other issues.
+
+
+
+## Language-based Solutions ## {#intro-language}
+
+Language-based solutions are far superior to library-based solutions for this problem. They provide a level of guarantees to make code a lot cleaner than normal.
+
+- [GCC/Clang attribute __attribute__((cleanup(…)))](https://gcc.gnu.org/onlinedocs/gcc/Common-Variable-Attributes.html#index-cleanup-variable-attribute), which takes 
+- [GTK's glib g_autoptr](https://blogs.gnome.org/desrt/2015/01/30/g_autoptr/), which works only on Clang/GCC using the language-based `__attribute__((cleanup(…)))` functionality;
+- [qemu's Lockable](https://github.com/qemu/qemu/blob/master/include/qemu/lockable.h#L21), which uses the above `g_autoptr` to build a macro to do proper scoped locks;
+- [an ObjC defer](https://nshipster.com/new-years-2016/#swifts-defer-in-objective-c) based on `__attribute__((cleanup(…)))`;
+- [an Apple Open Source auto-cleanup](https://opensource.apple.com/source/Libc/Libc-1439.141.1/libdarwin/h/cleanup.h.auto.html), based still on `__attribute__((cleanup(…)))`;
+- and, [MSVC's try-finally blocks](https://learn.microsoft.com/en-us/cpp/c-language/try-finally-statement-c), which offer a more imperative way of doing things rather than the declaration-based attribute.
+
+Even individuals with legitimate technical grievances against C++ speak highly of things such as `g_autoptr`:
+
+> It takes about 10 minutes to get used to the “g_autoptr(foo)” stuff, and then its not a big deal.
+> 
+> I’ve basically removed all of my “goto error;” handling.
+> 
+> If you need MSVC support, clearly you shouldn’t be using this yet. My hope is that the clang interop with MSVC will help make that a non-issue before long.
+> 
+> XlC might actually support it with recent versions. They are pretty good about tracking GCC frontend features. I doubt suncc will get to it though.
+>
+> — [Christian Hergert, February 5th, 2015](https://blogs.gnome.org/desrt/2015/01/30/g_autoptr/#comment-1301)
+
+This is not the first time programmers have moved towards this sort of solution. However, doing so often came at the cost of needing to leave the C language, or — as done above — embracing a potentially high degree of non-portability to achieve the goals. As a Standards Committee, it would seem prudent to produce a viable implementation of this that is capable of satisfying all of C's stakeholders without adding undue burden to the language.
+
+
+
+## Library-based Solutions ## {#intro-library}
+
+Just because there are language solutions to the library that others have built on top of, it has no stopped others from creating their own solutions produced entirely within library-based code. There are both simple and robust examples of this sort of code in the wild, with some of the most readily available being:
+
+- [moonchilled's Defer/Deferrable macros](https://github.com/moon-chilled/Defer) (requires top-of-scope declarations);
+- and, [Jens Gustedt's guard and defer macros](https://gitlab.inria.fr/gustedt/defer) (an incredibly robust implementation using all sorts of tricks to provide the right behavior).
+
+The details of these libraries — both the simple version in moonchilled's rendition and the more robust version in Jens Gustedt's offering — are testaments to the ability of a dedicated individual to work through the conditions of their language to produce remarkable code to solve the engineering problems they are facing. Unfortunately, each has a has a wide variety of implementation drawbacks:
+
+- adds execution overhead to register each `Defer(…)` or similarly-named macro into the current scope;
+- generally requires a change in the way the program is written (e.g., using `defer_return` instead of `return` or `defer_break` instead of `break`);
+- and, typically has a maximum number of registrations (as the storage has be be pre-allocated at the start of the scope to hold deferral registrations).
+
+Even when the final code compiles down to something fairly efficient, these macros still tend to cost extra stack space or take up additional binary size through (potential) dynamic allocations to hold defers that go beyond a certain limit and need extra space to hold certain kinds of callbacks. His means that most code written using library solutions end up fairly suboptimal to the language based or preprocessor-based solutions.
+
+
+
+
+# Design # {#design}
+
+The design of this feature chooses 4 core tenets upon which it is based:
+
+- compile-time available (no run-time construction or space needed, do not pay for what you do not use);
+- binds to the innermost scope (closest);
+- can only appear as part of a statement (e.g., at block scope);
+- is **not** a full call stack-unwinding mechanism.
+
+These four tenets are important to cleave close to existing practice and avoid any potential run-time overhead.
+
+Notably, this is **not** similar to C++'s "RAII" (Resource Acquisition is Initialization) idiom in the specific area that `std::terminate()` will run every object's destructor up the entire call stack. While C++ implementations with extensions may offer to give the same behavior as a run destructor for `defer` blocks in their C++-with-extensions mode, C does not need to have any `terminate()`-like function or unwinding capabilities at all. We explain these tenets and our design choices in the following subsections.
+
+
+
+## Defer Binding: Scope-Based ## {#design-binding}
+
+`defer` binds to the scope it was defined it. There is one other choice for `defer`, which is to bind to the scope of the function call. This is the programming language Go's choice of `defer`[[go-defer]]. Choosing function-based binding for C would be an unmitigated disaster of corner cases and add the potential for needing run-time accumulation (e.g., dynamic allocation) of resources for `defer` in order to handle `defer`s which appear in loops or other constructs whose execution is only determined at run-time but is still scoped to a compile-time entity like the scope of a function.
+
+To give an example of how quickly this behavior unravels itself, consider the following Go code:
+
+```go
+for i := 0; i < 100000; i++ {
+	mutex.Lock()
+	defer mutex.Unlock()
+	*counter += 1
+}
+```
+
+This code immediately deadlocks. The fix to this in Go is to write the loop like this:
+
+```go
+for i := 0; i < 100000; i++ {
+	func() {
+		mutex.Lock()
+		defer mutex.Unlock()
+		*counter += 1
+	}()
+}
+```
+
+This is just an extremely long-winded way of having a scope-based `defer`. It is not all bad for function-based `defer`: advantages include queueing up a piece of work to be done only if certain conditions are met. E.g., one can place a `defer` inside of an `if` statement and then having it run at the end of the function if and only if that `if` was entered. However, the cost of such behaviors means attempting to shoehorn a design from Go which has the backing of a garbage collector and on-demand allocation. The first go snippet above, if it had not deadlocked, required dynamic allocation in an earlier version of Go. It took significant optimization work to get to a place where this would no longer be the case.
+
+We know for a fact that many C compilers are averse to taking control of hidden dynamically-sized (not necessarily heap) allocations. It can often result in issues in the portability of code to smaller platforms. We also know for a fact that memory is neither free nor cheap in the C programming language; Go can pull this off because it has a run-time that can manage its garbage collector and is generally geared towards high-resource environments (even if it uses those resources efficiently). As a language feature, we cannot prioritize a design which may require an unbounded amount of code to be (potentially) stored in heap space so that it can be run as a callback, with potentially-saved data from each iteration of a loop stored in that construct as well.
+
+
+
+## Reference Captures "by Default" ## {#design-capture}
+
+This proposal does not tie the acceptance of the proposal to the presence of an explicit capturing clause, as was the case in other versions[[N2895]][[N2542]]. It simply allows for any variables that are visible in the scope of the `defer` statement to be allowed like any other named entity. No implicit or invisible copy of the variables is performed: it simply refers to those variables just as in the same way as the rest of the surrounding code. This is the safest and best way to handle the way that this feature works.
+
+The reason this is critically important is due to the potential to double-free. For example, consider the following function call:
+
+```cpp
+void f () {
+	void* p = malloc(meow);
+	defer free(p);
+	/* … */
+	if (some_important_condition) {
+		take_ownership_and_use(p);
+		p = NULL;
+	}
+	/* … */
+}
+```
+
+If captures are done by-value (the pointer's value is copied and held onto for the duration of the code until the function is exited by some means), then this example is a potential double-free. This is an enormous footgun. Copying by-value also a (hidden, semi-uncontrolled) state that will exist on all implementations until optimizers can potentially get rid of the extra copies stored in the `defer` statement. We note that this is the position Swift tends to take with its closures: values are referred to by-reference if they can prove such accesses are safe, but otherwise decay to by-value copies. However, Swift generally codifies and relies more on its ability to perform certain optimizations, whereas C implementations are allowed to be far weaker in terms of their optimization and translation/evaluation/execution guarantees.
+
+Copying by-value for `defer` is bad design in-general; anything that exists in the same scope and cannot escape said scope (such as statement expressions, `defer` statements, and otherwise) should always refer to existing variables through their name and at the same location/address. There is no risk of failure here because `defer` statements are not objects or declarations; they do not occupy a fixed amount of space as a reference-able object, they cannot be passed to `sizeof`, they cannot be copied or put on the heap versus the stack or some other form of storage location. They are simply a form of code (and code organization) like other flow control and code control entities. Treating them like callbacks (e.g., things that can be saved/transported/invoked at an arbitrary point later in time) is antithetical to the feature itself.
+
+For these reasons, `defer` should refer to existing variables as thought they were normal l-values (because they are and they should be). We anticipate that, in a future where Lambas/Nested Functions/etc. are possible, specific styles of capture can be obtained through their use where it will be explicit and documented neatly by the use of such hypothetical features themselves.
+
+
+
+## "Why Does This Not Unwind The Whole Call Stack??" ## {#design-unwinding}
+
+No C implementation provides a compiler-driven unwinding that we could find, even with `__attribute__((cleanup(free))) p = malloc(2);`. Calling any of:
+
+- `exit`;
+- `_Exit`;
+- `quick_exit`;
+- `thrd_exit`;
+- or, `abort`;
+
+did not produce any code that called either the cleanup-annotated variables, or other code. `defer` works similarly: no stack unwinding or call stack back-travel is done when any function that refuses to return and returns control to the host environment is done.
+
+Note: This is compatible with C++ semantics for a similar C++ feature: constructors and destructors.
+
+It is noteworthy that not even C++ destructors run on the invocation of any of these functions, either. (You can test that assumption [here](https://godbolt.org/z/185z5E4aM).) They have to use the C++-specific function `std::terminate()` and work with the `std::terminate_handler` in order to get appropriate unwinding behavior. Therefore, there is no precedent — not even from C++ — that C or C++ code should appropriately and carefully unwind the stack. `defer …`, therefore, will not provide this functionality. This makes it cheaper and easier to implement for platforms that do not have `__attribute__((cleanup(…)))`, while also following existing practice to the letter. Notably, the "cheapness" and "ease" that will come from the implementation means that at no point will there ever need to be a maintained runtime of unwind scopes or exception handling-alike tables. In fact, no  storage of any form of propagation information is necessary for this feature. It simply incentivizes the programming practices currently available to C programs: error codes, structured returns (with error codes embedded), and other testable function outputs in conjunction with better-defined cleanup code.
+
+
+
+## Compile-time Construct ## {#design-compile.time}
+
+Due to the nature of the design, all `defer` blocks can be transformed during translation and require no execution-time coordination or marking. This is imperative to ensure that the feature produces no overhead compared to `__attribute__((cleanup(…)))` functionality, to `__try` + `__finally` with no Structured Exception Handling catching on MSVC, or to manually writing a series of `goto cleanup0; … goto cleanup1;` in a (potentially deeply-nested) set of `goto`s. For example, consider this function from real-world code (the linked code from Martin, [[#intro|listed previously in this proposal]]) that performs a series of nested `if`s with a series of `goto`s for cleanup.
+
+```cpp
+h_err* h_build_plugins(const char* rootdir, h_build_outfiles outfiles, const h_conf* conf)
+{
+	char* pluginsdir = h_util_path_join(rootdir, H_FILE_PLUGINS);
+	if (pluginsdir == NULL)
+		return h_err_create(H_ERR_ALLOC, NULL);
+	char* outpluginsdirphp = h_util_path_join(
+		rootdir,
+		H_FILE_OUTPUT "/" H_FILE_OUT_META "/" H_FILE_OUT_PHP
+	);
+	if (outpluginsdirphp == NULL)
+	{
+		free(pluginsdir);
+		return h_err_create(H_ERR_ALLOC, NULL);
+	}
+	char* outpluginsdirmisc = h_util_path_join(
+		rootdir,
+		H_FILE_OUTPUT "/" H_FILE_OUT_META "/" H_FILE_OUT_MISC
+	);
+	if (outpluginsdirmisc == NULL)
+	{
+		free(pluginsdir);
+		free(outpluginsdirphp);
+		return h_err_create(H_ERR_ALLOC, NULL);
+	}
+
+	//Check status of rootdir/plugins, returning if it doesn't exist
+	{
+		int err = h_util_file_err(pluginsdir);
+		if (err == ENOENT)
+		{
+			free(outpluginsdirphp);
+			free(outpluginsdirmisc);
+			free(pluginsdir);
+			return NULL;
+		}
+		if (err && err != EEXIST)
+		{
+			free(outpluginsdirphp);
+			free(outpluginsdirmisc);
+			free(pluginsdir);
+			return h_err_from_errno(err, pluginsdir);
+		}
+	}
+
+	//Create dirs if they don't exist
+	if (mkdir(outpluginsdirphp, 0777) == -1 && errno != EEXIST) {
+		free(outpluginsdirphp);
+		free(outpluginsdirmisc);
+		free(pluginsdir);
+		return h_err_from_errno(errno, outpluginsdirphp);
+	}
+	if (mkdir(outpluginsdirmisc, 0777) == -1 && errno != EEXIST) {
+		free(outpluginsdirphp);
+		free(outpluginsdirmisc);
+		free(pluginsdir);
+		return h_err_from_errno(errno, outpluginsdirmisc);
+	}
+
+	//Loop through plugins, building them
+	struct dirent** namelist;
+	int n = scandir(pluginsdir, &namelist, NULL, alphasort);
+	int i;
+	for (i = 0; i < n; ++i)
+	{
+		struct dirent* ent = namelist[i];
+		if (ent->d_name[0] == '.')
+		{
+			free(ent);
+			continue;
+		}
+
+		char* dirpath = h_util_path_join(pluginsdir, ent->d_name);
+		if (dirpath == NULL)
+		{
+			free(outpluginsdirphp);
+			free(outpluginsdirmisc);
+			free(pluginsdir);
+			return h_err_create(H_ERR_ALLOC, NULL);
+		}
+		char* outdirphp = h_util_path_join(outpluginsdirphp, ent->d_name);
+		if (outdirphp == NULL)
+		{
+			free(dirpath);
+			free(outpluginsdirphp);
+			free(outpluginsdirmisc);
+			free(pluginsdir);
+			return h_err_create(H_ERR_ALLOC, NULL);
+		}
+		char* outdirmisc = h_util_path_join(outpluginsdirmisc, ent->d_name);
+		if (outdirmisc == NULL)
+		{
+			free(dirpath);
+			free(outdirphp);
+			free(outpluginsdirphp);
+			free(outpluginsdirmisc);
+			free(pluginsdir);
+			return h_err_create(H_ERR_ALLOC, NULL);
+		}
+
+		h_err* err;
+		err = build_plugin(dirpath, outdirphp, outdirmisc, outfiles, conf);
+		if (err)
+		{
+			free(dirpath);
+			free(outdirphp);
+			free(outdirmisc);
+			free(outpluginsdirphp);
+			free(outpluginsdirmisc);
+			free(pluginsdir);
+			return err;
+		}
+
+		free(dirpath);
+		free(outdirphp);
+		free(outdirmisc);
+		free(ent);
+	}
+
+	free(pluginsdir);
+	free(outpluginsdirphp);
+	free(outpluginsdirmisc);
+	free(namelist);
+
+	return NULL;
+}
+```
+
+This is a fairly small function, clocking in at some 130 lines long. There are, as far as most reviewers can tell, no errors in the creation or deletion of the various kinds of resources (particularly, repeated memory allocations). The exact same code can be restructured as follows.
+
+```cpp
+h_err* h_build_plugins(const char* rootdir, h_build_outfiles outfiles, const h_conf* conf)
+{
+	char* pluginsdir = h_util_path_join(rootdir, H_FILE_PLUGINS);
+	if (pluginsdir == NULL)
+		return h_err_create(H_ERR_ALLOC, NULL);
+	defer free(pluginsdir);
+	char* outpluginsdirphp = h_util_path_join(
+		rootdir,
+		H_FILE_OUTPUT "/" H_FILE_OUT_META "/" H_FILE_OUT_PHP
+	);
+	if (outpluginsdirphp == NULL)
+	{
+		return h_err_create(H_ERR_ALLOC, NULL);
+	}
+	defer free(outpluginsdirphp);
+	char* outpluginsdirmisc = h_util_path_join(
+		rootdir,
+		H_FILE_OUTPUT "/" H_FILE_OUT_META "/" H_FILE_OUT_MISC
+	);
+	if (outpluginsdirmisc == NULL)
+	{
+		return h_err_create(H_ERR_ALLOC, NULL);
+	}
+	defer free(outpluginsdirmisc);
+	//Check status of rootdir/plugins, returning if it doesn't exist
+	{
+		int err = h_util_file_err(pluginsdir);
+		if (err == ENOENT)
+		{
+			return NULL;
+		}
+		if (err && err != EEXIST)
+		{
+			return h_err_from_errno(err, pluginsdir);
+		}
+	}
+
+	//Create dirs if they don't exist
+	if (mkdir(outpluginsdirphp, 0777) == -1 && errno != EEXIST) {
+		return h_err_from_errno(errno, outpluginsdirphp);
+	}
+	if (mkdir(outpluginsdirmisc, 0777) == -1 && errno != EEXIST) {
+		return h_err_from_errno(errno, outpluginsdirmisc);
+	}
+
+	//Loop through plugins, building them
+	struct dirent** namelist;
+	int n = scandir(pluginsdir, &namelist, NULL, alphasort);
+	int i;
+	for (i = 0; i < n; ++i)
+	{
+		struct dirent* ent = namelist[i];
+		defer free(ent);
+		if (ent->d_name[0] == '.')
+		{
+			continue;
+		}
+		char* dirpath = h_util_path_join(pluginsdir, ent->d_name);
+		if (dirpath == NULL)
+		{
+			return h_err_create(H_ERR_ALLOC, NULL);
+		}
+		defer free(dirpath);
+		char* outdirphp = h_util_path_join(outpluginsdirphp, ent->d_name);
+		if (outdirphp == NULL)
+		{
+			return h_err_create(H_ERR_ALLOC, NULL);
+		}
+		defer free(outdirphp);
+		char* outdirmisc = h_util_path_join(outpluginsdirmisc, ent->d_name);
+		if (outdirmisc == NULL)
+		{
+			return h_err_create(H_ERR_ALLOC, NULL);
+		}
+		defer free(outdirmisc);
+
+		h_err* err;
+		err = build_plugin(dirpath, outdirphp, outdirmisc, outfiles, conf);
+		if (err)
+		{
+			return err;
+		}
+	}
+
+	return NULL;
+}
+```
+
+All of the special resource cleanup along certain branches are now completely gone. We have shrunk this function by around 20 lines of code. There are no resource leaks in this code, just as in the prior version, and if additional early exits or checks are added to the function, there is no risk of forgetting to free or clean up specific temporary resources. Shrinking code by 16% of its original size in the simple case and guaranteeing that further error checks and error handling do not introduce new forms of vulnerabilities. This sort of high-impact, high-quality refactoring enables better cleanup (as realized by GTK in its earliest iterations of `g_autoptr`) and resistance to changes-over-time, which is how many `goto fail;` or nested-`if` style of bugs have propagated into code[[goto-fail]][[cve-2021-3744]].
+
+Advisement: [[cve-2021-3744]] is not a vulnerability where they forget to free the data in totality: it was that the data for `tag` was not freed along very **specific** paths in a crop of sensitive code.
+
+Adding a `defer` at the allocation of these resources (particularly, [line 877 after the tag was successfully init with the DM work area](https://github.com/torvalds/linux/blob/505d9dcb0f7ddf9d075e729523a33d38642ae680/drivers/crypto/ccp/ccp-ops.c#L872-L889)) would make it impossible to forget to release the resources associated with that variable (or setting it to `NULL` along specific paths where the data was transferred off or taken ownership of).
+
+Note: This is not an indictment of the quality of Linux Kernel source code, but — as this sort of vulnerability has been repeated time and time again over the last two decades — a cautionary tale of how human beings are allowed to be fallible.
+
+To quote Daniel Stenberg, maintainer of curl:
+
+> It burns in my soul
+>
+> Reading the code now it is impossible not to see the bug. Yes, it truly aches having to accept the fact that I did this mistake without noticing and that the flaw then remained undiscovered in code for 1315 days. I apologize. I am **but a human**.
+>
+> — [How I Made A Heap Overflow In Curl; October 11th, 2023](https://daniel.haxx.se/blog/2023/10/11/how-i-made-a-heap-overflow-in-curl/)
+
+(Emphasis mine.) We are all human. We deserve tools and features that can cover our fallibility and make it difficult for us to forget to handle certain cases of bugs, whether it's heap overflow, use-after-free/double-free, integer overflow or otherwise.
+
+
+
+## `defer` Ordering? ## {#design-ordering}
+
+The code in a `defer` block runs after every other statement and expression in the block, save for other `defers` (which execute in reverse-lexical order).
+
+
+### `defer` interleaved with `return` ? ### {#design-ordering-return}
+
+A `defer` clause executes at the end of the scope, after every **other** kind of execution for the scope finishes. This includes **after** the invocation of the expression of a `return` statement. That is, given this example code:
+
+```cpp
+int woof();
+int bark();
+
+int use (int x){
+	defer {
+		woof();
+	}
+	return bark();
+}
+```
+
+The order of execution is `bark` and then `woof`. Another example:
+
+```cpp
+int use (int x){
+	int* p = &x;
+	*p = 400;
+	defer {
+		*p = 500;
+	}
+	return *p;
+}
+```
+
+The return value of the `use` function is `400`, not `500`. Also notably, because it runs after all other non-`defer` statements but just **before** the termination of the (function or block) scope
+
+Note: This is compatible with C++ semantics for a similar C++ feature: constructors and destructors. See [this live code snippet](https://godbolt.org/z/YeaodMMs7):
+
+```cpp
+struct destroy_me {
+	int& r;
+	~destroy_me() {
+		r = 5;
+	}
+};
+
+int main () {
+	int r = 4;
+	destroy_me dm{r};
+	return r;
+}
+```
+
+
+### Flow Control / Jumps out of `defer` ### {#design-ordering-jump.out}
+
+`defer` statements cannot allow compile-time jumps out of themselves and into other `defer`s or out into a surrounding scope. Otherwise, that would damage the integrity of a sequence of defers:
+
+```cpp
+int get_work_order();
+void rollback(int handle);
+void attempt_transaction(int handle0, int handle1);
+
+int main () {
+	int very_important_handle = get_work_order();
+	defer { 
+		rollback(very_important_handle);
+	}
+	int very_important_handle2 = get_work_order();
+	defer { 
+		rollback(very_important_handle2);
+		// !!!
+		goto try_attempt;
+	}
+	try_attempt:
+	opt(int) result = attempt_transaction(
+		very_important_handle,
+		very_important_handle2
+	);
+
+	return 0;
+}
+```
+
+That `goto` jumps out of the second `defer` statement, and back into the main block. This would skip over executing of the first `defer` (due to the reverse-lexical-order of how defer blocks are run), which would result in unintuitive behavior. In order to cut this off, we simply do not allow compile-time jumps (`goto`, `break`, `continue`, or `return`) out of a `defer` block. Should more reasonable semantics be nailed down at a later date, we can go back and fill in these intentional blanks (which, generally, is not possible when something is made undefined behavior rather than a constraint violation).
+
+
+### `goto` and other Flow Control **over** an existing `defer` ### {#design-ordering-jump.over}
+
+Much like the previous section, this code is also banned:
+
+```cpp
+#include <stdio.h>
+
+int main () {
+	goto b;
+	defer { printf(" meow"); }
+	b:
+	printf("cat says");
+}
+```
+
+Ostensibly, one could justify the way this works. "The `defer` is not really executed, it is more-so translated to happen at the end of the scope. Therefore, this should print `"cat says meow"`", some may state. However — for consistency's sake — this gets a bit more confusing when it is not just a `goto` jumping over a `defer` statement, but a `return` making it look like it's entirely unreachable:
+
+
+```cpp
+#include <stdio.h>
+
+int main () {
+	printf("cat says");
+	return 0;
+	defer { printf(" meow"); }
+}
+```
+
+Do we still print `"cat says meow"` here? The conclusion this paper comes to is "no". While `defer` provides code motion at compile-time, there is still the mental model of the programmer to consider and the tooling of the compiler to consider. In almost every case that anyone looks at this code, the `defer` looks like it is part of an unreachable set of code; if it were mandated to run, this would be problematic. Therefore, `defer`s cannot be jumped over by `return`s or `goto`s, similar to how Variable-Length Arrays cannot be jumped over by similar control flow constructs when the compiler can know about it.
+
+
+### What about `longjmp`? ### {#design-ordering-longjmp}
+
+Unfortunately, `longjmp` is non-local, runtime-controlled control flow. It can easily defy all of C's typical static analysis. Therefore, we cannot form any reasonable Constraint Violations (compile-time errors) for this category of behavior. Still, we enumerate several cases of execution-time behavior where, so long as the non-local jump does not put execution outside of the current `defer` block, the behavior remains well-defined (modulo other issues with jumping into/over/etc. things that may be within the `defer` block). If the non-local jump escapes the `defer`, though, we say the behavior is utterly undefined.
+
+
+
+# C++ Compatibility: Why Not Member Functions + Constructors/Destructors? # {#cpp.compat}
+
+As will be asked one hundred thousand times throughout the course of this proposal's life:
+
+Issue: Why Not Just Put Member Functions And Constructors/Destructors Into C? RAII Is Powerful And Solves This Problem?
+
+There are several purely technical reasons for not pursuing a constructor/destructor-alike solution that is fully compatible with C and C++ member declarations. Briefly, they can be categorized as follows.
+
+- Function overloading required for constructor syntax, even without other member function syntax.
+- Name mangling required for constructor syntax, even without other member function syntax.
+- And, interoperability with older C code that will suddenly be imbued with the potential for constructor/destructor semantics and may not produce binary-compatible construction representations (**implementation-specific**).
+
+The first two are interconnected and also simply part of the bargain. If any of GCC, Clang, or MSVC wanted to adopt a proposal for C that would inject member functions into the language, they would — naturally and correctly — do so with the implementation that has served C++ well over the last few decades, by using name mangling. But, implementation-controlled name mangling is abhorrent to C developers for a wide variety of reasons, least of all being they have less control over their Application Binary Interfaces than they have already been deprived of. While C mangling is fairly consistent across most platforms (in that there is either little or none at all), C++ name mangling implementations can outstrip the implementation of many C17 frontends in their entirety (and, in one documented case, has done so for a vendor in WG14 that supports both C and C++).
+
+Advisement: Function overloading — and the requisite name mangling schemes that would come with it — are very much not feasible for C implementations or the C language.
+
+Furthermore, `defer` actually escapes a small issue that C++ has created for itself with `noexcept`, exceptions, and destructors.  As C++ would generally rightfully claim, this feature is redundant with its RAII concept. They would be correct, except in one place: the C++ standard library. Peter Sommerlad has spent over 10 years working on a proposal for a "Generic Scope Guard" for C++, so long that it has a C++ Paper Number from both the P-based proposal system and also a large series of WG21 N-document numbers[[p0052]].
+
+Sommerlad's efforts ultimately failed in C++ because C++ has a rule that objects created and owned by the C++ Standard Library must never have a non-`noexcept` destructor. One of the most pertinent use cases is having scope guards which, in their destructor, could roll back transactions and then throw an exception. Because a hypothetical `std::scope_guard` object could not possibly have a non-`noexcept` destructor, this meant that creating an object, giving it a destructor that invokes the code contained by the function stored in a `std::scope_guard`, and having that function throw an exception, it would not achieve its desired purpose. It would, instead of throwing that exception, immediately call `std::terminate()` and kill the program on the spot. (All exceptions thrown in a `noexcept` destructor — as would be mandated would a `std::scope_guard` — immediately call `std::terminate()` when an exception hits the boundaries of a `noexcept`-marked function, including C++ destructors.)
+
+Advisement: Thusly, C++'s own rules about destructors — that they refused to break in this one case — makes it impossible to create an RAII object that fulfills one of the primary uses of `std::scope_guard`.
+
+`defer`, as a neutral language construct that is not tied to a member object, does not have this problem as there is no implication of success or failure; it is just an alternate form of code motion that is not tied to the lifetime of an object, but instead to lexical scope directly. Given the history of Peter Sommerlad's [[p0052]], we are unsure if they will pursue a language-based solutions to escape the rules of their own Standard Library (which are, for many reasons, completely justified). Therefore, this looks like one of those features that will, despite being very fundamental in either C or C++ code, be taken care of by user-defined libraries, shims, and polyfills (e.g., hand-rolled or Boost) for the forseeable future.
+
+In either case, for the above stated reasons, we will not be pursuing providing this feature for C++.
+
+Note: We do invite C++ users, for the sake of interoperation, to create their own using a structure/class with Class Template Argument Deduction (CTAD) and lambdas, as that can cover the space fairly nicely with (effectively, needs an extra `;` and requires braces) identical syntax to this proposal and [no Standard Library rules to worry about](https://godbolt.org/z/qEfqdTq5G). Feel free to use ours:
+
+```cpp
+#include <type_traits>
+#include <utility>
+
+template <typename _Fx>
+struct __defer_t {
+	_Fx __fx;
+
+	__defer_t(_Fx&& __arg_fx)
+	noexcept(::std::is_nothrow_move_constructible_v<_Fx>)
+	: __fx(::std::move(__arg_fx)) {}
+
+	~__defer_t()
+	noexcept(::std::is_nothrow_invocable_v<_Fx>) {
+		__fx();
+	}
+};
+
+template <typename _Fx>
+__defer_t(_Fx __fx) -> __defer_t<::std::decay_t<_Fx>>;
+
+#define __DEFER_TOK_PASTE(X, Y) X ## Y
+#define defer __defer_t \
+	__DEFER_TOK_PASTE(__scoped_defer_obj, __COUNTER__) =  \
+	[&]()
+
+#include <stdio.h>
+
+int main () {
+	defer {
+		defer {
+			printf(" :3");
+		};
+		printf(" meow");
+	};
+	printf("cat says");
+	return 0;
+}
+```
+
+
+# Wording # {#wording}
+
+Wording is relative to the latest draft revision of the C Standard.
+
+Note: This wording uses the lowercase `defer` keyword directly in its wording. We recognize that this may not be suitable, and it is not an integral part of this proposal to type in `s/defer/_Defer/g` for us. It is just simpler to read in this form. If it is necessary to change it, we've got more than enough time to add `_Defer` and do the same `#include <stddefer.h>` to provide the convenience macro for the lowercase spelling.
+
+
+
+## Modify 6.4.1 Keywords to include `defer` ## {#wording-6.4.1}
+
+<blockquote>
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.4.1</span> <span class="wording-clause-title">Keywords</span>
+</div>
+
+<div class="wording-section">
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+
+*keyword*: one of
+
+…
+
+**default**
+
+<ins>**defer**</ins>
+
+**do**
+
+…
+
+</div>
+</div>
+</blockquote>
+
+
+
+## Modify §6.8 Statements's *unlabeled-statement* grammar production to include a new *defer-statement* ## {#wording-6.8}
+
+<blockquote>
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.8</span> <span class="wording-clause-title">Statements</span>
+</div>
+
+<div class="wording-section">
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+
+*statement*:
+:: *labeled-statement*
+:: *unlabeled-statement*
+
+*unlabeled-statement*:
+:: *expression-statement*
+:: *attribute-specifier-sequence*<sub>*opt*</sub> *primary-block*
+:: *attribute-specifier-sequence*<sub>*opt*</sub> *jump-statement*
+:: <ins>*defer-statement*</ins>
+
+*primary-block*:
+:: *compound-statement*
+:: *selection-statement*
+:: *iteration-statement*
+
+*secondary-block*:
+:: *statement*
+
+</div>
+</div>
+</blockquote>
+
+
+## Add a new §6.8.7 's section describing the new *defer-statement* ## {#wording-6.8.7}
+
+<blockquote>
+<ins>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.8.7</span> <span class="wording-clause-title">Defer statements</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+
+*defer-statement*:
+:: **defer** *expression-statement*
+:: **defer** *primary-block*
+
+</div>
+
+<div class="wording-clause-section-title">
+Description
+</div>
+
+<div>
+
+Let *D* be a defer statement, *S* be the expression statement or primary block of *D*, *E* be the enclosing scope of *D*, and *B* be the scope denoted as-if a pair of braces were placed around *S*.
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+A defer statement shall appear at block scope.
+</div>
+
+<div class="wording-numbered">
+
+Jumps by means of `return` and `goto` shall not jump over a defer statement in the scope *E*.
+</div>
+
+<div class="wording-numbered">
+
+Jumps by means of `return`, `goto`, `break`, or `continue` shall not exit the scope *B*.
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered">
+
+When execution reaches a defer statement *D*, its *S* is not immediately executed during sequential execution of the program. Instead, *S* is executed upon:
+
+- the termination of the block *E* (such as from reaching the end of a scope or the end of a function);
+- or, any exit from *E* through means of flow control such as `return`, `goto`, `break`, `switch`, or `continue`.
+
+The execution is done just before leaving the enclosing scope *E*.
+</div>
+
+<div class="wording-numbered">
+
+Multiple defer statements execute in the reverse lexical order they appeared in *E*. Within a single defer statement *D*, if *D* contains one or more defer statements of its own, then these defer statements are also executed in reverse lexical order at the end of *E*, recursively, according to the rules of this clause.
+</div>
+
+<div class="wording-numbered">
+
+If a scope *E* has any defer statements *D* that have not yet been executed, and the program is terminated through any of the following means:
+
+- a function with the deprecated `_Noreturn` function specifier, or a function annotated with the `no_return`/`_Noreturn` attribute, is called;
+- or, any signal `SIGABRT`, `SIGINT`, or `SIGTERM` occurs;
+
+then *D* is not run.
+</div>
+
+<div class="wording-numbered">
+
+If a non-local jump (such as `longjmp`) is used within scope *E* but before the execution of *S*:
+
+- if control leaves scope *E*, *D*'s statements will not be executed;
+- otherwise, if control returns to a point in *E* and causes *D* to be reached more than once, there is no effect.<sup>FN0✨)</sup>
+
+</div>
+
+<sup>FN✨0)</sup><sub>This is because the "execution" of a defer statement only lets the program know that *S* will be run. There is no observable side effect to repeat from reaching *D*, as the manifestation of any of the effects of *S* will happen when if and only if scope is exited or terminated as previously specified.</sub>
+
+<div class="wording-numbered">
+
+If a non-local jump (such as `longjmp`) is executed within *S* and control leaves scope *B*, the behavior is undefined.
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 1**: Defer statements cannot be jumped over or jumped out of.
+
+```cpp
+#include <stdio.h>
+
+int f () {
+	goto b; // constraint violation
+	defer { printf(" meow"); }
+	b:
+	printf("cat says");
+	return 1;
+}
+
+int g () {
+	return printf("cat says");
+	defer { printf(" meow"); } // constraint violation
+}
+
+int h () {
+	goto b;
+	{
+		// okay: no constraint violation
+		defer { printf(" meow"); }
+	}
+	b:
+	printf("cat says");
+	return 1;
+}
+
+int i () {
+	{
+		defer { printf(" meow"); }
+		// okay: no constraint violation
+		goto b;
+	}
+	b:
+	printf("cat says");
+	return 1;
+}
+
+int j () {
+	defer {
+		goto b; // constraint violation
+		printf(" meow");
+	}
+	b:
+	printf("cat says");
+	return 1;
+}
+
+int k () {
+	defer {
+		return 5; // constraint violation
+		printf(" meow");
+	}
+	printf("cat says");
+	return 1;
+}
+```
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 2**: All the expressions and statements of an enclosing scope are evaluated before executing defer statements, and then leaving that scope.
+
+```cpp
+int main () {
+	int r = 4;
+	int* p = &r;
+	defer { *p = 5; }
+	return *p; // return 4;
+}
+```
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 3**: Defer statements need not execute if the exiting / non-returning functions detailed previously are called.
+
+```cpp
+#include <stdio.h>
+#include <stdlib.h>
+
+int main () {
+	void* p = malloc(1);
+	if (p == NULL) {
+		return 0;
+	}
+	defer free(p);
+	exit(1); // "p" may be leaked
+}
+```
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 4**: Defer statements are tied to their enclosing lexical scope.
+
+```cpp
+#include <stdio.h>
+#include <stdlib.h>
+
+int main () {
+	{
+		printf("cat says");
+		defer { printf(" meow"); }
+	}
+	// "cat says meow" is printed to standard output
+	exit(1);
+}
+```
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 5**: Defer statements execute in reverse lexical order, and nested defer statements execute in reverse lexical order but at the end of the defer statement they were invoked within. The following program:
+
+```cpp
+int main () {
+	int r = 0;
+	{
+		defer {
+			defer r *= 5;
+			r *= 3;
+			defer {
+				r += 1;
+			}
+		}
+		defer r += 2;
+	}
+	return r; // return 35;
+}
+```
+
+is equivalent to:
+
+```cpp
+int main () {
+	int r = 0;
+	r += 2;
+	r *= 3;
+	r += 1;
+	r *= 5;
+	return r; // return 35;
+}
+```
+</div>
+
+
+</div>
+</div>
+</ins>
+</blockquote>
+
+
+
+## Modify Annex J's list of undefined behaviors with non-local jump undefined behavior (e.g. `longjmp`) ## {#wording-annex.j}
+
+Note: 📝 For the editor to do within the Annex J undefined behavior list. 
+
+
+
+<pre class="biblio">
+{
+	"N2895": {
+		"authors": [
+			"Jens Gustedt",
+			"Robert C. Seacord"
+		],
+		"title": "N2895: A simple defer feature for C",
+		"href": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2895.htm",
+		"date": "December 31st, 2021"
+	},
+	"n2542": {
+		"authors": [
+			"Aaron Ballman",
+			"Alex Gilding",
+			"Jens Gustedt",
+			"Tom Scogland",
+			"Robert C. Seacord",
+			"Martin Uecker",
+			"Freek Wiedijk"
+		],
+		"title": "Defer Mechanism for C",
+		"publisher": "ISO/IEC JTC1 SC22 WG14 — Programming Languages, C",
+		"href": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2542.pdf",
+		"date": "August 8th, 2020"
+	},
+	"go-defer": {
+		"authors": [
+			"Andrew Gerrand"
+		],
+		"title": "",
+		"publisher": "The Go Project",
+		"href": "https://go.dev/blog/defer-panic-and-recover",
+		"date": "August 4th, 2010"
+	},
+	"goto-fail": {
+		"authors": [
+			"Arie van Deursen"
+		],
+		"title": "Learning from Apple's #gotofail Security Bug",
+		"publisher": "Arie van Deursen",
+		"href": "https://avandeursen.com/2014/02/22/gotofail-security/",
+		"date": "February 22nd, 2014"
+	},
+	"cve-2021-3744": {
+		"authors": [
+			"National Institute of Standards and Technology"
+		],
+		"title": "CVE-2021-3744 Detail",
+		"publisher": "National Vulnerability Database: NIST",
+		"href": "https://nvd.nist.gov/vuln/detail/CVE-2021-3744",
+		"date": "February 12th, 2023"
+	},
+	"p0052": {
+		"authors": [
+			"Peter Sommerlad",
+			"Andrew L. Sandoval",
+			"Eric Niebler",
+			"Daniel Krügler"
+		],
+		"title": " Generic Scope Guard and RAII Wrapper for the Standard Library",
+		"publisher": "ISO/IEC JTC1 SC22 WG21 — Programming Languages, C++",
+		"href": "https://wg21.link/p0052",
+		"date": "February 19th, 2019"
+	}
+}
+</pre>
