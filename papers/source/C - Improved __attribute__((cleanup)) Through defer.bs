@@ -73,7 +73,7 @@ Conversely, there is the opposite idiom where — in an attempt to reduce the so
 
 Language-based solutions are far superior to library-based solutions for this problem. They provide a level of guarantees to make code a lot cleaner than normal.
 
-- [GCC/Clang attribute __attribute__((cleanup(…)))](https://gcc.gnu.org/onlinedocs/gcc/Common-Variable-Attributes.html#index-cleanup-variable-attribute), which takes 
+- [GCC/Clang attribute __attribute__((cleanup(…)))](https://gcc.gnu.org/onlinedocs/gcc/Common-Variable-Attributes.html#index-cleanup-variable-attribute), which takes a function with a single `void*` referencing the value passed in;
 - [GTK's glib g_autoptr](https://blogs.gnome.org/desrt/2015/01/30/g_autoptr/), which works only on Clang/GCC using the language-based `__attribute__((cleanup(…)))` functionality;
 - [qemu's Lockable](https://github.com/qemu/qemu/blob/master/include/qemu/lockable.h#L21), which uses the above `g_autoptr` to build a macro to do proper scoped locks;
 - [an ObjC defer](https://nshipster.com/new-years-2016/#swifts-defer-in-objective-c) based on `__attribute__((cleanup(…)))`;
@@ -93,6 +93,8 @@ Even individuals with legitimate technical grievances against C++ speak highly o
 > — [Christian Hergert, February 5th, 2015](https://blogs.gnome.org/desrt/2015/01/30/g_autoptr/#comment-1301)
 
 This is not the first time programmers have moved towards this sort of solution. However, doing so often came at the cost of needing to leave the C language, or — as done above — embracing a potentially high degree of non-portability to achieve the goals. As a Standards Committee, it would seem prudent to produce a viable implementation of this that is capable of satisfying all of C's stakeholders without adding undue burden to the language.
+
+The only drawback of `__attribute__((cleanup(…)))` is that it is tied to passing in a single function, and only taking a single `void*` parameter. It becomes difficult to properly coordinate additional information to the function without figuring out potentially contested data transmission mechanisms between the function put into the `cleanup` portion of the attribute and the actual run of the function itself.
 
 
 
@@ -125,7 +127,11 @@ The design of this feature chooses 4 core tenets upon which it is based:
 
 These four tenets are important to cleave close to existing practice and avoid any potential run-time overhead.
 
-Notably, this is **not** similar to C++'s "RAII" (Resource Acquisition is Initialization) idiom in the specific area that `std::terminate()` will run every object's destructor up the entire call stack. While C++ implementations with extensions may offer to give the same behavior as a run destructor for `defer` blocks in their C++-with-extensions mode, C does not need to have any `terminate()`-like function or unwinding capabilities at all. We explain these tenets and our design choices in the following subsections.
+By making it a locally-scoped entity, we can have many more statements and much more data accessible to what is the effective equivalent of the `cleanup` function. This prevents us from fiddling with making larger structures and calling a function, when we can instead have it entirely in-line and improve code motion and optimization opportunities that would not be availabl others.
+
+Notably, this is **not** similar to C++'s "RAII" (Resource Acquisition is Initialization) idiom in the specific area that `std::terminate()` will run every object's destructor up the entire call stack. While C++ implementations with extensions may offer to give the same behavior as a run destructor for `defer` blocks in their C++-with-extensions mode, C does not need to have any `terminate()`-like function or unwinding capabilities at all.
+
+We explain these tenets and our design choices in the following subsections.
 
 
 

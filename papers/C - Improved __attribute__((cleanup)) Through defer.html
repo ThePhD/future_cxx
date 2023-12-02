@@ -1506,7 +1506,7 @@ Possible extra rowspan handling
   <meta content="Bikeshed version 82ce88815, updated Thu Sep 7 16:33:55 2023 -0700" name="generator">
   <link href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Improved%20__attribute__((cleanup))%20Through%20defer.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="7a1ff9cb8411a611c55089eb97a17a79cd468c30" name="document-revision">
+  <meta content="b8f8b784d7d29becbea152a86471b80148a85e44" name="document-revision">
 <style>
 
 :root {
@@ -2570,7 +2570,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    <p>Language-based solutions are far superior to library-based solutions for this problem. They provide a level of guarantees to make code a lot cleaner than normal.</p>
    <ul>
     <li data-md>
-     <p><a href="https://gcc.gnu.org/onlinedocs/gcc/Common-Variable-Attributes.html#index-cleanup-variable-attribute">GCC/Clang attribute __attribute__((cleanup(…)))</a>, which takes</p>
+     <p><a href="https://gcc.gnu.org/onlinedocs/gcc/Common-Variable-Attributes.html#index-cleanup-variable-attribute">GCC/Clang attribute __attribute__((cleanup(…)))</a>, which takes a function with a single <code class="highlight"><c- b>void</c-><c- o>*</c-></code> referencing the value passed in;</p>
     <li data-md>
      <p><a href="https://blogs.gnome.org/desrt/2015/01/30/g_autoptr/">GTK’s glib g_autoptr</a>, which works only on Clang/GCC using the language-based <code class="highlight"><c- n>__attribute__</c-><c- p>((</c-><c- n>cleanup</c-><c- p>(</c->…<c- p>)))</c-></code> functionality;</p>
     <li data-md>
@@ -2591,6 +2591,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
     <p>— <a href="https://blogs.gnome.org/desrt/2015/01/30/g_autoptr/#comment-1301">Christian Hergert, February 5th, 2015</a></p>
    </blockquote>
    <p>This is not the first time programmers have moved towards this sort of solution. However, doing so often came at the cost of needing to leave the C language, or — as done above — embracing a potentially high degree of non-portability to achieve the goals. As a Standards Committee, it would seem prudent to produce a viable implementation of this that is capable of satisfying all of C’s stakeholders without adding undue burden to the language.</p>
+   <p>The only drawback of <code class="highlight"><c- n>__attribute__</c-><c- p>((</c-><c- n>cleanup</c-><c- p>(</c->…<c- p>)))</c-></code> is that it is tied to passing in a single function, and only taking a single <code class="highlight"><c- b>void</c-><c- o>*</c-></code> parameter. It becomes difficult to properly coordinate additional information to the function without figuring out potentially contested data transmission mechanisms between the function put into the <code class="highlight"><c- n>cleanup</c-></code> portion of the attribute and the actual run of the function itself.</p>
    <h3 class="heading settled" data-level="2.2" id="intro-library"><span class="secno">2.2. </span><span class="content">Library-based Solutions</span><a class="self-link" href="#intro-library"></a></h3>
    <p>Just because there are language solutions to the library that others have built on top of, it has no stopped others from creating their own solutions produced entirely within library-based code. There are both simple and robust examples of this sort of code in the wild, with some of the most readily available being:</p>
    <ul>
@@ -2622,7 +2623,9 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
      <p>is <strong>not</strong> a full call stack-unwinding mechanism.</p>
    </ul>
    <p>These four tenets are important to cleave close to existing practice and avoid any potential run-time overhead.</p>
-   <p>Notably, this is <strong>not</strong> similar to C++'s "RAII" (Resource Acquisition is Initialization) idiom in the specific area that <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>terminate</c-><c- p>()</c-></code> will run every object’s destructor up the entire call stack. While C++ implementations with extensions may offer to give the same behavior as a run destructor for <code class="highlight"><c- n>defer</c-></code> blocks in their C++-with-extensions mode, C does not need to have any <code class="highlight"><c- n>terminate</c-><c- p>()</c-></code>-like function or unwinding capabilities at all. We explain these tenets and our design choices in the following subsections.</p>
+   <p>By making it a locally-scoped entity, we can have many more statements and much more data accessible to what is the effective equivalent of the <code class="highlight"><c- n>cleanup</c-></code> function. This prevents us from fiddling with making larger structures and calling a function, when we can instead have it entirely in-line and improve code motion and optimization opportunities that would not be availabl others.</p>
+   <p>Notably, this is <strong>not</strong> similar to C++'s "RAII" (Resource Acquisition is Initialization) idiom in the specific area that <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>terminate</c-><c- p>()</c-></code> will run every object’s destructor up the entire call stack. While C++ implementations with extensions may offer to give the same behavior as a run destructor for <code class="highlight"><c- n>defer</c-></code> blocks in their C++-with-extensions mode, C does not need to have any <code class="highlight"><c- n>terminate</c-><c- p>()</c-></code>-like function or unwinding capabilities at all.</p>
+   <p>We explain these tenets and our design choices in the following subsections.</p>
    <h3 class="heading settled" data-level="3.1" id="design-binding"><span class="secno">3.1. </span><span class="content">Defer Binding: Scope-Based</span><a class="self-link" href="#design-binding"></a></h3>
    <p><code class="highlight"><c- n>defer</c-></code> binds to the scope it was defined it. There is one other choice for <code class="highlight"><c- n>defer</c-></code>, which is to bind to the scope of the function call. This is the programming language Go’s choice of <code class="highlight"><c- n>defer</c-></code><a data-link-type="biblio" href="#biblio-go-defer">[go-defer]</a>. Choosing function-based binding for C would be an unmitigated disaster of corner cases and add the potential for needing run-time accumulation (e.g., dynamic allocation) of resources for <code class="highlight"><c- n>defer</c-></code> in order to handle <code class="highlight"><c- n>defer</c-></code>s which appear in loops or other constructs whose execution is only determined at run-time but is still scoped to a compile-time entity like the scope of a function.</p>
    <p>To give an example of how quickly this behavior unravels itself, consider the following Go code:</p>
