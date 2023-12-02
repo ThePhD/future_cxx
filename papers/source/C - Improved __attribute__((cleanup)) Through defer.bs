@@ -65,7 +65,7 @@ path: assets/C - defer/mort96 code.bs
 
 As stated by the code author, this is not more robust code. In fact, this sort of idiom — while explicit — has the user repeating themselves multiple times over and over again. Each nested scope, each conditional, is a chance to potentially forget to free an element, or free too many elements too many times.
 
-Conversely, there is the opposite idiom where — in an attempt to reduce the sort of code as shown above — the author deploys a series of outside-in, inside-out `goto`s and labels to handle failure. Other times, there is only one failure and the use of sentinel values (such as `INVALID_HANDLE` or the null pointer constant or `0`) are used to effectively have no-op `free`/`DestroyHandle`/`ReleaseResource`/etc. calls. But, even a simple set of conditionals with only one `goto fail;` and be error-prone in conjunction with formatting failures and other issues.
+Conversely, there is the opposite idiom where — in an attempt to reduce the sort of code as shown above — the author deploys a series of outside-in, inside-out `goto`s and labels to handle failure. Other times, there is only one failure and the use of sentinel values (such as `INVALID_HANDLE` or the null pointer constant or `0`) are used to effectively have no-op `free`/`DestroyHandle`/`ReleaseResource`/etc. calls. But, even a simple set of conditionals with only one `goto fail;` can be error-prone in conjunction with formatting failures and other issues.
 
 
 
@@ -127,7 +127,7 @@ The design of this feature chooses 4 core tenets upon which it is based:
 
 These four tenets are important to cleave close to existing practice and avoid any potential run-time overhead.
 
-By making it a locally-scoped entity, we can have many more statements and much more data accessible to what is the effective equivalent of the `cleanup` function. This prevents us from fiddling with making larger structures and calling a function, when we can instead have it entirely in-line and improve code motion and optimization opportunities that would not be availabl others.
+By making it a locally-scoped entity, we can have many more statements and much more data accessible to what is the effective equivalent of the `cleanup` function. This prevents us from fiddling with making larger structures and calling a function, when we can instead have it entirely in-line and improve code motion and optimization opportunities that would not be available otherwise.
 
 Notably, this is **not** similar to C++'s "RAII" (Resource Acquisition is Initialization) idiom in the specific area that `std::terminate()` will run every object's destructor up the entire call stack. While C++ implementations with extensions may offer to give the same behavior as a run destructor for `defer` blocks in their C++-with-extensions mode, C does not need to have any `terminate()`-like function or unwinding capabilities at all.
 
@@ -435,7 +435,13 @@ h_err* h_build_plugins(const char* rootdir, h_build_outfiles outfiles, const h_c
 }
 ```
 
-All of the special resource cleanup along certain branches are now completely gone. We have shrunk this function by around 20 lines of code. There are no resource leaks in this code, just as in the prior version, and if additional early exits or checks are added to the function, there is no risk of forgetting to free or clean up specific temporary resources. Shrinking code by 16% of its original size in the simple case and guaranteeing that further error checks and error handling do not introduce new forms of vulnerabilities. This sort of high-impact, high-quality refactoring enables better cleanup (as realized by GTK in its earliest iterations of `g_autoptr`) and resistance to changes-over-time, which is how many `goto fail;` or nested-`if` style of bugs have propagated into code[[goto-fail]][[cve-2021-3744]].
+All of the special resource cleanup along certain branches are now completely gone. We have shrunk this function by around 20 lines of code. There are no resource leaks in this code, just as in the prior version, and if additional early exits or checks are added to the function, there is no risk of forgetting to free or clean up specific temporary resources. Getting to:
+
+- shrink code by 16% of its original size;
+- guarantee that further error checks and error handling do not introduce new forms of vulnerabilities/leaks;
+- keeps resources in their scope and does not require refactoring nested `if` OR early returns;
+
+is a fairly good yield for a standard C feature. This sort of high-impact, high-quality refactoring enables better cleanup (as realized by GTK in its earliest iterations of `g_autoptr`) and resistance to changes-over-time, which is how many `goto fail;` or nested-`if` style of bugs have propagated into code[[goto-fail]][[cve-2021-3744]].
 
 Advisement: [[cve-2021-3744]] is not a vulnerability where they forget to free the data in totality: it was that the data for `tag` was not freed along very **specific** paths in a crop of sensitive code.
 
@@ -451,7 +457,12 @@ To quote Daniel Stenberg, maintainer of curl:
 >
 > — [How I Made A Heap Overflow In Curl; October 11th, 2023](https://daniel.haxx.se/blog/2023/10/11/how-i-made-a-heap-overflow-in-curl/)
 
-(Emphasis mine.) We are all human. We deserve tools and features that can cover our fallibility and make it difficult for us to forget to handle certain cases of bugs, whether it's heap overflow, use-after-free/double-free, integer overflow or otherwise.
+(Emphasis mine.) We are all human. One of the takeaways that people usually have from this is that we need to put "more eyeballs" or "do better teaching", but this is — again — not the first time this sort of vulnerability happened. For example, the same kind of bug also came from the GnuTLS implementation back in 2014[[gnu-tls-bug-analysis]]. The moral of the story is not to beat human beings up for their fallibility or mistakes, but to turn around to the language designers and actually ask them why this sort of problem can go on for nearly 40 years of C programming and nobody actually bring a solution to the problem.
+
+It is time to start acknowledging that our lack of built-in tools in C is not doing the job quite right. The fact that titans in our industry over 30, 40 years can have even the tiniest slipup or slightest indentation mistake used against them and their code, points to a fundamental issue in the way the language interacts with and works with its user base. Requiring perfect, 24/7 vigilance from people who support trillion-USD market cap industries and billion-USD quarterly budget businesses across the entire globe — and in space itself — is quite frankly bonkers. Our users have faithfully served the C language for decades.
+
+
+They deserve tools and features that can cover their fallibility and make it difficult for them to forget to handle certain cases of bugs, whether it's heap overflow, use-after-free/double-free, integer overflow or otherwise. It is time we recognize that, in some ways, we made it error-prone and wrong, and that we can do small, simple things to make it better.
 
 
 
@@ -1038,6 +1049,15 @@ Note: 📝 For the editor to do within the Annex J undefined behavior list.
 		"publisher": "National Vulnerability Database: NIST",
 		"href": "https://nvd.nist.gov/vuln/detail/CVE-2021-3744",
 		"date": "February 12th, 2023"
+	},
+	"gnu-tls-bug-analysis": {
+		"authors": [
+			"Sean Cassidy"
+		],
+		"title": "The Story of the GnuTLS Bug",
+		"publisher": "Sean Cassidy: Blog",
+		"href": "https://www.seancassidy.me/the-story-of-the-gnutls-bug.html",
+		"date": "March 14th, 2014"
 	},
 	"p0052": {
 		"authors": [
