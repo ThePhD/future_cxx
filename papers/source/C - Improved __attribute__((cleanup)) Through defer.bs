@@ -48,10 +48,10 @@ path: resources/css/bikeshed-color-fix.html
 
 The need to clean up resources, undo partially-successful function invocations, and perform actions upon early return has been a computing need since we started having computers that were capable of calculation. This need intensified with the introduction of resources that work with the boundaries of a system, from sockets and files to memory allocations and parallelism primitives.
 
-We have also had a large variety of failures related to `goto cleanup;` or `goto fail;`-style of programming. It becomes incredibly precarious to balance such code correctly, and sometimes individuals even opt out of `goto` entirely and simply repeat necessary cleanup on exit of each scope:
+We have also had a large variety of failures related to `goto cleanup;` or `goto fail;`-style of programming, in conjunction with forgotten . It becomes incredibly precarious to balance such code correctly, and sometimes individuals even opt out of `goto` entirely and simply repeat necessary cleanup on exit of each scope:
 
 <blockquote>
-So this isn't as ... "nice" ... as those "goto err1; ... goto err2;" style solutions, this is my own little piece of hell :)
+So this isn't as ... "nice" ... as those "`goto err1;` ... `goto err2;`" style solutions, this is my own little piece of hell :)
 
 It's the result of retrofitting freeing memory in error situations to an application which used to not care about that because it was a one-shot thing.
 
@@ -82,9 +82,9 @@ Language-based solutions are far superior to library-based solutions for this pr
 
 Even individuals with legitimate technical grievances against C++ speak highly of things such as `g_autoptr`:
 
-> It takes about 10 minutes to get used to the “g_autoptr(foo)” stuff, and then its not a big deal.
+> It takes about 10 minutes to get used to the “`g_autoptr(foo)`” stuff, and then its not a big deal.
 > 
-> I’ve basically removed all of my “goto error;” handling.
+> I’ve basically removed all of my “`goto error;`” handling.
 > 
 > If you need MSVC support, clearly you shouldn’t be using this yet. My hope is that the clang interop with MSVC will help make that a non-issue before long.
 > 
@@ -100,7 +100,7 @@ The only drawback of `__attribute__((cleanup(…)))` is that it is tied to passi
 
 ## Library-based Solutions ## {#intro-library}
 
-Just because there are language solutions to the library that others have built on top of, it has no stopped others from creating their own solutions produced entirely within library-based code. There are both simple and robust examples of this sort of code in the wild, with some of the most readily available being:
+Just because there are language solutions to the library that others have built on top of, it has not stopped others from creating their own solutions produced entirely within library-based code. There are both simple and robust examples of this sort of code in the wild, with some of the most readily available being:
 
 - [moonchilled's Defer/Deferrable macros](https://github.com/moon-chilled/Defer) (requires top-of-scope declarations);
 - and, [Jens Gustedt's guard and defer macros](https://gitlab.inria.fr/gustedt/defer) (an incredibly robust implementation using all sorts of tricks to provide the right behavior).
@@ -186,17 +186,17 @@ void f () {
 }
 ```
 
-If captures are done by-value (the pointer's value is copied and held onto for the duration of the code until the function is exited by some means), then this example is a potential double-free. This is an enormous footgun. Copying by-value also a (hidden, semi-uncontrolled) state that will exist on all implementations until optimizers can potentially get rid of the extra copies stored in the `defer` statement. We note that this is the position Swift tends to take with its closures: values are referred to by-reference if they can prove such accesses are safe, but otherwise decay to by-value copies. However, Swift generally codifies and relies more on its ability to perform certain optimizations, whereas C implementations are allowed to be far weaker in terms of their optimization and translation/evaluation/execution guarantees.
+If captures are done by-value (the pointer's value is copied and held onto for the duration of the code until the function is exited by some means), then this example is a potential double-free. This is an enormous footgun. Copying by-value also introduces a (hidden, semi-uncontrolled) state that will exist on all implementations until optimizers can potentially get rid of the extra copies stored in the `defer` statement. We note that this is the position Swift tends to take with its closures: values are referred to by-reference if they can prove such accesses are safe, but otherwise decay to by-value copies. However, Swift generally codifies and relies more on its ability to perform certain optimizations, whereas C implementations are allowed to be far weaker in terms of their optimization and translation/evaluation/execution guarantees.
 
 Copying by-value for `defer` is bad design in-general; anything that exists in the same scope and cannot escape said scope (such as statement expressions, `defer` statements, and otherwise) should always refer to existing variables through their name and at the same location/address. There is no risk of failure here because `defer` statements are not objects or declarations; they do not occupy a fixed amount of space as a reference-able object, they cannot be passed to `sizeof`, they cannot be copied or put on the heap versus the stack or some other form of storage location. They are simply a form of code (and code organization) like other flow control and code control entities. Treating them like callbacks (e.g., things that can be saved/transported/invoked at an arbitrary point later in time) is antithetical to the feature itself.
 
-For these reasons, `defer` should refer to existing variables as thought they were normal l-values (because they are and they should be). We anticipate that, in a future where Lambas/Nested Functions/etc. are possible, specific styles of capture can be obtained through their use where it will be explicit and documented neatly by the use of such hypothetical features themselves.
+For these reasons, `defer` should refer to existing variables as thought they were normal l-values (because they are and they should be). We anticipate that, in a future where Lambdas/Nested Functions/etc. are possible, specific styles of capture can be obtained through their use where it will be explicit and documented neatly by the use of such hypothetical features themselves.
 
 
 
 ## "Why Does This Not Unwind The Whole Call Stack??" ## {#design-unwinding}
 
-No C implementation provides a compiler-driven unwinding that we could find, even with `__attribute__((cleanup(free))) p = malloc(2);`. Calling any of:
+No C implementation provides a compiler-driven unwinding that we could find, even with `__attribute__((cleanup(free))) p = malloc(2);`. There is one notable exception, but it requires code to be in "C++ mode" (or have the equivalent of `-fexceptions` passed to the compiler to enable it in "C mode"). Right now, calling any of:
 
 - `exit`;
 - `_Exit`;
@@ -209,6 +209,81 @@ did not produce any code that called either the cleanup-annotated variables, or 
 Note: This is compatible with C++ semantics for a similar C++ feature: constructors and destructors.
 
 It is noteworthy that not even C++ destructors run on the invocation of any of these functions, either. (You can test that assumption [here](https://godbolt.org/z/185z5E4aM).) They have to use the C++-specific function `std::terminate()` and work with the `std::terminate_handler` in order to get appropriate unwinding behavior. Therefore, there is no precedent — not even from C++ — that C or C++ code should appropriately and carefully unwind the stack. `defer …`, therefore, will not provide this functionality. This makes it cheaper and easier to implement for platforms that do not have `__attribute__((cleanup(…)))`, while also following existing practice to the letter. Notably, the "cheapness" and "ease" that will come from the implementation means that at no point will there ever need to be a maintained runtime of unwind scopes or exception handling-alike tables. In fact, no  storage of any form of propagation information is necessary for this feature. It simply incentivizes the programming practices currently available to C programs: error codes, structured returns (with error codes embedded), and other testable function outputs in conjunction with better-defined cleanup code.
+
+The one place this does not hold up is `thrd_exit`. Consider the following code:
+
+```cpp
+#include <stdlib.h>
+#include <stdio.h>
+#include <threads.h>
+
+extern void* ep;
+extern void* ep2;
+extern int alternate;
+
+void cfree(void *userdata) {
+	void **pp = (void**)userdata;
+	printf("freeing %p !!\n", *pp);
+	free(*pp);
+}
+
+[[gnu::noinline]] void use(void* p) {
+	if ((++alternate % 2) == 0)
+		ep = p;
+	else
+		ep2 = p;
+}
+
+int thread([[maybe_unused]]void* arg) {
+	__attribute__((cleanup(cfree))) void* p = malloc(1);
+	printf("allocating %p !!\n", p);
+	use(p);
+	thrd_exit(1);
+	return 1;
+}
+
+int main () {
+	__attribute__((cleanup(cfree))) void* p = malloc(1);
+	printf("allocating %p !!\n", p);
+	int r = 0;
+	thrd_t th0 = {};
+	thrd_create(&th0, thread, NULL);
+	thrd_join(th0, &r);
+	use(p);
+	exit(0);
+	return 0;
+}
+
+void* ep = 0;
+void* ep2 = 0;
+int alternate = 0;
+```
+
+As of December 1st, 2023 on GCC trunk with the latest libpthreads, this code will print:
+
+```sh
+allocating 0xa072a0 !!
+allocating 0x7f8034000b70 !!
+freeing 0x7f8034000b70 !!
+```
+
+with `-fexceptions` turned on (or built in C++ mode), and
+
+```sh
+allocating 0x47e2a0 !!
+allocating 0x7f7e14000b70 !!
+```
+
+with `-fexceptions` not provided. This indicates that, specifically for `thrd_exit` and its underlying implementation on `pthread_cancel`/`pthread_exit`, the system will deploy a C++-style exception to do unwinding. This is fine for an implementation, and it is a conforming extension to add unwinding on top of C in this manner (to e.g. be more behavior-compatible with C++ or to protect precious thread-based resources).
+
+However, note that even in this example, the memory from `main` is always leaked, no matter what. This means that even in C++ mode or C mode with `-fexceptions` specified, `exit`, `quick_exit`, and similar do not provide unwinding capabilities. Implementations should feel free to change or enhance this behavior, but as of right now unwinding is a very niche things that happens in select cases.
+
+
+### What about thread static storage destructors, `atexit`, etc.? ### {#design-unwinding-atexit}
+
+These features require explicitly opt-in from the user in order to do program-specific and thread-specific cleanup in C. (C++, for threads, just relies on its RAII primitives in conjunction with parallelism language features and parallelism primitives). They can be hooked into while writing `defer` to register each `defer` statement's code into them, and provide a form of artisanal & manual unwinding. Some applications that must retain the integrity of its data tend to use these features as a way to perform rollback or as a last-minute way to sanity check assumptions and data.
+
+This proposal does not change anything about the semantics of these functions in any way.
 
 
 
@@ -395,11 +470,19 @@ h_err* h_build_plugins(const char* rootdir, h_build_outfiles outfiles, const h_c
 	//Loop through plugins, building them
 	struct dirent** namelist;
 	int n = scandir(pluginsdir, &namelist, NULL, alphasort);
-	int i;
-	for (i = 0; i < n; ++i)
+	if (n == -1) {
+		return h_err_from_errno(errno, namelist);
+	}
+	defer {
+		for (int i = 0; i < n; ++i)
+		{
+			free(namelist[i]);
+		}
+		free(namelist);
+	}
+	for (int i = 0; i < n; ++i)
 	{
 		struct dirent* ent = namelist[i];
-		defer free(ent);
 		if (ent->d_name[0] == '.')
 		{
 			continue;
@@ -430,14 +513,14 @@ h_err* h_build_plugins(const char* rootdir, h_build_outfiles outfiles, const h_c
 			return err;
 		}
 	}
-
+	
 	return NULL;
 }
 ```
 
-All of the special resource cleanup along certain branches are now completely gone. We have shrunk this function by around 20 lines of code. There are no resource leaks in this code, just as in the prior version, and if additional early exits or checks are added to the function, there is no risk of forgetting to free or clean up specific temporary resources. Getting to:
+All of the special resource cleanup along certain branches are now completely gone. We have shrunk this function by around 14 lines of code. There are no resource leaks in this code. There was a potential resource leak in the first bit of the code, where if `n` was six in the code's `scandir` loop and the third loop failed, it would return but fail to release the rest of the `scandir` results. We added an additional early exit and check to this, and such a check does not require another list of `free`s (which makes the differential here even more significant, since we have eliminated even potential future code with `defer`). When `defer` is used, additional early returns and checks added to the function later give no risk of forgetting to free or clean up specific temporary resources. Getting to:
 
-- shrink code by 16% of its original size;
+- shrink code by 18% of its original size (when including the differential for the additional checks);
 - guarantee that further error checks and error handling do not introduce new forms of vulnerabilities/leaks;
 - keeps resources in their scope and does not require refactoring nested `if` OR early returns;
 
@@ -459,7 +542,7 @@ To quote Daniel Stenberg, maintainer of curl:
 
 (Emphasis mine.) We are all human. One of the takeaways that people usually have from this is that we need to put "more eyeballs" or "do better teaching", but this is — again — not the first time this sort of vulnerability happened. For example, the same kind of bug also came from the GnuTLS implementation back in 2014[[gnu-tls-bug-analysis]]. The moral of the story is not to beat human beings up for their fallibility or mistakes, but to turn around to the language designers and actually ask them why this sort of problem can go on for nearly 40 years of C programming and nobody actually bring a solution to the problem.
 
-It is time to start acknowledging that our lack of built-in tools in C is not doing the job quite right. The fact that titans in our industry over 30, 40 years can have even the tiniest slipup or slightest indentation mistake used against them and their code, points to a fundamental issue in the way the language interacts with and works with its user base. Requiring perfect, 24/7 vigilance from people who support trillion-USD market cap industries and billion-USD quarterly budget businesses across the entire globe — and in space itself — is quite frankly bonkers. Our users have faithfully served the C language for decades.
+It is time to start acknowledging that our lack of built-in tools in C is not doing the job quite right. The fact that titans in our industry over 30, 40 years can have even the tiniest slip-up or slightest indentation mistake used against them and their code, points to a fundamental issue in the way the language interacts with and works with its user base. Requiring perfect, 24/7 vigilance from people who support trillion-USD market cap industries and billion-USD quarterly budget businesses across the entire globe — and in space itself — while only earning a fraction of that while sometimes unable to support themselves is quite frankly bonkers. Our users have faithfully served the C language for decades.
 
 
 They deserve tools and features that can cover their fallibility and make it difficult for them to forget to handle certain cases of bugs, whether it's heap overflow, use-after-free/double-free, integer overflow or otherwise. It is time we recognize that, in some ways, we made it error-prone and wrong, and that we can do small, simple things to make it better.
@@ -500,7 +583,7 @@ int use (int x){
 }
 ```
 
-The return value of the `use` function is `400`, not `500`. Also notably, because it runs after all other non-`defer` statements but just **before** the termination of the (function or block) scope
+The return value of the `use` function is `400`, not `500`. Also notably, because it runs after all other non-`defer` statements but just **before** the termination of the (function or block) scope, all of the variables are still alive when referred to.
 
 Note: This is compatible with C++ semantics for a similar C++ feature: constructors and destructors. See [this live code snippet](https://godbolt.org/z/YeaodMMs7):
 
@@ -612,9 +695,9 @@ Sommerlad's efforts ultimately failed in C++ because C++ has a rule that objects
 
 Advisement: Thusly, C++'s own rules about destructors — that they refused to break in this one case — makes it impossible to create an RAII object that fulfills one of the primary uses of `std::scope_guard`.
 
-`defer`, as a neutral language construct that is not tied to a member object, does not have this problem as there is no implication of success or failure; it is just an alternate form of code motion that is not tied to the lifetime of an object, but instead to lexical scope directly. Given the history of Peter Sommerlad's [[p0052]], we are unsure if they will pursue a language-based solutions to escape the rules of their own Standard Library (which are, for many reasons, completely justified). Therefore, this looks like one of those features that will, despite being very fundamental in either C or C++ code, be taken care of by user-defined libraries, shims, and polyfills (e.g., hand-rolled or Boost) for the forseeable future.
+`defer`, as a neutral language construct that is not tied to a member object, does not have this problem as there is no implication of success or failure; it is just an alternate form of code motion that is not tied to the lifetime of an object, but instead to lexical scope directly. Given the history of Peter Sommerlad's [[p0052]], we are unsure if they will pursue a language-based solutions to escape the rules of their own Standard Library (which are, for many reasons, completely justified). Therefore, this looks like one of those features that will, despite being very fundamental in either C or C++ code, be taken care of by user-defined libraries, shims, and polyfills (e.g., hand-rolled or Boost) for the foreseeable future.
 
-In either case, for the above stated reasons, we will not be pursuing providing this feature for C++.
+In either case, for the above stated reasons, we will not be pursuing providing member functions (constructors/destructors) for C. We also do not anticipate C++ being thrilled about that, and may see us asking for `defer` as trying to inject yet another alternative design into C++ for poor reasons. We would like to not antagonize C++ any further while respecting the design of C, and therefore offer the below partial solution to the problem.
 
 Note: We do invite C++ users, for the sake of interoperation, to create their own using a structure/class with Class Template Argument Deduction (CTAD) and lambdas, as that can cover the space fairly nicely with (effectively, needs an extra `;` and requires braces) identical syntax to this proposal and [no Standard Library rules to worry about](https://godbolt.org/z/qEfqdTq5G). Feel free to use ours:
 
@@ -659,11 +742,42 @@ int main () {
 ```
 
 
+
+
+# Implementation Experience # {#experience}
+
+This proposal is modeled after existing practice, but is not directly provided in a C compiler in C mode. It can be approximated (as shown above) using C++, but C++ does not have a language feature for this form that isn't just a stripped-down form of RAII.
+
+This leaves only `__attribute__((cleanup(…)))` as has been implemented in many compilers, some of which are GCC, Clang, XLC, and Tiny C Compiler.
+
+
+
+
 # Wording # {#wording}
 
 Wording is relative to the latest draft revision of the C Standard.
 
 Note: This wording uses the lowercase `defer` keyword directly in its wording. We recognize that this may not be suitable, and it is not an integral part of this proposal to type in `s/defer/_Defer/g` for us. It is just simpler to read in this form. If it is necessary to change it, we've got more than enough time to add `_Defer` and do the same `#include <stddefer.h>` to provide the convenience macro for the lowercase spelling.
+
+
+## Modify §5.1.2.2.3 Program termination to ensure defers in `main` are run ## {#wording-5.1.2.2.3}
+
+<blockquote>
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">5.1.2.2.3</span> <span class="wording-clause-title">Program termination</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-numbered">
+
+If the return type of the `main` function is a type compatible with `int`, a return from the initial call to the main function is equivalent to calling the `exit` function with the value returned by the `main` function as its argument after <ins>all active `defer` statements of the function body of main have been executed</ins>; …
+</div>
+
+</div>
+
+</blockquote>
 
 
 
@@ -780,7 +894,7 @@ A defer statement shall appear at block scope.
 
 <div class="wording-numbered">
 
-Jumps by means of `return` and `goto` shall not jump over a defer statement in the scope *E*.
+Jumps by means of `goto` shall not jump over a defer statement in the scope *E*.
 </div>
 
 <div class="wording-numbered">
@@ -850,7 +964,7 @@ int f () {
 
 int g () {
 	return printf("cat says");
-	defer { printf(" meow"); } // constraint violation
+	defer { printf(" meow"); } // okay: no constraint vilation, not executed
 }
 
 int h () {
