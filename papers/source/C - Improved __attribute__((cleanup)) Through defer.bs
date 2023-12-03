@@ -196,7 +196,7 @@ For these reasons, `defer` should refer to existing variables as thought they we
 
 ## "Why Does This Not Unwind The Whole Call Stack??" ## {#design-unwinding}
 
-No C implementation provides a compiler-driven unwinding that we could find, even with `__attribute__((cleanup(free))) p = malloc(2);`. There is one notable exception, but it requires code to be in "C++ mode" (or have the equivalent of `-fexceptions` passed to the compiler to enable it in "C mode"). Right now, calling any of:
+No C implementation provides a compiler-driven unwinding that we could find, even with `__attribute__((cleanup(…))) p = malloc(2);`. There is one notable exception, but it requires code to be in "C++ mode" (or have the equivalent of `-fexceptions` passed to the compiler to enable it in "C mode"). Right now, calling any of:
 
 - `exit`;
 - `_Exit`;
@@ -877,6 +877,29 @@ Syntax
 </blockquote>
 
 
+## Modify 6.8.6.1 The `goto` statement ## {#wording-6.8.6.1}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.8.6.1</span> <span class="wording-clause-title">The `goto` statement</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+The identifier in a `goto` statement shall name a label located somewhere in the enclosing function. A
+`goto` statement shall not jump from outside the scope of an identifier having a variably modified
+type to inside the scope of that identifier.<ins> A `goto` statement shall not jump from inside a defer statement (6.8.7) to a place outside of it, nor shall it jump from outside a defer statement into one.</ins>
+</div>
+
+</div>
+</blockquote>
+
 ## Add a new §6.8.7 's section describing the new *defer-statement* ## {#wording-6.8.7}
 
 <blockquote>
@@ -974,12 +997,12 @@ If a non-local jump (such as `longjmp`) is used within scope *E* but before the 
 
 <div class="wording-numbered">
 
-If a non-local jump (such as `longjmp`) is executed within *S* and control leaves scope *B*, the behavior is undefined.
+If a non-local jump (such as `longjmp`) is executed from *S* and control leaves scope *B*, the behavior is undefined.
 </div>
 
 <div class="wording-numbered">
 
-If a non-local jump (such as `longjmp`) is executed within *E* and it jumps into any *D*, the behavior is undefined.
+If a non-local jump (such as `longjmp`) is executed outside of any *D* and it jumps into any *D*, the behavior is undefined.
 </div>
 
 <div class="wording-numbered">
@@ -1090,7 +1113,7 @@ int main () {
 
 <div class="wording-numbered">
 
-**EXAMPLE 4**: Defer statements are tied to their enclosing lexical scope.
+**EXAMPLE 4**: Defer statements, when execution reaches them, are tied to their enclosing scope.
 
 ```cpp
 #include <stdio.h>
@@ -1098,11 +1121,15 @@ int main () {
 
 int main () {
 	{
-		printf("cat says");
-		defer { printf(" meow"); }
+		defer {
+			printf(" meow");
+		}
+		if (true)
+			defer printf("cat");
+		printf(" says");
 	}
 	// "cat says meow" is printed to standard output
-	exit(1);
+	exit(0);
 }
 ```
 </div>
@@ -1142,11 +1169,79 @@ int main () {
 ```
 </div>
 
+<div class="wording-numbered">
+
+**EXAMPLE 6**: Defer statements can be executed within a `switch`, but a `switch` cannot be used to jump over a defer statement.
+
+```cpp
+int main () {
+	void* p
+	switch (1) {
+	defer free(p); // constraint violation
+	default:
+		defer free(p);
+		break;
+	}
+
+	return 2;
+}
+```
+</div>
 
 </div>
 </div>
 </ins>
 </blockquote>
+
+
+## OPTIONAL: Add to 6.8.7 Defer statements a new paragraph 3 additional constraint to reject multiply-nested `defer`. ## {#wording-optional.6.8.7}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.8.7</span> <span class="wording-clause-title">Defer statements</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+
+*defer-statement*:
+:: **defer** *expression-statement*
+:: **defer** *primary-block*
+
+</div>
+
+<div class="wording-clause-section-title">
+Description
+</div>
+
+<div>
+
+Let *D* be a defer statement, *S* be the expression statement or primary block of *D*, *E* be the enclosing scope of *D*, and *B* be the scope denoted as-if a pair of braces were placed around *S*.
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+A defer statement shall appear at block scope.
+</div>
+
+<div class="wording-newnumbered">
+
+<ins>A defer statement shall not appear within another defer statement.</ins>
+</div>
+
+</div>
+</blockquote>
+
+Note: 📝 Editor: also edit **Example 4** and **Example 5** with `// constraint violation` in the appropriate places.
 
 
 
