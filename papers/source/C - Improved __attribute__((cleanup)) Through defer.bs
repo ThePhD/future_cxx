@@ -167,6 +167,19 @@ We know for a fact that many C compilers are averse to taking control of hidden 
 
 
 
+## `defer` Syntax and Grammar: *secondary-block* ## {#design-syntax}
+
+The syntax of a `defer` block simply uses:
+
+*defer-statement*:
+:: **defer** *secondary-block*
+
+A *secondary-block* is the same grammar term used for e.g. `if` statements, so all of the typical syntactic constructs — even the ones that look questionable — are allowed. We expect coding guidelines and build-failing tools to apply conformance to make these more legible (e.g., clang-tidy) and resistant to the usual failure cases.
+
+We also chose the all-lowercase name `defer` for this feature. This is, technically, a breaking change. We do not mind swapping every instance of `defer` in this paper to be `_Defer`, or `_Cleanup`, or `_Meow`; the exactly spelling of the introductory keyword is of little consequence to us. We use `defer` in this paper to draw clear connections to the existing practice in other languages which use a similar keyword, such as the Go programming language. `defer`/`Defer` is also, as shown in the existing practice above, a very common spelling for this feature.
+
+
+
 ## Reference Captures "by Default" ## {#design-capture}
 
 This proposal does not tie the acceptance of the proposal to the presence of an explicit capturing clause, as was the case in other versions[[N2895]][[N2542]]. It simply allows for any variables that are visible in the scope of the `defer` statement to be allowed like any other named entity. No implicit or invisible copy of the variables is performed: it simply refers to those variables just as in the same way as the rest of the surrounding code. This is the safest and best way to handle the way that this feature works.
@@ -520,11 +533,18 @@ h_err* h_build_plugins(const char* rootdir, h_build_outfiles outfiles, const h_c
 
 All of the special resource cleanup along certain branches are now completely gone. We have shrunk this function by around 14 lines of code. There are no resource leaks in this code. There was a potential resource leak in the first bit of the code, where if `n` was six in the code's `scandir` loop and the third loop failed, it would return but fail to release the rest of the `scandir` results. We added an additional early exit and check to this, and such a check does not require another list of `free`s (which makes the differential here even more significant, since we have eliminated even potential future code with `defer`). When `defer` is used, additional early returns and checks added to the function later give no risk of forgetting to free or clean up specific temporary resources. Getting to:
 
-- shrink code by 18% of its original size (when including the differential for the additional checks);
+- shrink code by 18% of its original size (when including the differential for the additional checks added here and the `free`s they do not have to do);
 - guarantee that further error checks and error handling do not introduce new forms of vulnerabilities/leaks;
 - keeps resources in their scope and does not require refactoring nested `if` OR early returns;
 
-is a fairly good yield for a standard C feature. This sort of high-impact, high-quality refactoring enables better cleanup (as realized by GTK in its earliest iterations of `g_autoptr`) and resistance to changes-over-time, which is how many `goto fail;` or nested-`if` style of bugs have propagated into code[[goto-fail]][[cve-2021-3744]].
+is a fairly good yield for a standard C feature. This sort of high-impact, high-quality refactoring enables better cleanup (as realized by GTK in its earliest iterations of `g_autoptr`) and resistance to changes-over-time.
+
+This feature also achieves something that C users have frequently requested of a feature of this form. While C++ destructors "hide" the code behind the destruction of an object, `defer` leaves that effect clear in the code by requiring that it is placed in the requisite scope. One can simply trace backward from a `return` or a `goto` paired with its label and see what actions will be taken by `defer`. This is a bit harder to achieve with `__attribute__((cleanup(…)))`-style code.
+
+
+## Safety & `defer`: Preventing Leaks from Human Vulnerability ## {#design.safety}
+
+One of the most important tenets of this feature is resistance to human fallibility. There is a lot of ways in which a human being who deals with resource handling and required calls may fail to do such explicitly paired calls for creating a resource/entity and releasing a resource/entity. Many vulnerabilities happen because restructuring to `if` ladders (shown above to have still leaked some resources from the `scandir` code, though this code itself is not directly vulnerable and just a leak) or `goto fail;`-style code and leave out necessary actions, e.g. [[goto-fail]]. One such CVE that highlights human fallibility in the face of necessary control flow is the Linux Kernel's somewhat recent CVE-2021-3744[[cve-2021-3744]].
 
 Advisement: [[cve-2021-3744]] is not a vulnerability where they forget to free the data in totality: it was that the data for `tag` was not freed along very **specific** paths in a crop of sensitive code.
 
@@ -544,14 +564,13 @@ To quote Daniel Stenberg, maintainer of curl:
 
 It is time to start acknowledging that our lack of built-in tools in C is not doing the job quite right. The fact that titans in our industry over 30, 40 years can have even the tiniest slip-up or slightest indentation mistake used against them and their code, points to a fundamental issue in the way the language interacts with and works with its user base. Requiring perfect, 24/7 vigilance from people who support trillion-USD market cap industries and billion-USD quarterly budget businesses across the entire globe — and in space itself — while only earning a fraction of that while sometimes unable to support themselves is quite frankly bonkers. Our users have faithfully served the C language for decades.
 
-
 They deserve tools and features that can cover their fallibility and make it difficult for them to forget to handle certain cases of bugs, whether it's heap overflow, use-after-free/double-free, integer overflow or otherwise. It is time we recognize that, in some ways, we made it error-prone and wrong, and that we can do small, simple things to make it better.
 
 
 
 ## `defer` Ordering? ## {#design-ordering}
 
-The code in a `defer` block runs after every other statement and expression in the block, save for other `defers` (which execute in reverse-lexical order).
+The code in a `defer` block runs after every other statement and expression in the block, save for other `defer`s (which execute in reverse-lexical order from whence they appeared). Nested `defer` statements execute at the end of the block for the `defer` they are within. It is recognized that nested `defer`s, for some people may be considered a sincere code smell. Therefore, there is optional [[#wording-optional.6.8.7|wording below (6.6)]] to allow for this if people rally behind this idea.
 
 
 ### `defer` interleaved with `return` ? ### {#design-ordering-return}
@@ -698,6 +717,7 @@ Unfortunately, `longjmp` is non-local, runtime-controlled control flow. It can e
 
 
 
+
 # C++ Compatibility: Why Not Member Functions + Constructors/Destructors? # {#cpp.compat}
 
 As will be asked one hundred thousand times throughout the course of this proposal's life:
@@ -773,7 +793,15 @@ int main () {
 
 This proposal is modeled after existing practice, but is not directly provided in a C compiler in C mode. It can be approximated (as shown above) using C++, but C++ does not have a language feature for this form that isn't just a stripped-down form of RAII.
 
-This leaves only `__attribute__((cleanup(…)))` as has been implemented in many compilers, some of which are GCC, Clang, XLC, and Tiny C Compiler.
+This leaves only `__attribute__((cleanup(…)))` as has been implemented in many compilers, some of which are GCC, Clang, XLC, and Tiny C Compiler. Most of what has shaped this proposal has been driven by this feature. However, we **specifically** do not use an attribute in this version of the proposal because `[[cleanup(my_free)]] some_variable;` is:
+
+- ignorable by the wording for attributes (and their expected behavior);
+- tied too strongly to a declaration (and may fall off in an unwarranted fashion);
+- and, in the existing practice, does not have support for single fields in a structure or similar without writing an extended function to pick out specific pieces of a structure to cleanup.
+
+In contrast `defer` has much clearer mechanisms to achieve the same goal, and may be applied to a wider variety of instances and cases than the attribute can.
+
+In the future, we expect that — should someone solve the tension between name mangling, member functions, constructors/destructors, and more — we could consider moving into a destructor-based solution that is tied to the type system and objects. We view that as better to solve the problem for individual member fields and larger objects, while reducing the amount of times that the cleanup code may need to be written. However, C users have expressed a deep tie to having code that will run be visible in the scope. Macros violate this rule (e.g. `g_autoptr` backed by `__attribute__((cleanup(…)))`), destructors violate this rule, but `defer` as a feature does not.
 
 
 
@@ -917,8 +945,7 @@ Syntax
 <div class="wording-numbered">
 
 *defer-statement*:
-:: **defer** *expression-statement*
-:: **defer** *primary-block*
+:: **defer** *secondary-block*
 
 </div>
 
@@ -926,9 +953,9 @@ Syntax
 Description
 </div>
 
-<div>
+<div class="wording-numbered">
 
-Let *D* be a defer statement, *S* be the expression statement or primary block of *D*, *E* be the enclosing scope of *D*, and *B* be the scope denoted as-if a pair of braces were placed around *S*.
+Let *D* be a defer statement, *S* be the secondary block of *D*, and *E* be the enclosing block of *D*.
 </div>
 
 <div class="wording-clause-section-title">
@@ -937,12 +964,7 @@ Constraints
 
 <div class="wording-numbered">
 
-A defer statement shall appear at block scope.
-</div>
-
-<div class="wording-numbered">
-
-Jumps by means of `goto` shall not jump over a defer statement in the scope *E*.
+Jumps by means of `goto` into *E* shall not jump over a defer statement in *E*.
 </div>
 
 <div class="wording-numbered">
@@ -952,7 +974,7 @@ Jumps by means of `goto` shall not jump into any defer statement.
 
 <div class="wording-numbered">
 
-Jumps by means of `return`, `goto`, `break`, or `continue` shall not exit the scope *B*.
+Jumps by means of `return`, `goto`, `break`, or `continue` shall not exit *S*.
 </div>
 
 <div class="wording-clause-section-title">
@@ -963,46 +985,46 @@ Semantics
 
 When execution reaches a defer statement *D*, its *S* is not immediately executed during sequential execution of the program. Instead, *S* is executed upon:
 
-- the termination of the block *E* (such as from reaching the end of a scope or the end of a function);
+- the termination of the block *E* (such as from reaching its end);
 - or, any exit from *E* through means of flow control such as `return`, `goto`, `break`, `switch`, or `continue`.
 
-The execution is done just before leaving the enclosing scope *E*.
+The execution is done just before leaving the enclosing block *E*.
 </div>
 
 <div class="wording-numbered">
 
-Multiple defer statements execute in the reverse lexical order they appeared in *E*. Within a single defer statement *D*, if *D* contains one or more defer statements of its own, then these defer statements are also executed in reverse lexical order at the end of *E*, recursively, according to the rules of this clause.
+Multiple defer statements execute in the reverse lexical order they appeared in *E*. Within a single defer statement *D*, if *D* contains one or more defer statements of its own, then these defer statements are also executed in reverse lexical order at the end of *S*, recursively, according to the rules of this clause.
 </div>
 
 <div class="wording-numbered">
 
-If a scope *E* has any defer statements *D* that have not yet been executed, and the program is terminated through any of the following means:
+If *E* has any defer statements *D* that have not yet been executed, and the program is terminated through any of the following means:
 
 - a function with the deprecated `_Noreturn` function specifier, or a function annotated with the `no_return`/`_Noreturn` attribute, is called;
 - or, any signal `SIGABRT`, `SIGINT`, or `SIGTERM` occurs;
 
-then *D* is not run.
+then such *D* are not run.
 </div>
 
 <div class="wording-numbered">
 
-If a non-local jump (such as `longjmp`) is used within scope *E* but before the execution of *S*:
+If a non-local jump (such as `longjmp`) is used within *E* but before the execution of *S*:
 
-- if control leaves scope *E*, *D*'s statements will not be executed;
+- if control leaves *E*, *D*'s statements will not be executed;
 - otherwise, if control returns to a point in *E* and causes *D* to be reached more than once, there is no effect.<sup>FN0✨)</sup>
 
 </div>
 
-<sup>FN✨0)</sup><sub>This is because the "execution" of a defer statement only lets the program know that *S* will be run. There is no observable side effect to repeat from reaching *D*, as the manifestation of any of the effects of *S* will happen when if and only if scope is exited or terminated as previously specified.</sub>
+<sup>FN✨0)</sup><sub>This is because the "execution" of a defer statement only lets the program know that *S* will be run. There is no observable side effect to repeat from reaching *D*, as the manifestation of any of the effects of *S* will happen when if and only if it is exited or terminated as previously specified.</sub>
 
 <div class="wording-numbered">
 
-If a non-local jump (such as `longjmp`) is executed from *S* and control leaves scope *B*, the behavior is undefined.
+If a non-local jump (such as `longjmp`) is executed from *S* and control leaves *S*, the behavior is undefined.
 </div>
 
 <div class="wording-numbered">
 
-If a non-local jump (such as `longjmp`) is executed outside of any *D* and it jumps into any *D*, the behavior is undefined.
+If a non-local jump (such as `longjmp`) is executed outside of any *D* and it jumps into any *S*, the behavior is undefined.
 </div>
 
 <div class="wording-numbered">
@@ -1033,7 +1055,7 @@ int h () {
 	}
 	b:
 	printf("cat says");
-	return 1;
+	return 1; // prints "cat says" to standard output
 }
 
 int i () {
@@ -1044,7 +1066,7 @@ int i () {
 	}
 	b:
 	printf("cat says");
-	return 1;
+	return 1; // prints "cat says meow" to standard output
 }
 
 int j () {
@@ -1075,12 +1097,32 @@ int j () {
 	printf("cat says");
 	return 1;
 }
+
+int k () {
+	goto b; // okay: no constraint violation
+	{
+		b:
+		defer { printf("cat says"); }
+	}
+	printf(" meow");
+	return 1; // prints "cat says meow" to standard output
+}
+
+int m () {
+	goto b; // constraint violation
+	{
+		defer { printf(" meow"); }
+		b:
+	}
+	printf("cat says");
+	return 1;
+}
 ```
 </div>
 
 <div class="wording-numbered">
 
-**EXAMPLE 2**: All the expressions and statements of an enclosing scope are evaluated before executing defer statements, and then leaving that scope.
+**EXAMPLE 2**: All the expressions and statements of an enclosing block are evaluated before executing defer statements. After all defer statements are executed, then the block is left.
 
 ```cpp
 int main () {
@@ -1113,7 +1155,7 @@ int main () {
 
 <div class="wording-numbered">
 
-**EXAMPLE 4**: Defer statements, when execution reaches them, are tied to their enclosing scope.
+**EXAMPLE 4**: Defer statements, when execution reaches them, are tied to their enclosing block.
 
 ```cpp
 #include <stdio.h>
@@ -1174,8 +1216,10 @@ int main () {
 **EXAMPLE 6**: Defer statements can be executed within a `switch`, but a `switch` cannot be used to jump over a defer statement.
 
 ```cpp
+#include <stdlib.h>
+
 int main () {
-	void* p
+	void* p = malloc(1);
 	switch (1) {
 	defer free(p); // constraint violation
 	default:
@@ -1210,8 +1254,7 @@ Syntax
 <div class="wording-numbered">
 
 *defer-statement*:
-:: **defer** *expression-statement*
-:: **defer** *primary-block*
+:: **defer** *secondary-block*
 
 </div>
 
@@ -1219,18 +1262,13 @@ Syntax
 Description
 </div>
 
-<div>
+<div class="wording-numbered">
 
-Let *D* be a defer statement, *S* be the expression statement or primary block of *D*, *E* be the enclosing scope of *D*, and *B* be the scope denoted as-if a pair of braces were placed around *S*.
+Let *D* be a defer statement, *S* be the secondary block of *D*, and *E* be the enclosing block of *D*.
 </div>
 
 <div class="wording-clause-section-title">
 Constraints
-</div>
-
-<div class="wording-numbered">
-
-A defer statement shall appear at block scope.
 </div>
 
 <div class="wording-newnumbered">
@@ -1241,7 +1279,7 @@ A defer statement shall appear at block scope.
 </div>
 </blockquote>
 
-Note: 📝 Editor: also edit **Example 4** and **Example 5** with `// constraint violation` in the appropriate places.
+Note: 📝 Editor: also edit **Example 4** and **Example 5** with `// constraint violation` in the appropriate places, and change the description to make it clear it is a constraint violation.
 
 
 

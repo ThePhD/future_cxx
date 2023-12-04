@@ -1506,7 +1506,7 @@ Possible extra rowspan handling
   <meta content="Bikeshed version 82ce88815, updated Thu Sep 7 16:33:55 2023 -0700" name="generator">
   <link href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Improved%20__attribute__((cleanup))%20Through%20defer.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="8b362902f1bb307fd785ff982f056f0fdce7f12e" name="document-revision">
+  <meta content="9b210b246d2777cee2ac76d83876320b959e58c4" name="document-revision">
 <style>
 
 :root {
@@ -2515,21 +2515,23 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
      <a href="#design"><span class="secno">3</span> <span class="content">Design</span></a>
      <ol class="toc">
       <li><a href="#design-binding"><span class="secno">3.1</span> <span class="content">Defer Binding: Scope-Based</span></a>
-      <li><a href="#design-capture"><span class="secno">3.2</span> <span class="content">Reference Captures "by Default"</span></a>
+      <li><a href="#design-syntax"><span class="secno">3.2</span> <span class="content"><code class="highlight"><c- n>defer</c-></code> Syntax and Grammar: <em>secondary-block</em></span></a>
+      <li><a href="#design-capture"><span class="secno">3.3</span> <span class="content">Reference Captures "by Default"</span></a>
       <li>
-       <a href="#design-unwinding"><span class="secno">3.3</span> <span class="content">"Why Does This Not Unwind The Whole Call Stack??"</span></a>
+       <a href="#design-unwinding"><span class="secno">3.4</span> <span class="content">"Why Does This Not Unwind The Whole Call Stack??"</span></a>
        <ol class="toc">
-        <li><a href="#design-unwinding-atexit"><span class="secno">3.3.1</span> <span class="content">What about thread static storage destructors, <code class="highlight"><c- n>atexit</c-></code>, etc.?</span></a>
+        <li><a href="#design-unwinding-atexit"><span class="secno">3.4.1</span> <span class="content">What about thread static storage destructors, <code class="highlight"><c- n>atexit</c-></code>, etc.?</span></a>
        </ol>
-      <li><a href="#design-compile.time"><span class="secno">3.4</span> <span class="content">Compile-time Construct</span></a>
+      <li><a href="#design-compile.time"><span class="secno">3.5</span> <span class="content">Compile-time Construct</span></a>
+      <li><a href="#design.safety"><span class="secno">3.6</span> <span class="content">Safety &amp; <code class="highlight"><c- n>defer</c-></code>: Preventing Leaks from Human Vulnerability</span></a>
       <li>
-       <a href="#design-ordering"><span class="secno">3.5</span> <span class="content"><code class="highlight"><c- n>defer</c-></code> Ordering?</span></a>
+       <a href="#design-ordering"><span class="secno">3.7</span> <span class="content"><code class="highlight"><c- n>defer</c-></code> Ordering?</span></a>
        <ol class="toc">
-        <li><a href="#design-ordering-return"><span class="secno">3.5.1</span> <span class="content"><code class="highlight"><c- n>defer</c-></code> interleaved with <code class="highlight"><c- k>return</c-></code> ?</span></a>
-        <li><a href="#design-ordering-jump.out"><span class="secno">3.5.2</span> <span class="content">Flow Control / Jumps out of <code class="highlight"><c- n>defer</c-></code></span></a>
-        <li><a href="#design-ordering-jump.over"><span class="secno">3.5.3</span> <span class="content"><code class="highlight"><c- k>goto</c-></code> and other Flow Control <strong>over</strong> an existing <code class="highlight"><c- n>defer</c-></code></span></a>
-        <li><a href="#design-ordering-jump.into"><span class="secno">3.5.4</span> <span class="content"><code class="highlight"><c- k>goto</c-></code> and other Flow Control <strong>into</strong> an existing <code class="highlight"><c- n>defer</c-></code></span></a>
-        <li><a href="#design-ordering-longjmp"><span class="secno">3.5.5</span> <span class="content">What about <code class="highlight"><c- n>longjmp</c-></code>?</span></a>
+        <li><a href="#design-ordering-return"><span class="secno">3.7.1</span> <span class="content"><code class="highlight"><c- n>defer</c-></code> interleaved with <code class="highlight"><c- k>return</c-></code> ?</span></a>
+        <li><a href="#design-ordering-jump.out"><span class="secno">3.7.2</span> <span class="content">Flow Control / Jumps out of <code class="highlight"><c- n>defer</c-></code></span></a>
+        <li><a href="#design-ordering-jump.over"><span class="secno">3.7.3</span> <span class="content"><code class="highlight"><c- k>goto</c-></code> and other Flow Control <strong>over</strong> an existing <code class="highlight"><c- n>defer</c-></code></span></a>
+        <li><a href="#design-ordering-jump.into"><span class="secno">3.7.4</span> <span class="content"><code class="highlight"><c- k>goto</c-></code> and other Flow Control <strong>into</strong> an existing <code class="highlight"><c- n>defer</c-></code></span></a>
+        <li><a href="#design-ordering-longjmp"><span class="secno">3.7.5</span> <span class="content">What about <code class="highlight"><c- n>longjmp</c-></code>?</span></a>
        </ol>
      </ol>
     <li><a href="#cpp.compat"><span class="secno">4</span> <span class="content">C++ Compatibility: Why Not Member Functions + Constructors/Destructors?</span></a>
@@ -2655,7 +2657,16 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 </pre>
    <p>This is just an extremely long-winded way of having a scope-based <code class="highlight"><c- n>defer</c-></code>. It is not all bad for function-based <code class="highlight"><c- n>defer</c-></code>: advantages include queueing up a piece of work to be done only if certain conditions are met. E.g., one can place a <code class="highlight"><c- n>defer</c-></code> inside of an <code class="highlight"><c- k>if</c-></code> statement and then having it run at the end of the function if and only if that <code class="highlight"><c- k>if</c-></code> was entered. However, the cost of such behaviors means attempting to shoehorn a design from Go which has the backing of a garbage collector and on-demand allocation. The first go snippet above, if it had not deadlocked, required dynamic allocation in an earlier version of Go. It took significant optimization work to get to a place where this would no longer be the case.</p>
    <p>We know for a fact that many C compilers are averse to taking control of hidden dynamically-sized (not necessarily heap) allocations. It can often result in issues in the portability of code to smaller platforms. We also know for a fact that memory is neither free nor cheap in the C programming language; Go can pull this off because it has a run-time that can manage its garbage collector and is generally geared towards high-resource environments (even if it uses those resources efficiently). As a language feature, we cannot prioritize a design which may require an unbounded amount of code to be (potentially) stored in heap space so that it can be run as a callback, with potentially-saved data from each iteration of a loop stored in that construct as well.</p>
-   <h3 class="heading settled" data-level="3.2" id="design-capture"><span class="secno">3.2. </span><span class="content">Reference Captures "by Default"</span><a class="self-link" href="#design-capture"></a></h3>
+   <h3 class="heading settled" data-level="3.2" id="design-syntax"><span class="secno">3.2. </span><span class="content"><code class="highlight"><c- n>defer</c-></code> Syntax and Grammar: <em>secondary-block</em></span><a class="self-link" href="#design-syntax"></a></h3>
+   <p>The syntax of a <code class="highlight"><c- n>defer</c-></code> block simply uses:</p>
+   <p><em>defer-statement</em>:</p>
+   <dl>
+    <dd data-md>
+     <p><strong>defer</strong> <em>secondary-block</em></p>
+   </dl>
+   <p>A <em>secondary-block</em> is the same grammar term used for e.g. <code class="highlight"><c- k>if</c-></code> statements, so all of the typical syntactic constructs — even the ones that look questionable — are allowed. We expect coding guidelines and build-failing tools to apply conformance to make these more legible (e.g., clang-tidy) and resistant to the usual failure cases.</p>
+   <p>We also chose the all-lowercase name <code class="highlight"><c- n>defer</c-></code> for this feature. This is, technically, a breaking change. We do not mind swapping every instance of <code class="highlight"><c- n>defer</c-></code> in this paper to be <code class="highlight"><c- n>_Defer</c-></code>, or <code class="highlight"><c- n>_Cleanup</c-></code>, or <code class="highlight"><c- n>_Meow</c-></code>; the exactly spelling of the introductory keyword is of little consequence to us. We use <code class="highlight"><c- n>defer</c-></code> in this paper to draw clear connections to the existing practice in other languages which use a similar keyword, such as the Go programming language. <code class="highlight"><c- n>defer</c-></code>/<code class="highlight"><c- n>Defer</c-></code> is also, as shown in the existing practice above, a very common spelling for this feature.</p>
+   <h3 class="heading settled" data-level="3.3" id="design-capture"><span class="secno">3.3. </span><span class="content">Reference Captures "by Default"</span><a class="self-link" href="#design-capture"></a></h3>
    <p>This proposal does not tie the acceptance of the proposal to the presence of an explicit capturing clause, as was the case in other versions<a data-link-type="biblio" href="#biblio-n2895" title="N2895: A simple defer feature for C">[N2895]</a><a data-link-type="biblio" href="#biblio-n2542" title="Defer Mechanism for C">[N2542]</a>. It simply allows for any variables that are visible in the scope of the <code class="highlight"><c- n>defer</c-></code> statement to be allowed like any other named entity. No implicit or invisible copy of the variables is performed: it simply refers to those variables just as in the same way as the rest of the surrounding code. This is the safest and best way to handle the way that this feature works.</p>
    <p>The reason this is critically important is due to the potential to double-free. For example, consider the following function call:</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>f</c-> <c- p>()</c-> <c- p>{</c->
@@ -2672,7 +2683,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    <p>If captures are done by-value (the pointer’s value is copied and held onto for the duration of the code until the function is exited by some means), then this example is a potential double-free. This is an enormous footgun. Copying by-value also introduces a (hidden, semi-uncontrolled) state that will exist on all implementations until optimizers can potentially get rid of the extra copies stored in the <code class="highlight"><c- n>defer</c-></code> statement. We note that this is the position Swift tends to take with its closures: values are referred to by-reference if they can prove such accesses are safe, but otherwise decay to by-value copies. However, Swift generally codifies and relies more on its ability to perform certain optimizations, whereas C implementations are allowed to be far weaker in terms of their optimization and translation/evaluation/execution guarantees.</p>
    <p>Copying by-value for <code class="highlight"><c- n>defer</c-></code> is bad design in-general; anything that exists in the same scope and cannot escape said scope (such as statement expressions, <code class="highlight"><c- n>defer</c-></code> statements, and otherwise) should always refer to existing variables through their name and at the same location/address. There is no risk of failure here because <code class="highlight"><c- n>defer</c-></code> statements are not objects or declarations; they do not occupy a fixed amount of space as a reference-able object, they cannot be passed to <code class="highlight"><c- k>sizeof</c-></code>, they cannot be copied or put on the heap versus the stack or some other form of storage location. They are simply a form of code (and code organization) like other flow control and code control entities. Treating them like callbacks (e.g., things that can be saved/transported/invoked at an arbitrary point later in time) is antithetical to the feature itself.</p>
    <p>For these reasons, <code class="highlight"><c- n>defer</c-></code> should refer to existing variables as thought they were normal l-values (because they are and they should be). We anticipate that, in a future where Lambdas/Nested Functions/etc. are possible, specific styles of capture can be obtained through their use where it will be explicit and documented neatly by the use of such hypothetical features themselves.</p>
-   <h3 class="heading settled" data-level="3.3" id="design-unwinding"><span class="secno">3.3. </span><span class="content">"Why Does This Not Unwind The Whole Call Stack??"</span><a class="self-link" href="#design-unwinding"></a></h3>
+   <h3 class="heading settled" data-level="3.4" id="design-unwinding"><span class="secno">3.4. </span><span class="content">"Why Does This Not Unwind The Whole Call Stack??"</span><a class="self-link" href="#design-unwinding"></a></h3>
    <p>No C implementation provides a compiler-driven unwinding that we could find, even with <code class="highlight"><c- n>__attribute__</c-><c- p>((</c-><c- n>cleanup</c-><c- p>(</c->…<c- p>)))</c-> <c- n>p</c-> <c- o>=</c-> <c- n>malloc</c-><c- p>(</c-><c- mi>2</c-><c- p>);</c-></code>. There is one notable exception, but it requires code to be in "C++ mode" (or have the equivalent of <code class="highlight"><c- o>-</c-><c- n>fexceptions</c-></code> passed to the compiler to enable it in "C mode"). Right now, calling any of:</p>
    <ul>
     <li data-md>
@@ -2746,10 +2757,10 @@ allocating 0x7f7e14000b70 !!
 </pre>
    <p>with <code class="highlight"><c- o>-</c-><c- n>fexceptions</c-></code> not provided. (See it running and change the flags <a href="https://godbolt.org/z/exoexG7Wq">here</a>.) This indicates that, specifically for <code class="highlight"><c- n>thrd_exit</c-></code> and its underlying implementation on <code class="highlight"><c- n>pthread_cancel</c-></code>/<code class="highlight"><c- n>pthread_exit</c-></code>, the system will deploy a C++-style exception to do unwinding. This is fine for an implementation, and it is a conforming extension to add unwinding on top of C in this manner (to e.g. be more behavior-compatible with C++ or to protect precious thread-based resources).</p>
    <p>However, note that even in this example, the memory from <code class="highlight"><c- n>main</c-></code> is always leaked, no matter what. This means that even in C++ mode or C mode with <code class="highlight"><c- o>-</c-><c- n>fexceptions</c-></code> specified, <code class="highlight"><c- n>exit</c-></code>, <code class="highlight"><c- n>quick_exit</c-></code>, and similar do not provide unwinding capabilities. Implementations should feel free to change or enhance this behavior, but as of right now unwinding is a very niche things that happens in select cases.</p>
-   <h4 class="heading settled" data-level="3.3.1" id="design-unwinding-atexit"><span class="secno">3.3.1. </span><span class="content">What about thread static storage destructors, <code class="highlight"><c- n>atexit</c-></code>, etc.?</span><a class="self-link" href="#design-unwinding-atexit"></a></h4>
+   <h4 class="heading settled" data-level="3.4.1" id="design-unwinding-atexit"><span class="secno">3.4.1. </span><span class="content">What about thread static storage destructors, <code class="highlight"><c- n>atexit</c-></code>, etc.?</span><a class="self-link" href="#design-unwinding-atexit"></a></h4>
    <p>These features require explicitly opt-in from the user in order to do program-specific and thread-specific cleanup in C. (C++, for threads, just relies on its RAII primitives in conjunction with parallelism language features and parallelism primitives). They can be hooked into while writing <code class="highlight"><c- n>defer</c-></code> to register each <code class="highlight"><c- n>defer</c-></code> statement’s code into them, and provide a form of artisanal &amp; manual unwinding. Some applications that must retain the integrity of its data tend to use these features as a way to perform rollback or as a last-minute way to sanity check assumptions and data.</p>
    <p>This proposal does not change anything about the semantics of these functions in any way.</p>
-   <h3 class="heading settled" data-level="3.4" id="design-compile.time"><span class="secno">3.4. </span><span class="content">Compile-time Construct</span><a class="self-link" href="#design-compile.time"></a></h3>
+   <h3 class="heading settled" data-level="3.5" id="design-compile.time"><span class="secno">3.5. </span><span class="content">Compile-time Construct</span><a class="self-link" href="#design-compile.time"></a></h3>
    <p>Due to the nature of the design, all <code class="highlight"><c- n>defer</c-></code> blocks can be transformed during translation and require no execution-time coordination or marking. This is imperative to ensure that the feature produces no overhead compared to <code class="highlight"><c- n>__attribute__</c-><c- p>((</c-><c- n>cleanup</c-><c- p>(</c->…<c- p>)))</c-></code> functionality, to <code class="highlight"><c- kr>__try</c-></code> + <code class="highlight"><c- kr>__finally</c-></code> with no Structured Exception Handling catching on MSVC, or to manually writing a series of <code class="highlight"><c- k>goto</c-> <c- n>cleanup0</c-><c- p>;</c-> … <c- k>goto</c-> <c- n>cleanup1</c-><c- p>;</c-></code> in a (potentially deeply-nested) set of <code class="highlight"><c- k>goto</c-></code>s. For example, consider this function from real-world code (the linked code from Martin, <a href="#intro">listed previously in this proposal</a>) that performs a series of nested <code class="highlight"><c- k>if</c-></code>s with a series of <code class="highlight"><c- k>goto</c-></code>s for cleanup.</p>
 <pre class="language-cpp highlight"><c- n>h_err</c-><c- o>*</c-> <c- nf>h_build_plugins</c-><c- p>(</c-><c- k>const</c-> <c- b>char</c-><c- o>*</c-> <c- n>rootdir</c-><c- p>,</c-> <c- n>h_build_outfiles</c-> <c- n>outfiles</c-><c- p>,</c-> <c- k>const</c-> <c- n>h_conf</c-><c- o>*</c-> <c- n>conf</c-><c- p>)</c->
 <c- p>{</c->
@@ -2976,13 +2987,16 @@ allocating 0x7f7e14000b70 !!
    <p>All of the special resource cleanup along certain branches are now completely gone. We have shrunk this function by around 14 lines of code. There are no resource leaks in this code. There was a potential resource leak in the first bit of the code, where if <code class="highlight"><c- n>n</c-></code> was six in the code’s <code class="highlight"><c- n>scandir</c-></code> loop and the third loop failed, it would return but fail to release the rest of the <code class="highlight"><c- n>scandir</c-></code> results. We added an additional early exit and check to this, and such a check does not require another list of <code class="highlight"><c- n>free</c-></code>s (which makes the differential here even more significant, since we have eliminated even potential future code with <code class="highlight"><c- n>defer</c-></code>). When <code class="highlight"><c- n>defer</c-></code> is used, additional early returns and checks added to the function later give no risk of forgetting to free or clean up specific temporary resources. Getting to:</p>
    <ul>
     <li data-md>
-     <p>shrink code by 18% of its original size (when including the differential for the additional checks);</p>
+     <p>shrink code by 18% of its original size (when including the differential for the additional checks added here and the <code class="highlight"><c- n>free</c-></code>s they do not have to do);</p>
     <li data-md>
      <p>guarantee that further error checks and error handling do not introduce new forms of vulnerabilities/leaks;</p>
     <li data-md>
      <p>keeps resources in their scope and does not require refactoring nested <code class="highlight"><c- k>if</c-></code> OR early returns;</p>
    </ul>
-   <p>is a fairly good yield for a standard C feature. This sort of high-impact, high-quality refactoring enables better cleanup (as realized by GTK in its earliest iterations of <code class="highlight"><c- n>g_autoptr</c-></code>) and resistance to changes-over-time, which is how many <code class="highlight"><c- k>goto</c-> <c- n>fail</c-><c- p>;</c-></code> or nested-<code class="highlight"><c- k>if</c-></code> style of bugs have propagated into code<a data-link-type="biblio" href="#biblio-goto-fail" title="Learning from Apple&apos;s #gotofail Security Bug">[goto-fail]</a><a data-link-type="biblio" href="#biblio-cve-2021-3744" title="CVE-2021-3744 Detail">[cve-2021-3744]</a>.</p>
+   <p>is a fairly good yield for a standard C feature. This sort of high-impact, high-quality refactoring enables better cleanup (as realized by GTK in its earliest iterations of <code class="highlight"><c- n>g_autoptr</c-></code>) and resistance to changes-over-time.</p>
+   <p>This feature also achieves something that C users have frequently requested of a feature of this form. While C++ destructors "hide" the code behind the destruction of an object, <code class="highlight"><c- n>defer</c-></code> leaves that effect clear in the code by requiring that it is placed in the requisite scope. One can simply trace backward from a <code class="highlight"><c- k>return</c-></code> or a <code class="highlight"><c- k>goto</c-></code> paired with its label and see what actions will be taken by <code class="highlight"><c- n>defer</c-></code>. This is a bit harder to achieve with <code class="highlight"><c- n>__attribute__</c-><c- p>((</c-><c- n>cleanup</c-><c- p>(</c->…<c- p>)))</c-></code>-style code.</p>
+   <h3 class="heading settled" data-level="3.6" id="design.safety"><span class="secno">3.6. </span><span class="content">Safety &amp; <code class="highlight"><c- n>defer</c-></code>: Preventing Leaks from Human Vulnerability</span><a class="self-link" href="#design.safety"></a></h3>
+   <p>One of the most important tenets of this feature is resistance to human fallibility. There is a lot of ways in which a human being who deals with resource handling and required calls may fail to do such explicitly paired calls for creating a resource/entity and releasing a resource/entity. Many vulnerabilities happen because restructuring to <code class="highlight"><c- k>if</c-></code> ladders (shown above to have still leaked some resources from the <code class="highlight"><c- n>scandir</c-></code> code, though this code itself is not directly vulnerable and just a leak) or <code class="highlight"><c- k>goto</c-> <c- n>fail</c-><c- p>;</c-></code>-style code and leave out necessary actions, e.g. <a data-link-type="biblio" href="#biblio-goto-fail" title="Learning from Apple&apos;s #gotofail Security Bug">[goto-fail]</a>. One such CVE that highlights human fallibility in the face of necessary control flow is the Linux Kernel’s somewhat recent CVE-2021-3744<a data-link-type="biblio" href="#biblio-cve-2021-3744" title="CVE-2021-3744 Detail">[cve-2021-3744]</a>.</p>
    <p><strong class="advisement"> <a data-link-type="biblio" href="#biblio-cve-2021-3744" title="CVE-2021-3744 Detail">[cve-2021-3744]</a> is not a vulnerability where they forget to free the data in totality: it was that the data for <code class="highlight"><c- n>tag</c-></code> was not freed along very <strong>specific</strong> paths in a crop of sensitive code.</strong></p>
    <p>Adding a <code class="highlight"><c- n>defer</c-></code> at the allocation of these resources (particularly, <a href="https://github.com/torvalds/linux/blob/505d9dcb0f7ddf9d075e729523a33d38642ae680/drivers/crypto/ccp/ccp-ops.c#L872-L889">line 877 after the tag was successfully init with the DM work area</a>) would make it impossible to forget to release the resources associated with that variable (or setting it to <code class="highlight">NULL</code> along specific paths where the data was transferred off or taken ownership of).</p>
    <p class="note" role="note"><span class="marker">Note:</span> This is not an indictment of the quality of Linux Kernel source code, but — as this sort of vulnerability has been repeated time and time again over the last two decades — a cautionary tale of how human beings are allowed to be fallible.</p>
@@ -2995,9 +3009,9 @@ allocating 0x7f7e14000b70 !!
    <p>(Emphasis mine.) We are all human. One of the takeaways that people usually have from this is that we need to put "more eyeballs" or "do better teaching", but this is — again — not the first time this sort of vulnerability happened. For example, the same kind of bug also came from the GnuTLS implementation back in 2014<a data-link-type="biblio" href="#biblio-gnu-tls-bug-analysis" title="The Story of the GnuTLS Bug">[gnu-tls-bug-analysis]</a>. The moral of the story is not to beat human beings up for their fallibility or mistakes, but to turn around to the language designers and actually ask them why this sort of problem can go on for nearly 40 years of C programming and nobody actually bring a solution to the problem.</p>
    <p>It is time to start acknowledging that our lack of built-in tools in C is not doing the job quite right. The fact that titans in our industry over 30, 40 years can have even the tiniest slip-up or slightest indentation mistake used against them and their code, points to a fundamental issue in the way the language interacts with and works with its user base. Requiring perfect, 24/7 vigilance from people who support trillion-USD market cap industries and billion-USD quarterly budget businesses across the entire globe — and in space itself — while only earning a fraction of that while sometimes unable to support themselves is quite frankly bonkers. Our users have faithfully served the C language for decades.</p>
    <p>They deserve tools and features that can cover their fallibility and make it difficult for them to forget to handle certain cases of bugs, whether it’s heap overflow, use-after-free/double-free, integer overflow or otherwise. It is time we recognize that, in some ways, we made it error-prone and wrong, and that we can do small, simple things to make it better.</p>
-   <h3 class="heading settled" data-level="3.5" id="design-ordering"><span class="secno">3.5. </span><span class="content"><code class="highlight"><c- n>defer</c-></code> Ordering?</span><a class="self-link" href="#design-ordering"></a></h3>
-   <p>The code in a <code class="highlight"><c- n>defer</c-></code> block runs after every other statement and expression in the block, save for other <code class="highlight"><c- n>defers</c-></code> (which execute in reverse-lexical order).</p>
-   <h4 class="heading settled" data-level="3.5.1" id="design-ordering-return"><span class="secno">3.5.1. </span><span class="content"><code class="highlight"><c- n>defer</c-></code> interleaved with <code class="highlight"><c- k>return</c-></code> ?</span><a class="self-link" href="#design-ordering-return"></a></h4>
+   <h3 class="heading settled" data-level="3.7" id="design-ordering"><span class="secno">3.7. </span><span class="content"><code class="highlight"><c- n>defer</c-></code> Ordering?</span><a class="self-link" href="#design-ordering"></a></h3>
+   <p>The code in a <code class="highlight"><c- n>defer</c-></code> block runs after every other statement and expression in the block, save for other <code class="highlight"><c- n>defer</c-></code>s (which execute in reverse-lexical order from whence they appeared). Nested <code class="highlight"><c- n>defer</c-></code> statements execute at the end of the block for the <code class="highlight"><c- n>defer</c-></code> they are within. It is recognized that nested <code class="highlight"><c- n>defer</c-></code>s, for some people may be considered a sincere code smell. Therefore, there is optional <a href="#wording-optional.6.8.7">wording below (6.6)</a> to allow for this if people rally behind this idea.</p>
+   <h4 class="heading settled" data-level="3.7.1" id="design-ordering-return"><span class="secno">3.7.1. </span><span class="content"><code class="highlight"><c- n>defer</c-></code> interleaved with <code class="highlight"><c- k>return</c-></code> ?</span><a class="self-link" href="#design-ordering-return"></a></h4>
    <p>A <code class="highlight"><c- n>defer</c-></code> clause executes at the end of the scope, after every <strong>other</strong> kind of execution for the scope finishes. This includes <strong>after</strong> the invocation of the expression of a <code class="highlight"><c- k>return</c-></code> statement. That is, given this example code:</p>
 <pre class="language-cpp highlight"><c- b>int</c-> <c- nf>woof</c-><c- p>();</c->
 <c- b>int</c-> <c- nf>bark</c-><c- p>();</c->
@@ -3034,7 +3048,7 @@ allocating 0x7f7e14000b70 !!
   <c- k>return</c-> <c- n>r</c-><c- p>;</c->
 <c- p>}</c->
 </pre>
-   <h4 class="heading settled" data-level="3.5.2" id="design-ordering-jump.out"><span class="secno">3.5.2. </span><span class="content">Flow Control / Jumps out of <code class="highlight"><c- n>defer</c-></code></span><a class="self-link" href="#design-ordering-jump.out"></a></h4>
+   <h4 class="heading settled" data-level="3.7.2" id="design-ordering-jump.out"><span class="secno">3.7.2. </span><span class="content">Flow Control / Jumps out of <code class="highlight"><c- n>defer</c-></code></span><a class="self-link" href="#design-ordering-jump.out"></a></h4>
    <p><code class="highlight"><c- n>defer</c-></code> statements cannot allow compile-time jumps out of themselves and into other <code class="highlight"><c- n>defer</c-></code>s or out into a surrounding scope. Otherwise, that would damage the integrity of a sequence of defers:</p>
 <pre class="language-cpp highlight"><c- b>int</c-> <c- nf>get_work_order</c-><c- p>();</c->
 <c- b>void</c-> <c- nf>rollback</c-><c- p>(</c-><c- b>int</c-> <c- n>handle</c-><c- p>);</c->
@@ -3061,7 +3075,7 @@ allocating 0x7f7e14000b70 !!
 <c- p>}</c->
 </pre>
    <p>That <code class="highlight"><c- k>goto</c-></code> jumps out of the second <code class="highlight"><c- n>defer</c-></code> statement, and back into the main block. This would skip over executing of the first <code class="highlight"><c- n>defer</c-></code> (due to the reverse-lexical-order of how defer blocks are run), which would result in unintuitive behavior. In order to cut this off, we simply do not allow compile-time jumps (<code class="highlight"><c- k>goto</c-></code>, <code class="highlight"><c- k>break</c-></code>, <code class="highlight"><c- k>continue</c-></code>, or <code class="highlight"><c- k>return</c-></code>) out of a <code class="highlight"><c- n>defer</c-></code> block. Should more reasonable semantics be nailed down at a later date, we can go back and fill in these intentional blanks (which, generally, is not possible when something is made undefined behavior rather than a constraint violation).</p>
-   <h4 class="heading settled" data-level="3.5.3" id="design-ordering-jump.over"><span class="secno">3.5.3. </span><span class="content"><code class="highlight"><c- k>goto</c-></code> and other Flow Control <strong>over</strong> an existing <code class="highlight"><c- n>defer</c-></code></span><a class="self-link" href="#design-ordering-jump.over"></a></h4>
+   <h4 class="heading settled" data-level="3.7.3" id="design-ordering-jump.over"><span class="secno">3.7.3. </span><span class="content"><code class="highlight"><c- k>goto</c-></code> and other Flow Control <strong>over</strong> an existing <code class="highlight"><c- n>defer</c-></code></span><a class="self-link" href="#design-ordering-jump.over"></a></h4>
    <p>Much like the previous section, this code is also banned:</p>
 <pre class="language-cpp highlight"><c- cp>#include</c-> &lt;stdio.h>
 
@@ -3083,7 +3097,7 @@ allocating 0x7f7e14000b70 !!
 </pre>
    <p>Do we still print <code class="highlight"><c- s>"cat says meow"</c-></code> here? The conclusion this paper comes to is "no". While <code class="highlight"><c- n>defer</c-></code> provides code motion at compile-time, there is still the mental model of the programmer to consider and the tooling of the compiler to consider. In almost every case that anyone looks at this code, the <code class="highlight"><c- n>defer</c-></code> looks like it is part of an unreachable set of code; if it were mandated to run, this would be problematic.</p>
    <p>For this case specifically, <code class="highlight"><c- k>return</c-></code> before a <code class="highlight"><c- n>defer</c-></code> in the same scope simply means it is not run. Therefore, <code class="highlight"><c- n>defer</c-></code>s cannot be jumped over by <code class="highlight"><c- k>goto</c-></code>s, similar to how Variable-Length Arrays cannot be jumped over by similar control flow constructs when the compiler can know about it. But, one can <code class="highlight"><c- k>return</c-></code> early before a <code class="highlight"><c- n>defer</c-></code> is ever reached.</p>
-   <h4 class="heading settled" data-level="3.5.4" id="design-ordering-jump.into"><span class="secno">3.5.4. </span><span class="content"><code class="highlight"><c- k>goto</c-></code> and other Flow Control <strong>into</strong> an existing <code class="highlight"><c- n>defer</c-></code></span><a class="self-link" href="#design-ordering-jump.into"></a></h4>
+   <h4 class="heading settled" data-level="3.7.4" id="design-ordering-jump.into"><span class="secno">3.7.4. </span><span class="content"><code class="highlight"><c- k>goto</c-></code> and other Flow Control <strong>into</strong> an existing <code class="highlight"><c- n>defer</c-></code></span><a class="self-link" href="#design-ordering-jump.into"></a></h4>
    <p>This case has to be banned. Under no circumstances can we allow <code class="highlight"><c- k>goto</c-></code> or similar into a <code class="highlight"><c- n>defer</c-></code> statement. Consider the following code, which has 2 potential exit branches (however contrived):</p>
 <pre class="language-cpp highlight"><c- b>int</c-> <c- nf>main</c-> <c- p>(</c-><c- b>int</c-> <c- n>argc</c-><c- p>,</c-> <c- b>char</c-><c- o>*</c-> <c- n>argv</c-><c- p>[])</c-> <c- p>{</c->
   <c- b>void</c-><c- o>*</c-> <c- n>p</c-> <c- o>=</c-> <c- n>malloc</c-><c- p>(</c-><c- mi>1</c-><c- p>);</c->
@@ -3100,7 +3114,7 @@ allocating 0x7f7e14000b70 !!
 <c- p>}</c->
 </pre>
    <p>If the <code class="highlight"><c- n>defer</c-></code> is leapt into, which "branch" of <code class="highlight"><c- n>defer</c-></code> are we running? The one in <code class="highlight"><c- n>argc</c-> <c- o>&lt;</c-> <c- mi>2</c-></code>, or the one at the other end at <code class="highlight"><c- k>return</c-> <c- mi>0</c-></code>? Furthermore, defer runs <em>after</em>, not before, things like return expressions are evaluated. What is the return value from <code class="highlight"><c- n>main</c-></code>? What does this function end up doing? All of these make <strong>absolutely</strong> no sense. Any flow control into a <code class="highlight"><c- n>defer</c-></code> is 110% banned, and for good reason.</p>
-   <h4 class="heading settled" data-level="3.5.5" id="design-ordering-longjmp"><span class="secno">3.5.5. </span><span class="content">What about <code class="highlight"><c- n>longjmp</c-></code>?</span><a class="self-link" href="#design-ordering-longjmp"></a></h4>
+   <h4 class="heading settled" data-level="3.7.5" id="design-ordering-longjmp"><span class="secno">3.7.5. </span><span class="content">What about <code class="highlight"><c- n>longjmp</c-></code>?</span><a class="self-link" href="#design-ordering-longjmp"></a></h4>
    <p>Unfortunately, <code class="highlight"><c- n>longjmp</c-></code> is non-local, runtime-controlled control flow. It can easily defy all of C’s typical static analysis. Therefore, we cannot form any reasonable Constraint Violations (compile-time errors) for this category of behavior. Still, we enumerate several cases of execution-time behavior where, so long as the non-local jump does not put execution outside of the current <code class="highlight"><c- n>defer</c-></code> block, the behavior remains well-defined (modulo other issues with jumping into/over/etc. things that may be within the <code class="highlight"><c- n>defer</c-></code> block). If the non-local jump escapes the <code class="highlight"><c- n>defer</c-></code>, though, we say the behavior is utterly undefined.</p>
    <h2 class="heading settled" data-level="4" id="cpp.compat"><span class="secno">4. </span><span class="content">C++ Compatibility: Why Not Member Functions + Constructors/Destructors?</span><a class="self-link" href="#cpp.compat"></a></h2>
    <p>As will be asked one hundred thousand times throughout the course of this proposal’s life:</p>
@@ -3162,7 +3176,17 @@ allocating 0x7f7e14000b70 !!
 </pre>
    <h2 class="heading settled" data-level="5" id="experience"><span class="secno">5. </span><span class="content">Implementation Experience</span><a class="self-link" href="#experience"></a></h2>
    <p>This proposal is modeled after existing practice, but is not directly provided in a C compiler in C mode. It can be approximated (as shown above) using C++, but C++ does not have a language feature for this form that isn’t just a stripped-down form of RAII.</p>
-   <p>This leaves only <code class="highlight"><c- n>__attribute__</c-><c- p>((</c-><c- n>cleanup</c-><c- p>(</c->…<c- p>)))</c-></code> as has been implemented in many compilers, some of which are GCC, Clang, XLC, and Tiny C Compiler.</p>
+   <p>This leaves only <code class="highlight"><c- n>__attribute__</c-><c- p>((</c-><c- n>cleanup</c-><c- p>(</c->…<c- p>)))</c-></code> as has been implemented in many compilers, some of which are GCC, Clang, XLC, and Tiny C Compiler. Most of what has shaped this proposal has been driven by this feature. However, we <strong>specifically</strong> do not use an attribute in this version of the proposal because <code class="highlight"><c- p>[[</c-><c- n>cleanup</c-><c- p>(</c-><c- n>my_free</c-><c- p>)]]</c-> <c- n>some_variable</c-><c- p>;</c-></code> is:</p>
+   <ul>
+    <li data-md>
+     <p>ignorable by the wording for attributes (and their expected behavior);</p>
+    <li data-md>
+     <p>tied too strongly to a declaration (and may fall off in an unwarranted fashion);</p>
+    <li data-md>
+     <p>and, in the existing practice, does not have support for single fields in a structure or similar without writing an extended function to pick out specific pieces of a structure to cleanup.</p>
+   </ul>
+   <p>In contrast <code class="highlight"><c- n>defer</c-></code> has much clearer mechanisms to achieve the same goal, and may be applied to a wider variety of instances and cases than the attribute can.</p>
+   <p>In the future, we expect that — should someone solve the tension between name mangling, member functions, constructors/destructors, and more — we could consider moving into a destructor-based solution that is tied to the type system and objects. We view that as better to solve the problem for individual member fields and larger objects, while reducing the amount of times that the cleanup code may need to be written. However, C users have expressed a deep tie to having code that will run be visible in the scope. Macros violate this rule (e.g. <code class="highlight"><c- n>g_autoptr</c-></code> backed by <code class="highlight"><c- n>__attribute__</c-><c- p>((</c-><c- n>cleanup</c-><c- p>(</c->…<c- p>)))</c-></code>), destructors violate this rule, but <code class="highlight"><c- n>defer</c-></code> as a feature does not.</p>
    <h2 class="heading settled" data-level="6" id="wording"><span class="secno">6. </span><span class="content">Wording</span><a class="self-link" href="#wording"></a></h2>
    <p>Wording is relative to the latest draft revision of the C Standard.</p>
    <p class="note" role="note"><span class="marker">Note:</span> This wording uses the lowercase <code class="highlight"><c- n>defer</c-></code> keyword directly in its wording. We recognize that this may not be suitable, and it is not an integral part of this proposal to type in <code class="highlight"><c- n>s</c-><c- o>/</c-><c- n>defer</c-><c- o>/</c-><c- n>_Defer</c-><c- o>/</c-><c- n>g</c-></code> for us. It is just simpler to read in this form. If it is necessary to change it, we’ve got more than enough time to add <code class="highlight"><c- n>_Defer</c-></code> and do the same <code class="highlight"><c- cp>#include</c-> &lt;stddefer.h></code> to provide the convenience macro for the lowercase spelling.</p>
@@ -3259,67 +3283,62 @@ type to inside the scope of that identifier.
        <p><em>defer-statement</em>:</p>
        <dl>
         <dd data-md>
-         <p><strong>defer</strong> <em>expression-statement</em></p>
-        <dd data-md>
-         <p><strong>defer</strong> <em>primary-block</em></p>
+         <p><strong>defer</strong> <em>secondary-block</em></p>
        </dl>
       </div>
       <div class="wording-clause-section-title"> Description </div>
-      <div>
-       <p>Let <em>D</em> be a defer statement, <em>S</em> be the expression statement or primary block of <em>D</em>, <em>E</em> be the enclosing scope of <em>D</em>, and <em>B</em> be the scope denoted as-if a pair of braces were placed around <em>S</em>.</p>
+      <div class="wording-numbered">
+       <p>Let <em>D</em> be a defer statement, <em>S</em> be the secondary block of <em>D</em>, and <em>E</em> be the enclosing block of <em>D</em>.</p>
       </div>
       <div class="wording-clause-section-title"> Constraints </div>
       <div class="wording-numbered">
-       <p>A defer statement shall appear at block scope.</p>
-      </div>
-      <div class="wording-numbered">
-       <p>Jumps by means of <code class="highlight"><c- k>goto</c-></code> shall not jump over a defer statement in the scope <em>E</em>.</p>
+       <p>Jumps by means of <code class="highlight"><c- k>goto</c-></code> into <em>E</em> shall not jump over a defer statement in <em>E</em>.</p>
       </div>
       <div class="wording-numbered">
        <p>Jumps by means of <code class="highlight"><c- k>goto</c-></code> shall not jump into any defer statement.</p>
       </div>
       <div class="wording-numbered">
-       <p>Jumps by means of <code class="highlight"><c- k>return</c-></code>, <code class="highlight"><c- k>goto</c-></code>, <code class="highlight"><c- k>break</c-></code>, or <code class="highlight"><c- k>continue</c-></code> shall not exit the scope <em>B</em>.</p>
+       <p>Jumps by means of <code class="highlight"><c- k>return</c-></code>, <code class="highlight"><c- k>goto</c-></code>, <code class="highlight"><c- k>break</c-></code>, or <code class="highlight"><c- k>continue</c-></code> shall not exit <em>S</em>.</p>
       </div>
       <div class="wording-clause-section-title"> Semantics </div>
       <div class="wording-numbered">
        <p>When execution reaches a defer statement <em>D</em>, its <em>S</em> is not immediately executed during sequential execution of the program. Instead, <em>S</em> is executed upon:</p>
        <ul>
         <li data-md>
-         <p>the termination of the block <em>E</em> (such as from reaching the end of a scope or the end of a function);</p>
+         <p>the termination of the block <em>E</em> (such as from reaching its end);</p>
         <li data-md>
          <p>or, any exit from <em>E</em> through means of flow control such as <code class="highlight"><c- k>return</c-></code>, <code class="highlight"><c- k>goto</c-></code>, <code class="highlight"><c- k>break</c-></code>, <code class="highlight"><c- k>switch</c-></code>, or <code class="highlight"><c- k>continue</c-></code>.</p>
        </ul>
-       <p>The execution is done just before leaving the enclosing scope <em>E</em>.</p>
+       <p>The execution is done just before leaving the enclosing block <em>E</em>.</p>
       </div>
       <div class="wording-numbered">
-       <p>Multiple defer statements execute in the reverse lexical order they appeared in <em>E</em>. Within a single defer statement <em>D</em>, if <em>D</em> contains one or more defer statements of its own, then these defer statements are also executed in reverse lexical order at the end of <em>E</em>, recursively, according to the rules of this clause.</p>
+       <p>Multiple defer statements execute in the reverse lexical order they appeared in <em>E</em>. Within a single defer statement <em>D</em>, if <em>D</em> contains one or more defer statements of its own, then these defer statements are also executed in reverse lexical order at the end of <em>S</em>, recursively, according to the rules of this clause.</p>
       </div>
       <div class="wording-numbered">
-       <p>If a scope <em>E</em> has any defer statements <em>D</em> that have not yet been executed, and the program is terminated through any of the following means:</p>
+       <p>If <em>E</em> has any defer statements <em>D</em> that have not yet been executed, and the program is terminated through any of the following means:</p>
        <ul>
         <li data-md>
          <p>a function with the deprecated <code class="highlight"><c- k>_Noreturn</c-></code> function specifier, or a function annotated with the <code class="highlight"><c- n>no_return</c-></code>/<code class="highlight"><c- k>_Noreturn</c-></code> attribute, is called;</p>
         <li data-md>
          <p>or, any signal <code class="highlight"><c- n>SIGABRT</c-></code>, <code class="highlight"><c- n>SIGINT</c-></code>, or <code class="highlight"><c- n>SIGTERM</c-></code> occurs;</p>
        </ul>
-       <p>then <em>D</em> is not run.</p>
+       <p>then such <em>D</em> are not run.</p>
       </div>
       <div class="wording-numbered">
-       <p>If a non-local jump (such as <code class="highlight"><c- n>longjmp</c-></code>) is used within scope <em>E</em> but before the execution of <em>S</em>:</p>
+       <p>If a non-local jump (such as <code class="highlight"><c- n>longjmp</c-></code>) is used within <em>E</em> but before the execution of <em>S</em>:</p>
        <ul>
         <li data-md>
-         <p>if control leaves scope <em>E</em>, <em>D</em>'s statements will not be executed;</p>
+         <p>if control leaves <em>E</em>, <em>D</em>'s statements will not be executed;</p>
         <li data-md>
          <p>otherwise, if control returns to a point in <em>E</em> and causes <em>D</em> to be reached more than once, there is no effect.<sup>FN0✨)</sup></p>
        </ul>
       </div>
-      <p><sup>FN✨0)</sup><sub>This is because the "execution" of a defer statement only lets the program know that <em>S</em> will be run. There is no observable side effect to repeat from reaching <em>D</em>, as the manifestation of any of the effects of <em>S</em> will happen when if and only if scope is exited or terminated as previously specified.</sub></p>
+      <p><sup>FN✨0)</sup><sub>This is because the "execution" of a defer statement only lets the program know that <em>S</em> will be run. There is no observable side effect to repeat from reaching <em>D</em>, as the manifestation of any of the effects of <em>S</em> will happen when if and only if it is exited or terminated as previously specified.</sub></p>
       <div class="wording-numbered">
-       <p>If a non-local jump (such as <code class="highlight"><c- n>longjmp</c-></code>) is executed from <em>S</em> and control leaves scope <em>B</em>, the behavior is undefined.</p>
+       <p>If a non-local jump (such as <code class="highlight"><c- n>longjmp</c-></code>) is executed from <em>S</em> and control leaves <em>S</em>, the behavior is undefined.</p>
       </div>
       <div class="wording-numbered">
-       <p>If a non-local jump (such as <code class="highlight"><c- n>longjmp</c-></code>) is executed outside of any <em>D</em> and it jumps into any <em>D</em>, the behavior is undefined.</p>
+       <p>If a non-local jump (such as <code class="highlight"><c- n>longjmp</c-></code>) is executed outside of any <em>D</em> and it jumps into any <em>S</em>, the behavior is undefined.</p>
       </div>
       <div class="wording-numbered">
        <p><strong>EXAMPLE 1</strong>: Defer statements cannot be jumped over or jumped out of.</p>
@@ -3346,7 +3365,7 @@ type to inside the scope of that identifier.
   <c- p>}</c->
   <c- nl>b</c-><c- p>:</c->
   <c- n>printf</c-><c- p>(</c-><c- s>"cat says"</c-><c- p>);</c->
-  <c- k>return</c-> <c- mi>1</c-><c- p>;</c->
+  <c- k>return</c-> <c- mi>1</c-><c- p>;</c-> <c- c1>// prints "cat says" to standard output</c->
 <c- p>}</c->
 
 <c- b>int</c-> <c- nf>i</c-> <c- p>()</c-> <c- p>{</c->
@@ -3357,7 +3376,7 @@ type to inside the scope of that identifier.
   <c- p>}</c->
   <c- nl>b</c-><c- p>:</c->
   <c- n>printf</c-><c- p>(</c-><c- s>"cat says"</c-><c- p>);</c->
-  <c- k>return</c-> <c- mi>1</c-><c- p>;</c->
+  <c- k>return</c-> <c- mi>1</c-><c- p>;</c-> <c- c1>// prints "cat says meow" to standard output</c->
 <c- p>}</c->
 
 <c- b>int</c-> <c- nf>j</c-> <c- p>()</c-> <c- p>{</c->
@@ -3388,10 +3407,30 @@ type to inside the scope of that identifier.
   <c- n>printf</c-><c- p>(</c-><c- s>"cat says"</c-><c- p>);</c->
   <c- k>return</c-> <c- mi>1</c-><c- p>;</c->
 <c- p>}</c->
+
+<c- b>int</c-> <c- nf>k</c-> <c- p>()</c-> <c- p>{</c->
+  <c- k>goto</c-> <c- n>b</c-><c- p>;</c-> <c- c1>// okay: no constraint violation</c->
+  <c- p>{</c->
+    <c- nl>b</c-><c- p>:</c->
+    <c- n>defer</c-> <c- p>{</c-> <c- n>printf</c-><c- p>(</c-><c- s>"cat says"</c-><c- p>);</c-> <c- p>}</c->
+  <c- p>}</c->
+  <c- n>printf</c-><c- p>(</c-><c- s>" meow"</c-><c- p>);</c->
+  <c- k>return</c-> <c- mi>1</c-><c- p>;</c-> <c- c1>// prints "cat says meow" to standard output</c->
+<c- p>}</c->
+
+<c- b>int</c-> <c- nf>m</c-> <c- p>()</c-> <c- p>{</c->
+  <c- k>goto</c-> <c- n>b</c-><c- p>;</c-> <c- c1>// constraint violation</c->
+  <c- p>{</c->
+    <c- n>defer</c-> <c- p>{</c-> <c- n>printf</c-><c- p>(</c-><c- s>" meow"</c-><c- p>);</c-> <c- p>}</c->
+    <c- nl>b</c-><c- p>:</c->
+  <c- p>}</c->
+  <c- n>printf</c-><c- p>(</c-><c- s>"cat says"</c-><c- p>);</c->
+  <c- k>return</c-> <c- mi>1</c-><c- p>;</c->
+<c- p>}</c->
 </pre>
       </div>
       <div class="wording-numbered">
-       <p><strong>EXAMPLE 2</strong>: All the expressions and statements of an enclosing scope are evaluated before executing defer statements, and then leaving that scope.</p>
+       <p><strong>EXAMPLE 2</strong>: All the expressions and statements of an enclosing block are evaluated before executing defer statements. After all defer statements are executed, then the block is left.</p>
 <pre class="language-cpp highlight"><c- b>int</c-> <c- nf>main</c-> <c- p>()</c-> <c- p>{</c->
   <c- b>int</c-> <c- n>r</c-> <c- o>=</c-> <c- mi>4</c-><c- p>;</c->
   <c- b>int</c-><c- o>*</c-> <c- n>p</c-> <c- o>=</c-> <c- o>&amp;</c-><c- n>r</c-><c- p>;</c->
@@ -3416,7 +3455,7 @@ type to inside the scope of that identifier.
 </pre>
       </div>
       <div class="wording-numbered">
-       <p><strong>EXAMPLE 4</strong>: Defer statements, when execution reaches them, are tied to their enclosing scope.</p>
+       <p><strong>EXAMPLE 4</strong>: Defer statements, when execution reaches them, are tied to their enclosing block.</p>
 <pre class="language-cpp highlight"><c- cp>#include</c-> &lt;stdio.h>
 <c- cp>#include</c-> &lt;stdlib.h>
 
@@ -3464,8 +3503,10 @@ type to inside the scope of that identifier.
       </div>
       <div class="wording-numbered">
        <p><strong>EXAMPLE 6</strong>: Defer statements can be executed within a <code class="highlight"><c- k>switch</c-></code>, but a <code class="highlight"><c- k>switch</c-></code> cannot be used to jump over a defer statement.</p>
-<pre class="language-cpp highlight"><c- b>int</c-> <c- nf>main</c-> <c- p>()</c-> <c- p>{</c->
-  <c- b>void</c-><c- o>*</c-> <c- n>p</c->
+<pre class="language-cpp highlight"><c- cp>#include</c-> &lt;stdlib.h>
+
+<c- b>int</c-> <c- nf>main</c-> <c- p>()</c-> <c- p>{</c->
+  <c- b>void</c-><c- o>*</c-> <c- n>p</c-> <c- o>=</c-> <c- n>malloc</c-><c- p>(</c-><c- mi>1</c-><c- p>);</c->
   <c- k>switch</c-> <c- p>(</c-><c- mi>1</c-><c- p>)</c-> <c- p>{</c->
   <c- n>defer</c-> <c- n>free</c-><c- p>(</c-><c- n>p</c-><c- p>);</c-> <c- c1>// constraint violation</c->
   <c- k>default</c-><c- o>:</c->
@@ -3489,25 +3530,20 @@ type to inside the scope of that identifier.
       <p><em>defer-statement</em>:</p>
       <dl>
        <dd data-md>
-        <p><strong>defer</strong> <em>expression-statement</em></p>
-       <dd data-md>
-        <p><strong>defer</strong> <em>primary-block</em></p>
+        <p><strong>defer</strong> <em>secondary-block</em></p>
       </dl>
      </div>
      <div class="wording-clause-section-title"> Description </div>
-     <div>
-      <p>Let <em>D</em> be a defer statement, <em>S</em> be the expression statement or primary block of <em>D</em>, <em>E</em> be the enclosing scope of <em>D</em>, and <em>B</em> be the scope denoted as-if a pair of braces were placed around <em>S</em>.</p>
+     <div class="wording-numbered">
+      <p>Let <em>D</em> be a defer statement, <em>S</em> be the secondary block of <em>D</em>, and <em>E</em> be the enclosing block of <em>D</em>.</p>
      </div>
      <div class="wording-clause-section-title"> Constraints </div>
-     <div class="wording-numbered">
-      <p>A defer statement shall appear at block scope.</p>
-     </div>
      <div class="wording-newnumbered">
       <ins>A defer statement shall not appear within another defer statement.</ins>
      </div>
     </div>
    </blockquote>
-   <p class="note" role="note"><span class="marker">Note:</span> 📝 Editor: also edit <strong>Example 4</strong> and <strong>Example 5</strong> with <code class="highlight"><c- c1>// constraint violation</c-></code> in the appropriate places.</p>
+   <p class="note" role="note"><span class="marker">Note:</span> 📝 Editor: also edit <strong>Example 4</strong> and <strong>Example 5</strong> with <code class="highlight"><c- c1>// constraint violation</c-></code> in the appropriate places, and change the description to make it clear it is a constraint violation.</p>
    <h3 class="heading settled" data-level="6.7" id="wording-annex.j"><span class="secno">6.7. </span><span class="content">Modify Annex J’s list of undefined behaviors with non-local jump undefined behavior (e.g. <code class="highlight"><c- n>longjmp</c-></code>)</span><a class="self-link" href="#wording-annex.j"></a></h3>
    <p class="note" role="note"><span class="marker">Note:</span> 📝 For the editor to do within the Annex J undefined behavior list.</p>
   </main>
