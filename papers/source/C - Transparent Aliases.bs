@@ -507,11 +507,10 @@ Various names were also thought of and unfortunately discarded because they exis
 - `name_decl`/`namedecl`
 - `name_def`/`namedef`
 - `name_alias`/`namealias`
-- `function_alias`
-- `func_def`/`funcdef`
-- `func_decl`/`funcdecl`
 
 While we use the word `_Alias` right now as a stand-in for some of the prose above and below, we would appreciate feedback on what name to pick. The specification working has `ALIAS-TOKEN` to signify that we have not settled on a specific token (or token sequence) for the name at the moment. This does not preclude a more thorough look at a `typedef`-alike syntax. However, we do note that we do not employ declarator syntax and so a `typedef`-style syntax is not necessarily the best idea.
+
+We would also like to note that C++ had a proposal to make the `using` syntax work for function declarations and also allow them to be renamed, just like this proposal[[p0945]]. However, the paper was dropped and never picked up and/or pursued in any other form again. It could be seen as taking design space or forcing a design upon C++ if we attempted to take the syntax `using A = ...;`, and therefore while possible we would strongly advise against such a direction.
 
 
 
@@ -564,7 +563,7 @@ There is, thankfully, plenty of room in the grammar to allow for this as an exte
 
 # Wording # {#wording}
 
-The following wording is registered against [[N2912]].
+The following wording is against the latest draft of the C standard.
 
 
 
@@ -572,7 +571,18 @@ The following wording is registered against [[N2912]].
 
 <blockquote>
 <div class="wording-numbered wording-numbered-1">
-An identifier can denote an object; a function; a tag or a member of a structure, union, or enumeration; a typedef name; <ins>a transparent alias name;</ins> a label name; a macro name; or a macro parameter.
+An identifier can denote:
+
+- a standard attribute, an attribute prefix, or an attribute name;
+- an object;
+- a function;
+- a tag or a member of a structure, union, or enumeration;
+- a typedef name;
+- <ins>a transparent alias name;</ins>
+- a label name;
+- a macro name;
+- or a macro parameter.
+
 </div>
 </blockquote>
 
@@ -640,7 +650,7 @@ The following identifiers have no linkage: an identifier declared to be anything
 <div class="wording-numbered-2 wording-numbered">
 
 An identifier is a primary expression, provided it has been declared as designating an object (in
-which case it is an lvalue) or a function<ins> or transparent alias</ins> (in which case it is a function designator).
+which case it is an lvalue)<del> or</del><ins>,</ins> a function (in which case it is a function designator)<ins>, or transparent alias (in which case it is either an lvalue or a function designator)</ins>.
 </div>
 </div>
 </blockquote>
@@ -747,6 +757,10 @@ Syntax
 
 </div>
 
+<div class="wording-clause-section-title">
+Description
+</div>
+
 <div class="wording-numbered">
 
 Let the identifier on the left hand side be the *transparent alias name* and the identifier on the right hand side be the *transparent alias target*.
@@ -755,9 +769,20 @@ Let the identifier on the left hand side be the *transparent alias name* and the
 <div class="wording-clause-section-title">
 Constraints
 </div>
+
 <div class="wording-numbered">
 
-A transparent alias target shall be a preceding and visible identifier. A transparent alias being redeclared shall refer to the same object or function as in its initial declaration<sup>FN0✨)</sup> and the type of that identifier shall be compatible with all visible declarations of the declared transparent alias.
+A transparent alias target shall be an identifier which is visible.
+</div>
+
+<div class="wording-numbered">
+
+A transparent alias being redeclared shall refer to the same object or function as in its initial declaration<sup>FN0✨)</sup> and the type of that identifier shall be compatible with all visible declarations of the declared transparent alias.
+
+<div class="wording-footnote">
+<sup>FN0✨)</sup> <sub>If the transparent alias target points to another transparent alias, then the alias target is first resolved. The resolution occurs recursively until a function or object is the alias target. Resolution of a transparent alias target happens before the synonym is declared or redeclared, meaning a transparent alias name may refer to itself when it is being redeclared, but not when it is first declared.</sub>
+</div>
+
 </div>
 
 <div class="wording-clause-section-title">
@@ -979,10 +1004,6 @@ int main () {
 
 </div>
 
-<div class="wording-footnote">
-<sup>FN0✨)</sup> <sub>If the transparent alias target points to another transparent alias, then the alias target is first resolved. The resolution occurs recursively until the function or object is the alias target. Resolution of a transparent alias target happens before the synonym is declared or redeclared, meaning a transparent alias name may refer to itself when it is being redeclared, but not when it is first declared.</sub>
-</div>
-
 <b>Recommended Practice</b>
 <div class="wording-numbered">
 Implementations and programs may use aliases as a way to produce stability for translation units which rely on specific function declaration and definitions being present while aliasing a common declaration name for a more suitable interface. It may be particularly helpful for function declarations which use type definitions (6.7.8) in return and parameter types. Programs may update and upgrade alias definitions alongside type definitions to preserve entities and symbols in a given program while letting newer programs take advantage of upgraded functionality.
@@ -990,25 +1011,47 @@ Implementations and programs may use aliases as a way to produce stability for t
 
 <div class="wording-numbered">
 
-**EXAMPLE 10** Versioning of a function call `imaxabs` while keeping old externally-defined function definitions available within the program.
+**EXAMPLE 10** Versioning of a function call `imaxabs` while keeping old externally-defined function definitions available within the program. The below snippets use some exposition-only implementation-provided signed integer types `__int128_t`, and `__int256_t` within a `imaxabs.h` file:
 
 ```cpp
-extern intmax_t __imaxabs_32ish(__int32 value);
-extern intmax_t __imaxabs_64ish(__int64 value);
-extern intmax_t __imaxabs_128ish(__int128 value);
+extern __int128 __imaxabs_128ish(__int128 value);
+extern __int256 __imaxabs_256ish(__int256 value);
 
-#if VER0
-	typedef __int32 intmax_t;
-	ALIAS-TOKEN imaxabs = __imaxabs_32ish;
-#elif VER1
-	typedef __int64 intmax_t;
-	ALIAS-TOKEN imaxabs = __imaxabs_64ish;
-#elif VER2
-	typedef __int128_t intmax_t;
+#if VER1
+	typedef __int128 intmax_t;
 	ALIAS-TOKEN imaxabs = __imaxabs_128ish;
+#elif VER2
+	typedef __int256_t intmax_t;
+	ALIAS-TOKEN imaxabs = __imaxabs_256ish;
 #else
-#error "Unknown version - unable to declare imaxabs"
+	typedef long long intmax_t;
+	extern long long imaxabs(long long value);
 #endif
+```
+
+and, with a `imaxabs.c` file:
+
+```cpp
+// <imaxabs.h> NOT included, intentionally
+
+extern __int128 __imaxabs_128ish(__int128 value) {
+	if (value < 0)
+		return -value;
+	return value;
+}
+
+extern __int256 __imaxabs_256ish(__int256 value) {
+	if (value < 0)
+		return -value;
+	return value;
+}
+
+// legacy external definition
+extern long long imaxabs(long long value) {
+	if (value < 0)
+		return -value;
+	return value;
+}
 ```
 </div>
 
@@ -1020,16 +1063,6 @@ extern intmax_t __imaxabs_128ish(__int128 value);
 
 <pre class="biblio">
 {
-	"N2912": {
-		"authors": [
-			"ISO/IEC JTC1 SC22 WG14 - Programming Languages, C",
-			"JeanHeyd Meneide",
-			"Freek Wiedijk"
-		],
-		"title": "N2912: ISO/IEC 9899:202x - Programming Languages, C",
-		"href": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2912.pdf",
-		"date": "June 8th, 2022"
-	},
 	"N2680": {
 		"authors": [
 			"Robert Seacord"
@@ -1074,6 +1107,15 @@ extern intmax_t __imaxabs_128ish(__int128 value);
 		"publisher": "ISO/IEC JTC1 SC22 WG14 - Programming Languages C",
 		"href": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2525.htm",
 		"date": "May 11th, 2020"
+	},
+	"p0945": {
+		"authors": [
+			"Richard Smith"
+		],
+		"title": "Generalizing alias declarations",
+		"publisher": "ISO/IEC JTC1 SC22 WG21 - Programming Languages C++",
+		"href": "https://wg21.link/p0945",
+		"date": "February 10th, 2018"
 	},
 	"gcc-attribute": {
 		"authors": [

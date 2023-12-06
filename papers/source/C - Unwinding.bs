@@ -1,5 +1,5 @@
 <pre class='metadata'>
-Title: Conditionally-Supported Unwinding
+Title: Conditionally Supported Unwinding
 Shortname: XXX11
 Revision: 0
 !Previous Revisions: None
@@ -45,7 +45,7 @@ During the production of the [defer paper](https://thephd.dev/_vendor/future_cxx
 
 This is not the best state of affairs, as having an uncheckable form of unwinding means that implementations need not provide any user-actionable way to detect whether or not their implementation is doing unwinding (without onerous `autoconf` checks or build-time orchestration or potentially fraught macro checks). This is not helpful, especially since `defer` and features such as `__attribute__((cleanup(…)))` may be responsible for sensitive system resources. Accidentally double `free`-ing or accidentally leaking such critical resources because unwinding is or is not done based on arbitrary, non-code-actionable choices is not helpful to the overall health of the C ecosystem.
 
-This proposal sets out to define a conditionally-supported unwinding feature for C, and provide compile-time integer constant expressions through macros in specific headers to allow for a user to know which termination/non-local jump functions will produce behavior that they can rely on. It will also allow them to programmatically devise their own solutions if necessary. 
+This proposal sets out to define a conditionally supported unwinding feature for C, and provide compile-time integer constant expressions through macros in specific headers to allow for a user to know which termination/non-local jump functions will produce behavior that they can rely on. It will also allow them to programmatically devise their own solutions if necessary. 
 
 
 
@@ -58,7 +58,7 @@ The design of this addition is based on a few observations, documented below. No
 - that stack unwinding unwinds the versions of `defer` they use on their implementation (such as `__attribute__((cleanup(…)))`);
 - and, those implementations make the choice at compile-time (not run-time) to do such cleanup.
 
-Therefore, we wanted to provide a **conditionally supported**, program-checkable way to do stack unwinding. It is our hope that by providing these documenting macros in the various headers (`<stdlib.h>`, `<threads.h>`, `<setjmp.h>`, and `<signal.h>`), users will get to know exactly which functions will trigger their cascades of `defer`-like features and offer them greater safety and security even in the face of (abnormal) program termination or convolution non-local jumps and control flow.
+Therefore, we wanted to provide a **conditionally supported**, program-checkable way to do stack unwinding. It is our hope that by providing these documenting macros in the various headers (`<stdlib.h>`, `<threads.h>`, `<setjmp.h>`, and `<signal.h>`), users will get to know exactly which functions will trigger their cascades of `defer`-like features and offer them greater safety and security even in the face of (abnormal) program termination or convoluted non-local jumps and control flow.
 
 
 
@@ -127,7 +127,7 @@ void* ep2 = 0;
 int alternate = 0;
 ```
 
-As of December 1st, 2023 on GCC trunk with the latest libpthreads, this code will print:
+As of December 6th, 2023 on GCC trunk with the latest libpthreads, this code will print:
 
 ```sh
 allocating 0xa072a0 !!
@@ -144,16 +144,18 @@ allocating 0x7f7e14000b70 !!
 
 with `-fexceptions` not provided. (See it running and change the flags [here](https://godbolt.org/z/exoexG7Wq).) This indicates that, specifically for `thrd_exit` and its underlying implementation on `pthread_cancel`/`pthread_exit`, the system will deploy a C++-style exception to do unwinding. This is fine for an implementation, and it is a conforming extension to add unwinding on top of C in this manner (to e.g. be more behavior-compatible with C++ or to protect precious thread-based resources).
 
-However, note that even in this example, the memory from `main` is always leaked, no matter what. This means that even in C++ mode or C mode with `-fexceptions` specified, `exit`, `quick_exit`, and similar do not provide unwinding capabilities. Implementations should feel free to change or enhance this behavior, but as of right now unwinding is a very niche thing that happens in select cases.
+However, note that even in this example, the memory from `main` is always leaked, no matter what. This means that even in C++ mode or C mode with `-fexceptions` specified, `exit`, `quick_exit`, and similar do not provide unwinding capabilities. Implementations should feel free to change or enhance this behavior.
+
+Finally, we note that pretty much everything in MSVC is done by doing stack unwinding with their Structured Exception Handling (SEH) or similar techniques, so for the macros we provide almost every single one will be defined and have the value of `1`. This includes even `longjmp`.
 
 
 
 
 # Implementation Experience # {#experience}
 
-MSVC performs select types of stack unwinding with `__try` and `__finally`, even in C. glibc (but not musl-libc or µlibC or really any other libc) implements their `pthread_cancel`/`pthread_exit` behavior has a thrown exception when the compiler detects `-fexceptions` or C++ mode is enabled. Otherwise, most other implementations do not perform any kind of stack unwinding.
+MSVC performs select types of stack unwinding with `__try` and `__finally`, even in C. glibc (but not musl-libc or µlibC or really any other libc) implements their `pthread_cancel`/`pthread_exit` behavior as a thrown exception when the compiler detects `-fexceptions` or C++ mode is enabled. Otherwise, most other implementations do not perform any kind of stack unwinding.
 
-The reason we provide so many different macros is because implementations have, effectively, chosen what happens for these on a function-by-function basis: therefore, the best we can do to provide good standards-backed, implementation-defined/conditionally-supported behavior is to mention it directly in the paper.
+The reason we provide so many different macros is because implementations have, effectively, chosen what happens for these on a function-by-function basis: therefore, the best we can do to provide good standards-backed, implementation-defined/conditionally supported behavior is to mention it directly in the paper.
 
 
 
@@ -164,7 +166,7 @@ Wording is relative to the latest draft revision of the C Standard.
 
 
 
-## Add a section §5.1.2.5 Unwinding's section describing the **Conditionally Supported** unwinding semantics ## {#wording-5.1.2.5}
+## Add a new §5.1.2.5 Unwinding describing the **Conditionally Supported** unwinding semantics ## {#wording-5.1.2.5}
 
 <blockquote>
 <ins>
@@ -232,9 +234,7 @@ When not supported, none of the actions described in the preceding paragraphs of
 
 
 
-
-
-## Modify section §6.8.7 Defer statements section describing the **Conditionally Supported** unwinding semantics ## {#wording-6.8.7}
+## Modify §6.8.7 Defer statements describing the **Conditionally Supported** unwinding semantics ## {#wording-6.8.7}
 
 <blockquote>
 
@@ -262,7 +262,7 @@ then any such *S* are not run, <del>unless as specified otherwise by the impleme
 
 
 
-## Add a paragraph to §7.13 to describe the conditionally supported unwinding macro ## {#wording-7.13}
+## Add a new paragraph 3 of §7.13 to describe one of the conditionally supported unwinding macros ## {#wording-7.13}
 
 <blockquote>
 
@@ -300,7 +300,7 @@ is an integer constant expression with a value equivalent to 1 if partial unwind
 
 
 
-## Add a paragraph to §7.14 to describe the conditionally supported unwinding macros ## {#wording-7.14}
+## Add a new paragraph to §7.14 to describe several of the conditionally supported unwinding macros ## {#wording-7.14}
 
 <blockquote>
 
@@ -343,7 +343,7 @@ are integer constant expressions with a value equivalent to 1 if unwinding (5.1.
 
 
 
-## Modify paragraph 4 to §7.24 to describe the conditionally supported unwinding macros ## {#wording-7.24}
+## Modify paragraph 4 of §7.24 to describe several of the conditionally supported unwinding macros ## {#wording-7.24}
 
 <blockquote>
 
@@ -385,7 +385,7 @@ are integer constant expressions with a value equivalent to 1 if program unwindi
 
 </blockquote>
 
-## Modify paragraph 3 to §7.28.1 to describe the conditionally supported unwinding macros ## {#wording-7.28.1}
+## Modify paragraph 3 of §7.28.1 to describe one of the conditionally supported unwinding macros ## {#wording-7.28.1}
 
 <blockquote>
 
@@ -415,7 +415,7 @@ which is never greater than `MB_LEN_MAX`; and,
 __STDC_THRD_EXIT_UNWINDS__
 ```
 
-is an integer constant expression with a value equivalent to 1 if thread unwinding or program unwinding (5.1.2.5) is supported when the functions `thrd_exit` is invoked and terminates the thread or program, or 0 otherwise.
+is an integer constant expression with a value equivalent to 1 if thread unwinding or program unwinding (5.1.2.5) is supported when the function `thrd_exit` is invoked and terminates the thread or program, or 0 otherwise.
 
 </ins>
 </div>
