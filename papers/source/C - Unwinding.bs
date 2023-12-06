@@ -1,0 +1,244 @@
+<pre class='metadata'>
+Title: Conditionally-Supported Unwinding
+Shortname: XXX11
+Revision: 0
+!Previous Revisions: None
+Status: P
+Date: 2024-01-02
+Group: WG14
+!Proposal Category: Change Request, Feature Request  
+!Target: C2y/C3a
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Unwinding.html
+!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-%20Unwinding">GitHub</a>
+Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
+Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+Abstract: Many compilers's "cleanup" attribute has long-since provided scope-based, compile-time deterministic, well-known mechanism for the C language to clean up resources of all kinds (not just memory). This proposal attempts to standardize something as close to existing practice as possible while providing a select and measured few set of behaviors to ensure greater portability and usability in the C ecosystem.
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-color-fix.html
+</pre>
+
+<div class="pagebreak"></div>
+
+
+
+
+# Changelog # {#changelog}
+
+- Initial release. ✨
+
+
+
+
+# Introduction, Motivation, and Prior Art # {#intro}
+
+During the production of the [defer paper](https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Improved%20__attribute__%28%28cleanup%29%29%20Through%20defer.html), we found some implementations in niche cases performed unwinding. Therefore, as a stopgap, the `defer` paper delegated the behavior of potential unwinding to an extension and stated it was implementation-defined whether or not unwinding was done or not.
+
+This is not the best state of affairs, as having an uncheckable form of unwinding means that implementations need not provide any user-actionable way to detect whether or not their implementation is doing unwinding (without onerous `autoconf` checks or build-time orchestration or potentially fraught macro checks). This is not helpful, especially since `defer` and features such as `__attribute__((cleanup(…)))` may be responsible for sensitive system resources. Accidentally double `free`-ing or accidentally leaking such critical resources because unwinding is or is not done based on arbitrary, non-code-actionable choices is not helpful to the overall health of the C ecosystem.
+
+This proposal sets out to define a conditionally-supported unwinding feature for C, and provide compile-time integer constant expressions through macros in specific headers to allow for a user to know which termination/non-local jump functions will produce behavior that they can rely on. It will also allow them to programmatically devise their own solutions if necessary. 
+
+
+
+
+# Design # {#design}
+
+The design of this addition is based on a few observations, documented below. Notably,
+
+- some implementations in very select cases do perform stack unwinding, even in C;
+- that stack unwinding unwinds the versions of `defer` they use on their implementation (such as `__attribute__((cleanup(…)))`);
+- and, those implementations make the choice at compile-time (not run-time) to do such cleanup.
+
+Therefore, we wanted to provide a **conditionally supported**, program-checkable way to do stack unwinding. It is our hope that by providing these documenting macros in the various headers (`<stdlib.h>`, `<threads.h>`, `<setjmp.h>`, and `<signal.h>`), users will get to know exactly which functions will trigger their cascades of `defer`-like features and offer them greater safety and security even in the face of (abnormal) program termination or convolution non-local jumps and control flow.
+
+
+
+## "Why Does This Not Unwind The Whole Call Stack??" ## {#design-unwinding}
+
+Most C implementations do NOT provide a compiler-driven unwinding that we could find, even with `__attribute__((cleanup(…))) p = malloc(2);`. There is one notable exception, but it requires code to be in "C++ mode" (or have the equivalent of `-fexceptions` passed to the compiler to enable it in "C mode"). Right now, calling any of:
+
+- `exit`;
+- `_Exit`;
+- `quick_exit`;
+- `thrd_exit`;
+- or, `abort`;
+
+did not produce any code that called either the cleanup-annotated variables, or other code. `defer` works similarly: no stack unwinding or call stack back-travel is done when any function that refuses to return and returns control to the host environment is done.
+
+Note: This is compatible with C++ semantics for a similar C++ feature: constructors and destructors.
+
+It is noteworthy that not even C++ destructors run on the invocation of any of these functions, either. (You can test that assumption [here](https://godbolt.org/z/185z5E4aM).) They have to use the C++-specific function `std::terminate()` and work with the `std::terminate_handler` in order to get appropriate unwinding behavior. Therefore, there is no precedent — not even from C++ — that C or C++ code should appropriately and carefully unwind the stack. `defer …`, therefore, will not provide this functionality. This makes it cheaper and easier to implement for platforms that do not have `__attribute__((cleanup(…)))`, while also following existing practice to the letter. Notably, the "cheapness" and "ease" that will come from the implementation means that at no point will there ever need to be a maintained runtime of unwind scopes or exception handling-alike tables. In fact, no  storage of any form of propagation information is necessary for this feature. It simply incentivizes the programming practices currently available to C programs: error codes, structured returns (with error codes embedded), and other testable function outputs in conjunction with better-defined cleanup code.
+
+The one place this does not hold up is `thrd_exit`. Consider the following code:
+
+```cpp
+#include <stdlib.h>
+#include <stdio.h>
+#include <threads.h>
+
+extern void* ep;
+extern void* ep2;
+extern int alternate;
+
+void cfree(void *userdata) {
+	void **pp = (void**)userdata;
+	printf("freeing %p !!\n", *pp);
+	free(*pp);
+}
+
+[[gnu::noinline]] void use(void* p) {
+	if ((++alternate % 2) == 0)
+		ep = p;
+	else
+		ep2 = p;
+}
+
+int thread([[maybe_unused]]void* arg) {
+	__attribute__((cleanup(cfree))) void* p = malloc(1);
+	printf("allocating %p !!\n", p);
+	use(p);
+	thrd_exit(1);
+	return 1;
+}
+
+int main () {
+	__attribute__((cleanup(cfree))) void* p = malloc(1);
+	printf("allocating %p !!\n", p);
+	int r = 0;
+	thrd_t th0 = {};
+	thrd_create(&th0, thread, NULL);
+	thrd_join(th0, &r);
+	use(p);
+	exit(0);
+	return 0;
+}
+
+void* ep = 0;
+void* ep2 = 0;
+int alternate = 0;
+```
+
+As of December 1st, 2023 on GCC trunk with the latest libpthreads, this code will print:
+
+```sh
+allocating 0xa072a0 !!
+allocating 0x7f8034000b70 !!
+freeing 0x7f8034000b70 !!
+```
+
+with `-fexceptions` turned on (or built in C++ mode), and
+
+```sh
+allocating 0x47e2a0 !!
+allocating 0x7f7e14000b70 !!
+```
+
+with `-fexceptions` not provided. (See it running and change the flags [here](https://godbolt.org/z/exoexG7Wq).) This indicates that, specifically for `thrd_exit` and its underlying implementation on `pthread_cancel`/`pthread_exit`, the system will deploy a C++-style exception to do unwinding. This is fine for an implementation, and it is a conforming extension to add unwinding on top of C in this manner (to e.g. be more behavior-compatible with C++ or to protect precious thread-based resources).
+
+However, note that even in this example, the memory from `main` is always leaked, no matter what. This means that even in C++ mode or C mode with `-fexceptions` specified, `exit`, `quick_exit`, and similar do not provide unwinding capabilities. Implementations should feel free to change or enhance this behavior, but as of right now unwinding is a very niche thing that happens in select cases.
+
+
+
+
+# Implementation Experience # {#experience}
+
+MSVC performs select types of stack unwinding with `__try` and `__finally`, even in C. glibc (but not musl-libc or µlibC or really any other libc) implements their `pthread_cancel`/`pthread_exit` behavior has a thrown exception when the compiler detects `-fexceptions` or C++ mode is enabled. Otherwise, most other implementations do not perform any kind of stack unwinding.
+
+The reason we provide so many different macros is because implementations have, effectively, chosen what happens for these on a function-by-function basis: therefore, the best we can do to provide good standards-backed, implementation-defined/conditionally-supported behavior is to mention it directly in the paper.
+
+
+
+
+# Wording # {#wording}
+
+Wording is relative to the latest draft revision of the C Standard.
+
+
+
+## Add a section §5.1.2.5 Unwinding's section describing the **Conditionally Supported** unwinding semantics ## {#wording-5.1.2.5}
+
+<blockquote>
+<ins>
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">5.1.2.5</span> <span class="wording-clause-title">Unwinding</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-numbered">
+
+*Unwinding* is a conditionally supported feature of executing statements and expressions as the program returns to a specific location through a non-local jump, or through the program termination. There is:
+
+- *partial unwinding*, that does not terminate the program and returns to some location within it;
+- or, *program-wide unwinding*, for normal or abnormal termination.
+
+</div>
+
+<div class="wording-numbered">
+
+Unwinding is conditionally supported and support is queried by checking the following macro definitions from Clause 7:
+
+- `__STDC_LONGJMP_UNWINDS__` (`<setjmp.h>`, 7.13)
+- `__STDC_SIGNAL_SIGABRT_UNWINDS__` (`<signal.h>`, 7.14)
+- `__STDC_SIGNAL_SIGFPE_UNWINDS__` (`<signal.h>`, 7.14)
+- `__STDC_SIGNAL_SIGILL_UNWINDS__ ` (`<signal.h>`, 7.14)
+- `__STDC_SIGNAL_SIGSEGV_UNWINDS__` (`<signal.h>`, 7.14)
+- `__STDC_SIGNAL_SIGTERM_UNWINDS__` (`<signal.h>`, 7.14) 
+- `__STDC_EXIT_UNWINDS__` (`<stdlib.h>`, 7.24)
+- `__STDC__EXIT_UNWINDS__` (`<stdlib.h>`, 7.24)
+- `__STDC_QUICK_EXIT_UNWINDS__` (`<stdlib.h>`, 7.24)
+- `__STDC_ABORT_UNWINDS__` (`<stdlib.h>`, 7.24)
+- `__STDC_THRD_EXIT_UNWINDS__` (`<threads.h>`, 7.28)
+
+It is implementation-defined if other features or functions provide unwinding semantics.
+</div>
+
+<div class="wording-numbered">
+
+When supported, specific function calls or actions specified in this document or by the implementation trigger unwinding.
+
+</div>
+
+<div class="wording-numbered">
+
+For partial unwinding, a program that performs a non-local jumps from one block into another block runs every `defer` statement (6.8.1), in the order and with the semantics as specified in 6.8.1, that has been reached between the current execution path (including recursive function invocations) and the location being jumped to.
+</div>
+
+<div class="wording-numbered">
+
+For program-wide unwinding, a program that terminates (normally or abnormally) runs every `defer` statement, in the order and with the semantics as specified in 6.8.1, that has been reached between the current execution path (including recursive function invocations) and the start of the program.
+</div>
+
+<div class="wording-numbered">
+
+When not supported, none of the actions described in the preceding paragraphs of this section are taken.
+</div>
+
+</div>
+
+</ins>
+</blockquote>
+
+
+
+## Modify Annex J's list of implementation-defined/undefined behaviors with non-local jump undefined behavior (e.g. `longjmp`) ## {#wording-annex.j}
+
+Note: 📝 For the editor to do within the Annex J implementation-defined/undefined behavior list. 
+
+
+
+<pre class="biblio">
+{
+	
+}
+</pre>

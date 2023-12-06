@@ -11,8 +11,8 @@ Group: WG14
 !Target: C2y/C3a
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
-URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Improved%20__attribute__((cleanup))%20Through%20defer.html
-!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-%20Improved%20__attribute__((cleanup))%20Through%20defer.bs">GitHub</a>
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Improved%20__attribute__%28%28cleanup%29%29%20Through%20defer.html
+!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-%20Improved%20__attribute__%28%28cleanup%29%29%20Through%20defer.bs">GitHub</a>
 Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
 Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
 Markup Shorthands: markdown yes
@@ -297,6 +297,11 @@ However, note that even in this example, the memory from `main` is always leaked
 These features require explicitly opt-in from the user in order to do program-specific and thread-specific cleanup in C. (C++, for threads, just relies on its RAII primitives in conjunction with parallelism language features and parallelism primitives). They can be hooked into while writing `defer` to register each `defer` statement's code into them, and provide a form of artisanal & manual unwinding. Some applications that must retain the integrity of its data tend to use these features as a way to perform rollback or as a last-minute way to sanity check assumptions and data.
 
 This proposal does not change anything about the semantics of these functions in any way.
+
+
+### So how does this proposal handle it?? ### {#design-unwinding-handle}
+
+We leave room for a future paper adding conditionally supported, compile-time checkable unwinding semantics to C. That is, we say that any `defer` *D* that is reached may or may not run if a non-local jump or program termination occurs. We state that this is implementation-defined. Right now, we provide no macros or other hard-specified behavior on this. This will allow us to write papers immediately after the defer paper to properly define unwinding/stack unwinding, and their associated behaviors with `longjmp`/`setjmp`, `exit`/`_Exit`, `quick_exit`, `abort`, `thrd_exit`, and other `[[no_return]]`/`_Noreturn`-style of functionality.
 
 
 
@@ -767,7 +772,8 @@ struct __defer_t {
 template <typename _Fx>
 __defer_t(_Fx __fx) -> __defer_t<::std::decay_t<_Fx>>;
 
-#define __DEFER_TOK_PASTE(X, Y) X ## Y
+#define __DEFER_TOK_CONCAT(X, Y) X ## Y
+#define __DEFER_TOK_PASTE(X, Y) __DEFER_TOK_CONCAT(X, Y)
 #define defer __defer_t \
 	__DEFER_TOK_PASTE(__scoped_defer_obj, __COUNTER__) =  \
 	[&]()
@@ -928,7 +934,9 @@ type to inside the scope of that identifier.<ins> A `goto` statement shall not j
 
 </div>
 </blockquote>
---> 
+-->
+
+
 
 ## Add a new §6.8.7 's section describing the new *defer-statement* ## {#wording-6.8.7}
 
@@ -1000,24 +1008,26 @@ Multiple defer statements execute in the reverse lexical order they appeared in 
 
 <div class="wording-numbered">
 
-If *E* has any defer statements *D* that have not yet been executed, and the program is terminated through any means including but not limited to:
-
+If *E* has any defer statements *D* that have been reached and their *S* have not yet executed, but the program is terminated or leaves *E through any means such as:
+	
 - a function with the deprecated `_Noreturn` function specifier, or a function annotated with the `no_return`/`_Noreturn` attribute, is called;
 - or, any signal `SIGABRT`, `SIGINT`, or `SIGTERM` occurs;
 
-then such *D* are not run.
+then any such *S* are not run, unless as specified otherwise by the implementation<sup>FN0✨)</sup>. Any other *D* that have not been reached are not run.
 </div>
+
+<sup>FN0✨)</sup><sub>The execution of deferred statements upon non-local jumps or program termination is a technique sometimes known as "unwinding" or "stack unwinding", and some implementations perform it. See also ISO/IEC 14882 Programming languages — C++, section [except.ctor].</sub>
 
 <div class="wording-numbered">
 
 If a non-local jump (such as `longjmp`) is used within *E* but before the execution of *D*:
 
 - if control leaves *E*, *D*'s statements will not be executed;
-- otherwise, if control returns to a point in *E* and causes *D* to be reached more than once, there is no effect.<sup>FN0✨)</sup>
+- otherwise, if control returns to a point in *E* and causes *D* to be reached more than once, there is no effect.<sup>FN1✨)</sup>
 
 </div>
 
-<sup>FN0✨)</sup><sub>This is because the "execution" of a defer statement only lets the program know that *S* will be run. There is no observable side effect to repeat from reaching *D*, as the manifestation of any of the effects of *S* will happen when if and only if it is exited or terminated as previously specified.</sub>
+<sup>FN1✨)</sup><sub>This is because the "execution" of a defer statement only lets the program know that *S* will be run. There is no observable side effect to repeat from reaching *D*, as the manifestation of any of the effects of *S* will happen when if and only if it is exited or terminated as previously specified.</sub>
 
 <div class="wording-numbered">
 
