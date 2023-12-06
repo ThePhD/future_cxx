@@ -544,7 +544,25 @@ All of the special resource cleanup along certain branches are now completely go
 
 is a fairly good yield for a standard C feature. This sort of high-impact, high-quality refactoring enables better cleanup (as realized by GTK in its earliest iterations of `g_autoptr`) and resistance to changes-over-time.
 
-This feature also achieves something that C users have frequently requested of a feature of this form. While C++ destructors "hide" the code behind the destruction of an object, `defer` leaves that effect clear in the code by requiring that it is placed in the requisite scope. One can simply trace backward from a `return` or a `goto` paired with its label and see what actions will be taken by `defer`. This is a bit harder to achieve with `__attribute__((cleanup(…)))`-style code.
+
+
+## Visibility & Clarity of Code ## {#design.visiblity}
+
+This feature also achieves something that C users have frequently requested for functionality of this caliber. While C++ destructors "hide" the code behind the destruction of an object, `defer` leaves that effect clear in the code by requiring that it is placed in the requisite scope. One can simply trace backward from a `return` or a `goto` paired with its label and see what actions will be taken by `defer`.
+
+This is also a bit harder to achieve with `__attribute__((cleanup(…)))`-style code. Furthermore, because of the way the attribute works, one cannot use the normal and typical free/delete functions that have the usual behavior and are easily understandable. `__attribute__((cleanup(…)))` passes a pointer to the declared variable. So, writing the following:
+
+```cpp
+int main () {
+	__attribute__((cleanup(free))) void* p = malloc(1);
+	return 0;
+}
+```
+
+is incorrect, because it will pass `(void*)&p` — a `void**` that is then cast to the `void*` — to the `free` function. This means this code will compile, link, and run, but attempt to free the address of the stack variable that represents the pointer and not the value of the pointer itself. (Thankfully, GCC will warn about this.) A new function has to be written, that takes a `void*`, then casts it to `void**`, and then dereferences the `void**` to pass it to the `free` function.
+
+It is not an ideal interface.
+
 
 
 ## Safety & `defer`: Preventing Leaks from Human Vulnerability ## {#design.safety}
@@ -1013,7 +1031,7 @@ If *E* has any defer statements *D* that have been reached and their *S* have no
 - a function with the deprecated `_Noreturn` function specifier, or a function annotated with the `no_return`/`_Noreturn` attribute, is called;
 - or, any signal `SIGABRT`, `SIGINT`, or `SIGTERM` occurs;
 
-then any such *S* are not run, unless as specified otherwise by the implementation<sup>FN0✨)</sup>. Any other *D* that have not been reached are not run.
+then any such *S* are not run, unless otherwise specified by the implementation<sup>FN0✨)</sup>. Any other *D* that have not been reached are not run.
 </div>
 
 <sup>FN0✨)</sup><sub>The execution of deferred statements upon non-local jumps or program termination is a technique sometimes known as "unwinding" or "stack unwinding", and some implementations perform it. See also ISO/IEC 14882 Programming languages — C++, section [except.ctor].</sub>
