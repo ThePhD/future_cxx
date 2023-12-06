@@ -41,7 +41,7 @@ path: resources/css/bikeshed-color-fix.html
 
 # Introduction, Motivation, and Prior Art # {#intro}
 
-During the production of the [defer paper](https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Improved%20__attribute__%28%28cleanup%29%29%20Through%20defer.html), we found some implementations in niche cases performed unwinding. Therefore, as a stopgap, the `defer` paper delegated the behavior of potential unwinding to an extension and stated it was implementation-defined whether or not unwinding was done or not.
+During the production of the [defer paper](https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Improved%20__attribute__%28%28cleanup%29%29%20Through%20defer.html), we found some implementations in niche cases performed unwinding. Therefore, as a stopgap, the `defer` paper delegated the behavior of potential unwinding to an extension. It was made implementation-defined whether or not unwinding is completed, with no program-determinable way to handle it.
 
 This is not the best state of affairs, as having an uncheckable form of unwinding means that implementations need not provide any user-actionable way to detect whether or not their implementation is doing unwinding (without onerous `autoconf` checks or build-time orchestration or potentially fraught macro checks). This is not helpful, especially since `defer` and features such as `__attribute__((cleanup(…)))` may be responsible for sensitive system resources. Accidentally double `free`-ing or accidentally leaking such critical resources because unwinding is or is not done based on arbitrary, non-code-actionable choices is not helpful to the overall health of the C ecosystem.
 
@@ -64,7 +64,7 @@ Therefore, we wanted to provide a **conditionally supported**, program-checkable
 
 ## "Why Does This Not Unwind The Whole Call Stack??" ## {#design-unwinding}
 
-Most C implementations do NOT provide a compiler-driven unwinding that we could find, even with `__attribute__((cleanup(…))) p = malloc(2);`. There is one notable exception, but it requires code to be in "C++ mode" (or have the equivalent of `-fexceptions` passed to the compiler to enable it in "C mode"). Right now, calling any of:
+Most C implementations do NOT provide a compiler-driven or library-driven unwinding that we could find, even with `__attribute__((cleanup(…))) p = malloc(2);`. There is one notable exception, but it requires code to be in "C++ mode" (or have the equivalent of `-fexceptions` passed to the compiler to enable it in "C mode"). Right now, calling any of:
 
 - `exit`;
 - `_Exit`;
@@ -200,7 +200,7 @@ Unwinding is a conditionally supported feature. Support is queried by checking t
 - `__STDC_ABORT_UNWINDS__` (`<stdlib.h>`, 7.24)
 - `__STDC_EXIT_UNWINDS__` (`<stdlib.h>`, 7.24)
 - `__STDC_QUICK_EXIT_UNWINDS__` (`<stdlib.h>`, 7.24)
-- `__STDC_THRD_EXIT_UNWINDS__` (`<threads.h>`, 7.28)
+- `__STDC_THRD_EXIT_UNWINDS__` (`<threads.h>`, 7.28.1)
 
 It is implementation-defined if other features or functions provide unwinding semantics. When supported, specific function calls or actions specified in this document or by the implementation trigger unwinding.
 </div>
@@ -234,9 +234,13 @@ When not supported, none of the actions described in the preceding paragraphs of
 
 
 
-## Modify section §6.8.1 Unwinding's section describing the **Conditionally Supported** unwinding semantics ## {#wording-5.1.2.5}
+## Modify section §6.8.7 Defer statements section describing the **Conditionally Supported** unwinding semantics ## {#wording-6.8.7}
 
 <blockquote>
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.8.7</span> <span class="wording-clause-title">Defer statements</span>
+</div>
 
 <div class="wording-section">
 
@@ -247,7 +251,7 @@ If *E* has any defer statements *D* that have been reached and their *S* have no
 - a function with the deprecated `_Noreturn` function specifier, or a function annotated with the `no_return`/`_Noreturn` attribute, is called;
 - or, any signal `SIGABRT`, `SIGINT`, or `SIGTERM` occurs;
 
-then any such *S* are not run, <del>unless as specified otherwise by the implementation<sup>FN0✨)</sup></del><ins>except through the conditional support for unwinding (5.1.2.5)</ins>. Any other *D* that have not been reached are not run.
+then any such *S* are not run, <del>unless as specified otherwise by the implementation<sup>FN0✨)</sup></del><ins>except indicated by the conditional support for unwinding (5.1.2.5)</ins>. Any other *D* that have not been reached are not run.
 </div>
 
 <del><sup>FN0✨)</sup><sub>The execution of deferred statements upon non-local jumps or program termination is a technique sometimes known as "unwinding" or "stack unwinding", and some implementations perform it. See also ISO/IEC 14882 Programming languages — C++, section [except.ctor].</sub></del>
@@ -363,7 +367,7 @@ which is never greater than `MB_LEN_MAX`; and,
 
 ```cpp
 __STDC__EXIT_UNWINDS__
-__STDC_ABORT__
+__STDC_ABORT_UNWINDS__
 __STDC_EXIT_UNWINDS__
 __STDC_QUICK_EXIT_UNWINDS__
 ```
@@ -381,7 +385,7 @@ are integer constant expressions with a value equivalent to 1 if program unwindi
 
 </blockquote>
 
-## Modify paragraph 3 to §7.28.1 to describe the conditionally supported unwinding macros ## {#wording-7.24}
+## Modify paragraph 3 to §7.28.1 to describe the conditionally supported unwinding macros ## {#wording-7.28.1}
 
 <blockquote>
 
@@ -411,7 +415,7 @@ which is never greater than `MB_LEN_MAX`; and,
 __STDC_THRD_EXIT_UNWINDS__
 ```
 
-are integer constant expressions with a value equivalent to 1 if thread unwinding or program unwinding (5.1.2.5) is supported when the functions `thrd_exit` is invoked and terminates the thread or program, or 0 otherwise.
+is an integer constant expression with a value equivalent to 1 if thread unwinding or program unwinding (5.1.2.5) is supported when the functions `thrd_exit` is invoked and terminates the thread or program, or 0 otherwise.
 
 </ins>
 </div>
@@ -429,11 +433,3 @@ are integer constant expressions with a value equivalent to 1 if thread unwindin
 ## Modify Annex J's list of implementation-defined behaviors ## {#wording-annex.j}
 
 Note: 📝 For the editor to do within the Annex J implementation-defined behavior list. 
-
-
-
-<pre class="biblio">
-{
-	
-}
-</pre>
