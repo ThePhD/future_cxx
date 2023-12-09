@@ -1,7 +1,7 @@
 <pre class='metadata'>
 Title: #embed - a scannable, tooling-friendly binary resource inclusion mechanism
 H1: <code>#embed</code> - a scannable, tooling-friendly binary resource inclusion mechanism
-Shortname: P1967
+Shortname: D1967
 Revision: 12
 Status: D
 Date: 2023-11-08
@@ -15,16 +15,13 @@ URL: https://thephd.dev/_vendor/future_cxx/papers/d1967.html
 !Paper Source: <a href="https://github.com/ThePhD/future_cxx/blob/main/papers/source/d1967.bs">GitHub ThePhD/future_cxx</a>
 Metadata Order: Editor, Latest, Paper Source, Implementation, Project, Audience
 Markup Shorthands: markdown yes
+Boilerplate: style-syntax-highlighting off
 Toggle Diffs: no
 Abstract: Pulling binary data into a program often involves external tools and build system coordination. Many programs need binary data such as images, encoded text, icons and other data in a specific format. Current state of the art for working with such static data in C includes creating files which contain solely string literals, directly invoking the linker to create data blobs to access through carefully named extern variables, or generating large brace-delimited lists of integers to place into arrays. As binary data has grown larger, these approaches have begun to have drawbacks and issues scaling. From parsing 5 megabytes worth of integer literal expressions into AST nodes to arbitrary string literal length limits in compilers, portably putting binary data in a C program has become an arduous task that taxes build infrastructure and compilation memory and time. This proposal provides a flexible preprocessor directive for making this data available to the user in a straightforward manner.
 </pre>
 
 <pre class="include-raw">
 path: resources/css/bikeshed-wording.html
-</pre>
-
-<pre class="include-raw">
-path: resources/css/bikeshed-color-fix.html
 </pre>
 
 <div class="pagebreak"></div>
@@ -508,7 +505,7 @@ The above expansion ends up being nonsense that does not do what the user wants 
 <ins>
 
 — `__STDC_EMBED_NOT_FOUND__`, `__STDC_EMBED_FOUND__`, and `__STDC_EMBED_EMPTY__`
-:: The integer literals 0, 1, and 2. [*Note*: These represent values expanded from *has-embed-expression*s ([[[#wording-specification-cpp.cond|cpp.cond]]]). – *end Note*]
+:: The integer literals 0, 1, and 2, respectively. [*Note*: These represent values expanded from *has-embed-expression*s ([[[#wording-specification-cpp.cond|cpp.cond]]]). – *end Note*]
 
 </ins>
 </blockquote>
@@ -542,12 +539,13 @@ The above expansion ends up being nonsense that does not do what the user wants 
 :: *embed-parameter-seq* *embed-parameter*
 
 *embed-standard-parameter*:
-:: *limit* **(** *pp-balanced-token-seq* **)**
-:: *prefix* **(** *pp-balanced-token-seq*<sub>*opt*</sub> **)**
-:: *suffix* **(** *pp-balanced-token-seq*<sub>*opt*</sub> **)**
-:: *if_empty* **(** *pp-balanced-token-seq*<sub>*opt*</sub> **)**
+:: **limit** **(** *pp-balanced-token-seq* **)**
+:: **prefix** **(** *pp-balanced-token-seq*<sub>*opt*</sub> **)**
+:: **suffix** **(** *pp-balanced-token-seq*<sub>*opt*</sub> **)**
+:: **if_empty** **(** *pp-balanced-token-seq*<sub>*opt*</sub> **)**
 
 *embed-prefixed-parameter*:
+:: *identifier* **::** *identifier*
 :: *identifier* **::** *identifier* **(** *pp-balanced-token-seq*<sub>*opt*</sub> **)**
 
 *pp-balanced-token-seq*:
@@ -667,7 +665,7 @@ A preprocessing directive of the form
 
 :: `#embed <` *h-char-sequence* `>` *embed-parameter-seq*<sub>*opt*</sub> *new-line*
 
-searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the `<` and `>` delimiters, and causes the replacement of that directive by a comma-delimited list of integer constant expressions as specified below. It is implementation-defined how the places or how the resource is identified.
+searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the `<` and `>` delimiters. It is implementation-defined how the places or how the resource is identified.
 
 </div>
 
@@ -692,12 +690,18 @@ with the identical contained sequence (including " characters, if any) from the 
 
 <div class="wording-numbered">
 
-<diff-ins>Either form of the `#embed` directive shall process the text of the *embed-parameter-seq*, if present, as in normal text.</diff-ins> A *resource* is a source of data accessible from the translation environment. A resource has an *implementation-resource-width*, which is the implementation-defined size in bits of the located resource. It also has a *resource-width*, which is:
+Either form of the `#embed` directive shall process the *pp-balanced-token-seq* of any *embed-parameter* in the optional *embed-parameter-seq* as in normal text.
+
+</div>
+
+<div class="wording-numbered">
+
+A *resource* is a source of data accessible from the translation environment. A resource has an *implementation-resource-width*, which is the implementation-defined size in bits of the located resource. It also has a *resource-count*, which is:
 
 <div class="wording-numbered-list">
 
-- the number of bits as computed from the optionally-provided `limit` *embed-parameter* ([<a href="#cpp.res.param.limit">cpp.res.param.limit</a>]), if present.
-- Otherwise, the implementation-resource-width.
+- the value as computed from the optionally-provided `limit` *embed-parameter* ([<a href="#cpp.res.param.limit">cpp.res.param.limit</a>]), if present.
+- Otherwise, the *implementation-resource-width* divided by `CHAR_BIT`. If the *implementation-resource-width* is not an integral multiple of `CHAR_BIT`, the program is ill-formed.
 
 </div>
 
@@ -705,7 +709,18 @@ with the identical contained sequence (including " characters, if any) from the 
 
 <div class="wording-numbered">
 
-If the *resource-width* is not an integral multiple of the `CHAR_BIT`, the program is ill-formed.
+The *resource-width* is:
+
+<div class="wording-numbered-list">
+
+- `0`, if the integral constant expression evaluates to `0`.
+- Otherwise, the minimum between either `CHAR_BIT` multiplied by the value of the integral constant expression or the *implementation-resource-width*.
+
+</div>
+
+</div>
+
+<div class="wording-numbered">
 
 [*Example*:
 
@@ -730,11 +745,14 @@ int main (int, char*[]) {
 </div>
 
 <div class="wording-numbered">
-<diff-ins>
 
-Let *resource-count* be *resource-width* divided by `CHAR_BIT`. The integral constant expressions for each element of the comma-separated list shall contain values as if read by *resource-count* consecutive calls to `std::fgetc` ([<a href="http://eel.is/c++draft/library.c">library.c</a>]) from the resource as a file. If `std::fgetc` returns `EOF` then the directive is ill-formed. Otherwise, the integral constant expression is the value of `std::fgetc`'s return is cast to `unsigned char`.
+The `#embed` directive is replaced by a comma-delimited list of integral constant expressions, unless otherwise modified by embed parameters ([<a href="#cpp.res.param">cpp.res.param</a>]).
+</div>
 
-</diff-ins>
+<div class="wording-numbered">
+
+The integral constant expressions for each element of the comma-separated list correspond to *resource-count* consecutive calls to `std::fgetc` ([<a href="http://eel.is/c++draft/cstdio.syn">cstdio.syn</a>]) from the resource, as a file, converted to `unsigned char`. If any call to `std::fgetc` returns `EOF`, the program is ill-formed.
+
 </div>
 
 <div class="wording-numbered">
@@ -843,7 +861,7 @@ int main () {
 
 <div class="wording-numbered">
 
-*Embed-parameter*s can modify the result of the replacement for `#embed` preprocessing directives. The effect of *embed-standard-parameter*s are defined in this document. The effects of *embed-prefixed-parameters* are implementation-defined. [*Note*: For example, the `CHAR_BIT` used to compute the value of each element might be modified by a hypothetical `vendor::element_width(32)` *embed-prefix-parameter* which could change the maximum value to <code>2^<sup>32</sup>-1</code>, with each entry cast to `unsigned long` instead of `unsigned char`. — *end Note*]
+*Embed-parameter*s can modify the result of the replacement for `#embed` preprocessing directives. The effects of *embed-prefixed-parameters* are implementation-defined.
 </div>
 </div>
 
@@ -861,87 +879,61 @@ An *embed-parameter* of the form `limit ( pp-balanced-token-seq )` denotes the m
 
 <div class="wording-numbered">
 
-The *pp-balanced-token-seq* is used to compute the *resource-width*. The *pp-balanced-token-seq* is evaluated as a *constant-expression* using the rules as described in conditional inclusion ([<a href="http://eel.is/c++draft/cpp.cond">cpp.cond</a>])<diff-ins>, but with the exceptions that the tokens are not processed as in normal text a second time.</diff-ins>
+The *pp-balanced-token-seq* is evaluated as a *constant-expression* using the rules as described in conditional inclusion ([<a href="http://eel.is/c++draft/cpp.cond">cpp.cond</a>])<diff-ins>, except that the tokens are not processed as in normal text a second time.</diff-ins>
 </div>
 
 <div class="wording-numbered">
 
-The *constant-expression* shall be an integral constant expression whose value is greater than or equal to zero.
-</div>
-
-[*Example*: An `#embed` directive which matches one of the first two forms specified above will have macros properly expanded inside of the `limit` *embed-parameter*.
-
-```cpp
-#define DATA_LIMIT 15+17
-
-int main (int, char*[]) {
-	constexpr const unsigned char data[] = {
-#embed <data.dat> limit(DATA_LIMIT)
-	};
-}
-```
-
-is equivalent to:
-
-```cpp
-int main (int, char*[]) {
-	constexpr const unsigned char data[] = {
-#embed <data.dat> limit(15+17)
-	};
-}
-```
-— *end example*]
-
-<div class="wording-numbered">
-
-The resource-width is:
-
-<div class="wording-numbered-list">
-
-- `0`, if the integral constant expression evaluates to `0`.
-- Otherwise, the minimum between either `CHAR_BIT` multiplied by the value of the integral constant expression or the *implementation-resource-width*.
-
+The *constant-expression* shall be an integral constant expression whose value is greater than or equal to zero and denotes the number of elements the *resource-width*.
 </div>
 
 [*Example*:
 
 ```cpp
-#include <cassert>
+#define DATA_LIMIT 15+17
+#embed <data.dat> limit(DATA_LIMIT)
+```
 
-int main (int, char*[]) {
-	constexpr const unsigned char sound_signature[] = {
+is equivalent to:
+
+```cpp
+#embed <data.dat> limit(15+17)
+```
+— *end example*]
+
+[*Example*:
+
+```cpp
+constexpr const unsigned char sound_signature[] = {
+	// a hypothetical resource
 #embed <sdk/jump.wav> limit(2+2)
 	};
 
-	// verify PCM WAV resource
-	static_assert(sizeof(sound_signature) == 4);
-	static_assert(sound_signature[0] == 'R');
-	static_assert(sound_signature[1] == 'I');
-	static_assert(sound_signature[2] == 'F');
-	static_assert(sound_signature[3] == 'F');
-}
+// verify PCM WAV resource
+static_assert(sizeof(sound_signature) == 4);
+static_assert(sound_signature[0] == 'R');
+static_assert(sound_signature[1] == 'I');
+static_assert(sound_signature[2] == 'F');
+static_assert(sound_signature[3] == 'F');
 ```
 
 expands to:
 
 ```cpp
-#include <cassert>
+constexpr const unsigned char sound_signature[] = {
+	// a hypothetical example
+	(unsigned char)0x52,
+	(unsigned char)0x49,
+	(unsigned char)0x46,
+	(unsigned char)0x46,
+};
 
-int main (int, char*[]) {
-	constexpr const unsigned char sound_signature[] = {
-		(unsigned char)0x52,
-		(unsigned char)0x49,
-		(unsigned char)0x46,
-		(unsigned char)0x46,
-	};
-
-	// verify PCM WAV resource
-	static_assert(sizeof(sound_signature) == 4);
-	static_assert(sound_signature[0] == 'R');
-	static_assert(sound_signature[1] == 'I');
-	static_assert(sound_signature[2] == 'F');
-	static_assert(sound_signature[3] == 'F');
-}
+// verify PCM WAV resource
+static_assert(sizeof(sound_signature) == 4);
+static_assert(sound_signature[0] == 'R');
+static_assert(sound_signature[1] == 'I');
+static_assert(sound_signature[2] == 'F');
+static_assert(sound_signature[3] == 'F');
 ```
 
 – *end example*]
@@ -949,13 +941,9 @@ int main (int, char*[]) {
 [*Example*:
 
 ```cpp
-int main (int, char*[]) {
-	const unsigned char scal[] = {
 // ill-formed if resource-width is greater than 24,
 // or if ((resource-width * 1) % 24) is not equivalent to 0
-#embed "24_bits.bin" limit(1)
-	};
-}
+#embed "24_bits.bin"
 ```
 – *end example*]
 
@@ -976,7 +964,7 @@ An *embed-parameter* of the form `prefix (` `pp-balanced-token-seq`<sub>`opt`</s
 
 <div class="wording-numbered">
 
-If the resource is empty, this *embed-parameter* is ignored. Otherwise, any tokens from the *pp-balanced-token-seq* is placed immediately before the expansion of the `#embed` directive.
+If the resource is empty, this *embed-parameter* is ignored. Otherwise, the *pp-balanced-token-seq* is placed immediately after the comma-delimited list of the integral constant expressions.
 </div>
 </div>
 
@@ -994,27 +982,23 @@ An *embed-parameter* of the form `suffix (` `pp-balanced-token-seq`<sub>`opt`</s
 
 <div class="wording-numbered">
 
-If the resource is empty, this *embed-parameter* is ignored. Otherwise, any tokens from the *pp-balanced-token-seq* is placed directly after the expansion of the `#embed` directive.
+If the resource is empty, this *embed-parameter* is ignored. Otherwise, the *pp-balanced-token-seq* is placed immediately before the comma-delimited list of the integral constant expressions.
 
 [*Example*:
 
 ```cpp
-#include <cassert>
-
-void init_data () {
-	static constexpr const char whl[] = {
+static constexpr const unsigned char whl[] = {
 #embed "ches.glsl" \
-		prefix(0xEF, 0xBB, 0xBF, ) /* UTF-8 BOM */ \
-		suffix(,)
-		0
-	};
-	// always null terminated,
-	// contains BOM if not-empty
-	constexpr bool is_good = (sizeof(whl) == 1 && whl[0] == '\0')
-	|| (whl[0] == '\xEF' && whl[1] == '\xBB'
-	    && whl[2] == '\xBF' && whl[sizeof(whl) - 1] == '\0');
-	static_assert(is_good);
-}
+	prefix(0xEF, 0xBB, 0xBF, ) /* a sequence of bytes */ \
+	suffix(,)
+	0
+};
+// always null terminated,
+// contains the sequence if not-empty
+constexpr bool is_good = (sizeof(whl) == 1 && whl[0] == '\0')
+|| (whl[0] == '\xEF' && whl[1] == '\xBB'
+	&& whl[2] == '\xBF' && whl[sizeof(whl) - 1] == '\0');
+static_assert(is_good);
 ```
 – *end example*]
 </div>
@@ -1034,7 +1018,7 @@ An *embed-parameter* of the form `if_empty (` `pp-balanced-token-seq`<sub>`opt`<
 
 <div class="wording-numbered">
 
-If the resource is not empty, this *embed-parameter* is ignored. Otherwise, any tokens from the *pp-balanced-token-seq* shall be placed where the embed directive is.
+If the resource is not empty, this *embed-parameter* is ignored. Otherwise, the `#embed` directive is replaced by the *pp-balanced-token-seq*.
 
 [*Example*: If some resource `"empty_file.dat"` is empty, then this
 
