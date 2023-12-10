@@ -1,11 +1,11 @@
 <pre class='metadata'>
 Title: Improved __attribute__((cleanup)) Through defer
 H1: Improved <code>__attribute__((cleanup))</code> Through <code>defer</code>
-Shortname: XXX6
+Shortname: 3199
 Revision: 0
 !Previous Revisions: None
 Status: P
-Date: 2024-01-02
+Date: 2023-12-10
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y/C3a
@@ -30,6 +30,10 @@ path: resources/css/bikeshed-wording.html
 
 
 # Changelog # {#changelog}
+
+
+
+## Revision 0 - December 10<sup>th</sup>, 2023 ## {#changelog-r0}
 
 - Initial release. ✨
 
@@ -290,7 +294,7 @@ However, note that even in this example, the memory from `main` is always leaked
 Finally, we note that pretty much everything in MSVC is done by doing stack unwinding with their Structured Exception Handling (SEH) or similar techniques, so for the macros we provide almost every single one will be defined and have the value of `1`. This includes even `longjmp`.
 
 
-### What about thread static storage destructors, `atexit`, etc.? ### {#design-unwinding-atexit}
+### What about thread static storage destructors, `atexit`, etc.? ### {#design-unwinding-at.exit}
 
 These features require explicitly opt-in from the user in order to do program-specific and thread-specific cleanup in C. (C++, for threads, just relies on its RAII primitives in conjunction with parallelism language features and parallelism primitives). They can be hooked into while writing `defer` to register each `defer` statement's code into them, and provide a form of artisanal & manual unwinding. Some applications that must retain the integrity of its data tend to use these features as a way to perform rollback or as a last-minute way to sanity check assumptions and data.
 
@@ -745,7 +749,9 @@ Unfortunately, `longjmp` is non-local, runtime-controlled control flow. It can e
 
 As will be asked one hundred thousand times throughout the course of this proposal's life:
 
-Issue: Why Not Just Put Member Functions And Constructors/Destructors Into C? RAII Is Powerful And Solves This Problem?
+
+
+## Why Not Just Put Member Functions And Constructors/Destructors Into C? RAII Is Powerful And Solves This Problem? ## {#cpp.compat-constructors.destructors}
 
 There are several purely technical reasons for not pursuing a constructor/destructor-alike solution that is fully compatible with C and C++ member declarations. Briefly, they can be categorized as follows.
 
@@ -764,6 +770,45 @@ Sommerlad's efforts ultimately failed in C++ because C++ has a rule that objects
 Advisement: Thusly, C++'s own rules about destructors — that they refused to break in this one case — makes it impossible to create an RAII object that fulfills one of the primary uses of `std::scope_guard`.
 
 `defer`, as a neutral language construct that is not tied to a member object, does not have this problem as there is no implication of success or failure; it is just an alternate form of code motion that is not tied to the lifetime of an object, but instead to lexical scope directly. Given the history of Peter Sommerlad's [[p0052]], we are unsure if they will pursue a language-based solutions to escape the rules of their own Standard Library (which are, for many reasons, completely justified). Therefore, this looks like one of those features that will, despite being very fundamental in either C or C++ code, be taken care of by user-defined libraries, shims, and polyfills (e.g., hand-rolled or Boost) for the foreseeable future.
+
+
+
+## Signaling Failure in Destructors ## {#cpp.compat-destructor.failure}
+
+Destructors also present another serious problem in that the only way to communicate things out of them is to either:
+
+- capture specific information in the constructor and then propagate it out of the defer call in some fashion (antithetical to the design of both destructors or `defer`);
+- or, throw an exception.
+
+Asides from the general issues of how palatable exceptions may or may not be for C, destructors with unwinding and exceptions prove to be truly untenable in many cases. For example, for file-type resources in C++ or thread-type resources in C++, the standard mandates that any errors or exceptions generated are just completely consumed and swallowed and never communicated outside of their destructor. This presents a greater issue for the degree of resource safety, and often users have had to manually flush `std::(i|o)fstream`s and close them manually to check for errors properly rather than find out log files would suddenly truncate their output in the middle of serious outages where that information was necessary:
+
+> `virtual ~basic_filebuf();`
+> 
+> 
+> Effects: Calls `close()`.
+> 
+> 
+> If an exception occurs during the destruction of the object, including the call to `close()`, the exception is caught but not rethrown (see [<a href="http://eel.is/c++draft/res.on.exception.handling">res.on.exception.handling</a>]).
+>
+> — C++ Standard, 31.10.3.2 [<a href="http://eel.is/c++draft/filebuf#cons">filebuf.cons</a>], December 10th, 2023
+
+This happens in numerous other places in the C++ standard library. It is sufficient to state that this is very undesirable for C; swallowing exceptions -- or any other failure -- in a destructor-like design is not a good design for C. It is analogous to having error codes set on `errno` that get ignored, and this has been a significant source of problems for C development (especially when the actual values of `errno` being set end up implementation-defined, as they did for the `malloc(0)`/`realloc(p, 0)` messes that resulted in the functionality of the latter becoming undefined behavior).
+
+Note: Having cleanup behavior completely devoid of context and potential failures, trapped in its own function scope, removes the ability to react to important context related to the success or failure of certain complex hardware and operating system resources.
+
+`defer`, by its design, is always placed local to the scope and has access to local information. At the cost of needing to constantly write the `defer` itself, it retains the ability to be shuffled or move and take into account error codes, failed operations, and more that typical context-devoid type-based RAII resources cannot (without being explicitly written to with function objects or similar variables taken into its constructor).
+
+
+
+## The Ideal World ## {#cpp-compat.ideal}
+
+Speaking briefly from a language design standpoint: in an ideal world, both of these solutions would be present side by side to offer the user a maximally flexible choice of error handling, automated cleanup, general-purpose undo power, and freedom to choose context (or not have any contextual information at all). Unfortunately, due to the technical challenges of name mangling from member functions (destructors and constructors) it may be some time before C sees a solution where an object contains its own clean up code and that clean up code follows an object through the system (e.g., by using types).
+
+Despite the advances that `defer` makes for C, this will present a greater problem over time as C users get used to functional, block-scoped cleanup but do not have the ability to attach `defer`s to individual struct fields or to the lifetime of a given object. `__attribute__((cleanup(…)))` attempted to do this, but in a way that was brittle. It did not transfer to other object declarations and could not be properly relocated without runtime coordination and orchestration by the user. It also could not be applied to structure fields, providing one kind of block-scope safety but making it less ideal in other cases and requiring extra boilerplate functions to get the job done. RAII achieves this by leveraging the type system. `defer` achieves this but requires that every place a resource is used, it must have a `defer` block written. It is much more manual than RAII.
+
+
+
+## The Polyfill/C++ Fix ## {#cpp.compat-solution}
 
 In either case, for the above stated reasons, we will not be pursuing providing member functions (constructors/destructors) for C. We also do not anticipate C++ being thrilled about that, and may see us asking for `defer` as trying to inject yet another alternative design into C++ for poor reasons. We would like to not antagonize C++ any further while respecting the design of C, and therefore offer the below partial solution to the problem.
 
