@@ -310,15 +310,16 @@ These end up inhabiting the `stdbit.h` header and have the following interface:
 #include <limits.h>
 #include <stdint.h>
 
-#if (CHAR_BIT % 8 == 0)
+#if ((CHAR_BIT) % 8 == 0)
 void stdc_memreverse8(size_t n, unsigned char ptr[static n]);
 uintN_t stdc_memreverse8uN(uintN_t value);
 #endif
 ```
 
-where `N` is one of the exact-width integer types such as `8`, `24`, `16`, `32`, `64`, `128`, and others. On most architectures, this matches the builtins ([[msvc-builtins|MSVC]], [[clang-builtins|Clang]], [[gcc-builtins|GCC]]) and the result of compiler optimizations that produce instructions for many existing architectures as shown in the [[portable-endianness|README of this portable endianness function implementation]]. We use the exact-width values for the `uN`-suffixed functions because we **expect** that C compilers would want to lower the `stdc_memreverse8uN` call to existing practice of `byteswapN` instructions and compiler intrinsics. Using `uint_leastN_t` reduces the ability to match these existing optimizations in the case where `uintN_t` functions are not defined.
+where `N` is one of the exact-width integer types such as `8`, `24`, `16`, `32`, `64`, `128`, and others. On most architectures, this matches the builtins ([[msvc-builtins|MSVC]], [[clang-builtins|Clang]], [[gcc-builtins|GCC]]) and the result of compiler optimizations that produce instructions for many existing architectures as shown in the [[portable-endianness|README of this portable endianness function implementation]]. We use the exact-width values for the `uN`-suffixed functions because we **expect** that C compilers would want to lower the `stdc_memreverse8uN` call to existing practice of `byteswapN` instructions and compiler intrinsics. Using `uint_leastN_t` reduces the ability to match these existing optimizations in the case where `uintN_t` functions are not defined. This makes for the following code on most implementations to not trigger a failure:
 
 ```cpp
+// On typical CHAR_BIT == 8, i686/x86_32/x86_64/ARM32/AARCH64 implementations
 const uint32_t normal = 0xAABBCCDDu;
 const uint32_t reversed = 0xDDCCBBAAu;
 assert(stdc_memreverse8u32(normal) == reversed);
@@ -329,7 +330,7 @@ assert(stdc_memreverse8u32(normal) == reversed);
 
 Byte swapping, by itself, is absolutely dangerous in terms of code portability. Users often program strictly for their own architecture when doing serialization, and do not take into consideration that their endianness can change. This means that, while `stdc_memreverse` functions can compile down to intrinsics, those intrinsics get employed to change "little endian" to "big endian" without performing the necessary "am I already in the right endianness" check. Values that are *already* in the proper byte order for their target serialization get swapped, resulting in an incorrect byte order for the target network protocol, file format, or other binary serialization target.
 
-The inclusion of the `<stdbit.h>` header reduces this problem by giving access to the `__STDC_NATIVE_ENDIAN__` macro definition, but does not fully eliminate it. This is why many Linux and BSDs include functions which directly transcribe from one endianness to another. This is why the [[endian-fallacy|Byte Order Fallacy]] has spread so far in Systems Programming communities, and why many create their own versions of this both in official widespread vendor code ([[linux-endian]]) and in more personal code used for specific distributions ([[portable-endianness]]). Thusly, this proposal includes some endianness functions, specified just below.
+The inclusion of the `<stdbit.h>` header reduces this problem by giving access to the `__STDC_NATIVE_ENDIAN__` macro definition, but does not fully eliminate it. This is why many Linux and BSDs include functions which directly transcribe from one endianness to another. This is why the [[endian-fallacy|Byte Order Fallacy]] has spread so far in Systems Programming communities, and why many create their own versions of this both in official widespread vendor code ([[linux-endian]]) and in more personal code used for specific distributions ([[portable-endianness]]). Thusly, this proposal includes some endianness functions, [[#design-endianness|specified further below]].
 
 
 ### Vetting the Implementation / Algorithm for `memreverse` ### {#design-memreverse-implementation}
@@ -401,11 +402,11 @@ int_leastN_t stdc_load8_aligned_besN(
 #endif
 ```
 
-Thanks to some feedback from implementers and librarians, this first implementation would also need an added signed variant to the load and store functions as well as aligned and unaligned loads and stores. While C23 will mandate a two's complement representation for integers, because we are using the `uint_leastN_t` functions (which may be larger than the intended `N == 24` or `N == 32` specification), it is important for the sign bit to be properly serialized an transported. Therefore, during `stdc_load8_(le/be)sN`/`stdc_load8_(le/be)uN` operations, the sign bit will be directly serialized into resulting signed value or byte array where necessary.
+Thanks to some feedback from implementers and librarians, this first implementation would also need an added signed variant to the load and store functions as well as aligned and unaligned loads and stores. While C23 mandates a two's complement representation for integers, because we are using the `uint_leastN_t` functions (which may be larger than the intended `N == 24` or `N == 32` specification), it is important for the sign bit to be properly serialized an transported. Therefore, during `stdc_load8_(le/be)sN`/`stdc_load8_(le/be)uN` operations, the sign bit will be directly serialized into resulting signed value or byte array where necessary.
 
 This specification is marginally more complicated than the `stdc_memreverseuN` functions because they operate on `uint_leastN_t`, where `N` is the minimum-width bit value. These functions, on most normal implementations, will just fill in the exact number of 8, 16, 32, 64, etc. bits.
 
-We are fine with not making these precisely `uintN_t`/`intN_t` because the upcoming C23 Standard includes a specific requirement that if `uintN_t`/`intN_t` exist, then `uint_leastN_t`/`int_leastN_t` must match their exact-width counterparts exactly, which has been existing practice on almost all implementations for quite some time now.
+We are fine with not making these precisely `uintN_t`/`intN_t` because the C23 Standard includes a specific requirement that if `uintN_t`/`intN_t` exist, then `uint_leastN_t`/`int_leastN_t` must match their exact-width counterparts exactly, which has been existing practice on almost all implementations for quite some time now.
 
 
 ### Vetting the Implementation / Algorithm for 8-bit loads and stores ### {#design-endianness-implementation}
@@ -425,7 +426,7 @@ Regardless of how well it's tested and checked, the paper still restricts the co
 
 ## Additional Modern Bit Utilities ## {#design-bit}
 
-Additionally to this, upon first pre_review of the paper there was a strong supporting groundswell for bit operations that have long been present in both hardware and as compiler intrinsics. This idea progressed naturally from the `bswap` and `__builtin_bswap` discussion. As indicated in [[p0553]] (merged into C++20 already), here's a basic rundown of some common architectures and their support for various bit functionality:
+Additionally to this, upon first review of the paper there was a strong supporting groundswell for bit operations that have long been present in both hardware and as compiler intrinsics. This idea progressed naturally from the `bswap` and `__builtin_bswap` discussion. As indicated in [[p0553]] (merged into C++20 already), here's a basic rundown of some common architectures and their support for various bit functionality:
 
 <table>
 	<tr><th>operation</th> <th>Intel/AMD</th>    <th>ARM</th>    <th>PowerPC</th></tr> 
@@ -587,7 +588,7 @@ Synopsis
 #include <limits.h>
 #include <stdint.h>
 
-#if (CHAR_BIT == 8)
+#if (CHAR_BIT) == 8
 uintN_t stdc_memreverse8uN(uintN_t value);
 #endif
 ```
