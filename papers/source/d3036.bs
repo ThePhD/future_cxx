@@ -48,6 +48,8 @@ Issue: For `std::format_to`, Do we want to use a `std::ranges::to`-style formula
 
 Issue: Do we want a function `std::format_into` that always works only over the region `[std::ranges::begin(rng)`, `std::ranges::begin(rng))`?
 
+Issue: To which name — `format_into` and `format_to` — do we want to give the *container-insertable* behavior versus the strict `[std::ranges::begin(rng)`, `std::ranges::begin(rng))` behavior?
+
 
 
 # Introduction and Motivation # {#intro}
@@ -135,11 +137,13 @@ The "Properties" uses the following legend, with a numeric marker for each line 
 
 - ✔️ Compiles, links, and runs without issue.
 - ❌ Does not compile.
-- ☢️1 Stack buffer overrun.
-- ☢️2 Heap buffer overrun.
+- ⛔ Does not compile (because the feature does not exist yet).
+- ☢️1 Compiles, links, and runs with: linear stack buffer overrun.
+- ☢️2 Compiles, links, and runs with: linear heap buffer overrun.
 - †: Mitigation for ☢️; Stopped by Undefined Behavior Sanitizer / Address Sanitizer.
 - ‡: Mitigation for ☢️; Implementation-specific iterator debugging will stop (unsafe in typical 'Release"-mode software).
 
+<!--
 
 ### With `std::array` and `std::span` ### {#intro-problems-array.span.c_array}
 
@@ -184,7 +188,13 @@ Properties:
 9. ☢️1‡
 10. ☢️1‡
 11. ❌
+-->
 
+Advisement: TODO — this table is an AWFUL way to display this. Fix it up into a proper set of demonstrations that are not formatted as table, and also provides the resulting string/range contents for scrutiny in the success case.
+
+<table>
+<thead>
+<th>Used Ranges/Views</th>
 <th>Properties</th>
 <th>Code Snippet</th>
 </tr>
@@ -199,6 +209,20 @@ Properties:
 </td>
 <td>
 
+0. ❌
+1. ☢️1†
+2. ☢️1‡
+3. ⛔
+
+4. ❌
+5. ✔️
+6. ✔️
+7. ⛔
+
+8. ❌
+9. ☢️1‡
+10. ☢️1‡
+11. ⛔
 
 </td>
 <td>
@@ -241,16 +265,18 @@ Properties:
 <tr>
 <td>
 
-`char[…]`
+`char[…]` (c-style array)
 </td>
 <td>
 0. ☢️1†
 1. ☢️1†
 2. ☢️1‡
+3. ☢️1‡
 
-3. ✔️
 4. ✔️
 5. ✔️
+6. ✔️
+7. ✔️
 
 </td>
 <td>
@@ -264,11 +290,15 @@ Properties:
 	// 2.
 	std::format_to(std::begin(tiny_arr), "Big: {}", 2234561011);
 	// 3.
-	std::format_to(arr, "Big: {}", 2234561011);
+	std::format_to(std::ranges::unbounded_view(tiny_arr), "Big: {}", 2234561011);
 	// 4.
-	std::format_to(std::data(arr), "Big: {}", 2234561011);
+	std::format_to(arr, "Big: {}", 2234561011);
 	// 5.
+	std::format_to(std::data(arr), "Big: {}", 2234561011);
+	// 6.
 	std::format_to(std::begin(arr), "Big: {}", 2234561011);
+	// 7.
+	std::format_to(std::ranges::unbounded_view(arr), "Big: {}", 2234561011);
 	/* … */
 ```
 </td>
@@ -284,21 +314,21 @@ Properties:
 <td>
 0. ❌
 1. ☢️2†
-2. ☢️2‡
-3. ☢️2†
-4. ❌
+2. ⛔
+3. ✔️
+4. ⛔
 
-5. ✔️
+5. ❌
 6. ✔️
-7. ✔️
-8. ❌
-9. ☢️2‡
+7. ⛔
+8. ☢️2‡
+9. ⛔
 
-10. ✔️
-11. ❌
-12. 
-13. 
-14. 
+10. ❌
+11. ☢️2‡
+12. ⛔
+13. ✔️
+14. ⛔
 
 </td>
 <td>
@@ -316,8 +346,9 @@ Properties:
 	std::format_to(std::inserter(tiny_rng, tiny_rng.begin()),
 		"Big: {}", 2234561011);
 	// 4.
-	std::format_to(std::ranges::unbounded_view(
-		std::inserter(tiny_rng, tiny_rng.begin())
+	std::format_to(
+		std::ranges::unbounded_view(
+			std::inserter(tiny_rng, tiny_rng.begin())
 		),
 		"Big: {}", 2234561011);
 	
@@ -332,24 +363,26 @@ Properties:
 	std::format_to(std::inserter(tiny_rng, tiny_rng.begin()),
 		"Big: {}", 2234561011);
 	// 9.
-	std::format_to(std::ranges::unbounded_view(
-		std::inserter(tiny_rng, tiny_rng.begin())
+	std::format_to(
+		std::ranges::unbounded_view(
+			std::inserter(tiny_rng, tiny_rng.begin())
 		),
 		"Big: {}", 2234561011);
 	
-	// 0.
+	// 10.
 	std::format_to(empty_rng, "Big: {}", 2234561011);
-	// 1.
+	// 11.
 	std::format_to(empty_rng.begin(), "Big: {}", 2234561011);
-	// 2.
+	// 12.
 	std::format_to(std::ranges::unbounded_view(empty_rng),
 		"Big: {}", 2234561011);
-	// 3.
+	// 13.
 	std::format_to(std::inserter(empty_rng, tiny_rng.begin()),
 		"Big: {}", 2234561011);
-	// 4.
-	std::format_to(std::ranges::unbounded_view(
-		std::inserter(empty_rng, empty_rng.begin())
+	// 14.
+	std::format_to(
+		std::ranges::unbounded_view(
+			std::inserter(empty_rng, empty_rng.begin())
 		),
 		"Big: {}", 2234561011);
 	/* … */
@@ -364,7 +397,7 @@ The above is the status quo. Notably, for C-style arrays, what should not compil
 
 It is also more difficult to mandate certain safety macro definitions or force the use of undefined behavior/address sanitization as a library author, leaving library problems to percolate up to users if library authors do not aggressively check inputs and outputs. Arguably, library authors should already be aggressively checking inputs and making sure things do not fall outside the range of expected values, but as much as we would like to be perfect the people who are reading this are (we assume) fallible creatures such as human beings. Expecting perfection is not a tractable task, as has been proven over the course of security issues from the last 40 years of C and C++. Even with the rise of stringent code review, heavier testing, heavier fuzzing, and more, sincere vulnerabilities still make it through.
 
-Therefore, we should start entertaining writing more safe-by-default range algorithms and functionality, and consider integrating the whole standard library with these principles. Rather than simply write a Policy Paper, this proposal takes the approach of using a much-loved piece of functionality — `std::format_to` — and directly enhancing its interface to handle ranges to make the shortest code (the one that passes the range directly) compile as well as have completely memory-safe and exception-resistant behavior.
+Therefore, we should start entertaining writing more safe-by-default range algorithms and functionality, and consider integrating the whole standard library with these principles. Rather than simply write a Policy Paper, this proposal takes the approach of using a much-loved piece of functionality — `std::format_to` — and directly enhancing its interface to handle ranges to make the shortest code (the one that passes the range directly) compile as well as have memory-safe behavior.
 
 
 
@@ -378,7 +411,8 @@ We get the design by starting with the innermost component — `basic_format_con
 0. `out()` on the `basic_format_context` needs to allow `output_range<Iyt, charT&>` in addition to output iterators;
 1. `formatter<…>::format(…)` needs to accept an output range and return an output range (e.g. a `subrange`) instead of just accepting an iterator and returning an iterator;
 2. `format_to` and `vformat_to` need to take `Out&& out` (a universal reference) now to handle taking in ranges **and** iterators;
-3. and, finally, `format_to` and `vformat_to` needs to select the right kind of `[iterator, sentinel)` set to pass down to the inner workings of the functions. In particular, whether to decay to a `format_to(container-inserter(out), …)` in the case that `Out&& out` might be a container, or otherwise just `subrange(out)`.
+3. `format_to` and `vformat_to` needs to select the right kind of `[iterator, sentinel)` set to pass down to the inner workings of the functions. In particular, whether to decay to a `format_to(container-inserter(out), …)` in the case that `Out&& out` might be a container, or otherwise just `subrange(out)`;
+4. and, finally, the functions must provide a stable `[iterator, sentinel)` behavior that does not attempt container insertion needs to be provided,so a new set of functions named `format_into` and `vformat_into` are provided to give those semantics.
 
 
 
@@ -386,159 +420,7 @@ We get the design by starting with the innermost component — `basic_format_con
 
 Taking the table from the above section and taking into account the changes made, we can show the changes that these new APIs would enable:
 
-<table>
-<thead>
-<tr>
-<th>Used Ranges/Views</th>
-<th>Properties</th>
-<th>Code Snippet</th>
-</tr>
-</thead>
-<tbody>
-
-<tr>
-<td>
-
-`std::array<char, …>`  
-`std::span<char…>`
-</td>
-<td>
-0. ❌ ⇒ ✔️
-1. ☢️1† ⇒ ✔️
-2. ☢️1‡ ⇒ ✔️
-
-3. ❌ ⇒ ✔️
-4. ✔️
-5. ✔️
-
-6. ❌ ⇒ ✔️
-7. ☢️1† ⇒ ✔️
-8. ☢️1‡ ⇒ ✔️
-
-</td>
-<td>
-
-```cpp
-	/* … */
-	// 0.
-	std::format_to(tiny_view, "Big: {}", 2234561011);
-	// 1.
-	std::format_to(tiny_view.data(), "Big: {}", 2234561011);
-	// 2.
-	std::format_to(tiny_view.begin(), "Big: {}", 2234561011);
-	// 3.
-	std::format_to(view, "Big: {}", 2234561011);
-	// 4.
-	std::format_to(view.data(), "Big: {}", 2234561011);
-	// 5.
-	std::format_to(view.begin(), "Big: {}", 2234561011);
-	// 6.
-	std::format_to(empty_view, "Big: {}", 2234561011);
-	// 7.
-	std::format_to(empty_view.data(), "Big: {}", 2234561011);
-	// 8.
-	std::format_to(empty_view.begin(), "Big: {}", 2234561011);
-	/* … */
-```
-</td>
-</tr>
-
-
-<tr>
-<td>
-
-`char[…]`
-</td>
-<td>
-0. ☢️1† ⇒ ✔️
-1. ☢️1† ⇒ ✔️
-2. ☢️1† ⇒ ✔️
-
-3. ✔️
-4. ✔️
-5. ✔️
-
-</td>
-<td>
-
-```cpp
-	/* … */
-	// 0.
-	std::format_to(tiny_arr, "Big: {}", 2234561011);
-	// 1.
-	std::format_to(std::data(tiny_arr), "Big: {}", 2234561011);
-	// 2.
-	std::format_to(std::begin(tiny_arr), "Big: {}", 2234561011);
-	// 3.
-	std::format_to(arr, "Big: {}", 2234561011);
-	// 4.
-	std::format_to(std::data(arr), "Big: {}", 2234561011);
-	// 5.
-	std::format_to(std::begin(arr), "Big: {}", 2234561011);
-	/* … */
-```
-</td>
-</tr>
-
-
-<tr>
-<td>
-
-`std::vector<char>`  
-`std::list<char>`
-</td>
-<td>
-0. ❌ ⇒ ✔️
-1. ☢️2†
-2. ☢️2‡
-3. ☢️2†
-
-4. ❌ ⇒ ✔️
-5. ✔️ ⇒ ✔️
-6. ✔️ ⇒ ✔️
-7. ✔️ ⇒ ✔️
-
-8. ❌ ⇒ ✔️
-9. ☢️2‡
-10. ☢️2‡
-11. ☢️2‡ ⇒ ✔️
-
-</td>
-<td>
-
-```cpp
-	/* … */
-	// 0.
-	std::format_to(tiny_rng, "Big: {}", 2234561011);
-	// 1.
-	std::format_to(tiny_rng.begin(), "Big: {}", 2234561011);
-	// 2.
-	// 4.
-	std::format_to(std::inserter(tiny_rng, tiny_rng.begin()),
-		"Big: {}", 2234561011);
-	// 4.
-	std::format_to(rng, "Big: {}", 2234561011);
-	// 5.
-	std::format_to(rng.begin(), "Big: {}", 2234561011);
-	// 6.
-	// 7.
-	std::format_to(std::inserter(rng, rng.begin()),
-		"Big: {}", 2234561011);
-	// 8.
-	std::format_to(empty_rng, "Big: {}", 2234561011);
-	// 9.
-	std::format_to(empty_rng.begin(), "Big: {}", 2234561011);
-	// 10.
-	// 11.
-	std::format_to(std::inserter(empty_rng, empty_rng.begin()),
-		"Big: {}", 2234561011);
-	/* … */
-```
-</td>
-</tr>
-
-</tbody>
-</table>
+Advisement: TODO — after making the changes above, rewrite this section to be displayed appropriately.
 
 
 
@@ -549,20 +431,59 @@ In general, as shown above, output ranges are superior to typical iterators. The
 
 ```cpp
 std::vector<char> empty_rng;
-std::vector<char> rng{'\0','\0','\0','\0','\0','\0'};
-// (A)
+std::vector<char> tiny_rng{'\0','\0','\0','\0','\0','\0'};
+std::vector<char> rng(500uz, '\0');
+// 0.
 std::format_to(empty_rng, "Big: {}", 2234561011);
-// (B)
+// 1.
+std::format_to(tiny_rng, "Big: {}", 2234561011);
+// 2.
 std::format_to(rng, "Big: {}", 2234561011);
 ```
 
-There are two interpretations. `std::ranges::to` takes the interpretation that we should insert/append to such containers. This is also a natural choice for `std::ranges::to` because it is creating the whole container. Conversely, `std::format_to` does not create the target it is inserting to whole-cloth; it is very often writing into a pre-existing buffer or container. This leads to the second interpretation: filling only the space provided between `[std::ranges::begin, std::ranges::end)`.
+There are two interpretations for what happens in 0, 1 and 2. `std::ranges::to` takes the interpretation that we should insert/append to such containers. This is also a natural choice for `std::ranges::to` because it is creating the whole container. Conversely, `std::format_to` does not create the target it is inserting to whole-cloth; it is very often writing into a pre-existing buffer or container. This leads to the second interpretation: filling only the space provided between `[std::ranges::begin, std::ranges::end)`.
 
 We choose the `std::ranges::to` interpretation for `std::format_to`, and in conjunction with such a change also are going to probe LEWG/SG9 to ask for another set of functions — `std::format_into` and `std::vformat_into` — to take the second interpretation. This will provide the full set of functionality that covers 100% of the use cases, and provides a model for the rest of the standard library that needs to answer such questions.
 
 The reason we choose the `std::ranges::to` interpretation in this proposal is because that is the most user-friendly behavior. It is also the most common way we expect `std::format_to` to be used when used with a plain range such as `std::string`, `std::vector`, and other containers from the ecosystem (such as `llvm::SmallString<…>` or `boost::static_vector`). This has also been the design of choice for a widely deployed, and independently re-implemented, encoding library ztd.text[[ztd.text]], which uses this interpretation to great effect across the C++ ecosystem.
 
-Furthermore, the `std::ranges::to` interpretation is **safe** for other types of containers. In the `std::format_to` style of APIs, we will simply fall back to the `[begin, end)` behavior that is anticipated.
+Furthermore, the `std::ranges::to` interpretation is **safe** for other types of ranges and views that do not do insertion. In the `std::format_to` style of APIs, we will simply fall back to the `[begin, end)` behavior otherwise. In order to allow the user to explicitly opt into this kind of behavior, we will furnish an additional API — `std::format_into` — that will take the strict `[begin, end)` interpretation and not attempt to do insertion. Thusly, the code can be written to get the following behaviors:
+
+```cpp
+std::vector<char> empty_rng;
+std::vector<char> tiny_rng{'\0','\0','\0','\0','\0','\0'};
+std::vector<char> rng(500uz, '\0');
+// 0.
+std::format_to(empty_rng, "Big: {}", 2234561011);
+// 1.
+std::format_to(tiny_rng, "Big: {}", 2234561011);
+// 2.
+std::format_to(rng, "Big: {}", 2234561011);
+
+std::vector<char> empty_rng;
+std::vector<char> tiny_rng{'\0','\0','\0','\0','\0','\0'};
+std::vector<char> rng(500uz, '\0');
+// 3.
+std::format_into(empty_rng, "Big: {}", 2234561011);
+// 4.
+std::format_into(tiny_rng, "Big: {}", 2234561011);
+// 5.
+std::format_into(rng, "Big: {}", 2234561011);
+```
+
+For the `*_to` style of functions:
+
+0. `empty_rng` == `"Big: 2234561011"`
+1. `tiny_rng` == `"\0\0\0\0\0\0Big: 2234561011"`
+2. `large_rng` == (500 `NUL` characters, followed by) `"Big: 2234561011"`
+
+For the `*_into` style of functions:
+
+3. `empty_rng` == `""` (nothing)
+4. `tiny_rng` == `"Big: 2"` (truncated output)
+5. `large_rng` == `"Big: 2234561011"` (followed by 484 `NUL` characters)
+
+While the behavior for (B) and (C) seem odd, it is fine today because right now putting ranges into `format_to` does not compile, so there is no expectation of a behavior. There may be some debate over whether `_to` or `_into` should `insert`/`append`/`push_back`/etc.; we invite discussion over what the defaults are, but strongly encourage that both be present so that users have a way of opting out of insertion semantics where necessary.
 
 
 
@@ -789,6 +710,7 @@ The return type on these is just a subrange of what is input (contingent upon th
 # Benchmarks # {#benchmarks}
 
 `std::ranges::unbounded_view` has the potential to be an immense success in the standard library as a type-level indicator that such unlimited-write/unlimited-read optimizations are desired by the end-user. Here, we demonstrate a slurry of different text encoding APIs that use everything from C-style APIs in C, C-style APIs in C++, C++03 algorithm-style APIs, and the more advanced Output Ranges APIs detailed in this paper. The [benchmarks are also maintained and updated as part of the work on ztd.text](https://ztdtext.readthedocs.io/en/latest/benchmarks.html)[[ztd.text]]. Select examples for transcoding a large buffer of Unicode text are used to do the testing.
+
 
 
 ## Methodology ## {#benchmarks-methodology}
