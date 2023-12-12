@@ -4,16 +4,16 @@ H1: Stepanov is Correct: Output Ranges for <code>std::format_to</code>
 Shortname: P3036
 Revision: 0
 Audience: LEWG, SG9
-Status: P
+Status: iso/P
 Group: WG21
 URL: https://thephd.dev/_vendor/future_cxx/papers/d3036.html
 !Target: C++26
 !Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/d3036.html">https://thephd.dev/_vendor/future_cxx/papers/d3036.html</a>
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide (https://thephd.dev), phdofthehouse@gmail.com
-Date: 2023-11-04
+Date: 2023-12-12
 Markup Shorthands: markdown yes, biblio yes, markup yes
-Abstract: This proposal adds a new range type to the standard library and provides a practical example of adding an output range into an existing C++ interface for both improved safety and better performance.
+Abstract: This proposal adds a new range type to the standard library and provides a practical example of adding an output range into an existing C++ interface for both improved safety and better performance. Rather than a policy proposal, this paper attempts to model what to do by taking an existing interface, answering difficult questions about how to improve it, and then show and document those improvements so it can be applied to other places in the C++ standard library and the greater ecosystem.
 </pre>
 
 <pre class="include-raw">
@@ -27,10 +27,26 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 0 - November 5th, 2023 ## {#changelog-r0}
+## Revision 0 - December 12<sup>th</sup>, 2023 ## {#changelog-r0}
 
 	- Initial Release! 🎉
 
+
+
+
+# Polls # {#polls}
+
+These are the questions we would like answers to as this proposal progresses (unmentioned: a poll to continue progress of the paper in general).
+
+Issue: Do we want to throw an error if the range is too small, or simply truncate the output?
+
+Issue: Do we want dedicated `std::ranges::unbounded_view` and `std::ranges::views::unbounded`?
+
+Issue: For `std::format_to`, Do we want to use a `std::ranges::to`-style formulation that does `push_back`/`insert`/`append`/etc.-style appending for containers, and then falls back to simply working over the range `[std::ranges::begin(rng)`, `std::ranges::begin(rng))`?
+
+Issue: For `std::format_to`, Do we want to use a `std::ranges::to`-style formulation that does `push_back`/`insert`/`append`/etc.-style for containers and otherwise?
+
+Issue: Do we want a function `std::format_into` that always works only over the region `[std::ranges::begin(rng)`, `std::ranges::begin(rng))`?
 
 
 
@@ -40,7 +56,7 @@ Recently, the issue of security has been brought up for C and C++. While C++ has
 
 In this proposal, we look at a recently added C++20 interface — `std::format_to` — and provide a meaningful improvement to its API that prevents a wide class of stack and heap linear buffer overruns. This is accomplished by taking advantage of statically-deducible size and type information that can be gleaned from the use of a [pre-existing C++20 concept — `std::ranges::output_range` — in the function template definition](http://eel.is/c++draft/range.refinements).
 
-We also propose a new view alias template — `std::ranges::unbounded<OutputIterator>` — that enables an explicit, grep-able, searchable, and type-system-optimizable pathway to preserve the same performance characters are prior. We provide a demonstration about how fast this is by using an existing library that takes advantage of the same type mechanisms as a proof-of-concept, building on top of Alexander Stepanov's and Eric Niebler's ideals for iterator and ranges.
+We also propose a new view type with an adaptor — `std::ranges::unbounded_view<OutputIterator>` and `std::ranges::views::unbounded` — that enables an explicit, grep-able, searchable, and type-system-optimizable pathway to preserve the same performance characters are prior. We provide a demonstration about how fast this is by using an existing library that takes advantage of the same type mechanisms as a proof-of-concept, building on top of Alexander Stepanov's and Eric Niebler's ideals for iterator and ranges.
 
 
 
@@ -75,7 +91,7 @@ We can – and should — do better than this.
 
 
 
-## Problem Statement Tables ## {#intro-tables}
+## Problem Statement Snippets ## {#intro-problems}
 
 The first table in this section lists the old behaviors and their properties. The preamble code is listed here for both tables, to show the starting point of all of the snippets that will be discussed:
 
@@ -102,7 +118,7 @@ int main () {
 
 	std::span<char> tiny_arr_span(tiny_c_arr);
 	std::span<char> arr_span(c_arr);
-	std::span<char> empty_span{};
+	std::span<char> empty_arr_span{};
 
 	std::list<char> tiny_llist(size_t(4), '\0');
 	std::list<char> llist(size_t(50), '\0');
@@ -124,23 +140,36 @@ The "Properties" uses the following legend, with a numeric marker for each line 
 - †: Mitigation for ☢️; Stopped by Undefined Behavior Sanitizer / Address Sanitizer.
 - ‡: Mitigation for ☢️; Implementation-specific iterator debugging will stop (unsafe in typical 'Release"-mode software).
 
-<table>
-<thead>
-<tr>
-<th>Used Ranges/Views</th>
-<th>Properties</th>
-<th>Code Snippet</th>
-</tr>
-</thead>
-<tbody>
 
-<tr>
-<td>
+### With `std::array` and `std::span` ### {#intro-problems-array.span.c_array}
 
-`std::array<char, …>`  
-`std::span<char…>`
-</td>
-<td>
+Used Ranges/Views:
+
+```cpp
+	std::array<char, 4> tiny_arr;
+	std::array<char, 50> arr;
+	std::array<char, 0> empty_arr;
+
+	char tiny_c_arr[4];
+	char c_arr[50];
+
+	std::span<char> tiny_arr_span(tiny_c_arr);
+	std::span<char> arr_span(c_arr);
+	std::span<char> empty_arr_span{};
+```
+
+Snippet of code utilizing the above ranges/views with the following identifiers used as references:
+
+- `tiny_v`: `tiny_arr`, `tiny_c_arr`, `tiny_arr_span`
+- `v`: `arr`, `c_arr`, `arr_span`
+- `empty_v`: `empty_arr`, `empty_arr_span` (C-style arrays cannot have a size of `0`, so it is not included here)
+
+```cpp
+
+```
+
+Properties:
+
 0. ❌
 1. ☢️1†
 2. ☢️1‡
@@ -155,6 +184,21 @@ The "Properties" uses the following legend, with a numeric marker for each line 
 9. ☢️1‡
 10. ☢️1‡
 11. ❌
+
+<th>Properties</th>
+<th>Code Snippet</th>
+</tr>
+</thead>
+<tbody>
+
+<tr>
+<td>
+
+`std::array<char, …>`  
+`std::span<char…>`
+</td>
+<td>
+
 
 </td>
 <td>
@@ -327,10 +371,18 @@ Therefore, we should start entertaining writing more safe-by-default range algor
 
 # Design # {#design}
 
-The design of this feature is not particularly new or spectacular in its usage. It simply follows a core set of principles for both predictable and well-defined behavior, and prevents a wide class of undefined behavior unless **explicitly** opted into using a new range alias that takes advantage of `unreachable_sentinel_t` to explicitly mark the case where a range wants iterate infinitely.
+The design of this feature is not particularly new or spectacular in its usage. It simply follows a core set of principles for both predictable and well-defined behavior, and prevents a wide class of undefined behavior unless **explicitly** opted into using a new range that takes advantage of `unreachable_sentinel_t` to explicitly mark the case where a range wants iterate infinitely.
+
+We get the design by starting with the innermost component — `basic_format_context` — and working out the consequences of the design from the inside. Most importantly, a few things need to be changed:
+
+0. `out()` on the `basic_format_context` needs to allow `output_range<Iyt, charT&>` in addition to output iterators;
+1. `formatter<…>::format(…)` needs to accept an output range and return an output range (e.g. a `subrange`) instead of just accepting an iterator and returning an iterator;
+2. `format_to` and `vformat_to` need to take `Out&& out` (a universal reference) now to handle taking in ranges **and** iterators;
+3. and, finally, `format_to` and `vformat_to` needs to select the right kind of `[iterator, sentinel)` set to pass down to the inner workings of the functions. In particular, whether to decay to a `format_to(container-inserter(out), …)` in the case that `Out&& out` might be a container, or otherwise just `subrange(out)`.
 
 
-## Table of Changed Behaviors ## {#design.tables}
+
+## Table of Changed Behaviors ## {#design-tables}
 
 Taking the table from the above section and taking into account the changes made, we can show the changes that these new APIs would enable:
 
@@ -490,22 +542,304 @@ Taking the table from the above section and taking into account the changes made
 
 
 
-## Why not `.insert`/`.push_back`/etc. by-default? ## {#design-insertable}
+## Output Ranges ## {#design-output.ranges}
 
-The way this proposal handles ranges of all types is to simply consider the range between their `std::ranges::begin()` and their `std::ranges::end()` as the full set of values to work with. One of the immediate questions that comes from this interface is "how come we do not immediately invoke `rng.push_back(value)` or `rng.insert(rng.end(), value)` when capable containers are passed to these algorithms?".
+In general, as shown above, output ranges are superior to typical iterators. The only reason we have not deployed such things in the standard library has been, quintessentially, the question of what should happen in two of the cases shown above:
 
-This is merely the most conservative choice. `std::ranges::to` has cleared the way for allowing for such algorithms to use the many exposition-only concepts to automatically determine container-alike types that may be reserved, pushed back into, inserted into, and otherwise. Those concepts may need to be elevated from exposition-only concepts to instead be more dependable concepts so that they can be depended upon better by users who do not want to "silently" fall back to just working with the `[begin, end)` set of values.
 
-We do note that taking the `std::ranges::to` approach to such algorithms may add the additional failure condition where allocations from the underlying container may trigger exceptions. None of the `std::ranges` algorithms that write out are marked as `noexcept`, though, so while the exception may not be expected it will thankfully not trigger a full collapse. However, it will prove more difficult, in the future, to appropriately mark any algorithm as `noexcept`.
+```cpp
+std::vector<char> empty_rng;
+std::vector<char> rng{'\0','\0','\0','\0','\0','\0'};
+// (A)
+std::format_to(empty_rng, "Big: {}", 2234561011);
+// (B)
+std::format_to(rng, "Big: {}", 2234561011);
+```
 
-We leave this question in the hands of SG9 and LEWG, noting that -- at least in one library that uses output ranges thoroughly[[ztd.text]] -- we take the conservative approach and use a separate function to indicate the intent to `push_back`/`insert`/etc.
+There are two interpretations. `std::ranges::to` takes the interpretation that we should insert/append to such containers. This is also a natural choice for `std::ranges::to` because it is creating the whole container. Conversely, `std::format_to` does not create the target it is inserting to whole-cloth; it is very often writing into a pre-existing buffer or container. This leads to the second interpretation: filling only the space provided between `[std::ranges::begin, std::ranges::end)`.
 
+We choose the `std::ranges::to` interpretation for `std::format_to`, and in conjunction with such a change also are going to probe LEWG/SG9 to ask for another set of functions — `std::format_into` and `std::vformat_into` — to take the second interpretation. This will provide the full set of functionality that covers 100% of the use cases, and provides a model for the rest of the standard library that needs to answer such questions.
+
+The reason we choose the `std::ranges::to` interpretation in this proposal is because that is the most user-friendly behavior. It is also the most common way we expect `std::format_to` to be used when used with a plain range such as `std::string`, `std::vector`, and other containers from the ecosystem (such as `llvm::SmallString<…>` or `boost::static_vector`). This has also been the design of choice for a widely deployed, and independently re-implemented, encoding library ztd.text[[ztd.text]], which uses this interpretation to great effect across the C++ ecosystem.
+
+Furthermore, the `std::ranges::to` interpretation is **safe** for other types of containers. In the `std::format_to` style of APIs, we will simply fall back to the `[begin, end)` behavior that is anticipated.
+
+
+
+## Making Footguns Explicit with `std::ranges::unbounded_view` ## {#design-explicit.footguns}
+
+It is not enough to introduce output ranges into the API and retain the performance benefits by allowing users to use e.g. `std::format_to(vec.begin(), "my buffer is {} appropriately sized!", …)`. While output ranges provide safety, they do not provide something that is much more important to the ecosystem: easy reviewability and searchability of problematic code. In order to raise the ability to determine places where buffer overruns and other undefined behavior/footgun-prone behavior may be happening, we utilize the type system to leverage a new view with its adaptor: `std::ranges::unbounded_view` and `std::ranges::unbounded`.
+
+These types are effectively `std::ranges::subrange<Iterator, unreachable_sentinel_t>` wrapped in a nice package for easy constructability and usability. The goal of this type is to make it directly transparent by allowing users in Code Review to see `std::ranges::unbounded(_view)` and double-check that the code has verified its invariants before proceeding. Similarly, users suffering from typical signs of memory corruption or overflow should have the ability to leverage the type system to know that they have created a range that will under unfavorable circumstances produce Undefined Behavior. This makes it easy to find typical places where such memory corruption may originate, especially if either `unbounded_view` or `unreachable_sentinel_t` appears in the output. This is what Bjarne Stroustrup continually refers to as "type-rich programming" in his Keynotes and Presentations:
+
+> The aim is to support a type-rich style of programming. In particular, C++ supports type-safe programming with a non-trivial set of types.
+>
+> — "Foundations of C++", Bjarne Stroustrup, ETAPS, [2012](https://www.stroustrup.com/ETAPS-corrected-draft.pdf)
+
+Type-rich programming by deploying a new range type alongside the new `unreachable_sentinel_t` will allow us to directly and explicitly mark something as needing to perform an unbounded operation. Such a type has been implemented and has been able to explicitly deliver performance competitive with raw C code doing analogous operations: see [[#benchmarks]] for more discussion.
+
+
+
+## Not Taking Things Away ## {#design-keep.your.footguns}
+
+It is clear that having the unsafe overload is critical for performance use cases. Knowing the size in advance (due to e.g. advance knowledge at compile-time or having secured/known inputs or simply having done the size validation previously in the code) eliminates cycles and, in larger workloads, can easily accumulate performance benefits ([[#benchmarks]]).
+
+However, it is ultimately hostile to folks who want safer behavior to not provide **any** alternatives to such behavior, or alternatives that only work in a subset of cases. This is not to say that `std::format_to_n` is nothing; it is something and it can be utilized to great purpose.
+
+Unfortunately, C has had this problem for decades. Both `strcpy` and `strncpy`, as well as `sprintf` and `snprintf`, have been part of the standard library for ~34 and ~24 years, respectively. This has not stopped a wide variety of vulnerabilities, overflow bugs, improper-sizing bugs, and so much more. We have known for decades that keeping the size tightly coupled with the data it represents to be a boon (and every codebase for both C and C++ have perpetually reinvented the logical, moral, and spiritual equivalent of `std::span<…>` for ages):
+
+> A slice is a non-owning reference to N contiguous elements in memory. In Rust, slice is a language feature. Compiler ensures the life time. C++20 finally introduced std::Span. At Ubisoft we used slices already 10+ years ago.
+>
+> Let's talk why this is a super important abstraction. …
+>
+> — Sebastian Aaltonen, [March 12th, 2022](http://web.archive.org/web/20220904024447/https://twitter.com/SebAaltonen/status/1502640283502227465)
+
+Separating the iterator and the size into 2 separate arguments is a way to introduce boilerplate that represents the same class of design mistakes that C has made. By peeling the two apart, we end up in a situation where we risk repeating ourselves or — worse — risk repeating ourselves **incorrectly**. Every codebase and language small and large has learned not to do this, except C and C++ in their API design. In fact, the separation of these two has been considered a serious problem for a long time:
+
+> What mistake has caused more grief, more bugs, more workarounds, more endless hours consumed, etc., than any other? Many people would say null pointers. I don’t agree.
+> 
+> Conflating pointers with arrays.
+> 
+> I don’t mean them using the same syntax, or the implicit conversion of arrays to pointers. I mean the inability to pass an array to a function as an array, even if it is declared to be an array.
+>
+> — Walter Bright, [December 22, 2009](http://web.archive.org/web/20231013145702/https://www.digitalmars.com/articles/C-biggest-mistake.html)
+
+What makes this doubly egregious for C++ is that it always had the capability of handling this problem. While in C one could reasonably not expect the C standard library to do anything (it has no `std::span` abstraction, after all, and one has to be put in the language to even begin to address the question in a feasibly scalable manner), C++ — even without `std::span` — had the ability to take size-templated arrays by reference the entire time.
+
+Note: There was no need for the code in [[#intro-example]] to be as dangerous as it was, but we explicitly and purposefully made it dangerous because we prioritized speed over safety without even considering that someone could cast to a pointer to explicitly request the unsafe behavior. We made the default wrong, **again**, over making our code more defensibly robust for the 80% (estimated) array use case.
+
+If we are going to claim that we are a better language than C for security purposes[[p2739r0]], then we should start designing interfaces like we are actually smarter than C. That means taking advantage of the concepts that Stepanov started and that Eric Niebler & Co. polished to a fine point in the C++ standard. And it means actually using using whole ranges — `std::span`, array overloads, or otherwise — in an appreciable way in our API surfaces. If our interfaces still have the moral, spiritual, and technical underpinnings of the wildly unsafe `memcpy`, `strcpy`, and similar bugprone APIs, than we have clearly not learned an important enough lesson over the several decades we have been in friendly competition with C and every other programming language on earth.
+
+
+
+## Why `.insert`/`.push_back`/etc. by-default? ## {#design-insertable}
+
+One of the immediate questions that comes from this interface is "do we really want to do insertion/appending, or do we want some other kind of behavior?".
+
+We take the `std::ranges::to` approach to such a question. Any container matching the *container-insertable* exposition-only concept is chosen. Then, an iterator following the same design as `std::ranges::to` is chosen and passed to `std::format_to` to fill in the container. The container is not cleared (this would not make any sense and would invalidate progressive calls to `format`/`vformat`). If the range is not *container-insertable*, then we do not do any work in this regard.
+
+A more conservative choice would consist of simply doing `std::ranges::begin()` and `std::ranges::end()`. `std::ranges::to` has cleared the way for allowing for such algorithms to use the many exposition-only concepts to automatically determine container-alike types that may be reserved, pushed back into, inserted into, and otherwise. Those concepts may need to be elevated from exposition-only concepts to instead be more dependable concepts so that they can be depended upon better by users who do not want to "silently" fall back to just working with the `[begin, end)` set of values.
+
+One reason that might make the conservative choice more appealing here is the potential for other kinds of failure from the `std::ranges::to` approach. Using container insertion may add the additional failure conditions where allocations from the underlying container may trigger exceptions. None of the `std::ranges` algorithms that perform writing are marked as `noexcept`; neither is any overload of `std::format` or `std::format_to`. So, while the exception may not be expected, it will thankfully not trigger a full collapse or immediate termination. The only (potential) drawback is that it will prove more difficult, in the future, to appropriately mark any algorithm or I/O-less `format` call as `noexcept`.
+
+Ultimately, we will leave this question in the hands of SG9 and LEWG, noting that -- at least in one library that uses output ranges thoroughly[[ztd.text]] -- we take the conservative approach and use one set of functions to indicate the intent to `push_back`/`insert`/etc. (`*_to`-style functions) and another set of functions to indicate that we do not want any insertion with the plain `[begin, end)` region (`*_into`-style functions). This could work for `std::format_to` and `std::format_into`; we do not readily provide `std::format_into` in the first iteration of this proposal, but will pose the question to SG9 and LEWG as is appropriate.
+
+
+
+## "Why not Sources/Sinks?" ## {#design-sources.sinks}
+
+It was floated during conversation and during the standardization of the `std::ranges` algorithms back in C++20 that perhaps using sink functions would be a more ideal API surface for this behavior. Sources and sinks are simply the worst-case-scenario for ranges: they model the worst of the concepts `std::ranges::input_range` and `std::ranges::output_range` without the ability to upgrade their performance. A detailed breakdown of their failures is documented outside of this proposal[[throwing-out-kitchen-sink-output-ranges]], including performance testing and a demonstration of isomorphic behavior with the weakest kind of `std::ranges`.
+
+If someone would prefer a source/sink API, it can be achieved by simply making a `source_range<GeneratingFunction>` input range and a `sink_range<ConsumingFunction>` that creates an iterator with a hand-crafted `reference` type that either calls the `GeneratingFunction` to produce a value on dereference, or calls the `ConsumingFunction` to accept a value on assignment. (With proper return types for tracking when to input is exhausted or output is full.)
+
+In conclusion, Input and Output Ranges are a vastly superior abstraction to Source/Sinks for performance and latency, flexibility of use, and API design. We should not entertain another design without significant effort on the proposer's part to demonstrate the performance of, and API consequences due to, a Sources/Sinks-based design.
+
+
+
+## Detailed Synopsis Overview ## {#design-synopsis}
+
+The signatures for `format_to` get changed to have a deduced return:
+
+```cpp
+namespace std {
+	// …
+
+	template<class Out>
+		auto /* see-below */ vformat_to(Out&& out, string_view fmt, format_args args);
+	template<class Out>
+		auto /* see-below */ vformat_to(Out&& out, wstring_view fmt, wformat_args args);
+	template<class Out>
+		auto /* see-below */ vformat_to(Out&& out, const locale& loc, string_view fmt,
+	                                format_args args);
+	template<class Out>
+		auto /* see-below */ vformat_to(Out&& out, const locale& loc, wstring_view fmt,
+		                                wformat_args args);
+
+	template<class Out, class... Args>
+		auto /* see-below */  format_to(Out&& out,
+		                                format_string<Args...> fmt, Args&&... args);
+	template<class Out, class... Args>
+		auto /* see-below */  format_to(Out&& out,
+		                                wformat_string<Args...> fmt, Args&&... args);
+	template<class Out, class... Args>
+		auto /* see-below */  format_to(Out&& out,
+		                                const locale& loc, format_string<Args...> fmt,
+		                                Args&&... args);
+	template<class Out, class... Args>
+		auto /* see-below */  format_to(Out&& out,
+		                                const locale& loc, wformat_string<Args...> fmt,
+		                                Args&&... args);
+
+	// …
+}
+```
+
+The output becomes deduced based on what `Out` is. If it is an output range, then it returns `subrange<iterator_t<Out>, sentinel_t<Out>>` where `iterator_t<Out>` is an output iterator. Otherwise, the return type remains the same as before (just an `Out`, which that is the iterator itself). More importantly, there are changes to the `basic_format_context` that allow for the use of an output range rather than **just** an iterator:
+
+```cpp
+namespace std {
+	template<class Out, class charT>
+	class basic_format_context {
+		basic_format_args<basic_format_context> args_;      // exposition only
+		/* see-below */ out_;                               // exposition only
+
+	public:
+		using range = /* see-below */; // if present `iterator` is not present
+		using iterator = /* see-below */; // if present `range` is not present
+		using char_type = charT;
+		template<class T> using formatter_type = formatter<T, charT>;
+
+		basic_format_arg<basic_format_context> arg(size_t id) const noexcept;
+		std::locale locale();
+
+		auto /* see-below */ out();
+		void advance_to(/* see-below */ it);
+	};
+}
+```
+
+Notably, we need a new type definition -- `range` -- for use on `basic_format_context`, as well as turning `iterator` into a conditional definition. The `out()` and `advance(…)` functions take either the iterator-or-range arguments. The `Out` argument will be expanded to satisfy not only the constraint `output_iterator<Out, charT&>` to also allowing it to be `output_range<Out, charT&>`. All of the other changes to the API flow from these two changes.
+
+For example, the above adjustments means that the definition of the exposition-only `formattable` has to be expanded to handle either calling `Context::format` with both a `Context::iterator` alongside a `Context::range`:
+
+```cpp
+template<class T, class Context,
+		class Formatter = typename Context::template formatter_type<remove_const_t<T>>>
+	concept formattable-with =                // exposition only
+		semiregular<Formatter> &&
+		requires(Formatter& f, const Formatter& cf, T&& t, Context fc,
+		         basic_format_parse_context<typename Context::char_type> pc)
+		{
+			{ f.parse(pc) } -> same_as<typename decltype(pc)::iterator>;
+			{ cf.format(t, fc) } -> same_as<typename Context::iterator>;
+		};
+
+template<class T, class Context,
+		class Formatter = typename Context::template formatter_type<remove_const_t<T>>>
+	concept formattable-with-output-range =   // exposition only
+		semiregular<Formatter> &&
+		requires(Formatter& f, const Formatter& cf, T&& t, Context fc,
+		         basic_format_parse_context<typename Context::char_type> pc)
+		{
+			{ f.parse(pc) } -> same_as<typename decltype(pc)::iterator>;
+			{ cf.format(t, fc) } -> same_as<typename Context::range>;
+		};
+
+template<class T, class charT>
+	concept formattable =
+		formattable-with<
+			remove_reference_t<T>,
+			basic_format_context<fmt-iter-for<charT>, charT>
+		>
+		|| formattable-with-output-range<
+			remove_reference_t<T>,
+			basic_format_context<fmt-range-for<charT>, charT>>
+		>;
+```
+
+The rest of the specification — `Formatter` and `BasicFormatter` requirements, detailing the `format_to` and `vformat_to` overloads, and similar — flows from the above changes and is contained in the wording. More critically, at the top-level functions (`format_to`  and `vformat_to`), choose whether to insert into the container vs. write out of the container based on `std::ranges::to` logic.
+
+Finally, we add the following range-only `std::format_into` and `std::vformat_into` overloads:
+
+```cpp
+namespace std {
+	// …
+
+	template<borrowed_range Out>
+		subrange<iterator_t<Out>, sentinel_t<Out>>
+		vformat_into(Out out, string_view fmt, format_args args);
+	template<borrowed_range Out>
+		subrange<iterator_t<Out>, sentinel_t<Out>>
+		vformat_into(Out out, wstring_view fmt, wformat_args args);
+	template<borrowed_range Out>
+		subrange<iterator_t<Out>, sentinel_t<Out>>
+		vformat_into(Out out, const locale& loc, string_view fmt,
+		             format_args args);
+	template<borrowed_range Out>
+		subrange<iterator_t<Out>, sentinel_t<Out>>
+		vformat_into(Out out, const locale& loc, wstring_view fmt,
+		             wformat_args args);
+
+	template<borrowed_range Out, class... Args>
+		subrange<iterator_t<Out>, sentinel_t<Out>>
+		format_into(Out&& out, format_string<Args...> fmt,
+		            Args&&... args);
+	template<borrowed_range Out, class... Args>
+		subrange<iterator_t<Out>, sentinel_t<Out>>
+		format_into(Out&& out, wformat_string<Args...> fmt,
+		            Args&&... args);
+	template<borrowed_range Out, class... Args>
+		subrange<iterator_t<Out>, sentinel_t<Out>>
+		format_into(Out&& out, const locale& loc, format_string<Args...> fmt,
+		            Args&&... args);
+	template<borrowed_range Out, class... Args>
+		subrange<iterator_t<Out>, sentinel_t<Out>>
+		format_into(Out&& out, const locale& loc, wformat_string<Args...> fmt,
+		            Args&&... args);
+
+	// …
+}
+```
+
+The return type on these is just a subrange of what is input (contingent upon the input being a `borrowed_range`).
+
+
+
+
+# Benchmarks # {#benchmarks}
+
+`std::ranges::unbounded_view` has the potential to be an immense success in the standard library as a type-level indicator that such unlimited-write/unlimited-read optimizations are desired by the end-user. Here, we demonstrate a slurry of different text encoding APIs that use everything from C-style APIs in C, C-style APIs in C++, C++03 algorithm-style APIs, and the more advanced Output Ranges APIs detailed in this paper. The [benchmarks are also maintained and updated as part of the work on ztd.text](https://ztdtext.readthedocs.io/en/latest/benchmarks.html)[[ztd.text]]. Select examples for transcoding a large buffer of Unicode text are used to do the testing.
+
+
+## Methodology ## {#benchmarks-methodology}
+
+The method and materials for the benchmarks are as follows (performed December 2022): 
+
+1. Windows 10 Pro machine, general user processes running in the background (but machine not being used).
+2. AMD Ryzen 5 3600 6-Core @ 3600 MHz (12 Logical Processors), 32.0 GB Physical Memory
+3. Clang 15.0.3, latest available Clang at the time of generation with MSVC ABI.
+4.  Entire software stack for every dependency build under default CMake flags (including ICU and libiconv from vcpkg).
+5. Anywhere from 150 to 10million samples per iteration, with mean (average) of 100 iterations forming transparent dots on graph.
+6. Each bar graph is mean of the 100 iterations, with provided standard deviation-based error bars.
+7. In general, unless explicitly noted, the **fastest possible API under the constraints was used to produce the data**.
+	- “Unbounded” means that, where shown, the available space left for writing was not considered.
+	- “Unchecked”/“Assume Valid” means that, where shown, the input was not validated before being converted.
+	- “Well-Formed”, in the title, means that the input was well-formed.
+
+
+
+## Results ## {#benchmarks-results}
+
+<pre class="include">
+path: assets/d3036/utf8_to_utf16.bs
+</pre>
+
+<pre class="include">
+path: assets/d3036/utf8_to_utf32.bs
+</pre>
+
+Importantly, from these benchmarks, we can see that (with a high degree of confidence and with closely-related error intervals), a conversion done with `ztd::ranges::unbounded_view` (analogous to what is being proposed here) is able to reach the same performance levels as raw, C-style APIs (e.g. those present as described in a foundational paper on SIMD processing of Unicode encoding[[billions-Unicode-characters]]). More critically, we are able to achieve those same levels of performance despite having an incredibly rich API surface[[c-c++-rust-encoding-api-comparison]], as compared to the API surfaces in the other APIs and even the C and C++ standard APIs[[standard-c-c++-encoding-api-breakdown]]. The performance drops off as we add back abstraction layers or use APIs that do not allow for such differentiations at compile-time or execution-time. But, as shown specifically by the "**ztd.text (unbounded, assume valid)**" part of the graph, we are competitive with the one of the fastest APIs in C++, simdutf[[simdutf]]; this is achieved by specializing on `ztd::ranges::unbounded_view`.
+
+Note: Thusly, we have shown that we can retain low-level performance by using explicit, opt-in functionality and the aforementioned type-rich programming that Professor Bjarne Stroustrup continually advocates for.
+
+
+
+
+# Implementation & Deployment Experience # {#experience}
+
+As heavily discussed above, Output Ranges have been deployed in [[ztd.text]] since their inception. The authors of this paper have also spent a lot of time heavily advocating for the use of such abstractions and their essential need for performance-related scenarios, to great success outside of just this use case.
+
+For the specific case of whether this has been implemented in `format_to`, a patch to Victor Zverovich's [[fmtlib]] is planned.
+
+Advisement: TODO: finish the patch and submit it to `{fmt}` before submitting this paper officially.
 
 
 
 # Specification # {#wording}
 
 The specification is relative to the latest C++ Working Draft.
+
+Advisement: TODO: finish writing the wording in accordance with the above and send an implementation to `{fmt}`.
 
 
 
@@ -514,14 +848,25 @@ The specification is relative to the latest C++ Working Draft.
 
 ### Feature Test Macros ### {#wording-library-feature.test}
 
-The feature test macro for this should be `__cpp_lib_ranges_unbounded`, with an appropriate date provided. The other feature test macros related to the ranges library should also be updated:
+The feature test macro for this should be `__cpp_lib_ranges_unbounded`, with an appropriate date provided. The other feature test macros related to the ranges library and `std::format` should also be updated:
 
 ```cpp
+//…
+
+#define __cpp_lib_format           202504L /* 📝 EDITOR'S NOTE: APPROPRIATE VALUE HERE */
+	// also in <format>
+
+// …
+
 #define __cpp_lib_ranges           202504L /* 📝 EDITOR'S NOTE: APPROPRIATE VALUE HERE */
 	// also in <algorithm>, <functional>, <iterator>, <memory>, <ranges>
+
+// …
+
 #define __cpp_lib_ranges_unbounded 202504L /* 📝 EDITOR'S NOTE: APPROPRIATE VALUE HERE */
-#define __cpp_lib_ranges_output_algorithms 202504L /* 📝 EDITOR'S NOTE: APPROPRIATE VALUE HERE */
-	// also in <algorithm>
+	// also in <ranges>
+
+// …
 ```
 
 
@@ -540,19 +885,24 @@ The feature test macro for this should be `__cpp_lib_ranges_unbounded`, with an 
 namespace std::ranges {
 	// …
 ```
+
 <ins>
+
 ```cpp
 	template<input_or_output_iterator I>
 	class unbounded_view;                               // freestanding
+
+	namespace views { inline constexpr unspecified unbounded = unspecified; } // freestanding
 ```
+
 </ins>
+
 ```cpp
 	// …
 }
 ```
 
 </div>
-</ins>
 </blockquote>
 
 
@@ -562,15 +912,35 @@ namespace std::ranges {
 <ins>
 <div class="wording-section">
 
-<div id="range.unbounded_view" class="wording-section-header">
-<span class="wording-clause-number">26.5.8</span>
+<div id="range.unbounded" class="wordingsection-header">
+<span class="wording-clause-number">26.7.33✨</span>
 <span class="wording-clause-title">Unbounded view</span>
-<span class="wording-clause-stable-tag">[<b>range.unbounded_view</b>]</span>
+<span class="wording-clause-stable-tag">[<b>range.unbounded</b>]</span>
+</div>
+
+<div id="range.unbounded.overview" class="wording-section-header">
+<span class="wording-clause-number">26.7.33✨.1</span>
+<span class="wording-clause-title">Overview</span>
+<span class="wording-clause-stable-tag">[<b>range.unbounded.overview</b>]</span>
 </div>
 
 <div class="wording-numbered">
 
-An `unbounded_view` is a view that pairs an iterator and an `unreachable_sentinel_t` together, implying that the iterator will never reach its end.
+`unbounded_view` pairs an iterator and an `unreachable_sentinel_t` together and provides convenient construction from a range or a single iterator.
+
+</div>
+
+<div class="wording-numbered">
+
+The name `views::unbounded` denotes a range adaptor object (<a href="http://eel.is/c++draft/range.adaptor.object">[range.adaptor.object]</a>). Given subexpressions *E*, the expressions `views​::unbounded(E)` is expression-equivalent to `unbounded_view(E)`.
+
+</div>
+
+<div id="range.unbounded.view" class="wording-section-header">
+<span class="wording-clause-number">26.7.33✨.2</span>
+<span class="wording-clause-title">Class template `unbounded_view`</span>
+<span class="wording-clause-stable-tag">[<b>range.unbounded.view</b>]</span>
+</div>
 
 ```cpp
 namespace std::ranges {
@@ -611,8 +981,6 @@ namespace std::ranges {
 ```
 
 </div>
-
-</div>
 </ins>
 </blockquote>
 
@@ -627,7 +995,64 @@ namespace std::ranges {
 		"href": "https://ztdtext.readthedocs.io/",
 		"publisher": "Shepherd's Oasis, LLC",
 		"date": "November 25th, 2023"
+	},
+	"c-c++-rust-encoding-api-comparison": {
+		"authors": [
+			"JeanHeyd Meneide"
+		],
+		"title": "The Wonderfully Terrible World of C and C++ Encoding APIs (with Some Rust)",
+		"href": "https://thephd.dev/the-c-c++-rust-string-text-encoding-api-landscape",
+		"publisher": "https://thephd.dev",
+		"date": "October 12th, 2022"
+	},
+	"standard-c-c++-encoding-api-breakdown": {
+		"authors": [
+			"JeanHeyd Meneide"
+		],
+		"title": "cuneicode, and the Future of Text in C",
+		"href": "https://thephd.dev/cuneicode-and-the-future-of-text-in-c",
+		"publisher": "https://thephd.dev",
+		"date": "June 7th, 2023"
+	},
+	"throwing-out-kitchen-sink-output-ranges": {
+		"authors": [
+			"JeanHeyd Meneide"
+		],
+		"title": "Throwing Out the Kitchen Sink - Output Ranges",
+		"href": "https://thephd.dev/output-ranges",
+		"publisher": "https://thephd.dev",
+		"date": "August 15th, 2020"
+	},
+	"billions-Unicode-characters": {
+		"authors": [
+			"Daniel Lemire",
+			"Wojciech Muła"
+		],
+		"title": "Transcoding Billions of Unicode Characters per Second with SIMD Instructions",
+		"href": "https://arxiv.org/abs/2109.10433",
+		"publisher": "Software: Practice and Experience, Volume 52, Issue 2",
+		"date": "February 2022"
+	},
+	"simdutf": {
+		"authors": [
+			"Daniel Lemire",
+			"Robert Clausecker",
+			"Wojciech Muła",
+			"John Keiser"
+		],
+		"title": "simdutf/simdutf",
+		"href": "https://github.com/simdutf/simdutf",
+		"publisher": "GitHub",
+		"date": "December 4th, 2023"
+	},
+	"fmtlib": {
+		"authors": [
+			"Victor Zverovich"
+		],
+		"title": "fmtlib/fmt",
+		"href": "https://github.com/fmtlib/fmt",
+		"publisher": "GitHub",
+		"date": "December 11th, 2023"
 	}
-	
 }
 </pre>
