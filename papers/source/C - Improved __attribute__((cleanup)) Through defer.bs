@@ -33,6 +33,15 @@ path: resources/css/bikeshed-wording.html
 
 
 
+## Revision 1 - December 20<sup>th</sup>, 2023 ## {#changelog-r1}
+
+- Include discussion of Linux kernel-based attempts at `defer` (using `__attribute__((cleanup(…)))`) (thanks, Miguel Ojeda!)
+- Previously, in the [[#cpp.compat]] section, this paper mentioned a vendor who supports C and C++ that has a demangler that outstrips their C implementation in engineering effort. The vendor in question clarified that a pure C17 compiler given the burden of attempting to mangle C++ would result in a significant engineering effort that could outstrip such, and that currently — for their implementation — that burden has already been surpassed.
+- Document that destructors need mangling.
+- Discuss the `__try` and `__finally` MSVC extensions in relation to this.
+
+
+
 ## Revision 0 - December 10<sup>th</sup>, 2023 ## {#changelog-r0}
 
 - Initial release. ✨
@@ -95,6 +104,14 @@ Even individuals with legitimate technical grievances against C++ speak highly o
 This is not the first time programmers have moved towards this sort of solution. However, doing so often came at the cost of needing to leave the C language, or — as done above — embracing a potentially high degree of non-portability to achieve the goals. As a Standards Committee, it would seem prudent to produce a viable implementation of this that is capable of satisfying all of C's stakeholders without adding undue burden to the language.
 
 The only drawback of `__attribute__((cleanup(…)))` is that it is tied to passing in a single function, and only taking a single `void*` parameter. It becomes difficult to properly coordinate additional information to the function without figuring out potentially contested data transmission mechanisms between the function put into the `cleanup` portion of the attribute and the actual run of the function itself.
+
+Still, its benefits clearly outweigh its drawbacks, enough at least to warrant it being added to the Linux Kernel recently[[linux-cleanup]]. It has begun to see use for the typical cases that were outlined above:
+
+- automatic `free`ing of a pointer;
+- automatic lock/release of a `mutex` or similar multi-threading resource types;
+- and other resource management.
+
+This points to sign of the ecosystem at-large beginning to mature in a direction towards `defer`-style semantics (or constructor/destructor-style semantics). Therefore, we believe now is a prudent time to start moving this sort of functionality into the C standard.
 
 
 
@@ -759,9 +776,11 @@ There are several purely technical reasons for not pursuing a constructor/destru
 - Name mangling required for constructor syntax, even without other member function syntax.
 - And, interoperability with older C code that will suddenly be imbued with the potential for constructor/destructor semantics and may not produce binary-compatible construction representations (**implementation-specific**).
 
-The first two are interconnected and also simply part of the bargain. If any of GCC, Clang, or MSVC wanted to adopt a proposal for C that would inject member functions into the language, they would — naturally and correctly — do so with the implementation that has served C++ well over the last few decades, by using name mangling. But, implementation-controlled name mangling is abhorrent to C developers for a wide variety of reasons, least of all being they have less control over their Application Binary Interfaces than they have already been deprived of. While C mangling is fairly consistent across most platforms (in that there is either little or none at all), C++ name mangling implementations can outstrip the implementation of many C17 frontends in their entirety (and, in one documented case, has done so for a vendor in WG14 that supports both C and C++).
+The first two are interconnected and also simply part of the bargain. If any of GCC, Clang, or MSVC wanted to adopt a proposal for C that would inject member functions into the language, they would — naturally and correctly — do so with the implementation that has served C++ well over the last few decades, by using name mangling. But, implementation-controlled name mangling is abhorrent to C developers for a wide variety of reasons, least of all being they have less control over their Application Binary Interfaces than they have already been deprived of. While C mangling is fairly consistent across most platforms (in that there is either little or none at all), C++ name mangling implementations can outstrip the implementation of many C17 frontends in their entirety in complexity and effort.
 
 Advisement: Function overloading — and the requisite name mangling schemes that would come with it — are very much not feasible for C implementations or the C language.
+
+Advisement: Even destructors need [overloading (https://godbolt.org/z/W4jxqPxx9)](https://godbolt.org/z/W4jxqPxx9), as this example code shows for the differences in the way the destructor name is mangled versus the way a plain `extern "C"` function is mangled in C++.
 
 Furthermore, `defer` actually escapes a small issue that C++ has created for itself with `noexcept`, exceptions, and destructors.  As C++ would generally rightfully claim, this feature is redundant with its RAII concept. They would be correct, except in one place: the C++ standard library. Peter Sommerlad has spent over 10 years working on a proposal for a "Generic Scope Guard" for C++, so long that it has a C++ Paper Number from both the P-based proposal system and also a large series of WG21 N-document numbers[[p0052]].
 
@@ -804,7 +823,7 @@ Note: Having cleanup behavior completely devoid of context and potential failure
 
 Speaking briefly from a language design standpoint: in an ideal world, both of these solutions would be present side by side to offer the user a maximally flexible choice of error handling, automated cleanup, general-purpose undo power, and freedom to choose context (or not have any contextual information at all). Unfortunately, due to the technical challenges of name mangling from member functions (destructors and constructors) it may be some time before C sees a solution where an object contains its own clean up code and that clean up code follows an object through the system (e.g., by using types).
 
-Despite the advances that `defer` makes for C, this will present a greater problem over time as C users get used to functional, block-scoped cleanup but do not have the ability to attach `defer`s to individual struct fields or to the lifetime of a given object. `__attribute__((cleanup(…)))` attempted to do this, but in a way that was brittle. It did not transfer to other object declarations and could not be properly relocated without runtime coordination and orchestration by the user. It also could not be applied to structure fields, providing one kind of block-scope safety but making it less ideal in other cases and requiring extra boilerplate functions to get the job done. RAII achieves this by leveraging the type system. `defer` achieves this but requires that every place a resource is used, it must have a `defer` block written. It is much more manual than RAII.
+Despite the advances that `defer` makes for C, this will present a greater problem over time as C users get used to functional, block-scoped cleanup but do not have the ability to attach `defer`s to individual struct fields or to the lifetime of a given object. `__attribute__((cleanup(…)))` attempted to do this, but in a way that was brittle. It did not transfer to other object declarations and could not be properly relocated without runtime coordination and orchestration by the user. It also could not be applied to structure fields, providing one kind of block-scope safety but making it less ideal in other cases and requiring extra boilerplate functions to get the job done. RAII achieves this by leveraging the type system but cannot take in context without the help of an additional language feature (that ends up making it look pretty much identical to `defer` in nature). `defer` achieves this but requires that every place a resource is used, it must have a `defer` block written. It is much more manual than RAII.
 
 
 
@@ -862,13 +881,30 @@ int main () {
 
 This proposal is modeled after existing practice, but is not directly provided in a C compiler in C mode. It can be approximated (as shown above) using C++, but C++ does not have a language feature for this form that isn't just a stripped-down form of RAII.
 
-This leaves only `__attribute__((cleanup(…)))` as has been implemented in many compilers, some of which are GCC, Clang, XLC, and Tiny C Compiler. Most of what has shaped this proposal has been driven by this feature. However, we **specifically** do not use an attribute in this version of the proposal because `[[cleanup(my_free)]] some_variable;` is:
+This leaves both Microsoft's `__try`/`__finally`, and GCC's `__attribute__((cleanup(…)))`. Starting with `__attribute__((cleanup(…)))`, it has been implemented in many compilers, some of which are GCC, Clang, XLC, and Tiny C Compiler. Most of what has shaped this proposal has been driven by this feature. However, we **specifically** do not use an attribute in this version of the proposal because `[[cleanup(my_free)]] some_variable;` is:
 
 - ignorable by the wording for attributes (and their expected behavior);
 - tied too strongly to a declaration (and may fall off in an unwarranted fashion);
 - and, in the existing practice, does not have support for single fields in a structure or similar without writing an extended function to pick out specific pieces of a structure to cleanup.
 
 In contrast `defer` has much clearer mechanisms to achieve the same goal, and may be applied to a wider variety of instances and cases than the attribute can.
+
+For Microsoft's `__try`/`__finally`, it is also plausible to do this. It can be transformed without loss of generality to what a `defer` does in this proposal, and has similar semantics. However, there is additional practice here with `__leave`, which terminates the block immediately. It is conceptually the same as using a `goto` to get to the end of the block, but `__leave` specifically does not perform any stack unwinding. While we understand the need for `__try` and `__finally`, we ultimately realized it was a purely syntactic difference (ignoring the exception/unwinding implications). However, that syntactic difference matters: to maintain similarity, one would need to wrap up all code past a `defer …` statement into a `__try`, and move all of the code from the `defer` into the `__finally`. Declarations made in the `__try` are not visible in the `__finally` clause:
+
+```cpp
+int main () {
+	int foo = 0;
+	__try {
+		int x = 4;
+	}
+	__finally {
+		foo += x; // (MSVC) error C2065: 'x': undeclared identifier
+	}
+	return foo;
+}
+```
+
+This means one has to move all variable declarations out of the `__try`, in order to reference them properly in the `__finally`. All in all, this means that while such a movement/changing of how variables are created in that block scope, it encourages unsafe practices such as keeping large amounts of uninitialized data. This encourages setting variables to uninitialized / sentinel values, and then properly initializing them in the `__try` block before deploying a `__finally`. We would rather not pursue such an option in C.
 
 In the future, we expect that — should someone solve the tension between name mangling, member functions, constructors/destructors, and more — we could consider moving into a destructor-based solution that is tied to the type system and objects. We view that as better to solve the problem for individual member fields and larger objects, while reducing the amount of times that the cleanup code may need to be written. However, C users have expressed a deep tie to having code that will run be visible in the scope. Macros violate this rule (e.g. `g_autoptr` backed by `__attribute__((cleanup(…)))`), destructors violate this rule, but `defer` as a feature does not.
 
@@ -1439,10 +1475,19 @@ Note: 📝 For the editor to do within the Annex J undefined behavior list.
 			"Eric Niebler",
 			"Daniel Krügler"
 		],
-		"title": " Generic Scope Guard and RAII Wrapper for the Standard Library",
+		"title": "Generic Scope Guard and RAII Wrapper for the Standard Library",
 		"publisher": "ISO/IEC JTC1 SC22 WG21 — Programming Languages, C++",
 		"href": "https://wg21.link/p0052",
 		"date": "February 19th, 2019"
+	},
+	"linux-cleanup": {
+		"authors": [
+			"Peter Zijlstra"
+		],
+		"title": "locking: Introduce __cleanup() based infrastructure",
+		"publisher": "infradead.org, kernel.org",
+		"href": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/include/linux/cleanup.h",
+		"date": "June 26th, 2023"
 	}
 }
 </pre>

@@ -37,6 +37,7 @@ path: resources/css/bikeshed-wording.html
 
 - Fix minor typos in example specification.
 - Point out that C++ has made a similar change for its `wchar_t` in [[p2460r2]] and that if we would like to remain in sync, C should consider following suit, as described in [[#design-wchar_t]].
+- Improve the set of macros available from `<wchar.h>` and predefined in the compiler based on feedback and discuss in [[#design-wchar_t]].
 
 
 
@@ -98,7 +99,7 @@ path: resources/css/bikeshed-wording.html
 
 - Update definitions for when the `input` pointer - and its pointed to pointer - are `NULL`, and make sure they have identical behaviors.
 - Update definitions for when the `output` pointer - and its pointed to pointer - are `NULL`, and make sure they have identical behaviors.
-- Ensure that `mbstate_t` is properly cleared to the initial conversion state on both `NULL` input pointers or U+00000000 being processed in the input string. Ensure that it outputs any code unit sequences to the output necessary to return the output to its initial conversion state as well (thanks, Hubert Tong!).
+- Ensure that `mbstate_t` is properly cleared to the initial conversion state on both `NULL` input pointers or U+000000 being processed in the input string. Ensure that it outputs any code unit sequences to the output necessary to return the output to its initial conversion state as well (thanks, Hubert Tong!).
 - Handle `LC_CTYPE` being changed in the wording (it's unspecified behavior) (thanks, Hubert Tong!).
 - Switch to using `char8_t` officially now that it has been accepted to C23 (thanks, Joseph Myers!).
 - `restrict` added to the function prototypes ([[#design-forms-choice]]).
@@ -941,6 +942,35 @@ Given the above considerations about consistency with other functionality (no st
 
 
 
+## Extension Functions & Methods (Building on top of this API) ## {#design-extension}
+
+We can achieve a better API for all of this by utilizing either Statement Expressions (the widely-implemented GCC extension that exists in tcc, Clang, many flavors of IBM Compiler, and more) as well as with Lambdas (as shown in [[n2892]]). For example, here is an API that, without providing new backing functions, is capable of reducing the number of indirections and taking parameters directly ([implemented and deployed in the ztd.cuneicode library](https://github.com/soasis/cuneicode/blob/0d641dc8c5cd7619265b684021b0cafe6fae410b/examples/extensions/source/error_handling.utf32_to_utf8.stmt_exprs.c#L41-L46)):
+
+```cpp
+#include <ztd/cuneicode.h>
+
+#include <ztd/idk/size.h>
+
+int main() {
+	// This only works if we support extension functions!
+	const ztd_char32_t input_data[] = U"Bark Bark Bark \xFFFFFFFF🐕‍🦺!";
+	ztd_char8_t output_data[ztdc_c_array_size(input_data) * CNC_C8_MAX] = { 0 };
+	cnc_mcstate_t state                                                 = { 0 };
+	cnc_c32c8_error_result_t err_result = cnc_cxsrtocysn_into_with_handler(
+	     ztdc_c_array_size(output_data), output_data, input_data, &state,
+	     cnc_skip_input_and_replace_error, NULL);
+	// …
+}
+```
+
+Here, we see that we only need to take the `cnc_mcstate_t` (analogous to this proposal's `mbstate_t`) parameter by pointer. The rest of the arguments (the `size_t` for the data). This example even shows using an error handler function, with a `NULL`-provided `void* userdata` for said error handler, to skip over bad input and replace it with the typical "unknown character" diamond seen in many places ("�", U+FFFD REPLACEMNT CHARACTER).
+
+The API presented in this paper is the most basic and fundamental API that enables all of these use cases without loss of generality, and that is why we are focused on providing it to the C Standard. Extension methods utilizing statement expressions or lambdas in combination with macro generic programming will be able to provide additional functionality without forcing implementations to add more symbols to their symbol table.
+
+Advisement: Note that, due to C's lack of strong type safety for its core typedefs like `wchar_t` or `char16_t`, these type-based generic programming bits can be brittle. For example, on Windows machines using the Clang compiler, both `wchar_t` and `char16_t` are the same type (`unsigned short`). A `_Generic`-based switch for types will either make a compiler error if both `wchar_t` and `char16_t` are used in the same switch, or fall into the "wrong" function because it is impossible to differentiate between the two types. This is further reason why the Extension Functions should be left out of this proposal and for a later time.
+
+
+
 ## `wchar_t` and Existing practice ## {#design-wchar_t}
 
 `wchar_t` and wide characters in general have a requirement placed on them in the definition section that every character supported in the wide execution encoding (and wide literal encoding) must be fully representable as a **single** `wchar_t` value. This has not matched existing practice for the last ~20 or so years, and has produced specification issues with functions such as `mbrtowc`, which does not have a sequence of return values that can adequately represent e.g. Big5-HKSCS needing to output 2 different UTF-32 code points for some of its input characters (4 specific input sequences of them result in two UTF-32 code point outputs, to be precise).
@@ -951,16 +981,26 @@ As explained in [[#intro-problem-standard]], this has been a long-standing issue
 
 C++ has adopted identical changes to the one in this proposal here in Corentin Jabot's [[p2460r2]].
 
-As part of coping with these changes, implementations are offered 2 new macros, one predefined in the compiler and one in the standard library header `<wchar.h>` to reflect the new existing situation: 
+As part of coping with these changes, implementations are offered 9 new macros, 6 predefined in the compiler and three in the standard library header `<wchar.h>` to reflect the new existing situation: 
 
-- `__STDC_LITERAL_ISO10646__`, which is a predefined compiler macro describing whether the wide literal encoding (the compile-time `L""` string literal encoding) is ISO 10646 compliant for a single value of `wchar_t`. This can be achieved by UTF-32 implementations only.
-- `WCHAR_ISO10646`, which is a non-constant expression, that has a non-zero value if the wide **execution** encoding (the runtime encoding associated with `mbrtowc`, `wcrtomb`, and similar functions) is ISO 10646 compliant. Because this is a runtime check, it can handle the inherently runtime nature of this without compromising the compiler.
+- `__STDC_LITERAL_UTF8__`, which is a predefined compiler macro describing whether the literal encoding (the compile-time `""` string literal encoding) is ISO 10646 UTF-8 compliant (each element of the string is a single UTF-8 code unit). 
+- `__STDC_LITERAL_UTF16__`, which is a predefined compiler macro describing whether the literal encoding (the compile-time `""` string literal encoding) is ISO 10646 UTF-16 compliant (each element of the string is a single UTF-16 code unit). 
+- `__STDC_LITERAL_UTF32__`, which is a predefined compiler macro describing whether the literal encoding (the compile-time `""` string literal encoding) is ISO 10646 UTF-32 compliant (each element of the string is a single UTF-32 code unit). 
+- `__STDC_WIDE_LITERAL_UTF8__`, which is a predefined compiler macro describing whether the wide literal encoding (the compile-time `L""` string literal encoding) is UTF-16 compliant (each element of the string is a single UTF-8 code unit).
+- `__STDC_WIDE_LITERAL_UTF16__`, which is a predefined compiler macro describing whether the wide literal encoding (the compile-time `L""` string literal encoding) is UTF-16 compliant (each element of the string is a single UTF-16 code unit).
+- `__STDC_WIDE_LITERAL_UTF32__`, which is a predefined compiler macro describing whether the wide literal encoding (the compile-time `L""` string literal encoding) is UTF-32 compliant (each element of the string is a single UTF-32 code unit).
+- `WCHAR_UTF8`, which is a non-constant expression, that has a non-zero value if the **wide execution** encoding (the runtime encoding associated with `mbrtowc`, `wcrtomb`, and similar functions) is ISO 10646 compliant for UTF-8. Because this is a runtime check, it can handle the inherently runtime nature of this without compromising the compiler.
+- `WCHAR_UTF16`, which is a non-constant expression, that has a non-zero value if the **wide execution** encoding (the runtime encoding associated with `mbrtowc`, `wcrtomb`, and similar functions) is ISO 10646 compliant for UTF-16. Because this is a runtime check, it can handle the inherently runtime nature of this without compromising the compiler.
+- `WCHAR_UTF32`, which is a non-constant expression, that has a non-zero value if the **wide execution** encoding (the runtime encoding associated with `mbrtowc`, `wcrtomb`, and similar functions) is ISO 10646 compliant for UTF-32. Because this is a runtime check, it can handle the inherently runtime nature of this without compromising the compiler.
+- `MB_UTF8`, which is a non-constant expression, that has a non-zero value if the **execution** encoding (the runtime encoding associated with `mbrtowc`, `wcrtomb`, and similar functions) is ISO 10646 compliant for UTF-8. Because this is a runtime check, it can handle the inherently runtime nature of this without compromising the compiler.
+- `MB_UTF16`, which is a non-constant expression, that has a non-zero value if the **execution** encoding (the runtime encoding associated with `mbrtowc`, `wcrtomb`, and similar functions) is ISO 10646 compliant for UTF-16. Because this is a runtime check, it can handle the inherently runtime nature of this without compromising the compiler.
+- `MB_UTF32`, which is a non-constant expression, that has a non-zero value if the **execution** encoding (the runtime encoding associated with `mbrtowc`, `wcrtomb`, and similar functions) is ISO 10646 compliant for UTF-32. Because this is a runtime check, it can handle the inherently runtime nature of this without compromising the compiler.
 
 These changes are necessary because, as Clang implementers have pointed out in various issues against their compiler (such as [[clang-iso10646|this one]]), they cannot know before-hand whether or not the compiler can predefine this because the standard has mixed both execution encoding (execution time) and literal encoding (translation time) into the same macro, and asks the compiler to predefine it. An execution time property cannot be provably ascertained by the compiler ahead of time.
 
 GCC and other platforms work around this by using a special, internal, implementation-defined mechanism such as `stdc-predef.h`, where they collect a number of environment macros and then use them to provide enhanced compile-time information. Clang does not have the same powers right now and so, in a completely conforming manner, simply shuts off the macro despite the information it providing being very useful on a myriad of platforms.
 
-By separating the literal encoding macro with the new `__STDC_LITERAL_ISO10646__`, and leaving the `__STDC_ISO10646__` macro to represent a **potential** interpretation of both translation and execution time behavior, we give the user more actionable information and prevent split compiler/library implementations like Clang from needing special knowledge to provide useful information. We also allow implementations to provide the information at runtime, which -- especially for large strings -- can provide sufficiently actionable information that even doing the check at runtime can give significant performance improvements. (UTF-32 based encoding and decoding routines are often very heavily optimized, as compared to generic locale-based conversion routines in not only C and C++ implementations, but routines underlying Haskell, Go, and other programming languages. See the work in Daniel Lemire's [[lemire-spire2021]].)
+By separating the literal encoding macros into new `__STDC_(WIDE_)LITERAL_UTF(8/16/32)__` parts, and leaving the `__STDC_ISO10646__` macro to represent a **potential** interpretation of both translation and execution time behavior, we give the user more actionable information and prevent split compiler/library implementations like Clang from needing special knowledge to provide useful information. We also allow implementations to provide the information at runtime, which -- especially for large strings -- can provide sufficiently actionable information that even doing the check at runtime can give significant performance improvements. (UTF-32 based encoding and decoding routines are often very heavily optimized, as compared to generic locale-based conversion routines in not only C and C++ implementations, but routines underlying Haskell, Go, and other programming languages. See the work in Daniel Lemire's [[lemire-spire2021]].)
 
 No changes are needed to `__STDC_MB_MIGHT_NEQ_WC__` because the specification for this macro already deliberately refers to using a basic character set value "… as the line character in an integer character constant" (§6.10.9.2, ¶1, [[n3054]]). Therefore, the only change to this predefined macro is in its description where it applies directly to the literal **AND** wide literal encodings, rather than only one.
 
@@ -971,7 +1011,7 @@ These changes strengthen C's legacy as a language suitable for powerful string p
 
 # Conclusion # {#conclusion}
 
-The ecosystem deserves ways to get to a statically-known encoding and not rely on implementation and locale-parameterized encodings. This allows developers a way to perform cross-platform text processing without needing to go through fantastic gymnastics to support different languages and platforms. An independent library implementation, _cuneicode_ (talked about from [[Unicode_greater_detail|Meeting C++]] and [[Unicode_deep_c_diving|C++ On Sea]]), is now [[cuneicode|publicly available to everyone]].
+The ecosystem deserves ways to get to a statically-known encoding and not rely on implementation and locale-parameterized encodings. This allows developers a way to perform cross-platform text processing without needing to go through fantastic gymnastics to support different languages and platforms. An independent library implementation, *cuneicode* (talked about from [[Unicode_greater_detail|Meeting C++]] and [[Unicode_deep_c_diving|C++ On Sea]]), is now [[cuneicode|publicly available to everyone]].
 
 
 
@@ -990,6 +1030,7 @@ The intent of the wording is to provide transcoding functions that:
 - define the notion of an "indivisible unit of work";
 - remove the requirement that wide characters must represent a full, complete unit for all wide execution encodings that exist on the machine as they do not today;
 - introduce the notion of multi-unit work that does not use the same 1:N or M:1 design as the precious `wchar_t` functions;
+- introduce new macros that allow for a programmer to tell the difference between
 - convert from the execution ("`mc`") and wide execution ("`mwc`") encodings to the Unicode ("`c8`", "`c16`", "`c32`") encodings and vice-versa;
 - convert from the execution ("`mc`") encoding to the wide execution ("`mwc`") encoding and vice-versa;
 - provide a way for `mbstate_t` to be properly initialized as the initial conversion state; and,
@@ -1045,7 +1086,17 @@ The following are unspecified:
 
 :: `__STDC_ISO_10646__` An integer constant of the form `yyyymmL` (for example, `199712L`). If this symbol is defined, then every character in the Unicode required set, when stored in an object of type `wchar_t`, has the same value as the short identifier of that character. The Unicode required set consists of all the characters that are defined by ISO/IEC 10646, along with all amendments and technical corrigenda, as of the specified year and month. If some other encoding is used, the macro shall not be defined and the actual encoding used is implementation-defined.
 
-:: <ins>`__STDC_LITERAL_ISO10646__` An integer constant of the form `yyyymmL` (for example, `202012L`). If this symbol is defined, then the wide literal encoding (6.2.9) is capable of storing every character in the Unicode required set and each object of `wchar_t` from string or character literals has a value that is the same as the short identifier of the character.</ins>
+:: <ins>`__STDC_LITERAL_UTF8__` An integer constant of the form `yyyymmL` (for example, `202012L`). If this symbol is defined, then the literal encoding (6.2.9) is capable of storing every character in the Unicode required set and every sequence of `char` from a string literal (excluding non-Universal character escape sequences) forms a valid encoding of UTF-8 sequence.</ins>
+
+:: <ins>`__STDC_LITERAL_UTF16__` An integer constant of the form `yyyymmL` (for example, `202012L`). If this symbol is defined, then the literal encoding (6.2.9) is capable of storing every character in the Unicode required set and every sequence of `char` from a string literal (excluding non-Universal character escape sequences) forms a valid encoding of UTF-16 sequence.</ins>
+
+:: <ins>`__STDC_LITERAL_UTF32__` An integer constant of the form `yyyymmL` (for example, `202012L`). If this symbol is defined, then the literal encoding (6.2.9) is capable of storing every character in the Unicode required set and every sequence of `char` from a string literal (excluding non-Universal character escape sequences) forms a valid encoding of UTF-32 sequence.</ins>
+
+:: <ins>`__STDC_WIDE_LITERAL_UTF8__` An integer constant of the form `yyyymmL` (for example, `202012L`). If this symbol is defined, then the wide literal encoding (6.2.9) is capable of storing every character in the Unicode required set and every sequence of `w_chart` from a `wchar_t` string literal (excluding non-Universal character escape sequences) forms a valid encoding of UTF-8 sequence.</ins>
+
+:: <ins>`__STDC_WIDE_LITERAL_UTF16__` An integer constant of the form `yyyymmL` (for example, `202012L`). If this symbol is defined, then the wide literal encoding (6.2.9) is capable of storing every character in the Unicode required set and every sequence of `wchar_t` from a `wchar_t` string literal (excluding non-Universal character escape sequences) forms a valid encoding of UTF-16 sequence.</ins>
+
+:: <ins>`__STDC_WIDE_LITERAL_UTF32__` An integer constant of the form `yyyymmL` (for example, `202012L`). If this symbol is defined, then the wide literal encoding (6.2.9) is capable of storing every character in the Unicode required set and every sequence of `wchar_t` from a `wchar_t` string literal (excluding non-Universal character escape sequences) forms a valid encoding of a UTF-32 sequence.</ins>
 
 :: `__STDC_MB_MIGHT_NEQ_WC__` The integer constant `1`, intended to indicate that, in the <ins>wide literal </ins>encoding for `wchar_t`, a member of the basic character set need not have a code value equal to its value when used as the lone character in an integer character constant.
 
@@ -1099,7 +1150,7 @@ which is an integer type whose range of values can represent <del>distinct codes
 
 <div class="wording-section">
 <div class="wording-numbered">
-The header `<wchar.h>` defines <del>four</del><ins>five</ins> macros, and declares four data types, one tag, and many functions.
+The header `<wchar.h>` defines <del>four</del><ins>several</ins> macros, and declares four data types, one tag, and many functions.
 
 </div>
 
@@ -1115,11 +1166,35 @@ scribed in 7.22)<ins>;</ins>
 <ins>
 
 ```cpp
-WCHAR_ISO10646
+WCHAR_UTF8
+WCHAR_UTF16
+WCHAR_UTF32
 ```
 </ins>
 
-<ins>which expands to an expression of signed or unsigned integer type that is non-zero if the wide execution encoding (6.2.9) is both capable of representing every character in the required Unicode set, and also if the character stored in a `wchar_t` object shall have a value equivalent to the short identifier of the character</ins>; and,
+<ins>which expand to an expression of signed or unsigned integer type whose value is non-zero if:
+
+- the wide execution encoding (6.2.9) is capable of representing every character in the required Unicode set;
+- the width of `wchar_t` is at least 8, 16, or 32 for UTF-8, UTF-16, or UTF-32, respectively;
+- and, the values of a sequence of `wchar_t` objects consumed and produced by related character functions have a values consistent with a sequence of code units of the UTF-8, UTF-16, or UTF-32 encodings, respectively.
+
+</ins>
+
+<ins>
+```cpp
+MB_UTF8
+MB_UTF16
+MB_UTF32
+```
+</ins>
+
+<ins>which expand to an expression of signed or unsigned integer type whose value is non-zero if:
+
+- the execution encoding (6.2.9) is capable of representing every character in the required Unicode set;
+- the width of `char` is at least 8, 16, or 32 for UTF-8, UTF-16, or UTF-32, respectively;
+- and, the values of a sequence of `char` objects consumed and produced by related character functions have a values consistent with a sequence of code units of the UTF-8, UTF-16, or UTF-32 encodings, respectively;
+
+</ins> and,
 
 ````cpp
 WEOF
@@ -1246,7 +1321,7 @@ Functions in `<stdmchar.h>` which use `char` and `wchar_t`, or their qualified f
 
 <div>
 <span class="footnote-ref">FN✨0)</span>
-<span class="footnote">Each value is treated as code units and not as a container of octets. This means that the decision of, for example, UTF-16 in big or little endian encoding scheme is decided by the endianness of the code unit type. Only whole code unit values are used, i.e., a UTF-32 code point value of U+0001F377 represents a value identical to how `U'\U0001F377'` is stored by the implementation. This requirement does not apply to the implementation-defined literal, wide literal, narrow execution, and wide execution encodings, but does apply to the Unicode encodings.</span>
+<span class="footnote">Each value is treated as code units and not as a container of octets. This means that the decision of, for example, UTF-16 in big or little endian encoding scheme is decided by the endianness of the code unit type. Only whole code unit values are used, i.e., a UTF-32 code point value of U+1F377 represents a value identical to how `U'\U0001F377'` is stored by the implementation. This requirement does not apply to the implementation-defined literal, wide literal, narrow execution, and wide execution encodings, but does apply to the Unicode encodings.</span>
 </div>
 <br/>
 
@@ -2145,6 +2220,13 @@ Thankfully, that does not seem to be the case at this time. It will also no long
 		"title": "Unicode at Gigabytes per Second",
 		"href": "https://doi.org/10.48550/arXiv.2111.08692",
 		"date": "November 14th, 2021"
+	},
+	"n2892": {
+		"authors": [
+			"Jens Gustedt"
+		],
+		"title": "N2892: Basic lambdas for C",
+		"href": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2892.pdf"
 	}
 }
 </pre>
