@@ -1506,7 +1506,7 @@ Possible extra rowspan handling
   <meta content="Bikeshed version 82ce88815, updated Thu Sep 7 16:33:55 2023 -0700" name="generator">
   <link href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Efficient%20Character%20Conversions.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="cbd9758c9b2c261d63c5bf66ee85d4dd54fd5fbd" name="document-revision">
+  <meta content="5334e9ffcfa837c6e2242d9485c1febf44ceee96" name="document-revision">
 <style>
 :root {
 	/* Default (light) theme */
@@ -2418,6 +2418,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
        </ol>
       <li><a href="#design-extension"><span class="secno">4.2</span> <span class="content">Extension Functions &amp; Methods (Building on top of this API)</span></a>
       <li><a href="#design-wchar_t"><span class="secno">4.3</span> <span class="content"><code class="highlight"><c- b>wchar_t</c-></code> and Existing practice</span></a>
+      <li><a href="#design-state"><span class="secno">4.4</span> <span class="content"><code class="highlight"><c- b>mbstate_t</c-></code> and state handling</span></a>
      </ol>
     <li><a href="#conclusion"><span class="secno">5</span> <span class="content">Conclusion</span></a>
     <li>
@@ -2462,15 +2463,20 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
      <p>Rewrite specification to be far more understandable.</p>
      <ul>
       <li data-md>
-       <p>Move most footnotes to proper NOTEs. (This is in line with ISO editorial guidance anyhow.)</p>
+       <p>Move most footnotes to proper NOTEs. (This is in line with ISO editorial guidance to reduce footnote usage as much as possible.)</p>
       <li data-md>
        <p>Remove uses of "may" in NOTEs/EXAMPLEs.</p>
       <li data-md>
+       <p>Define special "write output"/"read input" words and use them to simplify specification for transcoding functions.</p>
      </ul>
     <li data-md>
      <p>Point out that C++ has made a similar change for its <code class="highlight"><c- b>wchar_t</c-></code> in <a data-link-type="biblio" href="#biblio-p2460r2" title="Relax requirements on wchar_t to match existing practices">[p2460r2]</a> and that if we would like to remain in sync, C should consider following suit, as described in <a href="#design-wchar_t">§ 4.3 wchar_t and Existing practice</a>.</p>
     <li data-md>
-     <p>Improve the set of macros available from <code class="highlight"><c- o>&lt;</c-><c- n>wchar</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code> and predefined in the compiler based on feedback and discuss in <a href="#design-wchar_t">§ 4.3 wchar_t and Existing practice</a>.</p>
+     <p>Improve the set of macros available from <code class="highlight"><c- o>&lt;</c-><c- n>wchar</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code> and predefined in the compiler based on feedback and design discussion in <a href="#design-wchar_t">§ 4.3 wchar_t and Existing practice</a>.</p>
+    <li data-md>
+     <p>Clarify that setting <code class="highlight"><c- o>*</c-><c- n>state</c-></code> to its initial sequence when given a null pointer as <code class="highlight"><c- n>input</c-></code> (or <code class="highlight"><c- o>*</c-><c- n>input</c-></code>) is a feature of the legacy API that is being carried over in <a href="#design-state">§ 4.4 mbstate_t and state handling</a>.</p>
+    <li data-md>
+     <p>Add additional paragraph at the end of <a href="#design-forms-state">§ 4.1.1 mbstate_t Parameter for Unicode-only Conversions?</a> explaining why its still good to have the <code class="highlight"><c- b>mbstate_t</c-></code> parameter for Unicode encodings.</p>
    </ul>
    <h3 class="heading settled" data-level="1.2" id="changelog-r11"><span class="secno">1.2. </span><span class="content">Revision 11 - January 31<sup>st</sup>, 2023</span><a class="self-link" href="#changelog-r11"></a></h3>
    <ul>
@@ -3279,6 +3285,7 @@ operating outside the scope of the standard.</p>
    <p>As a negative, it requires writes through indirect pointers for both the input and output, as well as for the sizes for the input and output. This causes multiple updates to be necessary, and duplicates information in exchange for a moderate decrease in ease-of-use. U#fortunately, it turns out this form is actually necessary for all of the functionality proposed here.</p>
    <h4 class="heading settled" data-level="4.1.1" id="design-forms-state"><span class="secno">4.1.1. </span><span class="content"><code class="highlight"><c- b>mbstate_t</c-></code> Parameter for Unicode-only Conversions?</span><a class="self-link" href="#design-forms-state"></a></h4>
    <p>Because the Unicode conversions, as specified, require no intermediate holdings, there is technically no reason to provide the <code class="highlight"><c- b>mbstate_t</c-></code> parameter. However, macro-generic programming used to wrap this code may partially rely on having an additional parameter to pass to the function. There is currently no way to have a variable argument parameter in a macro reflected with <code class="highlight"><c- n>__VA_ARGS__</c-></code> without undefined behavior / implementation extensions, and solving such an issue would take even more advanced macro generic programming to solve the problem. Therefore, we keep the <code class="highlight"><c- b>mbstate_t</c-></code> parameter, noting that passing the state object or just simply passing <code class="highlight">NULL</code>/<code class="highlight"><c- mi>0</c-></code> all the time to such a parameter is a viable usage strategy. We realize this is not ideal but it is <a href="https://ztdcuneicode.readthedocs.io/en/latest/api/generic%20typed%20conversions.html#c.cnc_cxsnrtocysn">how it has been implemented in our code</a>.</p>
+   <p>A much more compelling reason is that additional (un)safe options can be grafted into the <code class="highlight"><c- b>mbstate_t</c-></code> object for use with Unicode conversions. This has been done for the purposes of optimization and has produced wildly successful results, as shown by how competitive cuneicode can be on the <a href="https://ztdtext.readthedocs.io/en/latest/benchmarks/transcoding%20-%20UTF.html">transcoding benchmarks</a>.</p>
    <h4 class="heading settled" data-level="4.1.2" id="design-forms-simplify"><span class="secno">4.1.2. </span><span class="content">Simplification Without Loss of Functionality?</span><a class="self-link" href="#design-forms-simplify"></a></h4>
    <p>An attempt to fix this is done by utilizing the form in (2), which prevents giving the sizes as pointers but still has pointer-to-pointer values. Unfortunately for design (2), this means that it is impossible to perform a "counting" operation (just calculate the number of code units to write out or the number of input characters that will be consumed) without having a valid buffer to write data into, so that before/after pointer values for <code class="highlight"><c- n>output</c-></code> can be subtracted from one another.</p>
    <p>One could then try to smuggle the error code into the return value, albeit down that path is fraught with API design issues. One would need to exclude the values <code class="highlight"><c- mi>0</c-></code>, <code class="highlight"><c- mi>-1</c-></code>, <code class="highlight"><c- mi>-2</c-></code>, and <code class="highlight"><c- mi>-3</c-></code> from being used in return values, or some other set of arbitrary values. These are not good ideas and C users have struggled with APIs that behaved this way in the past: see the conversion functions currently in the C Standard which behave in this manner and obfuscate the return value for <code class="highlight"><c- mi>0</c-></code> (which still writes out a character but also indicates other actions performed) or the case of <code class="highlight"><c- mi>-3</c-></code> (where multiple write outs may need to happen so the function needs to be called again). These issues have also caused fundamental limitations in the C standard library, as present in <a data-link-type="biblio" href="#biblio-glibc-25744" title="`mbrtowc` with Big5-HKSCS returns 2 instead of 1 when consuming the second byte of certain double byte characters">[glibc-25744]</a>.</p>
@@ -3303,11 +3310,12 @@ operating outside the scope of the standard.</p>
 
 <c- b>int</c-> <c- nf>main</c-><c- p>()</c-> <c- p>{</c->
   <c- c1>// This only works if we support extension functions!</c->
-  <c- k>const</c-> <c- n>ztd_char32_t</c-> <c- n>input_data</c-><c- p>[]</c-> <c- o>=</c-> U<c- s>"Bark Bark Bark </c-><c- se>\xFFFF</c-><c- s>FFFF🐕‍🦺!"</c-><c- p>;</c->
   <c- n>ztd_char8_t</c-> <c- n>output_data</c-><c- p>[</c-><c- n>ztdc_c_array_size</c-><c- p>(</c-><c- n>input_data</c-><c- p>)</c-> <c- o>*</c-> <c- n>CNC_C8_MAX</c-><c- p>]</c-> <c- o>=</c-> <c- p>{</c-> <c- mi>0</c-> <c- p>};</c->
   <c- n>cnc_mcstate_t</c-> <c- n>state</c->                                                 <c- o>=</c-> <c- p>{</c-> <c- mi>0</c-> <c- p>};</c->
   <c- n>cnc_c32c8_error_result_t</c-> <c- n>err_result</c-> <c- o>=</c-> <c- n>cnc_cxsrtocysn_into_with_handler</c-><c- p>(</c->
-       <c- n>ztdc_c_array_size</c-><c- p>(</c-><c- n>output_data</c-><c- p>),</c-> <c- n>output_data</c-><c- p>,</c-> <c- n>input_data</c-><c- p>,</c-> <c- o>&amp;</c-><c- n>state</c-><c- p>,</c->
+       <c- n>ztdc_c_array_size</c-><c- p>(</c-><c- n>output_data</c-><c- p>),</c-> <c- n>output_data</c-><c- p>,</c->
+    <c- o>&amp;</c->U<c- s>"Bark Bark Bark </c-><c- se>\xFFFF</c-><c- s>FFFF🐕‍🦺!"</c-><c- p>[</c-><c- mi>0</c-><c- p>],</c->
+    <c- o>&amp;</c-><c- n>state</c-><c- p>,</c->
        <c- n>cnc_skip_input_and_replace_error</c-><c- p>,</c-> NULL<c- p>);</c->
   <c- c1>// …</c->
 <c- p>}</c->
@@ -3329,7 +3337,7 @@ operating outside the scope of the standard.</p>
     <li data-md>
      <p><code class="highlight"><c- n>__STDC_LITERAL_UTF32__</c-></code>, which is a predefined compiler macro describing whether the literal encoding (the compile-time <code class="highlight"><c- s>""</c-></code> string literal encoding) is ISO 10646 UTF-32 compliant (each element of the string is a single UTF-32 code unit).</p>
     <li data-md>
-     <p><code class="highlight"><c- n>__STDC_WIDE_LITERAL_UTF8__</c-></code>, which is a predefined compiler macro describing whether the wide literal encoding (the compile-time <code class="highlight">L<c- s>""</c-></code> string literal encoding) is UTF-16 compliant (each element of the string is a single UTF-8 code unit).</p>
+     <p><code class="highlight"><c- n>__STDC_WIDE_LITERAL_UTF8__</c-></code>, which is a predefined compiler macro describing whether the wide literal encoding (the compile-time <code class="highlight">L<c- s>""</c-></code> string literal encoding) is UTF-8 compliant (each element of the string is a single UTF-8 code unit).</p>
     <li data-md>
      <p><code class="highlight"><c- n>__STDC_WIDE_LITERAL_UTF16__</c-></code>, which is a predefined compiler macro describing whether the wide literal encoding (the compile-time <code class="highlight">L<c- s>""</c-></code> string literal encoding) is UTF-16 compliant (each element of the string is a single UTF-16 code unit).</p>
     <li data-md>
@@ -3363,6 +3371,9 @@ operating outside the scope of the standard.</p>
 <c- cp>#define WCHAR_UTF32 0</c->
 </pre>
    <p>A more sophisticated implementation is demonstrated using values computed with functions in <a href="https://github.com/soasis/idk/blob/613a52df6995c0afd3f2457219a3961859f006b2/include/ztd/idk/encoding_detection.h#L60-L89">ztd.idk’s headers</a> and <a href="https://github.com/soasis/idk/blob/613a52df6995c0afd3f2457219a3961859f006b2/source/ztd/idk/encoding_detection.c.cpp">ztd.idk’s source files</a>.</p>
+   <h3 class="heading settled" data-level="4.4" id="design-state"><span class="secno">4.4. </span><span class="content"><code class="highlight"><c- b>mbstate_t</c-></code> and state handling</span><a class="self-link" href="#design-state"></a></h3>
+   <p>The newly proposed functions have some behavior that, on inspection, may seem unnecessary, duplicated, or superfluous. For example, processing a null pointer for the <code class="highlight"><c- n>input</c-></code> (or <code class="highlight"><c- o>*</c-><c- n>input</c-></code>) resulting in setting <code class="highlight"><c- o>*</c-><c- n>state</c-></code> to the initial conversion sequence. We note here that this functionality exists in the API because the legacy APIs such as <code class="highlight"><c- n>mbrtowc</c-></code> and its friends also have that behavior. In order to make portability as easy as humanly possible (and to allow, with minimal tweaking, reusing such functions internally if its helpful), we leave the equivalent behaviors intact in this API.</p>
+   <p>Additionally, the processing of code units with a value of <code class="highlight">\<c- mi>0</c-></code> also setting <code class="highlight"><c- o>*</c-><c- n>state</c-></code> to the initial conversion state is a legacy holdover from how the previous functions work. Again, this is multiple ways to clear <code class="highlight"><c- o>*</c-><c- n>state</c-></code> in a way that is not just doing the equivalent of zero-initializing the bits with <code class="highlight"><c- o>=</c-> <c- p>{}</c-></code>, <code class="highlight"><c- o>=</c-> <c- p>(</c-><c- b>mbstate_t</c-><c- p>){}</c-></code>, or similar assignment or initialization expressions. This can be useful when one wants to preserve certain internal bits in their library, such as not clearing an implementation-defined set of bits for doing non-validating, fast conversions. See [the <code class="highlight"><c- n>cnc_mcstate_t</c-></code> assumption setting/getting documentation](https://ztdcuneicode.readthedocs.io/en/latest/api/mcstate_t.html#state-functions) for an example of affecting a state object to perform additional behaviors beyond what is sanctioned by the specification itself.</p>
    <h2 class="heading settled" data-level="5" id="conclusion"><span class="secno">5. </span><span class="content">Conclusion</span><a class="self-link" href="#conclusion"></a></h2>
    <p>The ecosystem deserves ways to get to a statically-known encoding and not rely on implementation and locale-parameterized encodings. This allows developers a way to perform cross-platform text processing without needing to go through fantastic gymnastics to support different languages and platforms. An independent library implementation, <em>cuneicode</em> (talked about from <a data-link-type="biblio" href="#biblio-unicode_greater_detail" title="Catching ⬆️: Unicode for C++ in Greater Detail">Meeting C++</a> and <a data-link-type="biblio" href="#biblio-unicode_deep_c_diving" title="Deep C Diving - Fast and Scalable Text Interfaces at the Bottom">C++ On Sea</a>), is now <a data-link-type="biblio" href="#biblio-cuneicode" title="cuneicode - A spicy text library for C">publicly available to everyone</a>.</p>
    <h2 class="heading settled" data-level="6" id="wording"><span class="secno">6. </span><span class="content">Proposed Wording</span><a class="self-link" href="#wording"></a></h2>
@@ -3451,7 +3462,7 @@ current locale</del>
       <p>
        which is an integer type whose range of values can represent 
        <del>distinct codes for all members of the largest extended character set specified among the supported locales;</del>
-       <ins>codes for all the members of the supported wide execution and wide literal encodings (6.2.9);</ins>
+       <ins>codes (or part of a sequence of codes) for all the members of the supported wide execution and wide literal encodings (6.2.9);</ins>
         the null character shall have the code value zero. Each member of the basic character set shall have a code value equal to its value when used as the lone character in an integer character constant if an implementation does not define <code class="highlight"><c- n>__STDC_MB_MIGHT_NEQ_WC__</c-></code>; and,
       </p>
      </div>

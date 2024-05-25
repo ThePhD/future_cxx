@@ -36,11 +36,13 @@ path: resources/css/bikeshed-wording.html
 ## Revision 12 - May 20<sup>th</sup>, 2024 ## {#changelog-r12}
 
 - Rewrite specification to be far more understandable.
-	- Move most footnotes to proper NOTEs. (This is in line with ISO editorial guidance anyhow.)
+	- Move most footnotes to proper NOTEs. (This is in line with ISO editorial guidance to reduce footnote usage as much as possible.)
 	- Remove uses of "may" in NOTEs/EXAMPLEs.
-	- 
+	- Define special "write output"/"read input" words and use them to simplify specification for transcoding functions.
 - Point out that C++ has made a similar change for its `wchar_t` in [[p2460r2]] and that if we would like to remain in sync, C should consider following suit, as described in [[#design-wchar_t]].
-- Improve the set of macros available from `<wchar.h>` and predefined in the compiler based on feedback and discuss in [[#design-wchar_t]].
+- Improve the set of macros available from `<wchar.h>` and predefined in the compiler based on feedback and design discussion in [[#design-wchar_t]].
+- Clarify that setting `*state` to its initial sequence when given a null pointer as `input` (or `*input`) is a feature of the legacy API that is being carried over in [[#design-state]].
+- Add additional paragraph at the end of [[#design-forms-state]] explaining why its still good to have the `mbstate_t` parameter for Unicode encodings. 
 
 
 
@@ -907,6 +909,8 @@ As a negative, it requires writes through indirect pointers for both the input a
 
 Because the Unicode conversions, as specified, require no intermediate holdings, there is technically no reason to provide the `mbstate_t` parameter. However, macro-generic programming used to wrap this code may partially rely on having an additional parameter to pass to the function. There is currently no way to have a variable argument parameter in a macro reflected with `__VA_ARGS__` without undefined behavior / implementation extensions, and solving such an issue would take even more advanced macro generic programming to solve the problem. Therefore, we keep the `mbstate_t` parameter, noting that passing the state object or just simply passing `NULL`/`0` all the time to such a parameter is a viable usage strategy. We realize this is not ideal but it is [how it has been implemented in our code](https://ztdcuneicode.readthedocs.io/en/latest/api/generic%20typed%20conversions.html#c.cnc_cxsnrtocysn).
 
+A much more compelling reason is that additional (un)safe options can be grafted into the `mbstate_t` object for use with Unicode conversions. This has been done for the purposes of optimization and has produced wildly successful results, as shown by how competitive cuneicode can be on the [transcoding benchmarks](https://ztdtext.readthedocs.io/en/latest/benchmarks/transcoding%20-%20UTF.html).
+
 
 ### Simplification Without Loss of Functionality? ### {#design-forms-simplify}
 
@@ -956,11 +960,12 @@ We can achieve a better API for all of this by utilizing either Statement Expres
 
 int main() {
 	// This only works if we support extension functions!
-	const ztd_char32_t input_data[] = U"Bark Bark Bark \xFFFFFFFF🐕‍🦺!";
 	ztd_char8_t output_data[ztdc_c_array_size(input_data) * CNC_C8_MAX] = { 0 };
 	cnc_mcstate_t state                                                 = { 0 };
 	cnc_c32c8_error_result_t err_result = cnc_cxsrtocysn_into_with_handler(
-	     ztdc_c_array_size(output_data), output_data, input_data, &state,
+	     ztdc_c_array_size(output_data), output_data,
+		&U"Bark Bark Bark \xFFFFFFFF🐕‍🦺!"[0],
+		&state,
 	     cnc_skip_input_and_replace_error, NULL);
 	// …
 }
@@ -989,7 +994,7 @@ As part of coping with these changes, implementations are offered 12 new macros,
 - `__STDC_LITERAL_UTF8__`, which is a predefined compiler macro describing whether the literal encoding (the compile-time `""` string literal encoding) is ISO 10646 UTF-8 compliant (each element of the string is a single UTF-8 code unit). 
 - `__STDC_LITERAL_UTF16__`, which is a predefined compiler macro describing whether the literal encoding (the compile-time `""` string literal encoding) is ISO 10646 UTF-16 compliant (each element of the string is a single UTF-16 code unit). 
 - `__STDC_LITERAL_UTF32__`, which is a predefined compiler macro describing whether the literal encoding (the compile-time `""` string literal encoding) is ISO 10646 UTF-32 compliant (each element of the string is a single UTF-32 code unit). 
-- `__STDC_WIDE_LITERAL_UTF8__`, which is a predefined compiler macro describing whether the wide literal encoding (the compile-time `L""` string literal encoding) is UTF-16 compliant (each element of the string is a single UTF-8 code unit).
+- `__STDC_WIDE_LITERAL_UTF8__`, which is a predefined compiler macro describing whether the wide literal encoding (the compile-time `L""` string literal encoding) is UTF-8 compliant (each element of the string is a single UTF-8 code unit).
 - `__STDC_WIDE_LITERAL_UTF16__`, which is a predefined compiler macro describing whether the wide literal encoding (the compile-time `L""` string literal encoding) is UTF-16 compliant (each element of the string is a single UTF-16 code unit).
 - `__STDC_WIDE_LITERAL_UTF32__`, which is a predefined compiler macro describing whether the wide literal encoding (the compile-time `L""` string literal encoding) is UTF-32 compliant (each element of the string is a single UTF-32 code unit).
 - `WCHAR_UTF8`, which is a non-constant expression, that has a non-zero value if the **wide execution** encoding (the runtime encoding associated with `mbrtowc`, `wcrtomb`, and similar functions) is ISO 10646 compliant for UTF-8. Because this is a runtime check, it can handle the inherently runtime nature of this without compromising the compiler.
@@ -1022,6 +1027,14 @@ These changes strengthen C's legacy as a language suitable for powerful string p
 ```
 
 A more sophisticated implementation is demonstrated using values computed with functions in [ztd.idk's headers](https://github.com/soasis/idk/blob/613a52df6995c0afd3f2457219a3961859f006b2/include/ztd/idk/encoding_detection.h#L60-L89) and [ztd.idk's source files](https://github.com/soasis/idk/blob/613a52df6995c0afd3f2457219a3961859f006b2/source/ztd/idk/encoding_detection.c.cpp).
+
+
+
+## `mbstate_t` and state handling ## {#design-state}
+
+The newly proposed functions have some behavior that, on inspection, may seem unnecessary, duplicated, or superfluous. For example, processing a null pointer for the `input` (or `*input`) resulting in setting `*state` to the initial conversion sequence. We note here that this functionality exists in the API because the legacy APIs such as `mbrtowc` and its friends also have that behavior. In order to make portability as easy as humanly possible (and to allow, with minimal tweaking, reusing such functions internally if its helpful), we leave the equivalent behaviors intact in this API.
+
+Additionally, the processing of code units with a value of `\0` also setting `*state` to the initial conversion state is a legacy holdover from how the previous functions work. Again, this is multiple ways to clear `*state` in a way that is not just doing the equivalent of zero-initializing the bits with `= {}`, `= (mbstate_t){}`, or similar assignment or initialization expressions. This can be useful when one wants to preserve certain internal bits in their library, such as not clearing an implementation-defined set of bits for doing non-validating, fast conversions. See [the `cnc_mcstate_t` assumption setting/getting documentation](https://ztdcuneicode.readthedocs.io/en/latest/api/mcstate_t.html#state-functions) for an example of affecting a state object to perform additional behaviors beyond what is sanctioned by the specification itself.
 
 
 
@@ -1147,7 +1160,7 @@ The types are …
 wchar_t
 ```
 
-which is an integer type whose range of values can represent <del>distinct codes for all members of the largest extended character set specified among the supported locales;</del><ins>codes for all the members of the supported wide execution and wide literal encodings (6.2.9);</ins> the null character shall have the code value zero. Each member of the basic character set shall have a code value equal to its value when used as the lone character in an integer character constant if an implementation does not define `__STDC_MB_MIGHT_NEQ_WC__`; and,
+which is an integer type whose range of values can represent <del>distinct codes for all members of the largest extended character set specified among the supported locales;</del><ins>codes (or part of a sequence of codes) for all the members of the supported wide execution and wide literal encodings (6.2.9);</ins> the null character shall have the code value zero. Each member of the basic character set shall have a code value equal to its value when used as the lone character in an integer character constant if an implementation does not define `__STDC_MB_MIGHT_NEQ_WC__`; and,
 </div>
 </div>
 
