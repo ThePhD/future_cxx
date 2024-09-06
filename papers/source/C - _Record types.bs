@@ -1,0 +1,657 @@
+<pre class='metadata'>
+Title: _Record types
+H1: <code>_Record</code> types
+Shortname: 3332
+Revision: 0
+!Previous Revisions: None
+Status: P
+Date: 2024-09-06
+Group: WG14
+!Proposal Category: Change Request, Feature Request  
+!Target: C2y
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20A%20Measured%20Approach%20to%20_Operators.html
+!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-%20A%20Measured%20Approach%20to%20_Operators.bs">GitHub</a>
+Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
+Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+Abstract: User-controlled ways of handling compatibility for types in C, as a means to strengthen Type-Based Antialias Analysis but also give users an explicit handle on increasing type diversity in C.
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<div class="pagebreak"></div>
+
+
+
+
+# Changelog # {#changelog}
+
+
+
+# Revision 0 # {#changelog-r0}
+
+- Initial release. ✨
+
+
+
+
+# Introduction and Motivation # {#intro}
+
+The need for greater and more expansive compatibility due to various aspects of C programming — including macro-based generic programming for anonymous, in-line defined structures — has been increasingly high in C software. Furthermore, software which has been unable to get compatibility rules and aliasing rules to accommodate their code have worked largely by simply turning off strict type-based antialiasing analysis with flags such as `-fno-strict-aliasing`. (One major compiler vendor has simply decided to not implement any serious type-based antialiasing analysis and forego all of it.) This has put C in a tenuous situation, where its potentially rich type system is deeply at odds with some of its more serious and prominent users.
+
+
+
+## Type Compatibility Issues with Anonymous Types ## {#intro-anonymous}
+
+During the discussion of improving tag compatibility from Martin Uecker's [[N3037]], it was shown in a previous version of the paper that making all unnamed types compatible within the same translation unit would create a serious problem for type safety in C. Consider the following snippet of code:
+
+```cpp
+typedef struct { int value; } fahrenheit;
+typedef struct { int value; } celsius;
+```
+
+Under previous iterations of [[N3037]], these two would be considered compatible. This was seen as overreaching, as despite current C rules saying these two types are technically compatible if they are somehow accessed outside of the translation unit they are defined in, it violated safety within the translation unit itself. That is neither intended nor helpful, and could very well violate fundamental safety guarantees in a large body of software, particularly simulation and units-heavy software. Therefore, this provision was removed from in [[N3037]] before the paper was approved for C23.
+
+Speculation as to other ways of solving this problem were brought forward, such as making all anonymous structures identical except in the case where they are nested within a `typedef` declaration. None have been formally proposed yet, but the authors believe this subtle interaction would result in a greater complexity burden than is reasonably advisable. It is also unintuitive to go about things in this manner, as it would result in differnet behavior if a structure is named or not and specifically only in cases where a `typedef` is present or not.
+
+
+
+## Lack of Structural Typing ## {#intro-structural}
+
+Additionally, other kinds of code contain repetitive definitions of the same structure which logically, spiritually, and for all intents and purposes are exactly identical. Take these various range definitions in the headers of Andre Weissflog's sokol, a library that allows various different programming languages to interoperate with graphics in WASM, Nim, Zig, and others through C:
+
+- `typedef struct sfetch_range_t { const void* ptr; size_t size; } sfetch_range_t;` in [sokol_fetch.h](https://github.com/floooh/sokol/blob/df71cc24cb273c0cf68ccef91932c09893006b18/sokol_fetch.h#L1002-L1005)
+- `typedef struct sspine_range { const void* ptr; size_t size; } sspine_range;` in [sokol_spine.h](https://github.com/floooh/sokol/blob/df71cc24cb273c0cf68ccef91932c09893006b18/util/sokol_spine.h#L996)
+- `typedef struct sdtx_range { const void* ptr; size_t size; } sdtx_range;` in [sokol_debugtext.h](https://github.com/floooh/sokol/blob/df71cc24cb273c0cf68ccef91932c09893006b18/util/sokol_debugtext.h#L592-L595)
+
+Due to the current compatibility rules, these types are not compatible. And yet, the author of sokol has stated the only reason they are different types is for compilation time optimization:
+
+> They're all meant to be interchangeable. The reason they are separate is because I want the various sokol headers to be as standalone as possible (e.g. not require a shared "sokol_common.h" header).
+>
+> — [September 2nd, 2024](https://twitter.com/FlohOfWoe/status/1830557635822723503)
+
+Before this, Weissflog has also gone on to state:
+
+> I sometimes wish C had optional structurally typed structs (so that two differently named structs with the same interior are assignable to each other, would help to send data from one library to another without .‘entangling’ them via shared types.
+>
+> — [August 23rd, 2024](https://twitter.com/FlohOfWoe/status/1827000924377698395)
+
+This has also been a routine problem for developers who end up being the user of larger libraries or coordinating bigger projects, where disparate mathematics libraries and the like can be common. An example includes a frustration from a Doctor of Computer Science and Autodesk Meshmixer Creator Ryan Schmidt, offhandedly remarking on the current state of programming languages:
+
+> an utterly insane thing in (most? all?) programming languages is that you can have two separate math libraries, that each define their own vector-math types in exactly the same way, and there is no way to make `MyVector3f = YourVector3f` work transparently
+>
+> — [July 30th, 2024](https://twitter.com/rms80/status/1818307726960710139)
+
+Indeed, given the different definitions of even a 2 or 3 dimensional vector in [Datenwolf's linmath](https://github.com/datenwolf/linmath.h) versus [recp's cglm](https://github.com/recp/cglm) versus older libraries like [feselva's mathc](https://github.com/felselva/mathc), it can be frustrating coordinating these structures and types to work together with one another.
+
+Certain languages like [[ocaml-types|OCaml]] have types that use what is known as [[structural-typing|"structural typing"]], as is alluded to by Weissflog in his yearning for a better type system for C. These types only consider their members/fields/properties in order to determine type compatibility and identity. There are various "sub-flavors" of structural typing, but it effectively behaves exactly like C type compatibility with the caveat that the top-level structure or union name is not considered relevant when performing compatibility checks.
+
+
+
+## A Solution ## {#intro-solution}
+
+We are proposing a new keyword to allow **users** to explicitly annotate structures and unions which may have their top-level name ignored for compatibility purposes, as well as additional opt-in changes that are specified by the standard, and then further by implementations. The spelling of the keyword is `_Record` and `_Record( record-attributes … )`, and it creates new record modifiers which changes how types are considered compatible. Changing this allows explicit opt-in support for:
+
+- assignming between types that are fundamentally identically but differ in their top-level given tag name, as is the desire from the sokol example and the mathematics library example;
+- pointer-casting between types of identical type and name field layouts to allow for the long-standing practice of type-punning between two often "identical" types without an explicit `memcpy`;
+- passing such objects to morally, spiritually, and intentfully identical function calls without needing an explicit cast or conversion function;
+- protecting existing code which relies on the current and well-supported interpretation that nameless structures are all uniquely named and different within a single translation unit
+- and many, many more use cases covered in the [[#design]] section.
+
+This alleviates the pressure from having to find a precise formulation of `typedef` or empty strucutres which could disrupt and negatively impact existing code pointed out in previous minuted discussion of [[N3037]], while also giving users better explicit control of compatibility and sharing between different disparate and unconnected libraries. The design for `_Record` types is as below.
+
+
+
+
+# Design # {#design}
+
+The design of `_Record` and it's parenthesized counterpart is meant to accomplish a few critical goals that benefit both end-users and implementation vendors alike:
+
+- allow the user to explicitly opt a type into a shared space with similar types;
+- strengthen the case for type-based alias analysis by making the compatibility for many near-identical classes explicitly understood from explicit user opt-in;
+- promote ease of use between morally, spiritually, and semantically identical types **without** impacting existing code;
+- and, give vendors mechanisms to provide additional, separate-from-the-standard behaviors for compatibility.
+
+Note: This does NOT provide standards-blessed semantics for aliasing or assigning disparate types of different field types. That is covered under the [[#design-vendor.impl|vendor-provided record modifiers]] portion, and we hope that in providing that level of space we can further strengthen the case for type-based alias analysis by giving users and vendors more controls over layout-based compatibility. However, this proposal at this time does not have any mechanisms for allowing the punning of e.g. a structure with a single `int32_t` member and a structure with a single `float` member.
+
+A quick example looks as follows:
+
+```cpp
+typedef struct _Record range {
+	void* ptr;
+	size_t size;
+} range;
+
+typedef struct _Record slice {
+	void* ptr;
+	size_t size;
+} slice;
+
+void slice_func(slice value);
+
+int main () {
+	unsigned char data[1];
+	struct range r = { .ptr = data, .size = sizeof(data) };
+	struct slice s = { .ptr = data, .size = sizeof(data) };
+
+	slice_func(r); // ok
+	struct range* r = &s; // ok
+	r = s; // ok
+	
+	return 0;
+}
+```
+
+
+This design achieves those goals, in various ways. First, let us review the syntax that lets us achieve this.
+
+
+
+## Syntax ## {#design-syntax}
+
+Syntactically, `_Record` is a new keyword that is part of the declarator for a type definition. It goes between the tag type of `struct` or `union` and the identifier, and before the attribute specifier sequence:
+
+```cpp
+struct _Record meow { char __padding; }; // ok
+struct _Record[[some, attribs]] bark { char __padding; }; // ok
+struct _Record { char __padding; }; // ok
+struct _Record [[other_attrib]] { char __padding; }; // ok
+
+union _Record meow { char __padding; }; // ok
+union _Record[[some, attribs]] bark { char __padding; }; // ok
+union _Record { char __padding; }; // ok
+union _Record [[other_attrib]] { char __padding; }; // ok
+```
+
+Every definition of a type must agree and either have `_Record` on it like the first definition or not have `_Record` on it. `_Record` does not need to be placed on the type when forwarding declaring or referencing the type anymore: it will always be considered a `_Record` type. A type that was previously defined without `_Record` cannot be redefined with the `_Record` keyword on it. A forward declaration also cannot contain `_Record`, because it only carries meaning on the defining declaration:
+
+```cpp
+struct _Record meow; // constraint violation
+
+struct _Record bark { char __padding; }; // ok
+
+int main () {
+	struct bark b = {}; // ok
+	struct _Record bark b2 = {}; // constraint violation;
+	struct _Record woof { char __padding; } w0 = {}; // ok
+	struct _Record purr* p0; // constraint violation
+	return 0;
+}
+```
+
+
+
+## Shared Space vs. Fully Closed ## {#design-shared}
+
+The proposed semantics for `_Record` types is meant to be lenient and shared (also sometimes known as "*viral*"); that is, rather than needing both structures on both sides of a comparison, argument pass, or assignment to be annotated with `_Record`, only one of the structures or unions must be. This is very imporant because of preexisting code.
+
+Requiring that both sides of an assignment or argument pass requires the arduous task of modifying every existing library to have better semantics. It is against the charter and general nature of C over the last 40 years to require sweeping changes or steep investment in existing code to make these things work. Many fundamental libraries can be perfectly valid and usable, even if not well-maintained or locked into a specific era VIA contractual obligation. To bring more immediate usability outside of closely-knit ecosystems, the design of this system is so that only **one** of the two types for an assignment is record modified. Similarly, if there are two different kinds of record modified types, the standard defines the "order" in which record modifications take priority. In general, this priority can be considered as simply being from "most lenient" to "least lenient".
+
+Note that this does not subject any piece of code using known and well-understood mechanisms such as incomplete types / private source file definitions to suddenly be more or less compatible than they used to be. Record types are a property only of types with source-available definitions marked with `_Record` in a translation unit.
+
+
+
+## Generic Selection ## {#design-generic}
+
+The use of generic selection in codebases will be impacted by the changes here due to using type compatibility as a mechanism for improvement. However, at this time, generic selection has its issues due to not being based on better, stricter type matching semantics. While Aaron Ballman's [[N3260]] provided some of that through its own opt-in mechanism by providing a type rather than an expression, it still leaves the matching semantics dubious in cases with expressions. This includes for expressions which result in record types; if someone provides what are potentially 2 different types that match due to `_Record`, unintentional matches or sudden compilation errors will make things worse.
+
+There is no impact on exsiting code due to this feature being opt-in from users, but it can affect code written in the future with this feature. A follow-on paper will be written to address generic selection as a whole will be written rather than attempting to do a piecemeal modification of the fundamentally incomplete generic selection feature at this time.
+
+
+
+## Vendor Implementation Space ## {#design-vendor.impl}
+
+When discussing this feature with users, they made it clear they had many other ideals for this sort of compatibility fixup. Some voiced a need to make structures with the same field order and types but different top-level AND field names should be compatible, such as:
+
+```cpp
+typedef struct _Record liba_vec2 {
+	float x;
+	float y;
+} liba_vec2;
+
+typedef struct _Record libd_vec2 {
+	float mx;
+	float my;
+} libd_vec2; // names different, still not compatible even with _Record
+
+void f(liba_vec2 v);
+
+int main () {
+	liba_vec2 vec_a = {};
+	libd_vec2 vec_d = { 1.0f, 1.0f };
+	libd_vec2* d_thru_a = &vec_a; // constraint violation
+	vec_a = vec_d; // constraint violation
+	f(vec_d); // constraint violation
+	return 0;
+}
+```
+
+Others voiced that they would like to have more custom logic to make the sequence of `sockaddr` structures found in `<sys/socket.h>` (which may necessitate encoding additional runtime checks and similar into the `_Record` type that would be triggered upon casting from an e.g. `struct sockaddr` to `<netinet/in.h>`'s `struct sockaddr_in6`). It is clear that the ground for extensions to the idea of "custom compatibility" is fertile, and that there are many cases that cannot be reasonably covered by this proposal nor its inclusion into the C standard in-general. Therefore, the best way to allow for extension, experimentation, and customization is through the `_Record( … )` syntax carried forward as an "extension place" to this proposal.
+
+The syntax follows that of attributes, providing `_Record(foo)` and `_Record(foo(maybe_args …))` as a reserved syntax for the C standard. Implementations can inject their own vendor-specific semantics with `_Record(vendor::bark)` and `_Record(vendor::bark(maybe_args …))`. A caveat for flexible `_Record( … )` syntax is that any misunderstood or unknown `_Record( … )` declarations causes immediate compilation failure (i.e., is a constraint violation). This can be mitigated with the usual strategies (macros and feature detection); but, it is notable since this is different from attributes which are ignorable by the implementation.
+
+
+## `_Record(types)` for even MORE Compatibility Adjustment ## {#design-type.only}
+
+The above example showing identical type layout but differing names was a common ask for the addition of `_Record` by itself. While `_Record` solved the original problem of 2 anonymous structure definitions put behind `typedef`s for the purpose of strong typing an API to prevent accidental assignments and unintional casts, it did not satisfy the full gamut of issues people have had in the wild. Threfore, as an addendum to just plain `_Record`, we utilize the syntax from [[#design-vendor.impl]] to add a standard-recognized `_Record(types)`. The `types` is a standard-specified identifier that can go in parentheses for `_Record`. This syntax produces standard-defined record modifiers for making `liba_vec2` and `libd_vec2` in [[#design-vendor.impl]] be considered compatible types:
+
+```cpp
+typedef struct _Record(types) liba_vec2 {
+	float x;
+	float y;
+} liba_vec2;
+
+typedef struct _Record(types) libd_vec2 {
+	float mx;
+	float my;
+} libd_vec2; // compatible with libd_vec2
+
+void f(liba_vec2 v);
+
+int main () {
+	liba_vec2 vec_a = {};
+	libd_vec2 vec_d = { 1.0f, 1.0f };
+	libd_vec2* d_thru_a = &vec_a; // ok
+	vec_a = vec_d; // ok
+	f(vec_d); // ok
+	return 0;
+}
+```
+
+All of the properties associated with properly passing two compatible types work just fine in this case, since it has been marked as only requiring that the types and their ordering must be identical and the names are ignored.
+
+## (NOT PROPOSED) Future Direction: `_Record(mutable)` for even nested qualifier Compatibility Adjustment ## {#design-future.mutable}
+
+Another asked for feature is potentially marking types as being compatible if their types only differ by certain qualifiers: for example, an "array of spans" is a common data structure for asynchronous workloads, and employing `const` correctness in certain structures means that two types that are morally and spiritually compatible end up not being compatible:
+
+```cpp
+typedef struct span {
+	void* ptr;
+	size_t size;
+} span;
+
+typedef struct c_span {
+	const void* ptr;
+	size_t size;
+} c_span; // not compatible with the above
+
+int submit_async_work(c_span* workoads, size_t workloads_size);
+
+int main () {
+	span lots_of_work[10'000]; = {};
+	/* lots of assignment/work here... */
+
+	submit_async_work(lots_of_work, 10'000); // constraint violation;
+	                                         // must copy to c_span array
+}
+```
+
+This can lead to excessive copying of the data structure if only to get it into the right "form", as neither C nor C++ can handle levels of nested `const` in this manner. `_Record` can, potentially, solve that problem by marking these two structures compatible by using a new `_Record(mutable)` modifier, and thusly such structures in asynchronous work could be considered both compatible and aliasable, saving both time and energy.
+
+In general, we support such a sentiment. The reason we propose `types` in this paper but not `mutable` is that the effect of the name on the actual layout and access of the type is negligible: however, `const` on the members of a structure or union may have potential unforseen consequences when the power of aliasing compatible types is brought up. Therefore, it is not included in this proposal. We encourage implementations to implement `_Record(vendor::mutable)` and report back if this poses any issues that should be known over the next few years. In general, we expect there not to be any show-stopping issues, but we would like to be sure.
+
+
+
+
+# Prior Art & Implementation Experience # {#prior.art}
+
+There is no prior art for this. We would like to get a "temperature" on this paper, so we can go spend 2 or so years talking to Clang and GCC to get implementations going and off the ground. Having a proposal and talking to WG14 is the first step to proper standardization, as a hope to ensure the feature has a united featureset that all vendors can use.
+
+
+
+
+# Specification # {#wording}
+
+The following wording is against the latest draft of the C standard.
+
+NOTE: This paper does not modify generic selection; this is intentional. Generic selection needs a better mechanism to match types than "compatibility"; right now, changes to compatibility can deeply affect generic seleciton in a way that is not good. A follow-on paper will address and resolve these issues separately.
+
+
+
+## Modify Section §6.2.7 Tags ## {#wording-6.2.7}
+
+<blockquote>
+<div class="wording-section">
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.2.7</span> <span class="wording-clause-title">Compatible type and composite type</span>
+</div>
+
+<div class="wording-numbered">
+
+Two types are *compatible types* if they are the same. Additional rules for determining whether two types are compatible are described in 6.7.3 for type specifiers, in 6.7.4 for type qualifiers, and in 6.7.7 for declarators.<sup>45)</sup> Moreover, two complete structure, union, or enumerated types declared with the same tag are compatible if members satisfy the following requirements:
+
+:: — there shall be a one-to-one correspondence between their members such that each pair of corresponding members are declared with compatible types;
+:: — if one member of the pair is declared with an alignment specifier, the other is declared with an equivalent alignment specifier;
+:: — and, if one member of the pair is declared with a name, the other is declared with the same name.
+
+For two structures, corresponding members shall be declared in the same order. For two unions declared in the same translation unit, corresponding members shall be declared in the same order. For two structures or unions, corresponding bit-fields shall have the same widths. For two enumerations, corresponding members shall have the same values; if one has a fixed underlying type, then the other shall have a compatible fixed underlying type. For determining type compatibility, anonymous structures and unions are considered a regular member of the containing structure or union type, and the type of an anonymous structure or union is considered compatible to the type of another anonymous structure or union, respectively, if their members fulfill the preceding requirements.
+
+Furthermore, two structure, union, or enumerated types declared in separate translation units are compatible in the following cases:
+
+:: — both are declared without tags and they fulfill the preceding requirements;
+:: — both have the same tag and are completed somewhere in their respective translation units and they fulfill the preceding requirements;
+:: — both have the same tag and at least one of the two types is not completed in its translation unit.
+
+<ins>Additionally, if one of two structure or union types is a standard record type, then the types are compatible in the additional following cases:
+
+:: — if one of the types is a types-only record type (<a href="#wording-6.7.3.3">✨6.7.3.3</a>), both the tag of the structure or union and the names of its corresponding members are not considered while fulfilling the preceding requirements;
+:: — otherwise, if one of the types is a basic record type (<a href="#wording-6.7.3.3">✨6.7.3.3</a>), the tag of the structure or union is not considered are not considered while fulfilling the preceeding requirements;
+
+</ins>
+
+Otherwise, the structure, union, or enumerated types are incompatible.
+</div>
+</blockquote>
+</div>
+
+
+
+## Modify Section §6.7.3.2 "Structure and union specifiers" ## {#wording-6.7.3.2}
+
+<blockquote>
+<div class="wording-section">
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.7.3.2</span> <span class="wording-clause-title">Structure and union specifiers</span>
+</div>
+
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+
+*struct-or-union-specifier:*
+
+:: *struct-or-union* <ins>*record-modifier*<sub>opt</sub></ins> *attribute-specifier-sequence*<sub>opt</sub> *identifier*<sub>opt</sub> **{** *member-declaration-list* **}**
+:: *struct-or-union* *attribute-specifier-sequence*<sub>opt</sub> *identifier*
+
+…
+
+</div>
+</blockquote>
+
+
+
+## Add a new Section §6.7.3.3 "Record modifiers" ## {#wording-6.7.3.3}
+
+<blockquote>
+<ins>
+<div class="wording-section">
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.7.3.3</span> <span class="wording-clause-title">Structure and union specifiers</span>
+</div>
+
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+
+*record-modifier:*
+
+:: <ins>**_Record**</ins>
+:: <ins>**_Record** **(** *attribute-list* **)**</ins>
+
+</div>
+
+<div class="wording-numbered">
+
+A structure or union type with a record modifier is a *record type*. A record type with a record modifier of the form `_Record`, `_Record ( )`, or `_Record` followed by a parenthesized standard attribute listed in this subclause is a *standard record type*. Otherwise, it is an *implementation record type*.
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+If present, the identifier in a standard attribute for a record moifier shall be `types`. Standard attributes shall only be present once in the attribute list for a record modifier.
+</div>
+
+<div class="wording-numbered">
+
+A structure or union shall contain identical record modifiers on all of its definitions, if present. If a structure or union in two different translation units does not contain identical record modifiers, the behavior is undefined.
+</div>
+
+<div class="wording-numbered">
+
+A record modifier shall not contain an attribute unrecognized by the implementation.
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered">
+
+Record types provide additional ways to specify the compatibility of types that would otherwise be incompatible.
+</div>
+
+<div class="wording-numbered">
+
+The use of standard attributes in record modifiers is defined by this document. The use of attribute prefixed token sequences in record modifiers is implementation-defined. The order in which attribute tokens in a record modifier is not significant.
+</div>
+
+<div class="wording-numbered">
+
+A record modifier of the form `_Record` or `_Record ( )` classifies a standard record type as a *basic record type*. Basic record types modify their compatibility with other types as specified in <a href="#wording-6.2.7">6.2.7</a>.
+</div>
+
+<div class="wording-numbered">
+
+A record modifier which contains the attribute token `types` classifies a standard record type as a *types-only record type*. Types-only record types modify their compatibility with other types as specified in <a href="#wording-6.2.7">6.2.7</a>.
+</div>
+
+<div class="wording-numbered">
+
+Implementation record types, if any, have implementation-defined semantics.
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 1** Record modifiers allows for assignment between types that are meant to be related but otherwise would not be considered compatible:
+
+```cpp
+typedef struct _Record catlib_range {
+	void* ptr;
+	size_t size;
+} catlib_range;
+
+typedef struct _Record doglib_slice {
+	void* ptr;
+	size_t size;
+} doglib_slice;
+
+void doglib_func(doglib_slice value);
+void catlib_func(catlib value);
+void doglib_ptr_func(doglib_slice *mem);
+void catlib_ptr_func(catlib *mem);
+
+int main () {
+	unsigned char data[1];
+	catlib_range cats = { .ptr = data, .size = sizeof(data) };
+	doglib_slice dogs = { .ptr = data, .size = sizeof(data) };
+
+	// dogs and cats, working together
+	doglib_func(cats); // ok
+	catlib_func(cats); // ok
+	doglib_func(dogs); // ok
+	catlib_func(dogs); // ok
+
+	doglib_ptr_func(&cats); // ok
+	catlib_ptr_func(&cats); // ok
+	doglib_ptr_func(&dogs); // ok
+	catlib_ptr_func(&dogs); // ok
+	return 0;
+}
+```
+
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 2** Types-only record types allows for compatibility even if the name of members are different, even if only one of the types is considered compatible:
+
+```cpp
+typedef struct liba_vec2 {
+	float x;
+	float y;
+} liba_vec2;
+
+typedef struct _Record(types) libd_vec2 {
+	float mx;
+	float my;
+} libd_vec2; // compatible with libd_vec2
+
+void f(liba_vec2 v);
+
+int main () {
+	liba_vec2 vec_a = {};
+	libd_vec2 vec_d = { 1.0f, 1.0f };
+	libd_vec2* d_thru_a = &vec_a; // ok
+	vec_a = vec_d; // ok
+	f(vec_d); // ok
+	return 0;
+}
+```
+
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE 3** Compatibility between types with different record modifiers works by checking: if either of the type is a types-only record type, then, if either is a basic record type; then, typical non-record type compatibility rules.
+
+```cpp
+struct meow {
+	char a;
+};
+
+struct _Record miaou {
+	char b;
+};
+
+struct _Record(types) nya {
+	char c;
+};
+
+int main () {
+	struct meow ecat = {};
+	struct miaou fcat = {};
+	struct nya jcat = {};
+	
+	ecat = fcat; // constraint violation: incompatible types (basic record type),
+	             // tag names ignored, member names are different
+	ecat = jcat; // ok: compatible types (types-only record type),
+	             // tag names ignored, member names ignored
+
+	fcat = ecat; // constraint violation: incompatible types (basic record type),
+	             // tag names ignored, member names are different
+	fcat = jcat; // ok: compatible types (types-only record type),
+	             // tag names ignored, member names ignored
+
+	jcat = ecat; // ok: compatible types (types-only record type),
+	             // tag names ignored, member names ignored
+	jcat = fcat; // ok: compatible types (types-only record type),
+	             // tag names ignored, member names ignored
+
+	return 0;
+}
+```
+
+</div>
+
+</div>
+
+<div class="wording-clause-section-title">
+Recommended Practice
+</div>
+
+<div class="wording-numbered">
+
+Implementations interested in blessing specific forms of assignment, casting, and so-called "type-punning" between types typically not considered related should use implementation record types as a means of providing such behaviors to their end-users.
+</div>
+
+</ins>
+</blockquote>
+
+
+
+## Modify Section §6.7.3.4 Tags ## {#wording-6.7.3.4}
+
+<blockquote>
+<div class="wording-section">
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.7.3.4</span> <span class="wording-clause-title">Tags</span>
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div>
+…
+</div>
+
+<div class="wording-numbered wording-numbered-10">
+
+A type specifier of the form
+
+:: *struct-or-union* <ins>*record-modifier*<sub>opt</sub></ins> *attribute-specifier-sequence*<sub>opt</sub> *identifier*<sub>opt</sub> **{** *member-declaration-list* **}**
+
+…
+</div>
+</ins>
+</blockquote>
+
+
+## Automatically Update Annex J entries for implementation-defined behavior ## {#wording-annex.j}
+
+
+
+# Acknowledgements # {#acknowledgements}
+
+Many thanks to the individuals who voiced their frustration with C's current system to help spur this paper along. Thanks to Martin Uecker for addressing the original problem, and Jens Gustedt for the compelling counterexample.
+
+
+<pre class="biblio">
+{
+	"N3037": {
+		"authors": [
+			"Martin Uecker"
+		],
+		"title": "N3037 - Improved Rules for Tag Compatibility",
+		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3037.pdf",
+		"date": "July 7th, 2022"
+	},
+	"N3260": {
+		"authors": [
+			"Aaron Ballman"
+		],
+		"title": "N360 - Generic selection expression with a type operand",
+		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3260.pdf",
+		"date": "September 6, 2024"
+	},
+	
+	"structural-typing": {
+		"authors": [
+			"Wikipedia"
+		],
+		"title": "Structural type system",
+		"date": "September 2nd, 2024",
+		"href": "https://en.wikipedia.org/wiki/Structural_type_system"
+	},
+	"ocaml-types": {
+		"authors": [
+			"OCaml Contributors"
+		],
+		"title": "OCaml Basic Data Types and Pattern Matching",
+		"date": "September 2nd, 2024",
+		"href": "https://ocaml.org/docs/basic-data-types"
+	}
+}
+</pre>
