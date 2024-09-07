@@ -11,13 +11,13 @@ Group: WG14
 !Target: C2y
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
-URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20A%20Measured%20Approach%20to%20_Operators.html
-!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-%20A%20Measured%20Approach%20to%20_Operators.bs">GitHub</a>
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20_Record%20types.html
+!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-%20_Record%20types.bs">GitHub</a>
 Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
 Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
 Markup Shorthands: markdown yes
 Toggle Diffs: no
-Abstract: User-controlled ways of handling compatibility for types in C, as a means to strengthen Type-Based Antialias Analysis but also give users an explicit handle on increasing type diversity in C.
+Abstract: User-controlled ways of handling compatibility for types in C, as a means to strengthen Type-Based Alias Analysis but also give users an explicit handle on increasing type diversity in C.
 </pre>
 
 <pre class="include-raw">
@@ -33,7 +33,7 @@ path: resources/css/bikeshed-wording.html
 
 
 
-# Revision 0 # {#changelog-r0}
+## Revision 0 ## {#changelog-r0}
 
 - Initial release. ✨
 
@@ -42,7 +42,7 @@ path: resources/css/bikeshed-wording.html
 
 # Introduction and Motivation # {#intro}
 
-The need for greater and more expansive compatibility due to various aspects of C programming — including macro-based generic programming for anonymous, in-line defined structures — has been increasingly high in C software. Furthermore, software which has been unable to get compatibility rules and aliasing rules to accommodate their code have worked largely by simply turning off strict type-based antialiasing analysis with flags such as `-fno-strict-aliasing`. (One major compiler vendor has simply decided to not implement any serious type-based antialiasing analysis and forego all of it.) This has put C in a tenuous situation, where its potentially rich type system is deeply at odds with some of its more serious and prominent users.
+The need for greater and more expansive compatibility due to various aspects of C programming — including macro-based generic programming for anonymous, in-line defined structures — has been increasingly high in C software. Furthermore, software which has been unable to get compatibility rules and aliasing rules to accommodate their code have worked largely by simply turning off strict type-based alias analysis with flags such as `-fno-strict-aliasing`. (One major compiler vendor has simply decided to not implement any serious type-based aliasing analysis and forego all of it.) This has put C in a tenuous situation, where its potentially rich type system is deeply at odds with some of its more serious and prominent users.
 
 
 
@@ -55,9 +55,9 @@ typedef struct { int value; } fahrenheit;
 typedef struct { int value; } celsius;
 ```
 
-Under previous iterations of [[N3037]], these two would be considered compatible. This was seen as overreaching, as despite current C rules saying these two types are technically compatible if they are somehow accessed outside of the translation unit they are defined in, it violated safety within the translation unit itself. That is neither intended nor helpful, and could very well violate fundamental safety guarantees in a large body of software, particularly simulation and units-heavy software. Therefore, this provision was removed from in [[N3037]] before the paper was approved for C23.
+Under previous iterations of [[N3037]], these two would be considered compatible. This was seen as overreaching, as despite current C rules saying these two types are technically compatible if they are somehow accessed outside of the translation unit they are defined in, it violated safety within the translation unit itself. That is neither intended nor helpful, and could very well violate fundamental safety guarantees in a large body of software, particularly simulation and other units-heavy software. Therefore, this provision was removed from in [[N3037]] before the paper was approved for C23.
 
-Speculation as to other ways of solving this problem were brought forward, such as making all anonymous structures identical except in the case where they are nested within a `typedef` declaration. None have been formally proposed yet, but the authors believe this subtle interaction would result in a greater complexity burden than is reasonably advisable. It is also unintuitive to go about things in this manner, as it would result in differnet behavior if a structure is named or not and specifically only in cases where a `typedef` is present or not.
+Speculation as to other ways of solving this problem were brought forward, such as making all anonymous structures identical except in the case where they are nested within a `typedef` declaration. None have been formally proposed yet, but the authors believe this subtle interaction would result in a greater complexity burden than is reasonably advisable. It is also unintuitive to go about things in this manner, as it would result in different behavior if a structure is named or not and specifically only in cases where a `typedef` is present or not.
 
 
 
@@ -77,7 +77,7 @@ Due to the current compatibility rules, these types are not compatible. And yet,
 
 Before this, Weissflog has also gone on to state:
 
-> I sometimes wish C had optional structurally typed structs (so that two differently named structs with the same interior are assignable to each other, would help to send data from one library to another without .‘entangling’ them via shared types.
+> I sometimes wish C had optional structurally typed structs (so that two differently named structs with the same interior are assignable to each other, would help to send data from one library to another without ‘entangling’ them via shared types.
 >
 > — [August 23rd, 2024](https://twitter.com/FlohOfWoe/status/1827000924377698395)
 
@@ -87,9 +87,21 @@ This has also been a routine problem for developers who end up being the user of
 >
 > — [July 30th, 2024](https://twitter.com/rms80/status/1818307726960710139)
 
-Indeed, given the different definitions of even a 2 or 3 dimensional vector in [Datenwolf's linmath](https://github.com/datenwolf/linmath.h) versus [recp's cglm](https://github.com/recp/cglm) versus older libraries like [feselva's mathc](https://github.com/felselva/mathc), it can be frustrating coordinating these structures and types to work together with one another.
+Indeed, given the different definitions of even a 2 or 3 dimensional vector in [Datenwolf's linmath.h](https://github.com/datenwolf/linmath.h) versus [recp's cglm](https://github.com/recp/cglm) versus older libraries like [feselva's mathc](https://github.com/felselva/mathc), it can be frustrating coordinating these structures and types to work together with one another.
 
 Certain languages like [[ocaml-types|OCaml]] have types that use what is known as [[structural-typing|"structural typing"]], as is alluded to by Weissflog in his yearning for a better type system for C. These types only consider their members/fields/properties in order to determine type compatibility and identity. There are various "sub-flavors" of structural typing, but it effectively behaves exactly like C type compatibility with the caveat that the top-level structure or union name is not considered relevant when performing compatibility checks.
+
+
+
+## Macro-generic Data Structure Issues ## {#intro-macro}
+
+Martin Uecker's [[N3037]] enabled type-generic datastructures and macros with identical names at file and function scope with the same inner contents to be considered compatible types in C23. This meant that defining an e.g. dyanmic array macro as:
+
+```cpp
+#define array(T) struct array_##T##_t { size_t size; T* values; }
+```
+
+worked very well and no longer required a single "stable" pre-declaration of a given use of this type before using e.g. `array(int)` at function scope. However, this became slightly problematic with types that had spaces in them or were otherwise weird, such as with `array(unsigned char)`. The workaround was to use `typedef`s, but it still left a problem: how come it was not possible to make an unnamed type that, within a single translation unit, compatible with other types like it? While the "strong typing" case is indeed important, it seemed that we had to sacrifice one use case for another: this is, ultimately, not a good place to be in the ecosystem.
 
 
 
@@ -97,7 +109,7 @@ Certain languages like [[ocaml-types|OCaml]] have types that use what is known a
 
 We are proposing a new keyword to allow **users** to explicitly annotate structures and unions which may have their top-level name ignored for compatibility purposes, as well as additional opt-in changes that are specified by the standard, and then further by implementations. The spelling of the keyword is `_Record` and `_Record( record-attributes … )`, and it creates new record modifiers which changes how types are considered compatible. Changing this allows explicit opt-in support for:
 
-- assignming between types that are fundamentally identically but differ in their top-level given tag name, as is the desire from the sokol example and the mathematics library example;
+- assigning between types that are fundamentally identical but differ in their top-level given tag name, as is the desire from the sokol example and the mathematics library example;
 - pointer-casting between types of identical type and name field layouts to allow for the long-standing practice of type-punning between two often "identical" types without an explicit `memcpy`;
 - passing such objects to morally, spiritually, and intentfully identical function calls without needing an explicit cast or conversion function;
 - protecting existing code which relies on the current and well-supported interpretation that nameless structures are all uniquely named and different within a single translation unit
@@ -137,10 +149,10 @@ void slice_func(slice value);
 int main () {
 	unsigned char data[1];
 	struct range r = { .ptr = data, .size = sizeof(data) };
-	struct slice s = { .ptr = data, .size = sizeof(data) };
+	struct slice s = { .ptr = nullptr, .size = 0 };
 
 	slice_func(r); // ok
-	struct range* r = &s; // ok
+	struct range* slice_ptr_thru_range = &s; // ok
 	r = s; // ok
 	
 	return 0;
@@ -148,7 +160,7 @@ int main () {
 ```
 
 
-This design achieves those goals, in various ways. First, let us review the syntax that lets us achieve this.
+This design achieves those goals, in various ways. First, let us review the syntax.
 
 
 
@@ -158,12 +170,12 @@ Syntactically, `_Record` is a new keyword that is part of the declarator for a t
 
 ```cpp
 struct _Record meow { char __padding; }; // ok
-struct _Record[[some, attribs]] bark { char __padding; }; // ok
+struct _Record [[some, attribs]] bark { char __padding; }; // ok
 struct _Record { char __padding; }; // ok
 struct _Record [[other_attrib]] { char __padding; }; // ok
 
-union _Record meow { char __padding; }; // ok
-union _Record[[some, attribs]] bark { char __padding; }; // ok
+union _Record purr { char __padding; }; // ok
+union _Record [[some, attribs]] woof { char __padding; }; // ok
 union _Record { char __padding; }; // ok
 union _Record [[other_attrib]] { char __padding; }; // ok
 ```
@@ -186,6 +198,18 @@ int main () {
 
 
 
+## `_Record` for Macro-Generic Datastructures ## {#design-generics}
+
+Given the example in [[#intro-macro]], we can now side step any issues of non-identifier type names such as `int*` or `unsigned char` or similar by simply defining the structure to be an empty struct that is marked with `_Record`:
+
+```cpp
+#define array(T) struct _Record { size_t size; T* values; }
+```
+
+The structure remains unnamed, which means no extra effort needs to be taken to avoid colliding with user namespaced entities either. It works at file and function scope without issue. And there's no compatibility problems either, which preserves all of the intended effects of [[N3037]].
+
+
+
 ## Shared Space vs. Fully Closed ## {#design-shared}
 
 The proposed semantics for `_Record` types is meant to be lenient and shared (also sometimes known as "*viral*"); that is, rather than needing both structures on both sides of a comparison, argument pass, or assignment to be annotated with `_Record`, only one of the structures or unions must be. This is very imporant because of preexisting code.
@@ -200,7 +224,7 @@ Note that this does not subject any piece of code using known and well-understoo
 
 The use of generic selection in codebases will be impacted by the changes here due to using type compatibility as a mechanism for improvement. However, at this time, generic selection has its issues due to not being based on better, stricter type matching semantics. While Aaron Ballman's [[N3260]] provided some of that through its own opt-in mechanism by providing a type rather than an expression, it still leaves the matching semantics dubious in cases with expressions. This includes for expressions which result in record types; if someone provides what are potentially 2 different types that match due to `_Record`, unintentional matches or sudden compilation errors will make things worse.
 
-There is no impact on exsiting code due to this feature being opt-in from users, but it can affect code written in the future with this feature. A follow-on paper will be written to address generic selection as a whole will be written rather than attempting to do a piecemeal modification of the fundamentally incomplete generic selection feature at this time.
+There is no impact on existing code due to this feature being opt-in from users, but it can affect code written in the future with this feature. A follow-on paper will be written to address generic selection as a whole rather than attempting to do a piecemeal modification of the fundamentally incomplete generic selection feature at this time.
 
 
 
@@ -238,7 +262,7 @@ The syntax follows that of attributes, providing `_Record(foo)` and `_Record(foo
 
 ## `_Record(types)` for even MORE Compatibility Adjustment ## {#design-type.only}
 
-The above example showing identical type layout but differing names was a common ask for the addition of `_Record` by itself. While `_Record` solved the original problem of 2 anonymous structure definitions put behind `typedef`s for the purpose of strong typing an API to prevent accidental assignments and unintional casts, it did not satisfy the full gamut of issues people have had in the wild. Threfore, as an addendum to just plain `_Record`, we utilize the syntax from [[#design-vendor.impl]] to add a standard-recognized `_Record(types)`. The `types` is a standard-specified identifier that can go in parentheses for `_Record`. This syntax produces standard-defined record modifiers for making `liba_vec2` and `libd_vec2` in [[#design-vendor.impl]] be considered compatible types:
+The prior example in [[#design-vendor.impl]] showing identical type layout but differing names was a common ask for the addition of `_Record` by itself. While `_Record` solved the original problem of 2 anonymous structure definitions put behind `typedef`s for the purpose of strong typing an API to prevent accidental assignments and unintional casts, it did not satisfy the full gamut of issues people have had in the wild. Threfore, as an addendum to just plain `_Record`, we utilize the syntax from [[#design-vendor.impl]] to add a standard-recognized `_Record(types)`. The `types` is a standard-specified identifier that can go in parentheses for `_Record`. This syntax produces standard-defined record modifiers for making `liba_vec2` and `libd_vec2` in [[#design-vendor.impl]] be considered compatible types:
 
 ```cpp
 typedef struct _Record(types) liba_vec2 {
@@ -265,19 +289,23 @@ int main () {
 
 All of the properties associated with properly passing two compatible types work just fine in this case, since it has been marked as only requiring that the types and their ordering must be identical and the names are ignored.
 
-## (NOT PROPOSED) Future Direction: `_Record(mutable)` for even nested qualifier Compatibility Adjustment ## {#design-future.mutable}
+At the moment, we we have only provided `_Record(types)` or naked `_Record`/`_Record()`, we do not have to concern ourselves with "what if there are multiple attributes in the record modifier" for this proposal. But, to make clear the intention: for standard record modifiers, the standard manages how/if they can mix, and what is the effect of any allowed combinations. For implementation ones, it is on the implementation to define that behavior.
+
+
+
+## (NOT PROPOSED) Future Direction: `_Record(const)` for (nested) qualifier Compatibility Adjustment ## {#design-future.const}
 
 Another asked for feature is potentially marking types as being compatible if their types only differ by certain qualifiers: for example, an "array of spans" is a common data structure for asynchronous workloads, and employing `const` correctness in certain structures means that two types that are morally and spiritually compatible end up not being compatible:
 
 ```cpp
 typedef struct span {
-	void* ptr;
+	void* data;
 	size_t size;
 } span;
 
 typedef struct c_span {
 	const void* ptr;
-	size_t size;
+	size_t len;
 } c_span; // not compatible with the above
 
 int submit_async_work(c_span* workoads, size_t workloads_size);
@@ -291,16 +319,38 @@ int main () {
 }
 ```
 
-This can lead to excessive copying of the data structure if only to get it into the right "form", as neither C nor C++ can handle levels of nested `const` in this manner. `_Record` can, potentially, solve that problem by marking these two structures compatible by using a new `_Record(mutable)` modifier, and thusly such structures in asynchronous work could be considered both compatible and aliasable, saving both time and energy.
+This can lead to excessive copying of the data structure if only to get it into the right "form", as neither C nor C++ can handle levels of nested `const` in this manner for compatibility purposes. Even if `_Record(types)` ignores the names, the corresponding members are still not compatible. A new record modifier can, potentially, solve that problem by marking these two structures compatible. Through a new `_Record(const)` modifier, such structures in asynchronous work could be considered both compatible and aliasable, saving both time and energy.
 
-In general, we support such a sentiment. The reason we propose `types` in this paper but not `mutable` is that the effect of the name on the actual layout and access of the type is negligible: however, `const` on the members of a structure or union may have potential unforseen consequences when the power of aliasing compatible types is brought up. Therefore, it is not included in this proposal. We encourage implementations to implement `_Record(vendor::mutable)` and report back if this poses any issues that should be known over the next few years. In general, we expect there not to be any show-stopping issues, but we would like to be sure.
+In general, we support such a sentiment. The reason we propose `types` in this proposal but not `const` is that the effect of the name on the actual layout and access of the type is negligible: however, `const` on the members of a structure or union may have potential unforseen consequences when the power of aliasing compatible types is brought up. Therefore, it is not included in this proposal. We encourage implementations to implement `_Record(vendor::const)` and report back if this poses any issues that should be known over the next few years. In general, we expect there not to be any show-stopping issues, but we would like to be sure. Usage could be like so:
+
+```cpp
+typedef struct _Record(types, vendor::const) span {
+	void* data;
+	size_t size;
+} span;
+
+typedef struct _Record(types, vendor::const) c_span {
+	const void* ptr;
+	size_t len;
+} c_span; // nnow it's compatible
+
+int submit_async_work(c_span* workoads, size_t workloads_size);
+
+int main () {
+	span lots_of_work[10'000]; = {};
+	/* lots of assignment/work here... */
+
+	submit_async_work(lots_of_work, 10'000); // constraint violation;
+	                                         // must copy to c_span array
+}
+```
 
 
 
 
 # Prior Art & Implementation Experience # {#prior.art}
 
-There is no prior art for this. We would like to get a "temperature" on this paper, so we can go spend 2 or so years talking to Clang and GCC to get implementations going and off the ground. Having a proposal and talking to WG14 is the first step to proper standardization, as a hope to ensure the feature has a united featureset that all vendors can use.
+There is no prior art for this. We would like to get a "temperature" on this proposal, so we can go spend 2 or so years talking to Clang and GCC to get implementations going and off the ground. Having a proposal and talking to WG14 is the first step to proper standardization, as a hope to ensure the feature has a united featureset that all vendors can use.
 
 
 
@@ -309,7 +359,7 @@ There is no prior art for this. We would like to get a "temperature" on this pap
 
 The following wording is against the latest draft of the C standard.
 
-NOTE: This paper does not modify generic selection; this is intentional. Generic selection needs a better mechanism to match types than "compatibility"; right now, changes to compatibility can deeply affect generic seleciton in a way that is not good. A follow-on paper will address and resolve these issues separately.
+NOTE: This proposal does not modify generic selection; this is intentional. Generic selection needs a better mechanism to match types than "compatibility"; right now, changes to compatibility can deeply affect generic selection in a way that is not good. A follow-on paper will address and resolve these issues separately.
 
 
 
@@ -339,8 +389,8 @@ Furthermore, two structure, union, or enumerated types declared in separate tran
 
 <ins>Additionally, if one of two structure or union types is a standard record type, then the types are compatible in the additional following cases:
 
-:: — if one of the types is a types-only record type (<a href="#wording-6.7.3.3">✨6.7.3.3</a>), both the tag of the structure or union and the names of its corresponding members are not considered while fulfilling the preceding requirements;
-:: — otherwise, if one of the types is a basic record type (<a href="#wording-6.7.3.3">✨6.7.3.3</a>), the tag of the structure or union is not considered are not considered while fulfilling the preceeding requirements;
+:: — if one of the types is a types-only record type (<a href="#wording-6.7.3.3">✨6.7.3.3</a>), both the tag of the structures or unions and the names of its corresponding members are not considered while fulfilling the preceding requirements;
+:: — otherwise, if one of the types is a basic record type (<a href="#wording-6.7.3.3">✨6.7.3.3</a>), the tag of the structures or unions is not considered while fulfilling the preceeding requirements;
 
 </ins>
 
@@ -615,7 +665,7 @@ A type specifier of the form
 
 # Acknowledgements # {#acknowledgements}
 
-Many thanks to the individuals who voiced their frustration with C's current system to help spur this paper along. Thanks to Martin Uecker for addressing the original problem, and Jens Gustedt for the compelling counterexample.
+Many thanks to the individuals who voiced their frustration with C's current system to help spur this proposal along. Thanks to Martin Uecker for addressing the original problem, and Jens Gustedt for the compelling counterexample.
 
 
 <pre class="biblio">
