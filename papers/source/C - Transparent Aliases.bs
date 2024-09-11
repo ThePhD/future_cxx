@@ -1,13 +1,13 @@
 <pre class='metadata'>
 Title: Transparent Aliases
-Shortname: 3200
-Revision: 3
-!Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2970.htm">N2970 (r2)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2901.htm">N2901 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2729.htm">N2729 (r0)</a>
+Shortname: 3329
+Revision: 4
+!Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3200.htm">N3200 (r3)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2970.htm">N2970 (r2)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2901.htm">N2901 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2729.htm">N2729 (r0)</a>
 Status: P
-Date: 2023-12-10
+Date: 2024-09-07
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
-!Target: C2y/C3a
+!Target: C2y
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
 URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Transparent%20Aliases.html
@@ -30,6 +30,14 @@ path: resources/css/bikeshed-wording.html
 
 
 # Changelog # {#changelog}
+
+
+
+## Revision 4 - September 07<sup>th</sup>, 2024 ## {#changelog-r4}
+
+- Drastically add improve the paper's reasoning and examples.
+- Specifically address the idea that glibc and other libraries which have special names must keep linker names under a specific name and thus breaks this feature.
+- Specifically address the way composite types and other times.
 
 
 
@@ -76,7 +84,7 @@ Thankfully, progress is being made. With Robert Seacord's "Specific-width length
 
 Library functions in a "very vanilla" implementation of a C Standard Library (e.g., simply a sequence of function declarations/definitions of the exact form given in the C Standard) have a strong tie between the name of the function (e.g., `imaxabs`) and the symbol present in the final, compiled binary (e.g., `_imaxabs`). This symbol is tied to a specific numeric type (e.g., `typedef long long intmax_t`), which creates a strong relationship between the way the function is called (register usage, etc.) and more. Upgrading that type breaks old binaries that still call the old symbol; for example, `_imaxabs` being handed a `__int128_t` instead of a `long long` as an old application anticipates can result in the wrong registers being used, or worse. Thusly, because the Standard Library is bound by these rules and because implementations rely on functions with `typedef`-based types in them to resolve to a very specific symbol, we cannot upgrade any of the `typedef`s (e.g., what `intmax_t` is) or change anything about the functions (e.g., change `imaxabs`'s declaration in any way consequential fashion).
 
-Furthermore, macros cannot be used to "smooth" over the "real function call" because §7.1.4 specifically states that a user of the standard library has the right to deploy macro-suppressing techniques (e.g., `(imaxabs)(24)`) to call a library function (unless the call is designated to be a macro). This also includes preventing their existence as a whole with `#undef imaxabs`: every call after that `#undef` directive to `imaxabs(...)` must work and compile according to the Standard. While this guarantees users that they can always get a function pointer or a "real function name" from a given C Standard library function name, it also refuses implementations the ability to provide backwards compatibility shims using the only Standards-applicable tool in C++.
+Furthermore, macros cannot be used to "smooth" over the "real function call" because §7.1.4 specifically states that a user of the standard library has the right to deploy macro-suppressing techniques (e.g., `(imaxabs)(24)`) to call a library function (unless the call is designated to be a macro). This also includes preventing their existence as a whole with `#undef imaxabs`: every call after that `#undef` directive to `imaxabs(...)` must work and compile according to the Standard. While this guarantees users that they can always get a function pointer or a "real function name" from a given C Standard library function name, it also refuses implementations the ability to provide backwards compatibility shims using the only Standards-applicable tool in C and C++.
 
 
 
@@ -302,6 +310,12 @@ int main () {
 In short, as with `typedef`s, we want to focus on creating an entity that **has no linkage** but for functions/variables (objects).
 
 
+### Other Existing Practice: IBM Compilers ## {#design-existing-ibm}
+
+IBM has also stated that they have a similar extension in some of their non-public offerings, which create a compile-time link between two identifiers that does not perform any run-time or link-time replacement or changes.
+
+
+
 ### Implementation Experience ### {#design-existing-implementation}
 
 An implementation of Transparent Aliases is available at [this Clang fork](https://github.com/ThePhD/llvm-project/commit/d81faeefa01e7c57a222f5bdfe355bb6a7f4b84f). It provides the feature and, when built and installed, can be used to run [this suite of tests](https://github.com/ThePhD/transparent-aliases).
@@ -452,7 +466,7 @@ This is a restriction that is special to C. Thankfully, we are not particularly 
 - `wchar_t` (`mbstowcs`, `wcslen`, and similar functions)
 - and so on, and so forth.
 
-These are types which are controlled exclusively by the standard library and are known to change on 32-bit and 64-bit systems as well as transition based on locale and other compile-time settings. A single DLL can be distributed on a system and accommodate a variety of preprocessor-based switches or other compile-time information and allow an information to accommodate and/or upgrade a given system's symbol table (or DLL/SO's symbol table) without breaking old, original code.
+These are types which are controlled in conjunction by the standard library and are known to change on 32-bit and 64-bit systems as well as transition based on locale and other compile-time settings. A single DLL can be distributed on a system and accommodate a variety of preprocessor-based switches or other compile-time information and allow an information to accommodate and/or upgrade a given system's symbol table (or DLL/SO's symbol table) without breaking old, original code.
 
 Therefore, we do not do anything to support or inhibit such declarations. Implementations looking to keep such declarations working from older versions of code should consider leaving those old symbols within their binary artefacts (system tables, shared/static libraries, etc.) to continue supporting such a use case; this proposal is not going to address it or the myriad of other issues around this (such as strong/weak symbols and other attributes/aliasing issues).
 
@@ -527,7 +541,7 @@ int main () {
 }
 ```
 
-We think this would be a useful **general purpose compile-time renaming mechanism**. Current implementations for both assembly labels and attributes allow this, and therefore this seems like a good thing to do. Furthermore, it can allow for specific constructs constructs to be renamed and their old names to be marked with attributes. For example, occasionally APIs need to be reorganized for clarity purposes, but without fully breaking old code:
+We think this would be a useful **general purpose compile-time renaming mechanism**. Current implementations for both assembly labels and attributes allow this, and therefore we have added this functionality to the paper. Furthermore, it can allow for specific constructs constructs to be renamed and their old names to be marked with attributes. For example, occasionally APIs need to be reorganized for clarity purposes, but without fully breaking old code:
 
 
 ```cpp
@@ -551,9 +565,12 @@ This can help migrate users to newer APIs that may change names or evolve over t
 
 # Future Directions # {#future}
 
+
+## Weak Declarations vs. Strong declarations ## {#future-weak}
+
 There were further suggestions to have the ability to make "`_Weak`" aliases: that is, the ability to be able to define a compile-time alias, but be able to redeclare over it and completely erase the old declaration with an entirely incompatible/new declaration, at compile-time, with a new (and potentially incompatible) declaration. This is actually implemented in the current implementation, and it works as expected, but it is not provided in this paper.
 
-There is, thankfully, plenty of room in the grammar to allow for this as an extension, and if users voice strong concern for it a follow-on paper may add it to the standard.
+However, weak versus strong is still a separate concern. It is part of a conceptually separate feature for linkers.
 
 
 

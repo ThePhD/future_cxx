@@ -87,7 +87,7 @@ This has also been a routine problem for developers who end up being the user of
 >
 > — [July 30th, 2024](https://twitter.com/rms80/status/1818307726960710139)
 
-Indeed, given the different definitions of even a 2 or 3 dimensional vector in [Datenwolf's linmath.h](https://github.com/datenwolf/linmath.h) versus [recp's cglm](https://github.com/recp/cglm) versus older libraries like [feselva's mathc](https://github.com/felselva/mathc), it can be frustrating coordinating these structures and types to work together with one another.
+Indeed, given the different definitions of even a 2 or 3 dimensional vector in [[linmath-h|Datenwolf's linmath.h]] versus [[cglm|recp's cglm]] versus older libraries like [[mathc|feselva's mathc]], it can be frustrating coordinating these structures and types to work together with one another.
 
 Certain languages like [[ocaml-types|OCaml]] have types that use what is known as [[structural-typing|"structural typing"]], as is alluded to by Weissflog in his yearning for a better type system for C. These types only consider their members/fields/properties in order to determine type compatibility and identity. There are various "sub-flavors" of structural typing, but it effectively behaves exactly like C type compatibility with the caveat that the top-level structure or union name is not considered relevant when performing compatibility checks.
 
@@ -95,7 +95,7 @@ Certain languages like [[ocaml-types|OCaml]] have types that use what is known a
 
 ## Macro-generic Data Structure Issues ## {#intro-macro}
 
-Martin Uecker's [[N3037]] enabled type-generic datastructures and macros with identical names at file and function scope with the same inner contents to be considered compatible types in C23. This meant that defining an e.g. dyanmic array macro as:
+Martin Uecker's [[N3037]] enabled type-generic datastructures and macros with identical names at file and function scope with the same inner contents to be considered compatible types in C23. This meant that defining an e.g. dynamic array macro as:
 
 ```cpp
 #define array(T) struct array_##T##_t { size_t size; T* values; }
@@ -180,7 +180,7 @@ union _Record { char __padding; }; // ok
 union _Record [[other_attrib]] { char __padding; }; // ok
 ```
 
-Every definition of a type must agree and either have `_Record` on it like the first definition or not have `_Record` on it. `_Record` does not need to be placed on the type when forwarding declaring or referencing the type anymore: it will always be considered a `_Record` type. A type that was previously defined without `_Record` cannot be redefined with the `_Record` keyword on it. A forward declaration also cannot contain `_Record`, because it only carries meaning on the defining declaration:
+Every definition of a type must agree and either have `_Record` on it or not have `_Record` on it. `_Record` does not need to be placed on the type when forwarding declaring or referencing the type anymore: it will always be considered a `_Record` type. A type that was previously defined without `_Record` cannot be redefined with the `_Record` keyword on it. A forward declaration also cannot contain `_Record`, because it only carries meaning on the defining declaration:
 
 ```cpp
 struct _Record meow; // constraint violation
@@ -216,7 +216,94 @@ The proposed semantics for `_Record` types is meant to be lenient and shared (al
 
 Requiring that both sides of an assignment or argument pass requires the arduous task of modifying every existing library to have better semantics. It is against the charter and general nature of C over the last 40 years to require sweeping changes or steep investment in existing code to make these things work. Many fundamental libraries can be perfectly valid and usable, even if not well-maintained or locked into a specific era VIA contractual obligation. To bring more immediate usability outside of closely-knit ecosystems, the design of this system is so that only **one** of the two types for an assignment is record modified. Similarly, if there are two different kinds of record modified types, the standard defines the "order" in which record modifications take priority. In general, this priority can be considered as simply being from "most lenient" to "least lenient".
 
-Note that this does not subject any piece of code using known and well-understood mechanisms such as incomplete types / private source file definitions to suddenly be more or less compatible than they used to be. Record types are a property only of types with source-available definitions marked with `_Record` in a translation unit.
+Note that this does not subject any piece of code using known and well-understood mechanisms such as incomplete types / private source file definitions to suddenly be more or less compatible than they used to be. Record types are a property only of types with source-available definitions marked with `_Record` in a translation unit. This does, however, add a new way to access an old problem in C.
+
+
+### Type-Based Alias Analysis under "Viral" Compatibility ### {#design-shared-tbaa}
+
+Consider the following (probably illegal, but nonetheless compiling and running) code:
+
+```cpp
+// alice.h
+typedef struct alice_vec { int x; int y; } alice_vec;
+```
+
+```cpp
+// bob.h
+typedef struct bob_vec { int x; int y; } bob_vec;
+```
+
+```cpp
+// TU #1
+#include <alice.h>
+#include <bob.h>
+
+void foo(alice_vec *a, const bob_vec *b) {
+	a.x = b.y;
+	a.y = b.x; // TBAA says this is independent of the first read/write
+}
+```
+
+```cpp
+// TU #2
+#include <alice.h>
+#include <bob.h>
+#include <foo.h>
+
+void bar(alice_vec a) {
+	union my_vec { alic_vec a; bob_vec b; } u = {a};
+	foo(&u.a, &u.b); // erm......
+}
+```
+
+A similar issue can arise from the use of `_Record`, and the fact that an alias happened will escape the this translation unit without any indication:
+
+```cpp
+// TU #3
+#include <alice.h>
+#include <bob.h>
+#include <foo.h>
+
+// my_vec compatible with alice_vec and bob_vec
+typedef struct _Record my_vec { int x; int y; } my_vec;
+
+void baz(alice_vec a) {
+	const bob_vec* b = (my_vec*)&a;
+	foo(&u.a, &u.b); // ... ah.
+}
+```
+
+In both cases, the first translation unit has no idea about the aliasing of the second and third translation units used here. One example uses a union to do it, the other uses a record type that is compatible with both types. This is one of the weaknesses of `_Record` as a whole with a shared space / "viral" compatibility. A similar problem happens using void casts, without any intermediate `_Record` behavior at all:
+
+
+```cpp
+// TU #4
+#include <alice.h>
+#include <bob.h>
+#include <foo.h>
+
+void quux(alice_vec a) {
+	const bob_vec* b = (void*)&a;
+	foo(&u.a, &u.b); // ... hrm.
+}
+```
+
+
+### Should This Be Closed? ### {#design-shared-closed}
+
+As stated in [[#design-shared]], we believe the shared nature of `_Record` provides far more benefit to the ecosystem. Requiring everyone to annotate their code to turn on the benfits is a much less compelling design. This is also not a problem exclusive to this design: as demonstrated, this can happen with `union`s or `void*` casts. It does not make the situation better, but it also does not make the situation any worse than it is.
+
+NOTE: C++ technically is defeated by the `void*` situation, but not the `union` situation because it has explicit wording about which member of a union is an active union, and it is illegal to access a union through its non-active member.
+
+There are some potential directions that could fix this.
+
+The first one is disallowing pointer compatibility if **both** types aren't `_Record` types, but to allow things like argument passing and assignment so long as one is marked compatible through `_Record`. Having both types be record types means that `alice_vec` and `bob_vec` would both need to be marked as `_Record`, and that would clue a potential optimizer in to know that they might be potentially aliasing unless someone explicitly used the `restrict` keyword. This is somewhat of a compromise between many positions, but drastically decreases the usability of `_Record` for a wide variety of use cases. Macro generic programming is not affected.
+
+The second course of action is to require that `_Record` is placed on all types in order for **any** of its features to apply, meaning all of pointer compatibility, assignment, and argument passing are all disallowed unless both types are annotated. We think this is a poor idea and will create greater friction in adopting this feature to solve the present problems of the ecosystem, although it will have no effect on macro generic programming.
+
+The third course of action is to simply wait for whatever fix for the `void*` and `union` situations the Memory Model TS produces. This is a more general solution, and could solve it for everyone while not impeding this design. Both pointer casting and macro generic programming are not affected in this case.
+
+Our recommendation is for the third course of action, as this does not introduce a new footgun that has not been present since the dawn of C code.
 
 
 
@@ -684,9 +771,8 @@ Many thanks to the individuals who voiced their frustration with C's current sys
 		],
 		"title": "N360 - Generic selection expression with a type operand",
 		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3260.pdf",
-		"date": "September 6, 2024"
+		"date": "May 12th, 2024"
 	},
-	
 	"structural-typing": {
 		"authors": [
 			"Wikipedia"
@@ -702,6 +788,30 @@ Many thanks to the individuals who voiced their frustration with C's current sys
 		"title": "OCaml Basic Data Types and Pattern Matching",
 		"date": "September 2nd, 2024",
 		"href": "https://ocaml.org/docs/basic-data-types"
+	},
+	"linmath-h": {
+		"authors": [
+			"Datenwolf"
+		],
+		"title": "linmath.h",
+		"date": "September 2nd, 2024",
+		"href": "https://github.com/datenwolf/linmath.h"
+	},
+	"cglm": {
+		"authors": [
+			"recp"
+		],
+		"title": "cglm",
+		"date": "September 2nd, 2024",
+		"href": "https://github.com/recp/cglm"
+	},
+	"mathc": {
+		"authors": [
+			"feselva"
+		],
+		"title": "mathc",
+		"date": "September 2nd, 2024",
+		"href": "https://github.com/felselva/mathc"
 	}
 }
 </pre>
