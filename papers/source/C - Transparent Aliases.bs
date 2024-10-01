@@ -29,15 +29,15 @@ path: resources/css/bikeshed-wording.html
 
 
 
-# Changelog # {#changelog}
+# Revision History # {#changelog}
 
 
 
-## Revision 4 - September 07<sup>th</sup>, 2024 ## {#changelog-r4}
+## Revision 4 - September 7<sup>th</sup>, 2024 ## {#changelog-r4}
 
-- Drastically add improve the paper's reasoning and examples.
+- Drastically improve the paper's reasoning and examples.
 - Specifically address the idea that glibc and other libraries which have special names must keep linker names under a specific name and thus breaks this feature.
-- Specifically address the way composite types and other times.
+- Specifically address the way composite types and other redeclarations of the types are done.
 
 
 
@@ -113,6 +113,123 @@ This is, by itself, a completely untenable situation that hampers the growth of 
 > — [Steve Canon, Mathematician & Clang Developer](https://twitter.com/stephentyrone/status/1329796144193556482)
 
 At the surface of this issue and as illustrated by the many failed — and one successful — papers for `intmax_t` is that we need a better way for type definitions to be used for interfaces in the C standard. Underlying it is a wound that has begun to fester in the presence of not having a reason to invent wildly new architectures that necessitate fundamentally recompiling the world. Our inability to present a stable interface for users in a separable and Standards-Compliant way from the binary representation of a function that we cherish so deeply is becoming an increasing liability. If every function (the fundamental unit of doing work) essentially becomes impossible to change in any way, shape, or form, then what we are curating is not a living and extensible programming language but a dying system that is unequivocally doomed to general failure and eventual replacement.
+
+
+
+
+# Existing Practice # {#existing}
+
+To solve this problem, we pull from heavily deployed existing practice across all toolchains, standard libraries, embedded and server toolchains, and many more commercial and non-commercial compilers. It is, perhaps, one of the most widely deployed existing practices in the world insofar as C is concerned.
+
+
+
+## `__attribute__((alias(...)))` ## {#design-attribute.alias}
+
+It is not a coincidence that, in the initial example in [[#design]], we are using `__glibc…` prefixes for the 2 `imaxabs` function calls. Tying a function to a name it does not normally "mangle" to in the linker is a common implementation technique among more advanced C Standard Library Implementations, such as musl-libc and glibc. It is also a common technique deployed in many allocators to override symbols found in downstream binary artifacts, albeit this proposal does not cover the "weak symbol" portion of the alias techniques deployed by these libraries since that is sometimes limited to specific link-time configurations, binary artifact distributions, and platform architecture.
+
+Particularly, this proposal is focusing on the existing GCC-style attribute and a Clang-style attribute. The GCC attribute ([[gcc-attribute]]) provides the behavioral inspiration (but not exactly) for this proposal in its requirements, by effectively allowing for an existing function declaration to have its address made identical to the function it is aliasing:
+
+```cpp
+void __real_function (void) { /* real work here... */; }
+void function_decl(void) __attribute__ ((alias ("__real_function")));
+```
+
+This code will set up `function_decl` to contain an **additional** (potentially external) entry point for the address of `__real_function`. It is common implementation practice amongst compilers that are GCC-compatible and that focus on binary size reduction and macro-less, transparent, zero-cost indirection. It has the small caveat that it requires the target of the attribute to be fully defined before this happens, so it can definitively insert the address of the new entry point. For example, here is documentation from the Keil's armcc compiler ([[keil-attribute]]):
+
+```cpp
+static int oldname(int x, int y) {
+	return x + y;
+}
+static int newname(int x, int y) __attribute__((alias("oldname")));
+int caller(int x, int y) {
+	return oldname(x,y) + newname(x,y);
+}
+```
+
+This code compiles to:
+
+```cpp
+AREA ||.text||, CODE, READONLY, ALIGN=2
+newname                  ; Alternate entry point
+oldname PROC
+	MOV      r2,r0
+	ADD      r0,r2,r1
+	BX       lr
+	ENDP
+caller PROC
+	PUSH     {r4,r5,lr}
+	MOV      r3,r0
+	MOV      r4,r1
+	MOV      r1,r4
+	MOV      r0,r3
+	BL       oldname
+	MOV      r5,r0
+	MOV      r1,r4
+	MOV      r0,r3
+	BL       oldname
+	ADD      r0,r0,r5
+	POP      {r4,r5,pc}
+	ENDP
+```
+
+There are many compilers which implement exactly this behavior with exactly this GCC-extension syntax such as Oracle's C Compiler, the Intel C Compiler, the Tiny C Compiler, and Clang ([[oracle-attribute]], [[intel-attribute]]).
+
+Intermediate object files may still carry the name "`function_decl`", as well as an "alternate" name for the chosen functionality. This gets up fairly close to the desired behavior but not quite: we want to create an entity that, ultimately, has no linkage and is specified in such a way that it will almost always disappear in both intermediate objects and final artifacts, wherever possible, while still providing a level of compile-time indirection. In this way this feature departs from how `alias` in GCC's attribute syntax works, but we find this departure to be worth the effort.
+
+In order to clean away the minor issue of always creating a secondary external declaration that produces a "second name" in final artifacts with `__attribute__((alias(…)))` and similar, we then turn to another existing practice that does such renaming transparently, but does not require a second function declaration to map to a first one and does not always produce a secondary external name: `asm(…)` labels and `#pragma` definitions.
+
+
+
+
+## `asm("...")`/`__asm("...")`/`__asm__("...")` ## {#existing-asm}
+
+The second and equally as prominent existing practice for this behavior is what is known as "assembly labels". Clang also features this `asm`-style attribute, where the function's name is "mangled" to exactly the name given ([[clang-asm]]). GCC has this behavior as well ([[gcc-attribute]]). This is how NetBSD and other BSDs have been solving their Application Binary Interface woes [[netbsd-symbols|for nearly 30 years now]]. To borrow the example from NetBSD, they had an issue with their old, 32-bit time function being a 32-bit number. To solve this problem, they used 2 source files and 1 header file to export 2 differently-named symbols, but present the same declaration in the frontend for users:
+
+`old_time.c`
+```cpp
+// old, fixed declarations
+
+long time(long *ptime) { // no label: exports "time" symbol
+	/* old source here... */
+}
+```
+
+`time.c`
+```cpp
+#include <time.h>
+
+time_t time(time_t *ptime) __asm("time50") { // label: exports "time50" symbol
+	/* source here... */
+}
+```
+
+`time.h`
+```cpp
+typedef long long time_t;
+
+time_t time(time_t *ptime) __asm("time50");
+```
+
+This sequence of header and source files accomplishes the goal precisely of:
+
+- maintaining backwards binary compatibility with old binaries that expect a `time` function to exist that works with the registers associated with taking a `long` argument and returning a 32-bit `long` argument;
+- presenting the updated, user-facing, new `time` function that will not overwrite the other symbol (as it's name in the "assembly" has been changed to "`time50`");
+- allows a seamless upgrade experience in the right direction.
+
+Notice how this has allowed NetBSD to go from `long` to `long long` without issue: in general, this works extraordinarily well for functions that are paired with a typ definition. Users can be seamlessly upgrading by changing the type definition and/or structure while updating a function to have a newer assembly label in lock-step. Code that compiles more recently gets the new version with the new binary name, while old code that is not recompiled or changed continues to have its structures, layouts, expected stack/register usage preserved. This provides a way to upgrade users compiling new code without breaking binary users: in effect, this gets around the Application Binary Interface Break (ABI Break) problem that exists for many libraries in C.
+
+
+
+## `#pragma`s ## {#existing-pragmas}
+
+Microsoft Visual C uses a (slightly more complex) stateful pragma mechanisms and external compiler markup ([[msvc-exports]]). MSVC's `#pragma`-based approach can be coordinated entirely inside of the compiler, or it can rely on `EXPORT` commands and files given to a linker. Oracle's `#pragma redefine_extname` ([[oracle-pragma]]) is another similar extension that performs the equivalent of a find-and-replace for a given symbol name with the new symbol name. These are effectively assembly labels but done through blanket find-and-replace and similar implementation strategies. We will not expand upon it much further than that, as it is not much more interesting than "assembly labels through `#pragma`".
+
+They are harder to standardize because each mechanism relies too heavily on instructing the platform's linker and the details of binary artifacts to get the job done. It is hard to work with these as there is very little meaningful semantic constraints that can be placed on their designs that are enforceable within the boundaries of the Abstract Machine for standard C, and the experience when working with either of these directly is subpar; there can be no linker errors at all until an executable that needs a specific function is loaded, and only then will an error be tossed by the application loader. This is not friendly design for library writers or application developers.
+
+
+## Other Existing Practice: IBM Compilers ## {#existing-ibm}
+
+IBM has also stated that they have a similar extension in some of their non-public offerings, which create a compile-time link between two identifiers that does not perform any run-time or link-time replacement or changes.
 
 
 
@@ -220,74 +337,9 @@ In short, `alias_func` works like any other function declaration would, but is n
 It also serves as a layer of indirection to the "real function", which means function alias definitions and type definitions can be upgraded with one another while improving backwards compatibility.
 
 
+## Modeled after **both** `asm(...)` and `__attribute__((alias(...)))` ## {#design-model}
 
-## Inspiration: Existing Practice ## {#design-existing}
-
-It is not a coincidence that, in the initial example in [[#design]], we are using `__glibc…` prefixes for the 2 `imaxabs` function calls. Tying a function to a name it does not normally "mangle" to in the linker is a common implementation technique among more advanced C Standard Library Implementations, such as musl-libc and glibc. It is also a common technique deployed in many allocators to override symbols found in downstream binary artefacts, albeit this proposal does not cover the "weak symbol" portion of the alias techniques deployed by these libraries since that is sometimes limited to specific link-time configurations, binary artefact distributions, and platform architecture.
-
-Particularly, this proposal is focusing on the existing GCC-style attribute and a Clang-style attribute. The GCC attribute ([[gcc-attribute]]) provides the behavioral inspiration (but not exactly)  for this proposal in its requirements, by effectively allowing for an existing function declaration to have its address made identical to the function it is aliasing:
-
-```cpp
-void __real_function (void) { /* real work here... */; }
-void function_decl(void) __attribute__ ((alias ("__real_function")));
-```
-
-This code will set up `function_decl` to contain an **addtional** (potentially external) entry point for the address of `__real_function`. It is common implementation practice amongst compilers that are GCC-compatible and that focus on binary size reduction and macro-less, transparent, zero-cost indirection. It has the small caveat that it requires the target of the attribute to be fully defined before this happens, so it can definitively insert the address of the new entry point. For example, here is documentation from the Keil's armcc compiler ([[keil-attribute]]):
-
-```cpp
-static int oldname(int x, int y) {
-	return x + y;
-}
-static int newname(int x, int y) __attribute__((alias("oldname")));
-int caller(int x, int y) {
-	turn oldname(x,y) + newname(x,y);
-}
-```
-
-This code compiles to:
-
-```cpp
-AREA ||.text||, CODE, READONLY, ALIGN=2
-newname                  ; Alternate entry point
-oldname PROC
-	MOV      r2,r0
-	ADD      r0,r2,r1
-	BX       lr
-	ENDP
-caller PROC
-	PUSH     {r4,r5,lr}
-	MOV      r3,r0
-	MOV      r4,r1
-	MOV      r1,r4
-	MOV      r0,r3
-	BL       oldname
-	MOV      r5,r0
-	MOV      r1,r4
-	MOV      r0,r3
-	BL       oldname
-	ADD      r0,r0,r5
-	POP      {r4,r5,pc}
-	ENDP
-```
-
-There are many compilers which implement exactly this behavior with exactly this GCC-extension syntax such as Oracle's C Compiler, the Intel C Compiler, the Tiny C Compiler, and Clang ([[oracle-attribute]], [[intel-attribute]]). Clang also features its own `asm`-style attribute, where the function's name is "mangled" to exactly the name given ([[clang-attribute]]). Microsoft Visual C uses a (slightly more complex) stateful pragma mechanisms and external compiler markup ([[msvc-attribute]]).
-
-Intermediate object files may still carry the name "`function_decl`", as well as an "alternate" name for the chosen functionality. This gets up fairly close to the desired behavior but not quite: we want to create an entity that, ultimately, has no linkage and is specified in such a way that it will almost always disappear in both intermediate objects and final artefacts, wherever possible, while still providing a level of compile-time indirection. In this way this feature departs from how `alias` in GCC's attribute syntax works, but we find this departure to be worth the effort.
-
-In order to clean away the minor issue of always creating a secondary external declaration that produces a "second name" in final artefacts with `__attribute__((alias(…)))` and similar, we then turn to another existing practice that does such renaming transparently, but does not require a second function declaration to map to a first one and does not always produce a secondary external name: `asm(…)` labels and `#pragma` definitions.
-
-
-
-### Other Existing Practice: `asm(...)` and `#pragma` ### {#design-existing-other}
-
-There are 3 other proofs of practice in the industry today. One was an MSVC-like `#pragma` behavior/`EXPORT`-file specification. Another was a Clang-like `asm()`-attribute that behaved similarly to rename behavior. The third was a `#pragma` that simply made the linker do a find-and-replace symbol swap. When evaluated as potential alternatives to the syntaxes chosen here, there were a number of deficiencies for providing backwards compatibility. Notably, there are 2 chief concerns at play:
-
-- the function entity/entities the end-user must interact with from a given library; and,
-- valid interpretations of the directive in a world where the implementation does not produce binary artefacts.
-
-Clang and GCC's `asm(...)`, MSVC's `#pragma`-based approach, and Oracle's `#pragma redefine_extname` ([[oracle-pragma]]), are harder to standardize because each mechanism relies too heavily on the linker and the details of binary artefacts. The GCC-style attribute is tied to a front-end entity and, therefore, abstracts away binary changes as a means left to the implementation, Clang and MSVC's approaches are not tied to any entity that exists in the program in general. Export `#pragma`s and `asm(...)` attributes can be used to reference any symbol, by unchecked string, that can be resolved at any later stage of compilation (possibly during linking and code generation). There is no good way to standardize such behavior because there are no meaningful semantic constraints that can be placed on their designs that are enforceable within the boundaries of the Abstract Machine.
-
-Contrast this to GCC's alias attribute; it **requires** that a previous, in-language definition exists. If that definition does not exist, the program has a constraint violation:
+Transparent aliases have the practical effects of an `asm(...)` label applied to a function or variable, but borrows some of the type checking and useful behavior that is behind `__attribute__((alias(...)))`. Notably, the attribute alias approach **requires** that a previous, in-language definition exists. If that definition does not exist, the program has a constraint violation:
 
 ```cpp
 #if 0
@@ -304,80 +356,11 @@ int main () {
 }
 ```
 
+`__attribute((alias(…)))`'s entity-checking constraints are more suitable for Standard C, since we do not want to specify this in terms of effects on a binary artifact or "symbols". `asm(...)` is also not suitable for the user-facing design of this because it requires someone to know the precise mangling of a function call. While this can be helpful in exotic situations, we are okay with letting the wide plethora of existing practice cover the more exotic cases while providing for a strongly-typed, compiler-checked version that simply provides an invisible layer of indirection that is similar to the design of `typedef`.  Therefore, we gear our design to make no imposition on what may or may not happen to the exported symbols.
 
-`__attribute((alias(…)))`'s entity-checking constraints are more suitable for Standard C, since we do not want to specify this in terms of effects on a binary artefact or "symbols" (e.g., by using stringly-typed `asm("…")` blocks). Therefore, we gear our design to make no imposition on what may or may not happen to the exported symbols. It only ties one entity to another in what is typically known as an implementation's "front end". Whether or not final binary artefacts do the right thing is still up to an implementation (and always will be, because the Standard cannot specify such). This gives us proper semantics without undue burden on either specification or implementation.
+Crucially important, though, is that this behaves like `asm(...)` in that it does not actually export a symbol name for the Transparent Alias that is declared. This allows that name to be reused for binary artifacts in a more precise manner than was previously possible under these sorts of situations without implementation extensions. It only ties one Compilation Stage 5 entity to another Compilation Stage 5 entity in what is typically known as an implementation's "front end". Whether or not final binary artifacts do the right thing is still up to an implementation (and always will be, because the Standard cannot specify such). This gives us proper semantics without undue burden on either specification or implementation.
 
 In short, as with `typedef`s, we want to focus on creating an entity that **has no linkage** but for functions/variables (objects).
-
-
-### Other Existing Practice: IBM Compilers ## {#design-existing-ibm}
-
-IBM has also stated that they have a similar extension in some of their non-public offerings, which create a compile-time link between two identifiers that does not perform any run-time or link-time replacement or changes.
-
-
-
-### Implementation Experience ### {#design-existing-implementation}
-
-An implementation of Transparent Aliases is available at [this Clang fork](https://github.com/ThePhD/llvm-project/commit/d81faeefa01e7c57a222f5bdfe355bb6a7f4b84f). It provides the feature and, when built and installed, can be used to run [this suite of tests](https://github.com/ThePhD/transparent-aliases).
-
-The test suite sets up a supposed ABI on both Linux, Mac, and Windows by creating a DLL with exported functions. Without redefining the functions, the tests show that taking an old Shared Object or a Windows DLL, upgrading it and doing an in-place replacement of that file with a newly built object that contains new definitions, still lets old applications work while new applications return the correct and proper functionality from the updated code.
-
-The test suite also outputs a version number while doing a comparison test. A negative, custom-defined `intmax_t` number - which uses bits in all available registers on 2s complement 32-bit and 64-bit systems - is properly returned from a function `maxabs` that computes its absolute value. That value is further compared equal to the size of a defined `intmax_t`, which resolves to `8` in the old application (`long long`) and `16` in the new application (`__int128_t`):
-
-```cpp
-#include <my_libc/maxabs.h>
-
-#include <stdio.h>
-
-int main() {
-	intmax_t abi_is_hard = -(intmax_t)sizeof(intmax_t);
-	intmax_t but_not_that_hard = maxabs(abi_is_hard);
-	printf("%d\n", my_libc_magic_number());
-	return ((int)(but_not_that_hard) == sizeof(intmax_t)) ? 0 : 1;
-}
-```
-
-The program only returns `0` (and passes the test suite) if the returned value is properly negated and compares equal to the original size. The test output on all 3 of Linux (Ubuntu and Debian), Mac (Mojave), and Windows (Version 10 and 11) is as follows:
-
-```bash
-[proc] Executing command: ctest -j10 -C Debug -T test --output-on-failure
-[ctest] Cannot find file: transparent-aliases/.cmake/build/DartConfiguration.tcl
-[ctest]    Site: 
-[ctest]    Build name: (empty)
-[ctest] Cannot find file: transparent-aliases/.cmake/build/DartConfiguration.tcl
-[ctest] Test project transparent-aliases/.cmake/build
-[ctest]       Start  6: discard_warning.compile.clean
-[ctest]       Start 10: app_old.lib_new-copy
-[ctest]       Start  8: app_old.lib_old
-[ctest]       Start  9: app_new.lib_new
-[ctest]       Start  3: example3
-[ctest]       Start  5: discard_warning
-[ctest]       Start  4: example4
-[ctest]       Start  2: example2
-[ctest]       Start  1: example1
-[ctest]  1/11 Test  #6: discard_warning.compile.clean ....   Passed    0.20 sec
-[ctest]       Start  7: discard_warning.compile
-[ctest]  2/11 Test  #5: discard_warning ..................   Passed    0.12 sec
-[ctest]  3/11 Test #10: app_old.lib_new-copy .............   Passed    0.20 sec
-[ctest]       Start 11: app_old.lib_new
-[ctest]  4/11 Test  #4: example4 .........................   Passed    0.12 sec
-[ctest]  5/11 Test  #2: example2 .........................   Passed    0.09 sec
-[ctest]  6/11 Test  #1: example1 .........................   Passed    0.06 sec
-[ctest]  7/11 Test  #8: app_old.lib_old ..................   Passed    0.22 sec
-[ctest]  8/11 Test  #9: app_new.lib_new ..................   Passed    0.19 sec
-[ctest]  9/11 Test  #3: example3 .........................   Passed    0.16 sec
-[ctest] 10/11 Test #11: app_old.lib_new ..................   Passed    0.03 sec
-[ctest] 11/11 Test  #7: discard_warning.compile ..........   Passed    5.56 sec
-[ctest] 
-[ctest] 100% tests passed, 0 tests failed out of 11
-[ctest] 
-[ctest] Total Test time (real) =   5.79 sec
-[ctest] CTest finished with return code 0
-```
-
-We specifically make sure to turn off typical automatic RPATH handling on *Nix machines, and make sure they load the DLL present in `${ORIGIN}` (so that simply copying over the application-local DLL ensures it is loading the DLL associated with the test.
-
-This serves as concrete evidence that existing implementations can use the feature to produce upgradable libraries while keeping old symbols entirely intact. Users using the test compiler could reproduce these results successfully.
 
 
 
@@ -386,16 +369,16 @@ This serves as concrete evidence that existing implementations can use the featu
 At this point in time, one might wonder why we do not propose an attribute or similar for the task here. After all, almost all prior art uses an attribute-like or literal `__attribute__` syntax. Our reasons are 2-fold.
 
 
-### Standard Attributes may be ignored. ### {#design-attribute-ignored}
+### Standard Attributes may be ignored ### {#design-attribute-ignored}
 
 The ability to ignore an attribute and still have a conforming program is disastrous for this feature. It reduces portability of libraries that want to defend against binary breakages. Note that this is, effectively, the situation we are in now: compilers effectively ruin any implementation-defined extension by simply refusing to support that extension or coming up with one of their own. Somewhat ironically, those same vendors will attend C Committee meetings and complain about binary breakages. We then do not change anything related to that feature area, due to the potential of binary breakages.
 
 The cycle continues and will continue ad nauseum until Standard C provides a common-ground solution.
 
 
-### There is no such thing as "mangled name" or "symbol name" in the Standard. ### {#design-attribute-mangled}
+### There is no such thing as "mangled name" or "symbol name" in the Standard ### {#design-attribute-mangled}
 
-Any attempt at producing normative text for a "symbol name" construct is incredibly fraught with peril and danger. Vendors deserve to have implementation freedom with respect to their what their implementation produces (or not). Solving this problem must be done without needing to draft specification for what a "binary artefact" or similar may be and how an attribute or attribute-like construct could affect it. If this feature relies primarily on non-normative encouragement or notes to provide ABI protection, then it is not fit for purpose.
+Any attempt at producing normative text for a "symbol name" construct is incredibly fraught with peril and danger. Vendors deserve to have implementation freedom with respect to their what their implementation produces (or not). Solving this problem must be done without needing to draft specification for what a "binary artifact" or similar may be and how an attribute or attribute-like construct could affect it. If this feature relies primarily on non-normative encouragement or notes to provide ABI protection, then it is not fit for purpose.
 
 Therefore, we realize that the best way to achieve this is to effectively allow for a transparent aliasing technique for functions, similar to type definitions. It must be in the language and it must be Standard, otherwise we can never upgrade any of our type definitions without waiting for an enormous architectural break (like the 32-bit to 64-bit transition).
 
@@ -437,7 +420,7 @@ extern intmax_t __imaxabs_vanilla_v2(intmax_t);
 _Alias imaxabs = __imaxabs_vanilla_v2;
 ```
 
-As long as `inttypes_compatibility.c` is linked with the final binary artefact `vanilla.so`, the presumed mangled symbol `_imaxabs` will always be there. Meanwhile, the "standard" `inttypes.h` will have the normal `imaxabs` symbol that is tied in a transparent way to the "Version 2" of the vanilla implementation, `__imaxabs_vanilla_v2`. This produces a perfectly backwards compatible interface for the previous users of `vanilla.so`. It allows typedefs to be seamlessly upgraded, without breaking already-compiled end user code. Newly compiled code will directly reference the v2 functions with no performance loss or startup switching, getting an upgraded `intmax_t`. Older programs compiled with the old `intmax_t` continue to reference old symbols left by compatibility translation units in the code.
+As long as `inttypes_compatibility.c` is linked with the final binary artifact `vanilla.so`, the presumed mangled symbol `_imaxabs` will always be there. Meanwhile, the "standard" `inttypes.h` will have the normal `imaxabs` symbol that is tied in a transparent way to the "Version 2" of the vanilla implementation, `__imaxabs_vanilla_v2`. This produces a perfectly backwards compatible interface for the previous users of `vanilla.so`. It allows typedefs to be seamlessly upgraded, without breaking already-compiled end user code. Newly compiled code will directly reference the v2 functions with no performance loss or startup switching, getting an upgraded `intmax_t`. Older programs compiled with the old `intmax_t` continue to reference old symbols left by compatibility translation units in the code.
 
 This means that C Standard Libraries will have a language-capable medium of upgrading their code in a systemic and useful fashion. A working, tested, compiled version of this example is available at []().
 
@@ -463,12 +446,11 @@ This is a restriction that is special to C. Thankfully, we are not particularly 
 - `struct timespec` (`timespec_get`, and other functions)
 - `time_t` (`time`, `mktime`, `difftime`, and more functions)
 - `intmax_t` (`imaxabs`, `strtoimax`, and similar functions)
-- `wchar_t` (`mbstowcs`, `wcslen`, and similar functions)
 - and so on, and so forth.
 
 These are types which are controlled in conjunction by the standard library and are known to change on 32-bit and 64-bit systems as well as transition based on locale and other compile-time settings. A single DLL can be distributed on a system and accommodate a variety of preprocessor-based switches or other compile-time information and allow an information to accommodate and/or upgrade a given system's symbol table (or DLL/SO's symbol table) without breaking old, original code.
 
-Therefore, we do not do anything to support or inhibit such declarations. Implementations looking to keep such declarations working from older versions of code should consider leaving those old symbols within their binary artefacts (system tables, shared/static libraries, etc.) to continue supporting such a use case; this proposal is not going to address it or the myriad of other issues around this (such as strong/weak symbols and other attributes/aliasing issues).
+Therefore, we do not do anything to support or inhibit such declarations. Implementations looking to keep such declarations working from older versions of code should consider leaving those old symbols within their binary artifacts (system tables, shared/static libraries, etc.) to continue supporting such a use case; this proposal is not going to address it or the myriad of other issues around this (such as strong/weak symbols and other attributes/aliasing issues).
 
 
 
@@ -559,6 +541,84 @@ int main () {
 ```
 
 This can help migrate users to newer APIs that may change names or evolve over time, or offer better features/additional control parameters.
+
+
+
+
+# Implementation Experience # {#implementation}
+
+An implementation of Transparent Aliases is available at [this Clang fork](https://github.com/ThePhD/llvm-project/commit/d81faeefa01e7c57a222f5bdfe355bb6a7f4b84f). It provides the feature and, when built and installed, can be used to run [this suite of tests](https://github.com/ThePhD/transparent-aliases). A writeup of the effects of that implementation can be found in [this blog post](https://thephd.dev/to-save-c-we-must-save-abi-fixing-c-function-abi).
+
+The test suite sets up a supposed ABI on both Linux, Mac, and Windows by creating a DLL with exported functions. Without redefining the functions, the tests show that taking an old Shared Object or a Windows DLL, upgrading it and doing an in-place replacement of that file with a newly built object that contains new definitions, still lets old applications work while new applications return the correct and proper functionality from the updated code.
+
+The test suite also outputs a version number while doing a comparison test. A negative, custom-defined `intmax_t` number - which uses bits in all available registers on 2s complement 32-bit and 64-bit systems - is properly returned from a function `maxabs` that computes its absolute value. That value is further compared equal to the size of a defined `intmax_t`, which resolves to `8` in the old application (`long long`) and `16` in the new application (`__int128_t`):
+
+```cpp
+#include <my_libc/maxabs.h>
+
+#include <stdio.h>
+
+int main() {
+	intmax_t abi_is_hard = -(intmax_t)sizeof(intmax_t);
+	intmax_t but_not_that_hard = maxabs(abi_is_hard);
+	printf("%d\n", my_libc_magic_number());
+	return ((int)(but_not_that_hard) == sizeof(intmax_t)) ? 0 : 1;
+}
+```
+
+The program only returns `0` (and passes the test suite) if the returned value is properly negated and compares equal to the original size. The test output on all 3 of Linux (Ubuntu and Debian), Mac (Mojave), and Windows (Version 10 and 11) is as follows:
+
+```bash
+[proc] Executing command: ctest -j10 -C Debug -T test --output-on-failure
+[ctest] Cannot find file: transparent-aliases/.cmake/build/DartConfiguration.tcl
+[ctest]    Site: 
+[ctest]    Build name: (empty)
+[ctest] Cannot find file: transparent-aliases/.cmake/build/DartConfiguration.tcl
+[ctest] Test project transparent-aliases/.cmake/build
+[ctest]       Start  6: discard_warning.compile.clean
+[ctest]       Start 10: app_old.lib_new-copy
+[ctest]       Start  8: app_old.lib_old
+[ctest]       Start  9: app_new.lib_new
+[ctest]       Start  3: example3
+[ctest]       Start  5: discard_warning
+[ctest]       Start  4: example4
+[ctest]       Start  2: example2
+[ctest]       Start  1: example1
+[ctest]  1/11 Test  #6: discard_warning.compile.clean ....   Passed    0.20 sec
+[ctest]       Start  7: discard_warning.compile
+[ctest]  2/11 Test  #5: discard_warning ..................   Passed    0.12 sec
+[ctest]  3/11 Test #10: app_old.lib_new-copy .............   Passed    0.20 sec
+[ctest]       Start 11: app_old.lib_new
+[ctest]  4/11 Test  #4: example4 .........................   Passed    0.12 sec
+[ctest]  5/11 Test  #2: example2 .........................   Passed    0.09 sec
+[ctest]  6/11 Test  #1: example1 .........................   Passed    0.06 sec
+[ctest]  7/11 Test  #8: app_old.lib_old ..................   Passed    0.22 sec
+[ctest]  8/11 Test  #9: app_new.lib_new ..................   Passed    0.19 sec
+[ctest]  9/11 Test  #3: example3 .........................   Passed    0.16 sec
+[ctest] 10/11 Test #11: app_old.lib_new ..................   Passed    0.03 sec
+[ctest] 11/11 Test  #7: discard_warning.compile ..........   Passed    5.56 sec
+[ctest] 
+[ctest] 100% tests passed, 0 tests failed out of 11
+[ctest] 
+[ctest] Total Test time (real) =   5.79 sec
+[ctest] CTest finished with return code 0
+```
+
+We specifically make sure to turn off typical automatic RPATH handling on *Nix machines, and make sure they load the DLL present in `${ORIGIN}` (so that simply copying over the application-local DLL ensures it is loading the DLL associated with the test.
+
+This serves as concrete evidence that existing implementations can use the feature to produce upgradable libraries while keeping old symbols entirely intact. Users using the test compiler could reproduce these results successfully.
+
+
+
+## What About Mangled Identifiers? ## {#implementation-mangled}
+
+musl-libc, glibc, Darwin, and an excessively high amount of other standard library definitions make liberal use of both `__attribute__((alias(...)))` and `asm("...")`/`__asm("...")` labels to provide names in their binaries that do not represent typical mangling on existing systems. Below are snippets of such libraries and some declarations / code that they use to achieve this.
+
+
+### Darwin / MacOS 15.0 ### {#implementation-mangled-macos}
+
+Apple's MacOS 15.0 "Sequoia" currently deploys and has been deploying these fixes for a long time now. Using a macro named `__DARWIN_ALIAS(...)`, which translates to
+the tokens put into that macro being stringified and concatenated with an extra underscore VIA the adjacent string literal `"_"`, several variables **and** functions in their base runtime have a mangling different from what would be expected of a typical loading of e.g. the `timezone` variable of the `strftime` function. A reproduction of that code can be found in [[#appendix-macos.time.h]].
 
 
 
@@ -1075,6 +1135,104 @@ extern long long imaxabs(long long value) {
 
 
 
+# Appendix # {#appendix}
+
+A collection of code snippets, old information, and notes for the rest of the paper.
+
+
+## MacOS 15.0 Sequoia `_time.h` Code ## {#appendix-macos.time.h}
+
+```cpp
+/*
+ * Copyright (c) 2023 Apple Computer, Inc. All rights reserved.
+ *
+ * @APPLE_LICENSE_HEADER_START@
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
+ * 
+ * @APPLE_LICENSE_HEADER_END@
+ */
+/*
+ * Copyright (c) 1989, 1993
+ *	The Regents of the University of California.  All rights reserved.
+ * (c) UNIX System Laboratories, Inc.
+ * All or some portions of this file are derived from material licensed
+ * to the University of California by American Telephone and Telegraph
+ * Co. or Unix System Laboratories, Inc. and are reproduced herein with
+ * the permission of UNIX System Laboratories, Inc.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+ * 4. Neither the name of the University nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ *
+ *	@(#)time.h	8.3 (Berkeley) 1/21/94
+ */
+
+#ifndef _TIME_H_
+#define	_TIME_H_
+
+/* ... SOME CODE OMITTED ... */
+
+extern int getdate_err;
+#if __DARWIN_UNIX03
+extern long timezone __DARWIN_ALIAS(timezone);
+#endif /* __DARWIN_UNIX03 */
+extern int daylight;
+
+__BEGIN_DECLS
+char *asctime(const struct tm *);
+clock_t clock(void) __DARWIN_ALIAS(clock);
+char *ctime(const time_t *);
+double difftime(time_t, time_t);
+struct tm *getdate(const char *);
+struct tm *gmtime(const time_t *);
+struct tm *localtime(const time_t *);
+time_t mktime(struct tm *) __DARWIN_ALIAS(mktime);
+size_t strftime(char * __restrict, size_t, const char * __restrict, const struct tm * __restrict) __DARWIN_ALIAS(strftime);
+char *strptime(const char * __restrict, const char * __restrict, struct tm * __restrict) __DARWIN_ALIAS(strptime);
+time_t time(time_t *);
+
+/* ... SOME CODE OMITTED ... */
+```
+
+
 <pre class="biblio">
 {
 	"N2680": {
@@ -1140,7 +1298,7 @@ extern long long imaxabs(long long value) {
 		"href": "https://gcc.gnu.org/onlinedocs/gcc-4.0.2/gcc/Function-Attributes.html#Function-Attributes",
 		"date": "August 16th, 2021"
 	},
-	"clang-attribute": {
+	"clang-asm": {
 		"authors": [
 			"LLVM Maintainers"
 		],
@@ -1176,7 +1334,7 @@ extern long long imaxabs(long long value) {
 		"href": "https://docs.oracle.com/cd/E24457_01/html/E21990/gjzke.html#scrolltoc",
 		"date": "December 30th, 2012"
 	},
-	"msvc-attribute": {
+	"msvc-exports": {
 		"authors": [
 			"Microsoft Visual C++"
 		],
@@ -1193,6 +1351,15 @@ extern long long imaxabs(long long value) {
 		"publisher": "armcc Compiler Maintainers",
 		"href": "https://www.keil.com/support/man/docs/armcc/armcc_chr1359124973698.htm",
 		"date": "December 31st, 2019"
+	},
+	"netbsd-symbols": {
+		"authors": [
+			"NetBSD & Contributors"
+		],
+		"title": "Symbol Versioning",
+		"publisher": "NetBSD Wiki",
+		"href": "https://wiki.netbsd.org/symbol_versions/",
+		"date": "September 24th, 2024"
 	}
 }
 </pre>
