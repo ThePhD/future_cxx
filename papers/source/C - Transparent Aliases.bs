@@ -4,7 +4,7 @@ Shortname: 3329
 Revision: 4
 !Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3200.htm">N3200 (r3)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2970.htm">N2970 (r2)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2901.htm">N2901 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2729.htm">N2729 (r0)</a>
 Status: P
-Date: 2024-09-07
+Date: 2024-10-19
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -35,9 +35,10 @@ path: resources/css/bikeshed-wording.html
 
 ## Revision 4 - September 7<sup>th</sup>, 2024 ## {#changelog-r4}
 
-- Drastically improve the paper's reasoning and examples.
-- Specifically address the idea that glibc and other libraries which have special names must keep linker names under a specific name and thus breaks this feature.
-- Specifically address the way composite types and other redeclarations of the types are done.
+- Drastically improve the paper's reasoning and examples in [[#design]].
+- Add several real-life code examples from C standard and platform libraries in the [[#appendix]].
+- Specifically address the idea that glibc and other libraries which have special names must keep linker names under a specific name and thus breaks this feature / breaks `dlsym` in [[#motivation-dlsym]].
+- Specifically address the way composite types and other redeclarations of the types are done; refined the [[#wording]].
 
 
 
@@ -102,6 +103,20 @@ These techniques, expanded upon in the design section as to why we chose the syn
 
 
 
+## `dlsym`, `GetProcAddress`, and More ## {#motivation-dlsym}
+
+There is, unfortunately, no guarantee that asking for e.g. `strftime` or similar raw name from the C standard library will actually directly translate to having such a definition findable in a program with an appropriately loaded standard library with implementation-defined functionality such as `dlsym` or `GetProcAddress`. Oftentimes, users need to actually specifically ask for certain function names, including decorating them with `__` and `64` (to match some musl-libc functions) or similar for glibc and otherwise. How long these symbols stick around is a matter of implementation quality, though sometimes such changes result in very difficult-to-change Application Binary Interfaces.
+
+From NetBSD, in large text in a heading:
+
+> <b>Programs that use dlsym(3), such as C foreign function interfaces in dynamic languages like Python, need to know that if they want the legacy 32-bit `time()` function, they must use the symbol `time`, and if they want the modern 64-bit time() function, they must use the symbol `__time50`.</b>
+>
+> — [NetBSD: Symbol Versions](https://wiki.netbsd.org/symbol_versions/)
+
+It is clear that C implementations do not require a 1:1 mapping between C standard library names and actualy symbols on the machine.
+
+
+
 ## C Issue - Prevented Evolution ## {#motivation-evolution}
 
 Not fixing this issue also comes with a grave problem without considering C++ at all. We have no way of seamlessly upgrading our libraries without forcing end-users to consider ABI breakage inherit in changes type definitions or having library authors jump through implementation-specific and frightening hoops for creating (transparent) layers of indirection between a function call and the final binary. This means large swaths of C's standard library, due to §7.1.4, are entirely static and non-upgradeable, even if we write functions that use type definitions that can change.
@@ -123,7 +138,7 @@ To solve this problem, we pull from heavily deployed existing practice across al
 
 
 
-## `__attribute__((alias(...)))` ## {#design-attribute.alias}
+## `__attribute__((alias(...)))` ## {#existing-attribute.alias}
 
 It is not a coincidence that, in the initial example in [[#design]], we are using `__glibc…` prefixes for the 2 `imaxabs` function calls. Tying a function to a name it does not normally "mangle" to in the linker is a common implementation technique among more advanced C Standard Library Implementations, such as musl-libc and glibc. It is also a common technique deployed in many allocators to override symbols found in downstream binary artifacts, albeit this proposal does not cover the "weak symbol" portion of the alias techniques deployed by these libraries since that is sometimes limited to specific link-time configurations, binary artifact distributions, and platform architecture.
 
@@ -236,12 +251,12 @@ IBM has also stated that they have a similar extension in some of their non-publ
 
 # Design # {#design}
 
-Our goal with this feature is to create a no-cost, zero-overhead function abstraction layer that prevents a type definition or other structure from leaking into a binary in a permanent and non-upgradable fashion. From the motivation and analysis above, we need the following properties:
+Our goal with this feature is to create an identifier with no linkage (therefore costing no binary space even with a naïve implementation) that can point to any variable or function, following the widespread [[#existing]]. From the motivation and analysis above, we need the following properties:
 
-- It must be a concrete name, not a macro.
-- It must be able to decay to a function pointer when referenced by name, like a normal function declaration, and that value must be usable.
-- It should not require producing a symbol on non-interpreter implementations of C.
-- It should allow for an implementation to upgrade or change the arguments or return type of a concrete symbol without requiring a detectable binary break on any binary C implementation.
+- It must be a concrete name (identifier), not a macro.
+- It must be able to decay to a function pointer when referenced plainly by name, like a normal function declaration, and that value must be usable (unlike a function macro).
+- It should not require producing a symbol on non-interpreter implementations of C for a simple, straightforward implementation of the feature.
+- It should allow for an implementation to upgrade or change the arguments or return type of a concrete symbol without requiring a detectable binary break when used in the same way that the existing practice has been used for C implementations.
 
 To fulfill these requirements, we propose the a new *transparent-alias* construct that, in general, would be used like such:
 
@@ -286,7 +301,7 @@ int real_func (double d, int i) {
 
 _Alias alias_func = real_func;
 
-/* The below is a Constration Violation. You cannot redeclare */
+/* The below is a Constraint Violation. You cannot redeclare */
 /* a function alias with an incompatible signature. */
 //void alias_func(void);
 
@@ -366,7 +381,7 @@ In short, as with `typedef`s, we want to focus on creating an entity that **has 
 
 ## Why not an `[[attribute]]`? ## {#design-attribute}
 
-At this point in time, one might wonder why we do not propose an attribute or similar for the task here. After all, almost all prior art uses an attribute-like or literal `__attribute__` syntax. Our reasons are 2-fold.
+At this point in time, one might wonder why we do not propose an attribute or similar for the task here. After all, almost all prior art that does not use compiler options and/or the preprocessor uses an attribute-like or literal `__attribute__` syntax. Our reasons are 2-fold.
 
 
 ### Standard Attributes may be ignored ### {#design-attribute-ignored}
@@ -422,8 +437,6 @@ _Alias imaxabs = __imaxabs_vanilla_v2;
 
 As long as `inttypes_compatibility.c` is linked with the final binary artifact `vanilla.so`, the presumed mangled symbol `_imaxabs` will always be there. Meanwhile, the "standard" `inttypes.h` will have the normal `imaxabs` symbol that is tied in a transparent way to the "Version 2" of the vanilla implementation, `__imaxabs_vanilla_v2`. This produces a perfectly backwards compatible interface for the previous users of `vanilla.so`. It allows typedefs to be seamlessly upgraded, without breaking already-compiled end user code. Newly compiled code will directly reference the v2 functions with no performance loss or startup switching, getting an upgraded `intmax_t`. Older programs compiled with the old `intmax_t` continue to reference old symbols left by compatibility translation units in the code.
 
-This means that C Standard Libraries will have a language-capable medium of upgrading their code in a systemic and useful fashion. A working, tested, compiled version of this example is available at []().
-
 
 ### Standard Library Redeclaration ### {#design-compatibility-redeclaration}
 
@@ -441,11 +454,12 @@ int main () {
 }
 ```
 
-This is a restriction that is special to C. Thankfully, we are not particularly concerned about the ability to upgrade this function: users who are declaring Standard Library functions without including the header like this are doing this strictly as experts. They have a strong expectation of what symbol they are getting from their distribution. Transparent aliases are meant to be used for functions which rely on type definitions or structures defined in the standard library, including (but not limited to):
+This is a restriction that is special to C. Thankfully, we are not particularly concerned about the ability to upgrade this function: users who are declaring Standard Library functions without including the header like this are doing this strictly as experts. They have a strong expectation of what symbol they are getting from their distribution. Transparent aliases are meant to be used for functions which rely on type definitions or structures which may change, prompting the need to provide updated global variables and updated functions without breaking old binaries. Some famous C standard library examples of this include (but are not limited to):
 
-- `struct timespec` (`timespec_get`, and other functions)
-- `time_t` (`time`, `mktime`, `difftime`, and more functions)
-- `intmax_t` (`imaxabs`, `strtoimax`, and similar functions)
+- `struct timespec` (`timespec_get`, and other functions);
+- `time_t` (`time`, `mktime`, `difftime`, and more functions);
+- `intmax_t` (`imaxabs`, `strtoimax`, and similar functions);
+- `strtoul` and similar functions to handle changes to `%b` and `%B` that might be breaking;
 - and so on, and so forth.
 
 These are types which are controlled in conjunction by the standard library and are known to change on 32-bit and 64-bit systems as well as transition based on locale and other compile-time settings. A single DLL can be distributed on a system and accommodate a variety of preprocessor-based switches or other compile-time information and allow an information to accommodate and/or upgrade a given system's symbol table (or DLL/SO's symbol table) without breaking old, original code.
@@ -474,7 +488,7 @@ extern void b(int w, double x, struct yy* y, struct zz* z);
 typeof(b) a = b;
 ```
 
-This is much more palatable, but violates the rule of "don't repeat yourself". Repeating ourselves leaves the potential, still, for slight misspellings between what is inside of `typeof` and what is at the other end of the equal (`=`) sign. We would like to replace this potential redunancy with a simple token instead, as this would also allow us to avoid ambiguity or figure out how to work such syntax into the "declarator" grammar construction (which is not impossible, just less palatable). Therefore, we do not pursue this option for the syntax of this feature.
+This is much more palatable, but violates the rule of "don't repeat yourself". Repeating ourselves leaves the potential, still, for slight misspellings between what is inside of `typeof` and what is at the other end of the equal (`=`) sign. We would like to replace this potential redunancy with a simple token instead, as this would also allow us to avoid ambiguity or figure out how to work such syntax into the "declarator" grammar construction (which is not impossible, just less palatable). Therefore, we do not pursue this option for the syntax of this feature. The other problem with this is that no function definition/declaration works in this manner, and such types are usually "adjusted" to being function pointers anyways.
 
 
 
@@ -531,7 +545,8 @@ We think this would be a useful **general purpose compile-time renaming mechanis
 
 const char* v1_name = "very.cool.name!";
 
-[[deprecatad("this name will be removed in version 2, please upgrade appropriately")]]
+[[deprecatad("this name will be removed in future versions, "
+"please upgrade appropriately")]]
 _Alias v0_name = v1_name;
 
 int main () {
@@ -672,16 +687,16 @@ Change every instance of "<del>declarator or type specifier</del>" to be "<ins>d
 
 <blockquote>
 <div class="wording-numbered wording-numbered-7">
-Structure, union, and enumeration tags have scope that begins just after the appearance of the tag in a type specifier that declares the tag. Each enumeration constant has scope that begins just after the appearance of its defining enumerator in an enumerator list.<ins>A transparent alias name has a scope that begins at the end of its definition.</ins> Any other identifier has scope that begins just after the completion of its declarator.
+Structure, union, and enumeration tags have scope that begins just after the appearance of the tag in a type specifier that declares the tag. Each enumeration constant has scope that begins just after the appearance of its defining enumerator in an enumerator list. An ordinary identifier that has an underspecified definition has scope that starts when the definition is completed; if the same ordinary identifier declares another entity with a scope that encloses the current block, that declaration is hidden as soon as the inner declarator is completed.<sup>19)</sup> <ins>A transparent alias name has a scope that begins at the end of its definition.</ins> Any other identifier has scope that begins just after the completion of its declarator.
 </div>
 </blockquote>
 
 
 
-## Modify paragraph 6 "§6.2.2 Linkages of identifiers" ## {#wording-6.2.2}
+## Modify "§6.2.2 Linkages of identifiers", paragraph 6 ## {#wording-6.2.2}
 
 <blockquote>
-<div class="wording-numbered wording-numbered-8">
+<div class="wording-numbered wording-numbered-6">
 The following identifiers have no linkage: an identifier declared to be anything other than an object or a function; <ins>a transparent alias;</ins> an identifier declared to be a function parameter; a block scope identifier for an object declared without the storage-class specifier <b>extern</b>.
 </div>
 </blockquote>
@@ -717,14 +732,13 @@ The following identifiers have no linkage: an identifier declared to be anything
 </blockquote>
 
 
-## Modify §6.5.1, Semantics, paragraph 2 ## {#wording-6.5.1}
+## Modify §6.5.2 Primary expressions, Semantics, paragraph 2 ## {#wording-6.5.2}
 
 <blockquote>
 <div class="wording-section">
 <div class="wording-numbered-2 wording-numbered">
 
-An identifier is a primary expression, provided it has been declared as designating an object (in
-which case it is an lvalue)<del> or</del><ins>,</ins> a function (in which case it is a function designator)<ins>, or transparent alias (in which case it is either an lvalue or a function designator)</ins>.
+An identifier is a primary expression, provided it has been declared as designating an object (in which case it is an lvalue)<del> or</del><ins>,</ins> a function (in which case it is a function designator)<ins>, or transparent alias (in which case it is either an lvalue or a function designator)</ins>.
 </div>
 </div>
 </blockquote>
@@ -734,7 +748,7 @@ which case it is an lvalue)<del> or</del><ins>,</ins> a function (in which case 
 ## Modify "§6.7 Declarations" as follows... ## {#wording-6.7}
 
 
-### §6.7 Syntax, paragraph 1, with a new "declaration" production ### {#wording-6.7-p1}
+### §6.7.1 General, Syntax, paragraph 1, with a new "declaration" production ### {#wording-6.7.1-p1}
 
 <blockquote>
 <div class="wording-numbered wording-numbered-1">
@@ -751,27 +765,26 @@ which case it is an lvalue)<del> or</del><ins>,</ins> a function (in which case 
 </blockquote>
 
 
-### §6.7 Constraints, paragraphs 2 and 3 ### {#wording-6.7-p2}
+### §6.7.1 General, Constraints, paragraphs 2 and 4 ### {#wording-6.7.1-p2.p4}
 
 <blockquote>
 <div class="wording-numbered wording-numbered-2">
 
-A declaration other than a *static_assert*, <ins>*transparent alias*,</ins> or *attribute* declaration shall declare at least a declarator (other than the parameters of a function or the members of a structure or union), a tag, or the members of an enumeration.
+A declaration other than a *static_assert*, <ins>*transparent alias*,</ins> or *attribute* declaration shall declare at least…
 </div>
 
-<div class="wording-numbered">
+<div class="wording-numbered wording-numbered-4">
 If an identifier has no linkage, there shall be no more than one declaration of the identifier (in a declarator or type specifier) with the same scope and in the same name space, except that:
 
-<ul>
-	<li>a typedef name may be redefined to denote the same type as it currently does, provided that type is not a variably modified type;</li>
-	<li><ins>a transparent alias name may be redefined as specified in 6.7.12; and</ins></li>
-	<li>tags may be redeclared as specified in 6.7.2.3.</li>
-	</ul>
+:: — a typedef name may be redefined to denote the same type as it currently does, provided that type is not a variably modified type;
+:: <ins>— a transparent alias name may be redefined as specified in 6.7.✨; and</ins>
+:: — numeration constants and tags can be redeclared as specified in 6.7.3.3 and 6.7.3.4, respectively.
+
 </div>
 </blockquote>
 
 
-### §6.7 Semantics, paragraph 5 ### {#wording-6.7-p5}
+### §6.7.1 General, Semantics, paragraph 7 ### {#wording-6.7.1-p7}
 
 <blockquote>
 <div class="wording-section">
@@ -780,11 +793,11 @@ If an identifier has no linkage, there shall be no more than one declaration of 
 
 A declaration specifies the interpretation and properties of a set of identifiers. A definition of an identifier is a declaration for that identifier that:
 
-- for an object, causes storage to be reserved for that object;
-- for a function, includes the function body;<span class="footnote-ref">129)</span>
-- for an enumeration constant, is the (only) declaration of the identifier;
-- for a typedef name, is the first (or only) declaration of the identifier<del>.</del><ins>; or</ins>
-- <ins>for a transparent alias name, is the first (or only) declaration of the identifier.</ins>
+:: — for an object, causes storage to be reserved for that object;
+:: — for a function, includes the function body;<span class="footnote-ref">123)</span>
+:: — for an enumeration constant, is the (only) declaration of the identifier;
+:: — for a typedef name, is the first (or only) declaration of the identifier<del>.</del><ins>; or</ins>
+:: <ins>— for a transparent alias name, is the first (or only) declaration of the identifier.</ins>
 
 </div>
 </div>
@@ -797,24 +810,25 @@ A declaration specifies the interpretation and properties of a set of identifier
 
 <blockquote>
 <div class="wording-numbered wording-numbered-3">
-There shall be no more than one external definition for each identifier declared with internal linkage in a translation unit. Moreover, if an identifier declared with internal linkage is used <ins>directly or indirectly (e.g., through a transparent alias)</ins> in an expression (other than as a part of the operand of a <b>sizeof</b> or <b>_Alignof</b> operator whose result is an integer constant), there shall be exactly one external definition for the identifier in the translation unit.
+There shall be no more than one external definition for each identifier declared with internal linkage in a translation unit. Moreover, if an identifier declared with internal linkage is used <ins>directly or indirectly (e.g., through a transparent alias)</ins> in an expression there shall be exactly one external definition for the identifier in the translation unit, …
 </div>
 
 …
 
 <div class="wording-numbered wording-numbered-5">
-An external definition is an external declaration that is also a definition of a function (other than an inline definition) or an object. If an identifier declared with external linkage is used <ins>directly or indirectly (e.g., through a transparent alias)</ins> in an expression (other than as part of the operand of a <b>sizeof</b> or <b>_Alignof</b> operator whose result is an integer constant), somewhere in the entire program there shall be exactly one external definition for the identifier; otherwise, there shall be no more than one.<sup>176)</sup>
+An external definition is an external declaration that is also a definition of a function (other than an
+inline definition) or an object. If an identifier declared with external linkage is used <ins>directly or indirectly (e.g., through a transparent alias)</ins> in an expression (other than as part of the operand of a typeof operator whose result is not a variably modified type, part of the controlling expression of a generic selection, part of the expression in a generic association that is not the result expression of its generic selection…
 </div>
 </blockquote>
 
 
 
-## Add a new sub-clause "§6.7.12 Transparent alias" ## {#wording-6.7.12}
+## Add a new sub-clause "§6.7.✨ Transparent alias" ## {#wording-6.7.✨}
 
 <blockquote>
 <ins>
 <div class="wording-clause-header">
-<span class="wording-clause-number">6.7.12</span><span class="wording-clause-title">Transparent aliases</span>
+<span class="wording-clause-number">6.7.✨</span><span class="wording-clause-title">Transparent aliases</span>
 </div>
 
 <div class="wording-section">
@@ -846,7 +860,7 @@ Constraints
 
 <div class="wording-numbered">
 
-A transparent alias target shall be an identifier which is visible.
+A transparent alias target shall be an identifier which is an object, a function, or a transparent alias.
 </div>
 
 <div class="wording-numbered">
@@ -854,7 +868,7 @@ A transparent alias target shall be an identifier which is visible.
 A transparent alias being redeclared shall refer to the same object or function as in its initial declaration<sup>FN0✨)</sup> and the type of that identifier shall be compatible with all visible declarations of the declared transparent alias.
 
 <div class="wording-footnote">
-<sup>FN0✨)</sup> <sub>If the transparent alias target points to another transparent alias, then the alias target is first resolved. The resolution occurs recursively until a function or object is the alias target. Resolution of a transparent alias target happens before the synonym is declared or redeclared, meaning a transparent alias name may refer to itself when it is being redeclared, but not when it is first declared.</sub>
+<sup>FN0✨)</sup> <sub>If the transparent alias target points to another transparent alias, then the alias target is first resolved. The resolution occurs recursively until a function or object is the alias target. Resolution of a transparent alias target happens before the synonym is declared or redeclared, meaning a transparent alias name may refer to itself when it is being redeclared, but not when it is first declared. This resolution is not recomputed every time the transparent aliases is declared.</sub>
 </div>
 
 </div>
@@ -864,11 +878,11 @@ Semantics
 </div>
 
 <div class="wording-numbered">
-A transparent alias refers to an existing visible entity named by the transparent alias target. A transparent alias does not produce a new declaration; it is only a synonym for the transparent alias target specified. If the transparent alias target is another transparent alias, it is translated, recursively, until a non-transparent alias target is determined.
+A transparent alias refers to an existing entity named by the transparent alias target. A transparent alias does not produce a new declaration; it is only a synonym for the transparent alias target specified. If the transparent alias target is another transparent alias, it is translated, recursively, until a non-transparent alias target is determined. A transparent alias target that is another transparent alias may be capable of referring to an entity that is no longer visible in the current scope.
 </div>
 
 <div class="wording-numbered">
-A transparent alias may be used in any context where the target may be used. A transparent alias has the same type as the transparent alias target it refers to.
+A transparent alias may be used in any context where the target may be used. A transparent alias has the same type as the transparent alias target it refers to when declared.
 </div>
 
 <div class="wording-numbered">
@@ -878,7 +892,7 @@ The optional attribute specifier sequence before the **ALIAS-TOKEN** appertains 
 
 <div class="wording-numbered">
 
-**EXAMPLE 1** The following program contains no constraint violations:
+**EXAMPLE 1** The following program contains no constraint violations nor any failed assertions:
 
 ```cpp
 #include <assert.h>
@@ -935,7 +949,7 @@ ALIAS-TOKEN sleep_alias = sleep_alias_alias;
 void func(void);
 int main () {
 	// Inner scope: no constraint violation
-	_Alias func = func;
+	_Alias func = zzz;
 }
 ```
 </div>
@@ -949,19 +963,19 @@ int zzz(int requested_sleep_time);
 int truncated_zzz(int requested_sleep_time);
 
 ALIAS-TOKEN sleep_alias = sleep_alias; // constraint violation: sleep_alias does
-	                                     // not exist until the
-	                                     // semicolon is reached
+                                       // not exist until the
+                                       // semicolon is reached
 ALIAS-TOKEN zzz = truncated_zzz; // constraint violation: cannot hide
-	                               // existing declaration
+                                 // existing declaration
 ALIAS-TOKEN truncated_zzz = truncated_zzz; // constraint violation: cannot change 
-	                                         // function declaration
-	                                         // to transparent alias
+                                           // function declaration
+                                           // to transparent alias
 
 ALIAS-TOKEN valid_sleep_alias = zzz;
 double valid_sleep_alias(double requested_sleep_time); // constraint violation:
-	                                                     // redeclaring a
-	                                                     // transparent alias with
-	                                                     // non-compatible type
+                                                       // redeclaring a
+                                                       // transparent alias with
+                                                       // non-compatible type
 ```
 </div>
 
@@ -972,7 +986,7 @@ double valid_sleep_alias(double requested_sleep_time); // constraint violation:
 ```cpp
 double purr(void) { return 1.0; }
 ALIAS-TOKEN meow = purr;
-double meow(void); // compatible redeclaration, still calls "purr"
+double meow(void); // constraint violation: not a transparent alias
 ALIAS-TOKEN meow = purr; // compatible redeclaration
 
 int main () {
@@ -984,13 +998,16 @@ int main () {
 
 <div class="wording-numbered">
 
-**EXAMPLE 5** Compatible and completed types through aliases:
+**EXAMPLE 5** Compatible and completed types versus aliases:
 
 ```cpp
 void otter(int (*)[]);
 ALIAS-TOKEN water_noodle = otter;
 void otter(int (*)[2]);
-// water_noodle has type void (int (*)[2])
+static_assert(_Generic(typeof(water_noodle),
+	void (int(*)[]): 1,
+	default: 0
+));
 ```
 
 </div>
@@ -1007,9 +1024,11 @@ int main () {
 	{
 		int cookie; // Shadow outer declaration.
 		{
-			void cookie(int (*)[]);
-			// biscuit has type void (int (*)[2])
-			// due to shadowing
+			// biscuit refers to declaration it was created with
+			static_assert(_Generic(typeof(biscuit),
+				void (int(*)[2]): 1,
+				default: 0
+			));
 		}
 	}
 	return 0;
@@ -1028,8 +1047,10 @@ int main () {
 	ALIAS-TOKEN water_sausage = otter;
 	{
 		void otter(int (*)[2], int (*)[]);
-		// water_sausage and otter have
-		// composite type void (int (*)[2], int (*)[2])
+		static_assert(_Generic(typeof(water_sausage),
+			void (int (*)[], int (*)[2]): 1,
+			default: 0
+		));
 	}
 }
 ```
@@ -1044,7 +1065,7 @@ int main () {
 int f (int value) { return value + value; }
 
 int main () {
-	int x = 1;
+	const int x = 1;
 	ALIAS-TOKEN y = x;
 	// equivalent to:
 	// return 2;
@@ -1066,7 +1087,7 @@ int main () {
 const char* v1_name = "treehouse.systems!";
 
 #if defined(V0_DEPRECATED) && (V0_DEPRECATED != 0)
-[[deprecatad("this name will be removed in version 2, please upgrade appropriately")]]
+[[deprecatad("v0_name will be removed in version 2, please upgrade")]]
 #endif
 ALIAS-TOKEN v0_name = v1_name;
 
@@ -1135,75 +1156,121 @@ extern long long imaxabs(long long value) {
 
 
 
+
 # Appendix # {#appendix}
 
 A collection of code snippets, old information, and notes for the rest of the paper.
 
 
+## FreeBSD `cdefs.h` with `__sym_compat` macro ## {#appendix-freebsd}
+
+FreeBSD uses a [sequence of macros to provide various levels of compatibility, all using various strengths and flavors of `__asm` labels](https://github.com/freebsd/freebsd-src/blob/main/sys/sys/cdefs.h#L369-L399):
+```cpp
+// …
+#define	__strong_reference(sym,aliassym)	\
+	extern __typeof (sym) aliassym __attribute__ ((__alias__ (#sym)))
+#ifdef __STDC__
+#define	__weak_reference(sym,alias)	\
+	__asm__(".weak " #alias);	\
+	__asm__(".equ "  #alias ", " #sym)
+#define	__warn_references(sym,msg)	\
+	__asm__(".section .gnu.warning." #sym);	\
+	__asm__(".asciz \"" msg "\"");	\
+	__asm__(".previous")
+#ifdef	__CC_SUPPORTS_SYMVER
+#define	__sym_compat(sym,impl,verid)	\
+	__asm__(".symver " #impl ", " #sym "@" #verid)
+#define	__sym_default(sym,impl,verid)	\
+	__asm__(".symver " #impl ", " #sym "@@@" #verid)
+#endif
+#else
+#define	__weak_reference(sym,alias)	\
+	__asm__(".weak alias");		\
+	__asm__(".equ alias, sym")
+#define	__warn_references(sym,msg)	\
+	__asm__(".section .gnu.warning.sym"); \
+	__asm__(".asciz \"msg\"");	\
+	__asm__(".previous")
+#ifdef	__CC_SUPPORTS_SYMVER
+#define	__sym_compat(sym,impl,verid)	\
+	__asm__(".symver impl, sym@verid")
+#define	__sym_default(impl,sym,verid)	\
+	__asm__(".symver impl, sym@@@verid")
+#endif
+#endif	/* __STDC__ */
+// …
+```
+
+This gets used effectively everywhere in FreeBSD for compatibility purposes, such as in [libgen.h](https://github.com/freebsd/freebsd-src/blob/ce4cc746bb4171a131ab9099947a500c0de18ff4/include/libgen.h#L58-L61).
+
+
+
 ## MacOS 15.0 Sequoia `_time.h` Code ## {#appendix-macos.time.h}
+
+This is from the MacOS 15.0 Sequoia release, and comes from its `_time.h` internal header. The specific macro that shows a redirect is the `_DARWIN_ALIAS` macro, which is a simple `__asm` label.
 
 ```cpp
 /*
- * Copyright (c) 2023 Apple Computer, Inc. All rights reserved.
- *
- * @APPLE_LICENSE_HEADER_START@
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
- * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
- * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
- * 
- * @APPLE_LICENSE_HEADER_END@
- */
+* Copyright (c) 2023 Apple Computer, Inc. All rights reserved.
+*
+* @APPLE_LICENSE_HEADER_START@
+* 
+* This file contains Original Code and/or Modifications of Original Code
+* as defined in and that are subject to the Apple Public Source License
+* Version 2.0 (the 'License'). You may not use this file except in
+* compliance with the License. Please obtain a copy of the License at
+* http://www.opensource.apple.com/apsl/ and read it before using this
+* file.
+* 
+* The Original Code and all software distributed under the License are
+* distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+* EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
+* INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+* Please see the License for the specific language governing rights and
+* limitations under the License.
+* 
+* @APPLE_LICENSE_HEADER_END@
+*/
 /*
- * Copyright (c) 1989, 1993
- *	The Regents of the University of California.  All rights reserved.
- * (c) UNIX System Laboratories, Inc.
- * All or some portions of this file are derived from material licensed
- * to the University of California by American Telephone and Telegraph
- * Co. or Unix System Laboratories, Inc. and are reproduced herein with
- * the permission of UNIX System Laboratories, Inc.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
- *
- *	@(#)time.h	8.3 (Berkeley) 1/21/94
- */
+* Copyright (c) 1989, 1993
+*	The Regents of the University of California.  All rights reserved.
+* (c) UNIX System Laboratories, Inc.
+* All or some portions of this file are derived from material licensed
+* to the University of California by American Telephone and Telegraph
+* Co. or Unix System Laboratories, Inc. and are reproduced herein with
+* the permission of UNIX System Laboratories, Inc.
+*
+* Redistribution and use in source and binary forms, with or without
+* modification, are permitted provided that the following conditions
+* are met:
+* 1. Redistributions of source code must retain the above copyright
+*    notice, this list of conditions and the following disclaimer.
+* 2. Redistributions in binary form must reproduce the above copyright
+*    notice, this list of conditions and the following disclaimer in the
+*    documentation and/or other materials provided with the distribution.
+* 3. All advertising materials mentioning features or use of this software
+*    must display the following acknowledgement:
+*	This product includes software developed by the University of
+*	California, Berkeley and its contributors.
+* 4. Neither the name of the University nor the names of its contributors
+*    may be used to endorse or promote products derived from this software
+*    without specific prior written permission.
+*
+* THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+* ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+* IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+* ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+* FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+* DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+* OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+* HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+* LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+* OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+* SUCH DAMAGE.
+*
+*	@(#)time.h	8.3 (Berkeley) 1/21/94
+*/
 
 #ifndef _TIME_H_
 #define	_TIME_H_
@@ -1230,6 +1297,138 @@ char *strptime(const char * __restrict, const char * __restrict, struct tm * __r
 time_t time(time_t *);
 
 /* ... SOME CODE OMITTED ... */
+```
+
+
+
+## musl-libc Aliasing/Renaming Features ## {#appendix-musl}
+
+musl-libc redirects function names frequently to prevent ABI collisions and compatibility failures. From [musl-libc's `features.h` header](https://github.com/bminor/musl/blob/047a16398b29d2702a41a0d6d15370d54b9d723c/include/features.h#L38):
+```cpp
+// …
+#define __REDIR(x,y) __typeof__(x) x __asm__(#y)
+// …
+```
+
+
+### musl-libc "`redirect`" Functionality ### {#appendix-musl-redirect}
+
+The redirect macro shown [[#appendix-musl|previously]] has over 50 uses in the musl-libc library, primarily to change the name of functions that contain the time type definition. An [example of this is in `sys/time.h`](https://github.com/bminor/musl/blob/047a16398b29d2702a41a0d6d15370d54b9d723c/include/sys/time.h#L59-L71):
+```cpp
+// …
+#if _REDIR_TIME64
+__REDIR(gettimeofday, __gettimeofday_time64);
+__REDIR(getitimer, __getitimer_time64);
+__REDIR(setitimer, __setitimer_time64);
+__REDIR(utimes, __utimes_time64);
+#if defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
+__REDIR(futimes, __futimes_time64);
+__REDIR(futimesat, __futimesat_time64);
+__REDIR(lutimes, __lutimes_time64);
+__REDIR(settimeofday, __settimeofday_time64);
+__REDIR(adjtime, __adjtime64);
+#endif
+#endif
+// …
+```
+
+
+### musl-libc 32-bit time compatibility compatibility shim ### {#appendix-musl-time32.h}
+
+From [musl-libc's `compat/time32/time32.h` header](https://github.com/bminor/musl/blob/047a16398b29d2702a41a0d6d15370d54b9d723c/compat/time32/time32.h#L1-L91):
+
+```cpp
+#ifndef TIME32_H
+#define TIME32_H
+
+#include <sys/types.h>
+
+typedef long time32_t;
+
+struct timeval32 {
+	long tv_sec;
+	long tv_usec;
+};
+
+struct itimerval32 {
+	struct timeval32 it_interval;
+	struct timeval32 it_value;
+};
+
+struct timespec32 {
+	long tv_sec;
+	long tv_nsec;
+};
+
+struct itimerspec32 {
+	struct timespec32 it_interval;
+	struct timespec32 it_value;
+};
+
+int __adjtime32() __asm__("adjtime");
+int __adjtimex_time32() __asm__("adjtimex");
+int __aio_suspend_time32() __asm__("aio_suspend");
+int __clock_adjtime32() __asm__("clock_adjtime");
+int __clock_getres_time32() __asm__("clock_getres");
+int __clock_gettime32() __asm__("clock_gettime");
+int __clock_nanosleep_time32() __asm__("clock_nanosleep");
+int __clock_settime32() __asm__("clock_settime");
+int __cnd_timedwait_time32() __asm__("cnd_timedwait");
+char *__ctime32() __asm__("ctime");
+char *__ctime32_r() __asm__("ctime_r");
+double __difftime32() __asm__("difftime");
+int __fstat_time32() __asm__("fstat");
+int __fstatat_time32() __asm__("fstatat");
+int __ftime32() __asm__("ftime");
+int __futimens_time32() __asm__("futimens");
+int __futimes_time32() __asm__("futimes");
+int __futimesat_time32() __asm__("futimesat");
+int __getitimer_time32() __asm__("getitimer");
+int __getrusage_time32() __asm__("getrusage");
+int __gettimeofday_time32() __asm__("gettimeofday");
+struct tm *__gmtime32() __asm__("gmtime");
+struct tm *__gmtime32_r() __asm__("gmtime_r");
+struct tm *__localtime32() __asm__("localtime");
+struct tm *__localtime32_r() __asm__("localtime_r");
+int __lstat_time32() __asm__("lstat");
+int __lutimes_time32() __asm__("lutimes");
+time32_t __mktime32() __asm__("mktime");
+ssize_t __mq_timedreceive_time32() __asm__("mq_timedreceive");
+int __mq_timedsend_time32() __asm__("mq_timedsend");
+int __mtx_timedlock_time32() __asm__("mtx_timedlock");
+int __nanosleep_time32() __asm__("nanosleep");
+int __ppoll_time32() __asm__("ppoll");
+int __pselect_time32() __asm__("pselect");
+int __pthread_cond_timedwait_time32() __asm__("pthread_cond_timedwait");
+int __pthread_mutex_timedlock_time32() __asm__("pthread_mutex_timedlock");
+int __pthread_rwlock_timedrdlock_time32() __asm__("pthread_rwlock_timedrdlock");
+int __pthread_rwlock_timedwrlock_time32() __asm__("pthread_rwlock_timedwrlock");
+int __pthread_timedjoin_np_time32() __asm__("pthread_timedjoin_np");
+int __recvmmsg_time32() __asm__("recvmmsg");
+int __sched_rr_get_interval_time32() __asm__("sched_rr_get_interval");
+int __select_time32() __asm__("select");
+int __sem_timedwait_time32() __asm__("sem_timedwait");
+int __semtimedop_time32() __asm__("semtimedop");
+int __setitimer_time32() __asm__("setitimer");
+int __settimeofday_time32() __asm__("settimeofday");
+int __sigtimedwait_time32() __asm__("sigtimedwait");
+int __stat_time32() __asm__("stat");
+int __stime32() __asm__("stime");
+int __thrd_sleep_time32() __asm__("thrd_sleep");
+time32_t __time32() __asm__("time");
+time32_t __time32gm() __asm__("timegm");
+int __timer_gettime32() __asm__("timer_gettime");
+int __timer_settime32() __asm__("timer_settime");
+int __timerfd_gettime32() __asm__("timerfd_gettime");
+int __timerfd_settime32() __asm__("timerfd_settime");
+int __timespec_get_time32() __asm__("timespec_get");
+int __utime_time32() __asm__("utime");
+int __utimensat_time32() __asm__("utimensat");
+int __utimes_time32() __asm__("utimes");
+pid_t __wait3_time32() __asm__("wait3");
+pid_t __wait4_time32() __asm__("wait4");
+
+#endif
 ```
 
 
