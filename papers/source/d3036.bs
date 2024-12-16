@@ -595,14 +595,17 @@ namespace std {
 }
 ```
 
-The output becomes deduced based on what `Out` is. If it is an output range, then it returns `subrange<iterator_t<Out>, sentinel_t<Out>>` where `iterator_t<Out>` is an output iterator. Otherwise, the return type remains the same as before (just an `Out`, which that is the iterator itself). More importantly, there are changes to the `basic_format_context` that allow for the use of an output range rather than **just** an iterator:
+The output becomes deduced based on what `Out` is. If it is an output range, then it returns `subrange<iterator_t<Out>, sentinel_t<Out>>` where `iterator_t<Out>` is at least an output. Otherwise, the return type remains the same as before (just an `Out`, which that is the iterator itself). More importantly, there are changes to the `basic_format_context` that allow for the use of an output range rather than **just** an iterator:
 
 ```cpp
 namespace std {
 	template<class Out, class charT>
 	class basic_format_context {
 		basic_format_args<basic_format_context> args_;      // exposition only
-		/* see-below */ out_;                               // exposition only
+		conditional_t<output_iterator<remove_cvref_t<Out>, charT>,
+			Out,
+			borrowed_subrange_t<Out>
+		> out_;                               // exposition only
 
 	public:
 		using range = /* see-below */; // if present `iterator` is not present
@@ -618,6 +621,8 @@ namespace std {
 	};
 }
 ```
+
+Note: The `conditional_t` used in a few places above is not meant to illustrate how the wording will be literally, as this will trigger an error since there is no short circuiting or dependent context delay in this case. This is, in fact, a prominent case where `is_detected_v` and the detection idiom are more functional and more superior to typical C++ concepts, and we recommend that the detection idiom is provided in the standard library from Library Fundamentals V2. 
 
 Notably, we need a new type definition -- `range` -- for use on `basic_format_context`, as well as turning `iterator` into a conditional definition. The `out()` and `advance(…)` functions take either the iterator-or-range arguments. The `Out` argument will be expanded to satisfy not only the constraint `output_iterator<Out, charT&>` to also allowing it to be `output_range<Out, charT&>`. All of the other changes to the API flow from these two changes.
 
@@ -660,41 +665,41 @@ template<class T, class charT>
 
 The rest of the specification — `Formatter` and `BasicFormatter` requirements, detailing the `format_to` and `vformat_to` overloads, and similar — flows from the above changes and is contained in the wording. More critically, at the top-level functions (`format_to`  and `vformat_to`), choose whether to insert into the container vs. write out of the container based on `std::ranges::to` logic.
 
-Finally, we add the following range-only `std::format_into` and `std::vformat_into` overloads:
+Finally, we add the following `std::format_into` and `std::vformat_into` overloads:
 
 ```cpp
 namespace std {
 	// …
 
-	template<borrowed_range Out>
-		subrange<iterator_t<Out>, sentinel_t<Out>>
+	template<class Out>
+		auto
 		vformat_into(Out out, string_view fmt, format_args args);
-	template<borrowed_range Out>
-		subrange<iterator_t<Out>, sentinel_t<Out>>
+	template<class Out>
+		auto
 		vformat_into(Out out, wstring_view fmt, wformat_args args);
-	template<borrowed_range Out>
-		subrange<iterator_t<Out>, sentinel_t<Out>>
+	template<class Out>
+		auto
 		vformat_into(Out out, const locale& loc, string_view fmt,
 		             format_args args);
-	template<borrowed_range Out>
-		subrange<iterator_t<Out>, sentinel_t<Out>>
+	template<class Out>
+		auto
 		vformat_into(Out out, const locale& loc, wstring_view fmt,
 		             wformat_args args);
 
-	template<borrowed_range Out, class... Args>
-		subrange<iterator_t<Out>, sentinel_t<Out>>
+	template<class Out, class... Args>
+		auto
 		format_into(Out&& out, format_string<Args...> fmt,
 		            Args&&... args);
-	template<borrowed_range Out, class... Args>
-		subrange<iterator_t<Out>, sentinel_t<Out>>
+	template<class Out, class... Args>
+		auto
 		format_into(Out&& out, wformat_string<Args...> fmt,
 		            Args&&... args);
-	template<borrowed_range Out, class... Args>
-		subrange<iterator_t<Out>, sentinel_t<Out>>
+	template<class Out, class... Args>
+		auto
 		format_into(Out&& out, const locale& loc, format_string<Args...> fmt,
 		            Args&&... args);
-	template<borrowed_range Out, class... Args>
-		subrange<iterator_t<Out>, sentinel_t<Out>>
+	template<class Out, class... Args>
+		auto
 		format_into(Out&& out, const locale& loc, wformat_string<Args...> fmt,
 		            Args&&... args);
 
@@ -702,18 +707,23 @@ namespace std {
 }
 ```
 
-The return type on these is just a subrange of what is input (contingent upon the input being a `borrowed_range`).
+The return type on these is either the iterator that was input (`remove_cvref_t<Out>`) if it's a `std::output_iterator<remove_cvref_t<Out>, CharT>`, or a `borrowed_subrange_t<Out>` otherwise (and ill-formed if it doesn't meet the requirements).
 
 
 
 
 # Benchmarks # {#benchmarks}
 
+In order to validate that Output Ranges — applied both to `std::format_to` and applied to `std::format_into` here — are plausible not just for the `<format>` functionality but in general, we present benchmarks for code that has been using the concept of output ranges.
+
+
+
+## ztd.text Encoding Conversion Benchmarks ## {#benchmarks-encoding}
+
 `std::ranges::unbounded_view` has the potential to be an immense success in the standard library as a type-level indicator that such unlimited-write/unlimited-read optimizations are desired by the end-user. Here, we demonstrate a slurry of different text encoding APIs that use everything from C-style APIs in C, C-style APIs in C++, C++03 algorithm-style APIs, and the more advanced Output Ranges APIs detailed in this paper. The [benchmarks are also maintained and updated as part of the work on ztd.text](https://ztdtext.readthedocs.io/en/latest/benchmarks.html)[[ztd.text]]. Select examples for transcoding a large buffer of Unicode text are used to do the testing.
 
 
-
-## Methodology ## {#benchmarks-methodology}
+### Methodology ### {#benchmarks-encoding-methodology}
 
 The method and materials for the benchmarks are as follows (performed December 2022): 
 
@@ -729,8 +739,7 @@ The method and materials for the benchmarks are as follows (performed December 2
 	- “Well-Formed”, in the title, means that the input was well-formed.
 
 
-
-## Results ## {#benchmarks-results}
+### Results ### {#benchmarks-encodingresults}
 
 <pre class="include">
 path: assets/d3036/utf8_to_utf16.bs
@@ -751,9 +760,7 @@ Note: Thusly, we have shown that we can retain low-level performance by using ex
 
 As heavily discussed above, Output Ranges have been deployed in [[ztd.text]] since their inception. The authors of this paper have also spent a lot of time heavily advocating for the use of such abstractions and their essential need for performance-related scenarios, to great success outside of just this use case.
 
-For the specific case of whether this has been implemented in `format_to`, a patch to Victor Zverovich's [[fmtlib]] is planned.
-
-Advisement: TODO: finish the patch and submit it to `{fmt}` before submitting this paper officially.
+For the specific case of whether this has been implemented in `format_to`, a patch to Victor Zverovich's [[fmtlib]] is planned. The pull request is [here](https://github.com/fmtlib/fmt/pull/3756). We pass all the code tests and have identical behavior for output iterators, while providing the output range functionality and drastically improving the safety and security of the array case.
 
 
 

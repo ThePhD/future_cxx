@@ -1,0 +1,187 @@
+<pre class='metadata'>
+Title: __self_func__
+H1: <code>__self_func__</code>
+Shortname: XXXB
+Revision: 0
+Status: P
+Date: 2024-12-16
+Group: WG14
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20embed.html
+!Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20__self_func.html">https://thephd.dev/_vendor/future_cxx/papers/C%20-%20__self_func.html</a>
+!Previous Revisions: None
+!Paper Source: <a href="https://github.com/ThePhD/future_cxx/blob/main/papers/source/C%20-%20__self_func.bs">GitHub ThePhD/future_cxx</a>
+Metadata Order: Editor, Latest, Previous Revisions, Paper Source, Implementation, Project, Audience
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+Abstract: This is a proposal to allow for a function to refer to itself, useful in macros and within statement expressions.
+</pre>
+
+<script>
+MathJax = {
+	tex: {inlineMath: [['$', '$'], ['\\(', '\\)']]}
+};
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<div class="pagebreak"></div>
+
+
+
+
+# Changelog # {#changelog}
+
+
+
+## Revision 0 - December 12<sup>th</sup>, 2024 ## {#changelog-r0}
+
+- Initial Release! 🎉
+
+
+
+
+# Introduction and Motivation # {#intro}
+
+C99 introduced `__func__`, which is the string name of the function. Microsoft added `__FUNCDSIG__` to provide another way to get the string name of the function call. But, none of the compilers ever added a way to refer to the current function, despite the need for it appearing it macros and other places that wished to implement e.g. Tail Recursion or other traits in a function-agnostic ways. Macro authors forced users to pass in the name of the function so it could be properly recursed on, but this is slightly cumbersome.
+
+Recently, `_Self` and -- at the behest of the Committee to rename it -- `_Recur` have both shown up in Celeste's "C Extensions to Support Generalized Functions Calls, v3.5" [[N3315]]. It's specification is there in the wording but it only exists to describe tail-calling. Some support was expressed for lifting it out and making it its own entity rather than something that existed purely in the wording itself.
+
+This paper is the lift out, implementing `__self_func` as a keyword.
+
+
+
+
+# Design # {#design}
+
+The design for this is, thankfully, very simple and easy: `__self_func` is a keyword/identifier that represents the current function invocation the compiler is in. This is implementable very simple in the compiler frontend by simply performing an identifier substitution for the name of the function being translated, and erroring if at file scope. `__self_func` is a "function designator" in C Standardese terms, that represents the current function. It is a constraint violation to call this in `main` (`main` is not allowed to recurse on itself, or rather it is undefined behavior) and it is a constraint violation for it to be used at any non-block scope. The wording tries to make this easy by making it part of the block grammar, banning it for existing at file scope.
+
+
+
+## Keyword Name ## {#design-name}
+
+We do not care what this is called. This has 3 popular names:
+
+- `self` (C++ using the "usual" name for its "Deducing This" feature, most users in C and C++-derived languages by convention)
+- `this`/`*this` (C++, sometimes JavaScript when `this` is not rebound in strange ways)
+- `recur` (Clojure and other LISP-style functional languages)
+
+`__self` and `_Self` are common identifiers in some places, which is what resulted in N3315 to rename it. `_Recur` and `__recur` are fine. `__self_func` is what this proposal settled on, using the double underscores to have it exist in a space similar to an identifier, even if the intent is to exist as a keyword.
+
+As stated earlier, we do not care what it is called, so long as it exists. Suggestions are welcome and any name will do just fine.
+
+
+
+
+# Wording # {#wording}
+
+This wording is relative to C's latest working draft.
+
+
+*📝 Editor's Note: The ✨ characters are intentional. They represent stand-ins to be replaced by the editor.*
+
+
+
+## Add the new keyword `__self_func` to §6.4.2 ## {#wording-6.4.2}
+
+
+## Add a new grammar terminal in the *postfix-expression* grammar production of §6.5.3.1 "`__self_func` ## {#wording-6.5.3.1}
+
+> **Syntax**
+>
+> <sup>1</sup>
+> *postfix-expression:*
+> :: *primary-expression*
+> :: *postfix-expression* `[` *expression `]`
+> :: *postfix-expression* `(` *argument-expression-list*<sub>opt</sub> `)`
+> :: *postfix-expression* `.` *identifier*
+> :: *postfix-expression* `->` *identifier*
+> :: *postfix-expression* `++`
+> :: *postfix-expression* `--`
+> :: *compound-literal*
+> :: <ins>`__self_func`</ins>
+
+
+## Add a new section §6.5.3.✨ "`__self_func` ## {#wording-6.5.3.✨}
+
+<blockquote>
+<ins>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.5.3.✨</span> <span class="wording-clause-title">`__self_func`</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+`__self_func` shall appear in a function body.
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered">
+
+`__self_func` is the function designator (6.3.3.1) of the function it is used in.
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE** A program refers to the enclosing function even when the name is not directly known.
+
+```cpp
+
+#include <stdlib.h>
+#include <stddef.h>
+#include <stdio.h>
+bool f (int tries, const char* fn) {
+
+#define MAX_TRIES 30
+#define RE_DO(TRIES, ...) if (TRIES >= MAX_TRIES) goto TOO_MANY_TRIES; return __self_func(TRIES + 1, __VA_ARGS__);
+
+	if (fn == nullptr) return false;
+	size_t fnlen = strlen(fn);
+	if (fnlen < 1) return false;
+	FILE* f = fopen(fn);
+	if (!f) {
+		fn[fnlen - 1] = '0' + tries;
+		RE_DO(tries, fn);
+	}
+	// found the first proper f,
+	// use it
+	fclose(f);
+	return true;
+
+	TOO_MANY_TRIES:
+	if (f) fclose(f);
+	return false;
+}
+```
+</div>
+</ins>
+</blockquote>
+
+
+
+
+<pre class="biblio">
+{
+	"n3315": {
+		"authors": [
+			"Alex Celeste"
+		],
+		"title": "C Extensions to support Generalized Function Calls, v3.5",
+		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3315.htm",
+		"date": "August 19th, 2024"
+	}
+}
+</pre>

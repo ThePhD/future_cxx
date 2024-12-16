@@ -1,11 +1,11 @@
 <pre class='metadata'>
 Title: Improved __attribute__((cleanup)) Through defer
 H1: Improved <code>__attribute__((cleanup))</code> Through <code>defer</code>
-Shortname: 3199
+Shortname: XXXB
 Revision: 0
-!Previous Revisions: None
+!Previous Revisions: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3199.htm">n3199 (r0)</a>
 Status: P
-Date: 2023-12-10
+Date: 2024-12-12
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -31,14 +31,17 @@ path: resources/css/bikeshed-wording.html
 
 # Changelog # {#changelog}
 
-## Revision 1 - February 4<sup>th</sup>, 2023 ## {#changelog-r1}
+
+
+## Revision 1 - December 12<sup>th</sup>, 2024 ## {#changelog-r1}
 
 - Include discussion of Linux kernel-based attempts at `defer` (using `__attribute__((cleanup(…)))`) (thanks, Miguel Ojeda!)
 - Previously, in the [[#cpp.compat]] section, this paper mentioned a vendor who supports C and C++ that has a demangler that outstrips their C implementation in engineering effort. The vendor in question clarified that a pure C17 compiler given the burden of attempting to mangle C++ would result in a significant engineering effort that could outstrip such, and that currently — for their implementation — that burden has already been surpassed.
-- Document that destructors need mangling.
-- Discuss the `__try` and `__finally` MSVC extensions in relation to this.
+- Document that destructors need mangling in [[#cpp.compat]].
+- Discuss the `__try` and `__finally` MSVC extensions in relation to this in [[#intro-try.finally]]
 - Improve the wording:
 	- remove weasel-y words like "such as" and similar from the wording;
+	- ensure that `goto` can be used to jump out of a `defer` statement, but not into a `defer` statement;
 	- add `switch` back into the wording that was present in a revision for jumping into/over;
 	- and, remove `switch` from the wording for exiting a block.
 - Add new examples for `defer if`/compound statements and `defer`.
@@ -132,6 +135,33 @@ The details of these libraries — both the simple version in moonchilled's rend
 - and, typically has a maximum number of registrations (as the storage has be be pre-allocated at the start of the scope to hold deferral registrations).
 
 Even when the final code compiles down to something fairly efficient, these macros still tend to cost extra stack space or take up additional binary size through (potential) dynamic allocations to hold defers that go beyond a certain limit and need extra space to hold certain kinds of callbacks. This means that most code written using library solutions end up fairly suboptimal to the language based or preprocessor-based solutions.
+
+
+
+## 2008 Proposal: A Brief Overview of `__try`/`__finally` from Microsoft ## {#intro-try.finally}
+
+Previously, WG14 indicated some support for Microsoft's `__try`/`__finally`, specifically[[n1298]]. It can be transformed without loss of generality to what a `defer` would do, as detailed in this proposal, and has similar semantics.
+
+However, there is additional practice here with `__leave`, which terminates the block immediately (not included in other existing implementations). It is conceptually the same as using a `goto` to get to the end of the block, but `__leave` specifically does not perform any "stack unwinding". This is represented by earlier exploratory `defer` proposals thinking about introducing `panic()` and `recover()` functions. This paper does not include those parts of the functionality and notes that it can be added later on top of what is being presented here without losing any design space at all.
+
+We do not take the path of `__try` and `__finally` as a design, because we ultimately realized it was a (mostly) syntactic difference to what is being proposed here (ignoring the exception/unwinding implications). There is one semantic issue with `__try` and `__finally`: to maintain similarity, one would need to move all of the code which is needed in both scopes up to a preceding, higher scope. Declarations made in the `__try` are not visible in the `__finally` clause:
+
+```cpp
+int main () {
+	int foo = 0;
+	__try {
+		int x = 4;
+	}
+	__finally {
+		foo += x; // (MSVC) error C2065: 'x': undeclared identifier
+	}
+	return foo;
+}
+```
+
+This means one has to move all variable declarations out of the `__try`, in order to reference them properly in the `__finally`. All in all, this means that while such a movement/changing of how variables are created in that block scope, it encourages unsafe practices such as keeping large amounts of uninitialized data. This encourages setting variables to uninitialized / sentinel values, and then properly initializing them in the `__try` block before deploying a `__finally`. We would rather not pursue such an option in C.
+
+At the moment, `defer` does not have the same ability as `__try` and `__finally` to allow `return` from the `__finally` block. We view this change as unwanted and counterproductive to the feature, though there is a straightforward way to generate code and produce predictable semantics in this situation. We leave it as a constraint violation in this proposal, with the possibility that someone brave enough to justify its usage will step in (perhaps someone who has extensive experience with `__try` and `__finally`).
 
 
 
@@ -892,23 +922,6 @@ This leaves both Microsoft's `__try`/`__finally`, and GCC's `__attribute__((clea
 
 In contrast `defer` has much clearer mechanisms to achieve the same goal, and may be applied to a wider variety of instances and cases than the attribute can.
 
-For Microsoft's `__try`/`__finally`, it is also plausible to do this. It can be transformed without loss of generality to what a `defer` does in this proposal, and has similar semantics. However, there is additional practice here with `__leave`, which terminates the block immediately. It is conceptually the same as using a `goto` to get to the end of the block, but `__leave` specifically does not perform any stack unwinding. While we understand the need for `__try` and `__finally`, we ultimately realized it was a purely syntactic difference (ignoring the exception/unwinding implications). However, that syntactic difference matters: to maintain similarity, one would need to wrap up all code past a `defer …` statement into a `__try`, and move all of the code from the `defer` into the `__finally`. Declarations made in the `__try` are not visible in the `__finally` clause:
-
-```cpp
-int main () {
-	int foo = 0;
-	__try {
-		int x = 4;
-	}
-	__finally {
-		foo += x; // (MSVC) error C2065: 'x': undeclared identifier
-	}
-	return foo;
-}
-```
-
-This means one has to move all variable declarations out of the `__try`, in order to reference them properly in the `__finally`. All in all, this means that while such a movement/changing of how variables are created in that block scope, it encourages unsafe practices such as keeping large amounts of uninitialized data. This encourages setting variables to uninitialized / sentinel values, and then properly initializing them in the `__try` block before deploying a `__finally`. We would rather not pursue such an option in C.
-
 In the future, we expect that — should someone solve the tension between name mangling, member functions, constructors/destructors, and more — we could consider moving into a destructor-based solution that is tied to the type system and objects. We view that as better to solve the problem for individual member fields and larger objects, while reducing the amount of times that the cleanup code may need to be written. However, C users have expressed a deep tie to having code that will run be visible in the scope. Macros violate this rule (e.g. `g_autoptr` backed by `__attribute__((cleanup(…)))`), destructors violate this rule, but `defer` as a feature does not.
 
 
@@ -1013,32 +1026,6 @@ Syntax
 </blockquote>
 
 
-<!--TODO: wonder whether this is necessary or not?
-## Modify 6.8.6.1 The `goto` statement ## {#wording-6.8.6.1}
-
-<blockquote>
-<div class="wording-clause-header">
-<span class="wording-clause-number">6.8.6.1</span> <span class="wording-clause-title">The `goto` statement</span>
-</div>
-
-<div class="wording-section">
-
-<div class="wording-clause-section-title">
-Constraints
-</div>
-
-<div class="wording-numbered">
-
-The identifier in a `goto` statement shall name a label located somewhere in the enclosing function. A
-`goto` statement shall not jump from outside the scope of an identifier having a variably modified
-type to inside the scope of that identifier.<ins> A `goto` statement shall not jump from inside a defer statement (6.8.7) to a place outside of it, nor shall it jump from outside a defer statement into one.</ins>
-</div>
-
-</div>
-</blockquote>
--->
-
-
 
 ## Add a new §6.8.7 's section describing the new *defer-statement* ## {#wording-6.8.7}
 
@@ -1076,17 +1063,22 @@ Constraints
 
 <div class="wording-numbered">
 
-Jumps by means of `goto` or `switch` into *E* shall not jump over a defer statement in *E*.
-</div>
-
-<div class="wording-numbered">
-
 Jumps by means of `goto` or `switch` shall not jump into any defer statement.
 </div>
 
 <div class="wording-numbered">
 
-Jumps by means of `return`, `goto`, `break`, orW `continue` shall not exit *S*.
+Jumps by means of `goto` or `switch` into *E* shall not jump over a defer statement in *E*.
+</div>
+
+<div class="wording-numbered">
+
+Jumps by means of `goto` in *E* shall not jump over a defer statement in *E*.
+</div>
+
+<div class="wording-numbered">
+
+Jumps by means of `return` shall not exit *S*.
 </div>
 
 <div class="wording-clause-section-title">
@@ -1100,7 +1092,7 @@ When execution reaches a defer statement *D*, its *S* is not immediately execute
 - the termination of the block *E* (such as from reaching its end);
 - or, any exit from *E* through `return`, `goto`, `break`, or `continue`.
 
-The execution is done just before leaving the enclosing block *E*.
+The execution is done just before leaving the enclosing block *E*. In particular `return` expressions (and conversion to return values) are calculated before executing *S*.
 </div>
 
 <div class="wording-numbered">
@@ -1124,12 +1116,12 @@ then any such *S* are not run, unless otherwise specified by the implementation<
 
 If a non-local jump (e.g. `longjmp`) is used within *E* but before the execution of *D*:
 
-- if control leaves *E*, *D*'s statements will not be executed;
+- if execution leaves *E*, *D*'s statements will not be executed;
 - otherwise, if control returns to a point in *E* and causes *D* to be reached more than once, there is no effect.<sup>FN1✨)</sup>
 
 </div>
 
-<sup>FN1✨)</sup><sub>This is because the "execution" of a defer statement only lets the program know that *S* will be run. There is no observable side effect to repeat from reaching *D*, as the manifestation of any of the effects of *S* will happen when if and only if it is exited or terminated as previously specified.</sub>
+<sup>FN1✨)</sup><sub>This is because the "execution" of a defer statement only lets the program know that *S* will be run. There is no observable side effect to repeat from reaching *D*, as the manifestation of any of the effects of *S* will happen if and only if *E* is exited or terminated as previously specified.</sub>
 
 <div class="wording-numbered">
 
@@ -1148,7 +1140,7 @@ the behavior is undefined.
 
 <div class="wording-numbered">
 
-**EXAMPLE 1**: Defer statements cannot be jumped over or jumped out of.
+**EXAMPLE**: Defer statements cannot be jumped over or jumped out of.
 
 ```cpp
 #include <stdio.h>
@@ -1191,12 +1183,13 @@ int i () {
 
 int j () {
 	defer {
-		goto b; // constraint violation
+		goto b; // okay: no constraint violation
 		printf(" meow");
 	}
 	b:
 	printf("cat says");
-	return 1;
+	return 1; // prints "cat says" over
+	// and over again to standard output
 }
 
 int k () {
@@ -1208,7 +1201,7 @@ int k () {
 	return 1;
 }
 
-int j () {
+int l () {
 	defer {
 		b:
 		printf(" meow");
@@ -1218,7 +1211,7 @@ int j () {
 	return 1;
 }
 
-int k () {
+int m () {
 	goto b; // okay: no constraint violation
 	{
 		b:
@@ -1228,7 +1221,7 @@ int k () {
 	return 1; // prints "cat says meow" to standard output
 }
 
-int m () {
+int n () {
 	goto b; // constraint violation
 	{
 		defer { printf(" meow"); }
@@ -1237,12 +1230,32 @@ int m () {
 	printf("cat says");
 	return 1;
 }
+
+int o () {
+	{
+		defer printf("cat says");
+		goto b;
+	}
+	b:;
+	printf(" meow");
+	return 1; // prints "cat says meow"
+}
+
+int p () {
+	{
+		goto b;
+		defer printf(" meow");
+	}
+	b:;
+	printf("cat says");
+	return 1; // prints "cat says"
+}
 ```
 </div>
 
 <div class="wording-numbered">
 
-**EXAMPLE 2**: All the expressions and statements of an enclosing block are evaluated before executing defer statements. After all defer statements are executed, then the block is left.
+**EXAMPLE** All the expressions and statements of an enclosing block are evaluated before executing defer statements, including any conversions. After all defer statements are executed, the block is then exited.
 
 ```cpp
 int main () {
@@ -1252,11 +1265,28 @@ int main () {
 	return *p; // return 4;
 }
 ```
+
+Conversions for the purposes of `return` are also computed before `defer` is entered.
+
+```cpp
+#include <float.h>
+#include <assert.h>
+
+bool f () {
+	double x = DBL_SNAN;
+	defer {
+		// fetestexcept (FE_INVALID) is nonzero because of the
+		// comparison during the conversion to bool
+		assert(ftestexcept(FE_INVALID) != 0);
+	}
+	return x;
+}
+```
 </div>
 
 <div class="wording-numbered">
 
-**EXAMPLE 3**: It is implementation-defined if defer statements will execute if the exiting / non-returning functions detailed previously are called.
+**EXAMPLE** It is implementation-defined if defer statements will execute if the exiting / non-returning functions detailed previously are called.
 
 ```cpp
 #include <stdio.h>
@@ -1275,7 +1305,7 @@ int main () {
 
 <div class="wording-numbered">
 
-**EXAMPLE 4**: Defer statements, when execution reaches them, are tied to their enclosing block.
+**EXAMPLE** Defer statements, when execution reaches them, are tied to their enclosing block.
 
 ```cpp
 #include <stdio.h>
@@ -1333,7 +1363,7 @@ int main () {
 
 <div class="wording-numbered">
 
-**EXAMPLE 6**: Defer statements can be executed within a `switch`, but a `switch` cannot be used to jump over a defer statement.
+**EXAMPLE** Defer statements can be executed within a `switch`, but a `switch` cannot be used to jump over a defer statement.
 
 ```cpp
 #include <stdlib.h>
@@ -1354,7 +1384,7 @@ int main () {
 
 <div class="wording-numbered">
 
-**EXAMPLE *7*: Defer statements that are not reached are not executed.
+**EXAMPLE**: Defer statements that are not reached are not executed.
 
 ```cpp
 #include <stdlib.h>
@@ -1362,14 +1392,14 @@ int main () {
 int main () {
 	void* p = malloc(1);
 	return 0;
-	defer free(p); // unexecuted
+	defer free(p); // not executed, p is leaked
 }
 ```
 </div>
 
 <div class="wording-numbered">
 
-**EXAMPLE *8*: Defer statements can contain other compound statements.
+**EXAMPLE** Defer statements can contain other compound statements.
 
 ```cpp
 typedef struct meow *handle;
@@ -1433,10 +1463,6 @@ Constraints
 </div>
 </blockquote>
 
-Note: 📝 Editor: also edit **Example 4** and **Example 5** with `// constraint violation` in the appropriate places, and change the description to make it clear it is a constraint violation.
-
-
-
 ## Modify Annex J's list of undefined behaviors with non-local jump undefined behavior (e.g. `longjmp`) ## {#wording-annex.j}
 
 Note: 📝 For the editor to do within the Annex J undefined behavior list. 
@@ -1445,6 +1471,14 @@ Note: 📝 For the editor to do within the Annex J undefined behavior list.
 
 <pre class="biblio">
 {
+	"n1298": {
+		"authors": [
+			"Nick Stoughton"
+		],
+		"title": "N1298: Cleanup and Try-Finally for C",
+		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n1298.pdf",
+		"date": "March 14th, 2008"
+	},
 	"N2895": {
 		"authors": [
 			"Jens Gustedt",

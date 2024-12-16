@@ -1,0 +1,192 @@
+<pre class='metadata'>
+Title: #embed offset parameter
+H1: <code>#embed</code> offset parameter
+Shortname: P3450
+Revision: 0
+Status: P
+Date: 2024-12-13
+Group: WG21
+Audience: EWG
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
+URL: httpthephd.dev/_vendor/future_cxx/papers/d1967.html
+!Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/d3450.html">https://thephd.dev/_vendor/future_cxx/papers/d3540.html</a>
+!Implementation: <a href="https://github.com/ThePhD/embed">GitHub ThePhD/embed</a>
+!Paper Source: <a href="https://github.com/ThePhD/future_cxx/blob/main/papers/source/d3450.bs">GitHub ThePhD/future_cxx</a>
+Metadata Order: Editor, Latest, Paper Source, Implementation, Project, Audience
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+Abstract: An additional, user-supported embed parameter implemented in Clang and GCC for providing an offset.
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<div class="pagebreak"></div>
+
+
+
+
+# Changelog # {#changelog}
+
+
+
+## Revision 0 - December 13<sup>th</sup>, 2024 ## {#changelog-r0}
+
+- Initial release.
+
+
+
+
+# Introduction and Motivation # {#intro}
+
+The goal is to add the extremely-popular and already-implemented `gnu::offset` and `clang::offset` parameters as standard parameters. That is the only motivation of this proposal; to standardize existing practice.
+
+Originally, users asked to add this parameter, but only after C23 standardized. Given the late stage that users have asked -- waiting until the very end -- it has to be added separately. This proposal aims to standardize what users have asked for, and what Clang and GCC have implemented.
+
+
+
+
+# Wording # {#wording}
+
+This wording is relative to C++'s latest working draft.
+
+
+
+## Intent ## {#wording-intent}
+
+The intent of the wording is to provide a preprocessing directive that:
+
+- allows an `offset` parameter skipping over a number of elements before beginning to write out elements to the comma-delimited list.
+
+
+
+## Proposed Language Wording ## {#wording-specification}
+
+
+### Add to the *control-line* production in §15.1 Preamble [**cpp.pre**] a new grammar production for `offset` ### {#wording-specification-cpp.pre}
+
+<blockquote>
+<div class="wording-section">
+<div>
+
+*embed-standard-parameter*:
+:: **limit** **(** *pp-balanced-token-seq* **)**
+:: <ins>**offset** **(** *pp-balanced-token-seq* **)**</ins>
+:: **prefix** **(** *pp-balanced-token-seq*<sub>*opt*</sub> **)**
+:: **suffix** **(** *pp-balanced-token-seq*<sub>*opt*</sub> **)**
+:: **if_empty** **(** *pp-balanced-token-seq*<sub>*opt*</sub> **)**
+
+</div>
+</div>
+</blockquote>
+
+
+### Add a new sub-clause §15.4.2.✨ under Resource Inclusion for Embed parameters for the new `offset` parameter [**cpp.res.param.offset**] ### {#wording-specification-cpp.res.param.offset}
+
+<blockquote class="quote-ins">
+<div id="cpp.res.param.offset" class="wording-section">
+<div class="wording-section-header">
+<span class="wording-clause-number">15.4.2.✨</span>
+<span class="wording-clause-title">`offset` parameter</span>
+<span class="wording-clause-stable-tag">[<b>cpp.res.param.offset</b>]</span>
+</div>
+
+<div class="wording-numbered">
+
+An *embed-parameter* of the form `offset ( pp-balanced-token-seq )` denotes the maximum number of elements that are produced in the comma-delimited list. It shall appear at most once in the *embed-parameter-seq*.
+</div>
+
+<div class="wording-numbered">
+
+The *pp-balanced-token-seq* is evaluated as a *constant-expression* using the rules as described in conditional inclusion ([<a href="http://eel.is/c++draft/cpp.cond">cpp.cond</a>]), but without being processed as in normal text an additional time.
+</div>
+
+<div class="wording-numbered">
+
+The *constant-expression* shall be an integral constant expression whose value is greater than or equal to zero. It shall provide the value for *resource-offset*. The embed directive performs *resource-offset* consecutive calls to `std::fgetc` ([<a href="http://eel.is/c++draft/cstdio.syn">cstdio.syn</a>]) from the resource, as a file. If a call to `std::fgetc` returns `EOF`, the program is ill-formed. Otherwise, the result of the call is discarded. Each call to `std::fgetc` does not count towards the number of consecutive calls for *resource-count*.
+</div>
+
+[*Example*:
+
+```cpp
+constexpr const unsigned char sound_signature[] = {
+// a hypothetical resource
+#embed <sdk/jump.wav> limit(2+2)
+};
+
+constexpr const unsigned char truncated_sound_signature[] = {
+// a hypothetical resource
+#embed <sdk/jump.wav> offset(2) limit(2)
+};
+
+// verify PCM WAV resource
+static_assert(sizeof(sound_signature) == 4);
+static_assert(sound_signature[0] == 'R');
+static_assert(sound_signature[1] == 'I');
+static_assert(sound_signature[2] == 'F');
+static_assert(sound_signature[3] == 'F');
+
+
+static_assert(sizeof(truncated_sound_signature) == 2);
+static_assert(sound_signature[0] == 'F');
+static_assert(sound_signature[1] == 'F');
+```
+
+expands to:
+
+```cpp
+constexpr const unsigned char sound_signature[] = {
+// a hypothetical example
+(unsigned char)0x52,
+(unsigned char)0x49,
+(unsigned char)0x46,
+(unsigned char)0x46,
+};
+
+constexpr const unsigned char truncated_sound_signature[] = {
+(unsigned char)0x46,
+(unsigned char)0x46,
+};
+
+// verify PCM WAV resource
+static_assert(sizeof(sound_signature) == 4);
+static_assert(sound_signature[0] == 'R');
+static_assert(sound_signature[1] == 'I');
+static_assert(sound_signature[2] == 'F');
+static_assert(sound_signature[3] == 'F');
+
+static_assert(sizeof(truncated_sound_signature) == 2);
+static_assert(sound_signature[0] == 'F');
+static_assert(sound_signature[1] == 'F');
+```
+– *end example*]
+</div>
+</div>
+
+</ins>
+</blockquote>
+
+
+
+## Add a new example to the `if_empty` embed parameter [cpp.res.if_empty] section ## {#wording-specification-if_empty.example}
+
+<blockquote class="quote-ins">
+
+[*Example*: Given a resource `<single_byte>` that has a *resource-count* of 1, the following directives:
+
+```cpp
+#embed <single_byte> offset(1) if_empty(44203)
+#embed <single_byte> limit(0)  offset(1) if_empty(44203)
+```
+
+are replaced with:
+
+```cpp
+42203
+42203
+```
+
+– *end example*]
+</blockquote>
