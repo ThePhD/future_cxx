@@ -40,6 +40,8 @@ Examples are provided to illustrate possible forms of the constructions describe
 	[NOTE #context note_counter.display() #h(0.5em)]
 }
 
+#let wd_stage = 1
+
 #let isoiec(
 	title: none,
 	authors: (),
@@ -55,8 +57,12 @@ Examples are provided to illustrate possible forms of the constructions describe
 	contents
 ) = {
 if stage == none {
-	stage = "working draft"
+	stage = "wd"
 }
+let stage_enum = if stage == "wd" or stage == "working draft" { 0 }
+else if stage == "cd" or stage == "committee draft" { 1 }
+else if stage == "dis" or stage == "draft international stage" { 2 }
+else if stage == "publication" { 3 } else { none }
 // general page settings, header/footer, initial settings
 // and styling
 set document(title: title, author: authors, keywords: keywords)
@@ -176,7 +182,7 @@ Specification
 
 #align(bottom, [
 	Reference Number \
-	ISO/DIS TS #ts_id #if stage != "published" [: Working Draft #id]
+	ISO/DIS TS #ts_id #if stage != "published" [: Working Draft #id] else if stage_enum == 1 [: Committee Draft #id] else if stage_enum == 2 [: Draft International Standard #id]
 ])
 ],
 [ISO/ TC22/SC22 \

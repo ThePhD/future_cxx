@@ -1,10 +1,10 @@
 <pre class='metadata'>
-Title: variable length Array (VLA) Allocation Control
-Shortname: XX10
+Title: Variable Length Array (VLA) Allocation Control
+Shortname: 3437
 Revision: 0
 !Previous Revisions: None
 Status: P
-Date: 2024-12-12
+Date: 2024-12-23
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -16,7 +16,7 @@ Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
 Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
 Markup Shorthands: markdown yes
 Toggle Diffs: no
-Abstract: variable length Arrays are commonly expected to be pulled off of what most implementations call their "stack", a dedicated area of memory for what are known as "automatic storage duration" variables and objects. However, this runs afoul of many inherent limitations unique to the stack, and exacerbated by the lack of terminology in the standard to handle it. Therefore, rather than require implementations to develop increasingly sophisticated techniques to handle these cases, we instead defer such behavior specification and implementation to the users themselves.
+Abstract: Variable length arrays are commonly expected to be pulled off of what most implementations call their "stack", a dedicated area of memory for what are known as "automatic storage duration" variables and objects. However, this runs afoul of many inherent limitations unique to the stack, and exacerbated by the lack of terminology in the standard to handle it. Therefore, rather than require implementations to develop increasingly sophisticated techniques to handle these cases, we instead defer such behavior specification and implementation to the users themselves.
 </pre>
 
 <pre class="include-raw">
@@ -32,7 +32,7 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 0 - December 12<sup>th</sup>, 2024 ## {#changelog-r0}
+## Revision 0 - December 23<sup>th</sup>, 2024 ## {#changelog-r0}
 
 - Initial release. ✨
 
@@ -56,7 +56,7 @@ Similarly, we do not infringe upon an implementation's right to refuse implement
 
 # Design # {#design}
 
-The design of this feature is simple; we need to provide users with the ultimate level of control so that implementations need not concern themselves with the details of allocation and deallocation of variable length Arrays. This eliminates the sole reason that VLAs were made optional in C11 to begin with; implementations of varying sizes struggled with the ability to compute the allocation. If the user is able to control how a VLA is allocated, then all of the most serious technical concerns for the implementation and proliferation of VLAs disappears as the user is stating they will be responsible. This means that even implementations that have `__STDC_NO_VLA__` defined and set to `1` will still be able to access the feature, provided the user declares 2 functions visible at the point of the creation of the VLA:
+The design of this feature is simple; we need to provide users with the ultimate level of control so that implementations need not concern themselves with the details of allocation and deallocation of variable length arrays. This eliminates the sole reason that VLAs were made optional in C11 to begin with; implementations of varying sizes struggled with the ability to compute the allocation. If the user is able to control how a VLA is allocated, then all of the most serious technical concerns for the implementation and proliferation of VLAs disappears as the user is stating they will be responsible. This means that even implementations that have `__STDC_NO_VLA__` defined and set to `1` will still be able to access the feature, provided the user declares 2 functions visible at the point of the creation of the VLA:
 
 ```cpp
 void* stdc_vla_alloc(size_t n, size_t align, size_t* out_n);
@@ -107,7 +107,7 @@ void stdc_vla_free(void p[static 1], size_t n, size_t align);
 
 Unfortunately, this syntax is **not** allowed for `void*` pointers. We do not solve this problem for this paper, but would note that such a fix would be of general interest to make these annotations more useful to a wide variety of functions, especially infallible (impossible to fail) memory and allocation functions.
 
-If someone wishes to handle an error, they must do so inside of the function and handle it by either aborting or jumping out before the function returns. Once the function returns, the program is entirely valid in assuming that the returned pointer is a valid address for the purposes of the VLA. Any error reporting or error checking must be done exclusively by the user. This is because there is simply no syntax when working with a variable length Array to check for success, as e.g.:
+If someone wishes to handle an error, they must do so inside of the function and handle it by either aborting or jumping out before the function returns. Once the function returns, the program is entirely valid in assuming that the returned pointer is a valid address for the purposes of the VLA. Any error reporting or error checking must be done exclusively by the user. This is because there is simply no syntax when working with a variable length array to check for success, as e.g.:
 
 ```cpp
 int main (int argc, char* argv[]) {
@@ -168,7 +168,7 @@ int main (int argc, char* argv[]) {
 	int $__vla_size;
 	int (*vla)[argc];
 	vla = (typeof(vla))stdc_vla_alloc(
-		sizeof(vla[0]) + sizeof(size_t) /* implementation-defined */,
+		sizeof(vla[0]) + sizeof(size_t) /* implementation-defined; extra storage for VLA size */,
 		alignof(size_t) /* implementation-defined */,
 		&$__vla_size
 	);
@@ -195,6 +195,8 @@ As shown in this de-sugared program, the VLA may have a size that is, practicall
 
 A frequent question in the face of this proposal is "what happens if an implementation is smart enough to lower the VLA to a C-style, fixed-size array?". The answer here is simple: it is already implementation-defined if an array is considered a VLA or not, due to the nature of the rules of Constant Expressions. This was clarified in C23[[n3138]] that such arrays may or may not be VLAs. Implementations can continue to lower VLAs into fixed-size, C-style arrays and declare them non-VLAs and thus avoid needing to invoke any of this infrastructure. This proposal does not prevent any class of optimizations, as the implementation is still within full control when it needs to be.
 
+What this **does** prevent implementations from doing is denying the use of VLAs outright if the program provides the necessary allocation functions.
+
 
 
 ## Memory Reuse ## {#design-memory.reuse}
@@ -217,14 +219,14 @@ int main () {
 The program may opt to only allocate the VLA once, resulting in a de-sugaring that looks something close to:
 
 ```cpp
-const int vla_n = 30;
+const int vla_n = 50;
 
 int main () {
-	const int n = 50;
+	const int n = 30;
 	size_t $__vla_size;
 	double (*vla)[vla_n];
 	vla = (typeof(vla))stdc_vla_alloc(
-		sizeof(vla[0]) + sizeof(size_t) /* implementation-defined */,
+		sizeof(vla[0]) /* implementation-defined */,
 		alignof(size_t) /* implementation-defined */,
 		&$__vla_size
 	);
@@ -413,7 +415,7 @@ int f (int n) {
 }
 ``` 
 
-The VLA in `main` will compile, link, and run (provided a definition of `my_vla_alloc` and `my_vla_free` are in the final program). Conversely, `f` is a constraint violation and thus the program may not compile, link, or run.
+The VLA in `main` will compile, link, and run (provided a definition of `my_vla_alloc` and `my_vla_free` are in the final program). Conversely, `f` is a constraint violation and thus the program may not compile, link, or run. This is mildly better than using a function pointer object because null function pointers are no longer a potential point of failure.
 
 
 
@@ -537,21 +539,21 @@ int main () {
 	extern void stdc_vla_free(void *p, size_t n, size_t align);
 
 	const int n = 50;
-	size_t vla_size;
-	double (*pvla)[vla_n];
-	pvla = (typeof(pvla))stdc_vla_alloc(
+	size_t __vla_size;
+	double (*__pvla)[vla_n];
+	__pvla = (typeof(__pvla))stdc_vla_alloc(
 		sizeof(pvla[0]) /* hypothetical */,
 		alignof(double) /* hypothetical */,
-		&vla_size
+		&__vla_size
 	);
 	for (int i = 0; i < n; ++i) {
-		for (size_t init_vla = 0; init_vla < sizeof(pvla[0]); ++init_vla) {
-			(pvla[0])[__init_vla] = (double){};
+		for (size_t __init_vla = 0; __init_vla < sizeof(__pvla[0]); ++__init_vla) {
+			(__pvla[0])[__init_vla] = (double){};
 		}
-		double* vla = pvla[0];
+		double* vla = __pvla[0];
 		/* use VLA */
 	}
-	stdc_vla_free(pvla, vla_size, alignof(double));
+	stdc_vla_free(__pvla, __vla_size, alignof(double));
 	return 0;
 }
 ```
@@ -561,18 +563,18 @@ int main () {
 
 <div class="wording-numbered">
 
-**EXAMPLE** Assuming an implementation where `__STDC_NO_VLA__` is defined and a non-zero value: let there be some function named `alloca` that provides storage that is automatically reclaimed by the implementation when provided a size and an alignment; and, let there be some attribute named `some::flatten` that behaves as-if the marked function, when called, has its function body written directly in the calling location. The following is a valid program that will translate and execute without error:
+**EXAMPLE** Assuming an implementation where `__STDC_NO_VLA__` is defined with a non-zero value: let there be some function named `alloca` that provides storage that is automatically reclaimed by the implementation when provided a size and an alignment; and, let there be some attribute named `acme::flatten` that behaves as-if the marked function, when called, has its function body written directly in the calling location. The following is a valid program that will translate and execute without error:
 
 ```cpp
 #include <stddef.h>
 
-[[some::flatten]]
+[[acme::flatten]]
 inline void* stdc_vla_alloc(size_t size, size_t alignment, size_t actual_size[static 1]) {
 	*actual_size = size;
 	return alloca(size, alignment);
 }
 
-[[some::flatten]]
+[[acme::flatten]]
 inline void stdc_vla_free(void* ptr, size_t size, size_t alignment) {
 	// nothing; implementation automatically reclaims this memory
 }
@@ -588,7 +590,7 @@ int main (int argc, char *argv[]) {
 
 <div class="wording-numbered">
 
-**EXAMPLE** Assuming an implementation where `__STDC_NO_VLA__` is defined and a non-zero value: the following will translate successfully until the body of function `f`.
+**EXAMPLE** Assuming an implementation where `__STDC_NO_VLA__` is defined with a non-zero value: the following will translate successfully until the body of function `f`.
 
 ```cpp
 #include <stddef.h>
@@ -617,17 +619,23 @@ int f (int n) {
 
 <div class="wording-numbered">
 
-**EXAMPLE** Implementations can avoid calling `stdc_vla_alloc` by using program information
+**EXAMPLE** Implementations can avoid calling `stdc_vla_alloc` by using semantic program information, meaning that every variable length array may not include a call to `stdc_vla_alloc`:
 
 ```cpp
+extern void *stdc_vla_alloc(size_t n, size_t align, size_t actual_size[static 1]);
+extern void stdc_vla_free(void *p, size_t n, size_t align);
+
+extern void use(int* p);
+
 void optimizable (int n) {
 	if (n < 100) {
 		int a[n];
-		// an implementation is permitted to not call stdc_vla_alloc
-		// here and instead perform a fixed allocation of int a[99] if it so ddems.
+		use(a);
 	}
 }
 ```
+
+An implementation is permitted to not call `stdc_vla_alloc` in `optimizable` and instead perform a fixed automatic storage duration allocation (similar to what would happen if `a` was declared as `int a[99]`).
 </div>
 </ins>
 </blockquote>
