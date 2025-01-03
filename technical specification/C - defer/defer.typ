@@ -17,7 +17,7 @@
 
 This Technical Specification specifies a series of extensions of the programming language C, specified by the international standard ISO/IEC 9899:2024#index[ISO/IEC 9899:2024].
 
-Each clause in this Technical Specification deals with a specific topic. The first sub-clauses of clauses 4 through 7 contain a technical description of the features of the topic and what is necessary for an implementation to achieve conformance through modifications or additions to ISO/IEC 9899:2024#index[ISO/IEC 9899:2024].
+Each clause in this Technical Specification deals with a specific topic. The first sub-clauses of clauses 4 through 7 contain a technical description of the features of the topic and what is necessary for an implementation to achieve conformance through extensions or additions to ISO/IEC 9899:2024#index[ISO/IEC 9899:2024].
 
 
 

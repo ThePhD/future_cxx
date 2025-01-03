@@ -264,41 +264,35 @@ Unfortunately, absolutely nothing can be done for parameters due to the ABI cons
 Allowing us to be generic over all `_BitInt` of signed or unsigned type means we can write a library version to find the number of bits in a bit-precise integer type:
 
 ```cpp
-#define BITINT_WIDTH_CHARBIT(...) _Generic(typeof(__VA_ARGS__),\
-	_BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 0): sizeof(__VA_ARGS__) * (CHAR_BIT) + 0,\
-	_BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 1): sizeof(__VA_ARGS__) * (CHAR_BIT) + 1,\
-	_BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 2): sizeof(__VA_ARGS__) * (CHAR_BIT) + 2,\
-	_BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 3): sizeof(__VA_ARGS__) * (CHAR_BIT) + 3,\
-	_BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 4): sizeof(__VA_ARGS__) * (CHAR_BIT) + 4,\
-	_BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 5): sizeof(__VA_ARGS__) * (CHAR_BIT) + 5,\
-	_BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 6): sizeof(__VA_ARGS__) * (CHAR_BIT) + 6,\
-	_BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 7): sizeof(__VA_ARGS__) * (CHAR_BIT) + 7,\
-	unsigned _BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 0):                             \
-		sizeof(__VA_ARGS__) * (CHAR_BIT) + 0,                                             \
-	unsigned _BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 1):                             \
-		sizeof(__VA_ARGS__) * (CHAR_BIT) + 1,                                             \
-	unsigned _BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 2):                             \
-		sizeof(__VA_ARGS__) * (CHAR_BIT) + 2,                                             \
-	unsigned _BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 3):                             \
-		sizeof(__VA_ARGS__) * (CHAR_BIT) + 3,                                             \
-	unsigned _BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 4):                             \
-		sizeof(__VA_ARGS__) * (CHAR_BIT) + 4,                                             \
-	unsigned _BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 5):                             \
-		sizeof(__VA_ARGS__) * (CHAR_BIT) + 5,                                             \
-	unsigned _BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 6):                             \
-		sizeof(__VA_ARGS__) * (CHAR_BIT) + 6,                                             \
-	unsigned _BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 7):                             \
-		sizeof(__VA_ARGS__) * (CHAR_BIT) + 7,                                             \
+#define BITINT_WIDTH_CHARBIT(S) _Generic(typeof(A),        \
+	_BitInt(S * (CHAR_BIT) + 0): S * (CHAR_BIT) + 0,         \
+	_BitInt(S * (CHAR_BIT) + 1): S * (CHAR_BIT) + 1,         \
+	_BitInt(S * (CHAR_BIT) + 2): S * (CHAR_BIT) + 2,         \
+	_BitInt(S * (CHAR_BIT) + 3): S * (CHAR_BIT) + 3,         \
+	_BitInt(S * (CHAR_BIT) + 4): S * (CHAR_BIT) + 4,         \
+	_BitInt(S * (CHAR_BIT) + 5): S * (CHAR_BIT) + 5,         \
+	_BitInt(S * (CHAR_BIT) + 6): S * (CHAR_BIT) + 6,         \
+	_BitInt(S * (CHAR_BIT) + 7): S * (CHAR_BIT) + 7,         \
+	unsigned _BitInt(S * (CHAR_BIT) + 0): S * (CHAR_BIT) + 0,\
+	unsigned _BitInt(S * (CHAR_BIT) + 1): S * (CHAR_BIT) + 1,\
+	unsigned _BitInt(S * (CHAR_BIT) + 2): S * (CHAR_BIT) + 2,\
+	unsigned _BitInt(S * (CHAR_BIT) + 3): S * (CHAR_BIT) + 3,\
+	unsigned _BitInt(S * (CHAR_BIT) + 4): S * (CHAR_BIT) + 4,\
+	unsigned _BitInt(S * (CHAR_BIT) + 5): S * (CHAR_BIT) + 5,\
+	unsigned _BitInt(S * (CHAR_BIT) + 6): S * (CHAR_BIT) + 6,\
+	unsigned _BitInt(S * (CHAR_BIT) + 7): S * (CHAR_BIT) + 7,\
 )
 
 
-#define BITINT_WIDTH(...) _Generic(typeof(__VA_ARGS__), \
-	_BitInt(): BITINT_WIDTH_CHARBIT(__VA_ARGS__),        \
-	unsigned _BitInt(): BITINT_WIDTH_CHARBIT(__VA_ARGS__),\
+#define BITINT_WIDTH(...) _Generic(typeof(__VA_ARGS__),               \
+	_BitInt(): BITINT_WIDTH_CHARBIT((sizeof(__VA_ARGS__) - 1)),         \
+	unsigned _BitInt(): BITINT_WIDTH_CHARBIT((sizeof(__VA_ARGS__) - 1)),\
 )
 ```
 
-This alone justifies `_BitInt` as an incomplete type. Some further wording may be necessary to prevent such a pointer, however, from being abused.
+This is not fully complete, as e.g. the size of a `_BitInt(...)` is not mandated to be exactly filled to the `CHAR_BIT` boundary. But, this is a decent start to getting a macro going, and further tweaking would allow for a greatly improved experience (though this might be something better suited for a built-in).
+
+This would also allow an implementation that wanted to match all `_BitInt`s but only select a certain criterion to do so, which might aid in the expansion of the `<stdbit.h>` utitlities.
 
 
 
@@ -595,7 +589,7 @@ The intent of this wording is to provide:
 
 - a change in the definition of incomplete types for arrays, which makes it so an incomplete constant sized array specification with `T[]` and incomplete variable size `T[*]` can complete their respective constant and incomplete array types;
 - move the array types wording and concentrate it into §6.2.5;
-- improvements to how type completion works for both array types, allowing multiple type derivations to be completed at once.
+- improvements to how type completion works for both categories of incomplete array types, allowing multiple type derivations to be completed at once.
 
 This wording is broken up into two major sections:
 
@@ -663,7 +657,6 @@ There are a handful of places where describing a VLA refers to an unspecified si
 > <sup>3</sup> The generic controlling operand is not evaluated. If a generic selection has a generic association with a type name that is <del>compatible</del><ins>associated</ins> with the controlling type, then the result expression of the generic selection is the expression in that generic association. Otherwise, the result expression of the generic selection is the expression in the `default` generic association. None of the expressions from any other generic association of the generic selection is evaluated.
 >
 > ...
->
 
 <blockquote>
 <ins>
@@ -735,7 +728,6 @@ int main () {
 </ins>
 </blockquote>
 
-
 <blockquote>
 <ins>
 <sup>✨</sup> EXAMPLE &emsp; A variable length array is associated with variably incomplete array types before unspecified incomplete array types.
@@ -780,50 +772,26 @@ int main () {
 </ins>
 </blockquote>
 
+
 <blockquote>
 <ins>
-<sup>✨</sup> EXAMPLE &emsp; A bit-precise incomplete integer type used with generic selection can be used to get the exact bit width of a type, given knowledge of `CHAR_BIT`'s size.
+<sup>✨</sup> EXAMPLE &emsp; A bit-precise incomplete integer type can match on multiple kinds of bit int.
 
 ```cpp
-static_assert((CHAR_BIT) == 8);
-#define BITINT_WIDTH_CHARBIT(...) _Generic(typeof(__VA_ARGS__),\
-	_BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 0): sizeof(__VA_ARGS__) * (CHAR_BIT) + 0,\
-	_BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 1): sizeof(__VA_ARGS__) * (CHAR_BIT) + 1,\
-	_BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 2): sizeof(__VA_ARGS__) * (CHAR_BIT) + 2,\
-	_BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 3): sizeof(__VA_ARGS__) * (CHAR_BIT) + 3,\
-	_BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 4): sizeof(__VA_ARGS__) * (CHAR_BIT) + 4,\
-	_BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 5): sizeof(__VA_ARGS__) * (CHAR_BIT) + 5,\
-	_BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 6): sizeof(__VA_ARGS__) * (CHAR_BIT) + 6,\
-	_BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 7): sizeof(__VA_ARGS__) * (CHAR_BIT) + 7,\
-	unsigned _BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 0):                             \
-		sizeof(__VA_ARGS__) * (CHAR_BIT) + 0,                                             \
-	unsigned _BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 1):                             \
-		sizeof(__VA_ARGS__) * (CHAR_BIT) + 1,                                             \
-	unsigned _BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 2):                             \
-		sizeof(__VA_ARGS__) * (CHAR_BIT) + 2,                                             \
-	unsigned _BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 3):                             \
-		sizeof(__VA_ARGS__) * (CHAR_BIT) + 3,                                             \
-	unsigned _BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 4):                             \
-		sizeof(__VA_ARGS__) * (CHAR_BIT) + 4,                                             \
-	unsigned _BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 5):                             \
-		sizeof(__VA_ARGS__) * (CHAR_BIT) + 5,                                             \
-	unsigned _BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 6):                             \
-		sizeof(__VA_ARGS__) * (CHAR_BIT) + 6,                                             \
-	unsigned _BitInt(sizeof(__VA_ARGS__) * (CHAR_BIT) + 7):                             \
-		sizeof(__VA_ARGS__) * (CHAR_BIT) + 7,                                             \
-)
-
-
-#define BITINT_WIDTH(...) _Generic(typeof(__VA_ARGS__), \
-	_BitInt(): BITINT_WIDTH_CHARBIT(__VA_ARGS__),         \
-	unsigned _BitInt(): BITINT_WIDTH_CHARBIT(__VA_ARGS__),\
-)
-
 int main () {
-	// equivalent to: return 64
-	return BITINT_WIDTH(_BitInt(34))
-	+ BITINT_WIDTH(unsigned _BitInt(27))
-	+ BITINT_WIDTH(signed _BitInt(3));
+	_BitInt() bits = 2wb; // type is _BitInt(2)
+	
+	static_assert(_Generic(typeof(bits),
+		signed _BitInt(): 1,
+		unsigned _BitInt(): 0,
+		default: 0
+	));
+
+	static_assert(_Generic(typeof(3uwb),
+		_BitInt(): 0,
+		unsigned _BitInt(): 1,
+		default: 0
+	));
 }
 ```
 </ins>
