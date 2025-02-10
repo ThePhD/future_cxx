@@ -1,10 +1,10 @@
 <pre class='metadata'>
 Title: __self_func
 H1: <code>__self_func</code>
-Shortname: 3470
-Revision: 1
+Shortname: XX16
+Revision: 2
 Status: P
-Date: 2025-02-03
+Date: 2025-02-11
 Group: WG14
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
@@ -36,6 +36,12 @@ path: resources/css/bikeshed-wording.html
 
 # Changelog # {#changelog}
 
+
+
+## Revision 2 - February 11<sup>th</sup>, 2025 ## {#changelog-r2}
+
+- Add further examples and rationale.
+- Fix the keyword / postfix expression wording.
 
 
 ## Revision 1 - February 3<sup>rd</sup>, 2025 ## {#changelog-r1}
@@ -83,18 +89,22 @@ However, C++ still has a vast deficiency here in that even with their new Deduci
 This means that C++ still can't viably implement `va_start(list)` with neither the last argument nor the function name passed explicitly to the macro. Deducing this also does not solve this problem because deducing this does not work inside of normal function calls. In C, there's two critical portions of this for a cross-platform implementation of `va_start` that relies purely on the library to perform this trick:
 
 0. `typeof(foo)` allowing the retrieval of the function's type (standardized in C23);
-1. `_Generic` (or other faux-reflection) allows 
+1. `_Generic` (or other faux-reflection) allows probing the signature of the function in certain ways;
 2. and, some way to access the name of the function or function object without needing to modify the function signature as it stands (currently unavailable).
 
 This means that the implementation of `va_start` above still has the same deficiency in both the C and C++ versions: we cannot get the name of the calling function independent of the user passing that in -- or passing the function type signature -- as extra information. The user must pass it in to us, which breaks the interface of `va_start` mandated by the standard (and is not helped by the old `va_start` interface that took an additional parameter representing the last argument to the function call).
 
-This proposal enables standalone, independent retrieval of the function designator of the function in use, which gives access to both the function itself and, importantly for a pure, ABI-based, assembly-hacking, library-hacking implementation, the function's type signature.
+This proposal enables standalone, independent retrieval of the function designator of the function in use, which gives access to both the function itself and, importantly for a pure, platform-based, assembly-hacking, ABI-probing, library-only implementation using information from the function's type signature and other (platform) macro definitions/compile-time information.
 
 
 
-## Future: Lambdas ## {#design-lambdas}
+## Current and Future: "Unnamed" Functions/Blocks, and Lambdas ## {#design-lambdas}
 
-This is important when lambdas (e.g. Jens Gustedt's [Basic Lambdas for C: N2892](https://www.open-std.org/JTC1/SC22/WG14/www/docs/n2892.pdf)) need this as they are, effectively, anonymous complete function objects. They don't necessary have a name. This also applies to Apple's C extension, [Blocks](https://www.open-std.org/JTC1/SC22/WG14/www/docs/n1457.pdf); right now, there's no way to get the name of a Lambda or the start of an unnamed Block. `__self_func` solves this problem.
+This is important when lambdas (e.g. Jens Gustedt's [Basic Lambdas for C: N2892](https://www.open-std.org/JTC1/SC22/WG14/www/docs/n2892.pdf)) need this as they are, effectively, anonymous complete objects (when not a "function literal") that is callable. They don't necessarily have a name. This also applies to Apple's C extension, [Blocks](https://www.open-std.org/JTC1/SC22/WG14/www/docs/n1457.pdf); right now, there's no way to get the name of a Lambda or an unnamed Block.
+
+This also solves the problem for other extensions in C, such as Clang/Apple "Blocks" (which can be nameless when created) and also for plain ol' C functions whose names are generated (either by a code generator which does not immediately provide the name its generating to the code being stuffed into the function) or are created VIA macro (e.g. using the extension `__COUNTER__`).
+
+`__self_func` solves this problem.
 
 
 
@@ -136,6 +146,18 @@ This wording is relative to C's latest working draft.
 > **Syntax**
 >
 > <sup>1</sup>
+> *keyword:* one of
+> 
+> ...
+> 
+> <ins>`__self_func`</ins>
+
+
+## Add `__self_func` to the *primary-expression* grammar of §6.5.3.1 ## {#wording-6.5.3.1}
+
+> **Syntax**
+>
+> <sup>1</sup>
 > *postfix-expression:*
 > :: *primary-expression*
 > :: *postfix-expression* `[` *expression `]`
@@ -164,7 +186,7 @@ Constraints
 </div>
 
 <div class="wording-numbered">
-`__self_func` shall appear in a function body.
+`__self_func` shall only appear in the compound statement of a function definition.
 </div>
 
 <div class="wording-clause-section-title">
@@ -174,41 +196,6 @@ Semantics
 <div class="wording-numbered">
 
 `__self_func` is the function designator (6.3.3.1) of the function it is used in.
-</div>
-
-<div class="wording-numbered">
-
-**EXAMPLE** A program refers to the enclosing function even when the name is not directly known.
-
-```cpp
-
-#include <stdlib.h>
-#include <stddef.h>
-#include <stdio.h>
-bool f (int tries, char* fn) {
-
-#define MAX_TRIES 30
-#define RE_DO(TRIES, ...) if (TRIES >= MAX_TRIES) goto TOO_MANY_TRIES;\
-			                     return __self_func(TRIES + 1 __VA_OPT__(,) __VA_ARGS__);
-
-	if (fn == nullptr) return false;
-	size_t fnlen = strlen(fn);
-	if (fnlen < 1) return false;
-	FILE* f = fopen(fn);
-	if (!f) {
-		fn[fnlen - 1] = '0' + tries;
-		RE_DO(tries, fn);
-	}
-	// found the first proper f,
-	// use it
-	fclose(f);
-	return true;
-
-	TOO_MANY_TRIES:
-	if (f) fclose(f);
-	return false;
-}
-```
 </div>
 </ins>
 </blockquote>
