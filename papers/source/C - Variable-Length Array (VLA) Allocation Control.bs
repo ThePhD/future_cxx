@@ -1,10 +1,10 @@
 <pre class='metadata'>
 Title: Variable Length Array (VLA) Allocation Control
-Shortname: 3437
-Revision: 0
-!Previous Revisions: None
+Shortname: XX20
+Revision: 1
+!Previous Revisions: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3437.htm">n3437 (r0)</a>
 Status: P
-Date: 2024-12-23
+Date: 2025-02-11
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -35,6 +35,9 @@ path: resources/css/bikeshed-wording.html
 ## Revision 1 - January 19<sup>th</sup>, 2025 ## {#changelog-r1}
 
 - Fix a few example problems and bad typos thanks to feedback (thanks Mr. Haible!).
+- Add a new example with a table to determine which allocation/deallocation functions are used in a function pointer / shadowing declaration situation.
+- Add clarification that the returned storage is allocated storage, but has the effective type and properties associated with the variable length array type.
+- 
 
 
 
@@ -199,7 +202,7 @@ As shown in this de-sugared program, the VLA may have a size that is, practicall
 
 ## What If A VLA Is Lowered To A C Array? ## {#design-vla.optimizations}
 
-A frequent question in the face of this proposal is "what happens if an implementation is smart enough to lower the VLA to a C-style, fixed-size array?". The answer here is simple: it is already implementation-defined if an array is considered a VLA or not, due to the nature of the rules of Constant Expressions. This was clarified in C23[[n3138]] that such arrays may or may not be VLAs. Implementations can continue to lower VLAs into fixed-size, C-style arrays and declare them non-VLAs and thus avoid needing to invoke any of this infrastructure. This proposal does not prevent any class of optimizations, as the implementation is still within full control when it needs to be.
+A frequent question in the face of this proposal is "what happens if an implementation is smart enough to lower the VLA to a C-style, fixed-size array?". The answer here is simple: it is already implementation-defined if an array is considered a VLA or not, due to the nature of the rules of Constant Expressions. This was clarified in C23[[n3138]] that such arrays may or may not be VLAs to begin with before lowering even starts. Implementations can continue to lower VLAs into fixed-size, C-style arrays and declare them non-VLAs and thus avoid needing to invoke any of this infrastructure. Even after this language classification, such optimizations are still commonplace even if the variable is **definitely** a VLA by extended constant expression rules. This proposal does not prevent any class of optimizations, as the implementation is still within full control when it needs to be.
 
 What this **does** prevent implementations from doing is denying the use of VLAs outright if the program provides the necessary allocation functions.
 
@@ -432,6 +435,10 @@ The VLA in `main` will compile, link, and run (provided a definition of `my_vla_
 
 Wording is relative to the latest draft of the C standard.
 
+
+
+## Add a new section 6.✨ Variable length array storage control ## {#wording-6.✨}
+
 <blockquote>
 <ins>
 
@@ -466,27 +473,32 @@ If one of `stdc_vla_alloc` or `stdc_vla_free` is visible at a given scope when a
 
 <div class="wording-numbered">
 
-`stdc_vla_alloc` shall have a (pointer to) function type compatible with `void *(size_t n, size_t align, size_t actual_size[static 1])`. `stdc_vla_free` shall have a (pointer to) function type compatible with `void (void *ptr, size_t n, size_t align)`. If any of them are function pointers, those function pointers shall not be a null function pointer.
+If the ordinary identifier `stdc_vla_alloc` is in scope, it shall have a (pointer to) function type compatible with `void *(size_t n, size_t align, size_t actual_size[static 1])`. If the ordinary identifier `stdc_vla_free` is in scope, it shall have a (pointer to) function type compatible with `void (void *ptr, size_t n, size_t align)`.
 </div>
 
 <div class="wording-numbered">
 
-The `stdc_vla_alloc` function shall return a non-null pointer to at least `n` bytes of storage and has the requested or compatible alignment `alignment`. The actual usable size of the allocation shall be written into the `actual_size` parameter, representing the usable size in bytes of the allocation.
+The `stdc_vla_alloc` function shall return a non-null pointer to at least `n` bytes of allocated storage (7.24.4) and has the requested or compatible alignment `alignment`. The actual usable size of the allocation shall be written into the `actual_size` parameter, representing the usable size in bytes of the allocation.
 </div>
 
 <div class="wording-numbered">
 
-**NOTE** A valid implementation of `stdc_vla_alloc` can terminate the program on failure to uphold the requirements. An implementation is allowed to use the provided allocation for any purpose or reason consistent with the usable size, alignment, and storage duration of the corresponding variable length array object.
+**NOTE** &emsp; &emsp; A valid implementation of `stdc_vla_alloc` can terminate the program on failure to uphold the requirements. An implementation is allowed to use the provided allocation for any purpose or reason consistent with the usable size, alignment, and storage duration of the corresponding variable length array object.
 </div>
 
 <div class="wording-numbered">
 
-For the duration of its lifetime (6.2.4), a variable length array object shall have its storage provided through a successful call to `stdc_vla_alloc`, and after the end of its lifetime will be freed with `stdc_vla_free`.
+For the duration of its lifetime (6.2.4), a variable length array object may have its storage provided through a successful invocation of `stdc_vla_alloc`, and after the end of its lifetime will be freed with a corresponding invocation to `stdc_vla_free`. For the duration of its lifetime, the effective type of the allocated storage is the type of the variable length array object.
 </div>
 
 <div class="wording-numbered">
 
-The implementation shall pair every successful execution of `stdc_vla_alloc` with a corresponding invocation of `stdc_vla_free`, unless a non-local jump (7.13) or program termination occurs.
+**NOTE** &emsp; &emsp; After the end a variable length array's lifetime and before the invocation of `stdc_vla_free`, the storage allocated by `stdc_vla_alloc` ceases to have the variable length array's type.
+</div>
+
+<div class="wording-numbered">
+
+The implementation shall pair every successful execution of `stdc_vla_alloc` with a corresponding invocation of `stdc_vla_free`, unless a non-local jump (7.13) or program termination occurs. The invocation of `stdc_vla_free` could potentially be of a different function than the ordinary identifier `stdc_vla_free` refers to at the time of the invocation `stdc_vla_alloc`.
 </div>
 
 <div class="wording-clause-section-title">
@@ -495,7 +507,7 @@ Semantics
 
 <div class="wording-numbered">
 
-Regardless of the presence or value of `__STDC_NO_VLA__`, if all of the previously-specified constraints and requirements in this subclause are met in a given scope, a program can declare, initialize, and otherwise use a variable length array object as specified in this document for that scope. If the constraints and requirements are not met, than this clause does not apply and the program is subject to the conditional support for variable length arrays and the unspecified nature of its allocation.
+Regardless of the presence or value of `__STDC_NO_VLA__`, if all of the previously-specified constraints and requirements in this subclause are met in a given scope, a program can declare, initialize, and otherwise use a variable length array object as specified in this document for that scope. If the constraints and requirements are not met, than this subclause does not apply and the program is subject to the conditional support for variable length arrays (6.10.10.4) and the potentially unspecified behavior for its allocation.
 </div>
 
 <div class="wording-numbered">
@@ -510,12 +522,17 @@ The behavior is undefined if execution returns from a call to `stdc_vla_alloc` a
 
 <div class="wording-numbered">
 
-**NOTE** Parameters declared with variable-length array type are equivalent to pointers, and do not need to use `stdc_vla_alloc` or `stdc_vla_free`. The `stdc_vla_free` function performs any necessary actions to undo memory previously allocated by `stdc_vla_alloc`, if there is any behavior at all.
+If either of the ordinary identifiers `stdc_vla_alloc` or `stdc_vla_free` is a function pointer, the function pointer shall not be the null pointer. If either is the null pointer, the behavior is undefined. The `stdc_vla_alloc` and `stdc_vla_free` functions called, even by indirection through function pointer, are the functions at the execution of the declaration of the automatic storage duration object.
 </div>
 
 <div class="wording-numbered">
 
-**EXAMPLE** An implementation is not guaranteed to call `stdc_vla_alloc` along with the corresponding `stdc_vla_free` for every single variable length array object if it has access to suitable storage already available, including if it has access to data previously provided by `stdc_vla_alloc`. The following:
+**NOTE** &emsp; &emsp; Parameters declared with variable-length array type are equivalent to pointers, and do not need to use `stdc_vla_alloc` or `stdc_vla_free`. The `stdc_vla_free` function performs any necessary actions to undo memory previously allocated by `stdc_vla_alloc`, if there is any behavior at all.
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE** An implementation is not guaranteed to call `stdc_vla_alloc` along with the corresponding `stdc_vla_free` for every single variable length array object if access to suitable storage is already available, including access to data previously provided by an invocation of `stdc_vla_alloc`. The following:
 
 ```cpp
 #include <stddef.h>
@@ -571,7 +588,7 @@ int main () {
 
 <div class="wording-numbered">
 
-**EXAMPLE** Assuming an implementation where `__STDC_NO_VLA__` is defined with a non-zero value: let there be some function named `alloca`, predefined by the implementation, that provides storage that is automatically reclaimed by the implementation when provided a size and an alignment; and, let there be some attribute named `acme::flatten` that behaves as-if the marked function, when called, has its function body written directly in the calling location. The following is a valid program that will translate and execute without error:
+**EXAMPLE** Assuming an implementation where `__STDC_NO_VLA__` is defined with a non-zero value: let there be some function named `alloca`, predefined by the implementation, that provides storage that is automatically reclaimed by the implementation when provided a size and an alignment; and, let there be some attribute named `acme::flatten` that behaves as-if the marked function, when called, has its function body translated directly into the calling location. The following is a valid program that will translate and execute without error:
 
 ```cpp
 #include <stddef.h>
@@ -593,8 +610,6 @@ int main (int argc, char *argv[]) {
 }
 ```
 </div>
-
-
 
 <div class="wording-numbered">
 
@@ -627,7 +642,7 @@ int f (int n) {
 
 <div class="wording-numbered">
 
-**EXAMPLE** Implementations can avoid calling `stdc_vla_alloc` by using semantic program information, meaning that every variable length array may not include a call to `stdc_vla_alloc`:
+**EXAMPLE** Implementations can avoid calling `stdc_vla_alloc` by using semantic program information. Thus, every variable length array does not necessarily include or imply a call to `stdc_vla_alloc`:
 
 ```cpp
 extern void *stdc_vla_alloc(size_t n, size_t align, size_t actual_size[static 1]);
@@ -643,11 +658,119 @@ void optimizable (int n) {
 }
 ```
 
-An implementation is permitted to not call `stdc_vla_alloc` in `optimizable` and instead perform a fixed automatic storage duration allocation (similar to what would happen if `a` was declared as `int a[99]`).
+An implementation is permitted to not call `stdc_vla_alloc` in `optimizable` and instead perform a fixed size automatic storage duration integer array allocation (similar to what would happen if `a` was declared as `int a[99]`).
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE** `stdc_vla_alloc` is used when an automatic storage duration variable of variable length array type begins its lifetime. `stdc_vla_free` is used when when such an automatic storage duration object ends its lifetime. This matters when using a function pointer for either identifier. The following program uses specific allocation and deallocation functions for each of its variables.
+
+```cpp
+extern void *vla_alloc1(size_t n, size_t align, size_t actual_size[static 1]);
+extern void vla_free1(void *p, size_t n, size_t align);
+
+extern void *vla_alloc2(size_t n, size_t align, size_t actual_size[static 1]);
+extern void vla_free2(void *p, size_t n, size_t align);
+
+extern void *vla_alloc3(size_t n, size_t align, size_t actual_size[static 1]);
+extern void vla_free3(void *p, size_t n, size_t align);
+
+extern void use(int* p);
+
+void multiple_usages (int n) {
+	typeof(vla_alloc1)* stdc_vla_alloc = vla_alloc1;
+	typeof(vla_free1)* stdc_vla_free = vla_free1;
+	int a11[n];
+	use(a11);
+	{
+		std_vla_alloc = vla_alloc2;
+		int a21[n];
+		use(a21);
+		{
+			std_vla_free = vla_free2;
+			int a22[n];
+			use(a22);
+		}
+		{
+			int also_a22[n];
+			use(also_a22);
+			stdc_vla_alloc = vla_alloc3;
+			typeof(vla_free3)* stdc_vla_free = vla_free3;
+		}
+		{
+			std_vla_alloc = vla_alloc3;
+			typeof(vla_alloc1)* stdc_vla_alloc = vla_alloc1;
+			int a12[n];
+			use(a12);
+			typeof(vla_free3)* stdc_vla_free = vla_free3;
+		}
+		{
+			typeof(vla_free3)* stdc_vla_free = vla_free3;
+			int a33[n];
+			use(a33);
+		}
+	}
+	int a32[n];
+	use(a32);
+}
+```
+
+Assuming that each and every object requires a separate allocation, its automatic storage duration variable length arrays perform such actions according to the following table:
+
+<table>
+	<tr>
+		<td>Object</td>
+		<td>Allocation Function</td>
+		<td>Deallocation Function</td>
+	</tr>
+	<tr>
+		<td>a11</td>
+		<td>vla_alloc1</td>
+		<td>vla_alloc1</td>
+	</tr>
+	<tr>
+		<td>a21</td>
+		<td>vla_alloc2</td>
+		<td>vla_free1</td>
+	</tr>
+	<tr>
+		<td>also_a22</td>
+		<td>vla_alloc2</td>
+		<td>vla_free2</td>
+	</tr>
+	<tr>
+		<td>a12</td>
+		<td>vla_alloc1</td>
+		<td>vla_free2</td>
+	</tr>
+	<tr>
+		<td>a33</td>
+		<td>vla_alloc3</td>
+		<td>vla_free3</td>
+	</tr>
+	<tr>
+		<td>a32</td>
+		<td>vla_alloc3</td>
+		<td>vla_free2</td>
+	</tr>
+</table>
+
+For `also_a22`, the value of the allocation and free functions are changed after the execution of `also_a22`, leading to neither the assignment of `stdc_vla_alloc` nor the shadowing definition of `stdc_vla_free` to change what `also_a22` is being allocated and deallocated with.
+
+For `a12`, the assignment to `stdc_vla_alloc` comes from an outer block that is then shadowed in the current scope by the definition of a new function pointer object immediately after. The definition of the `stdc_vla_free` object in that scope occurs after the evaluation of `a12`, meaning that the existing value before that point -- stored in `stdc_vla_free` -- is used.
 </div>
 </ins>
 </blockquote>
 
+
+
+## Modify 6.10.10.4 Conditional feature macros ## {#wording-6.10.10.4}
+
+> <sup>1</sup> The following macro names are conditionally defined by the implementation:
+> 
+> …
+>
+> `__STDC_NO_VLA__` &emsp; The integer literal 1, intended to indicate that the implementation does not support variable length arrays with automatic storage duration.<ins> This macro does not apply if the constraints and requirements in 6.✨ are met, and variable length arrays with automatic storage duration are supported for the block that such constraints and requirements are upheld.</ins> Parameters declared with variable length array types are adjusted and then define objects of automatic storage duration with pointer types. Thus, support for such declarations is mandatory.
 
 <pre class="biblio">
 {
