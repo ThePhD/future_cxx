@@ -1564,7 +1564,7 @@ Possible extra rowspan handling
   <meta content="Bikeshed version ac5ea272d, updated Fri Dec 6 15:45:15 2024 -0800" name="generator">
   <link href="https://thephd.dev/_vendor/future_cxx/papers/d1967.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="b9500c56499e0d8b15fc8e88cc549c176cc1ef98" name="revision">
+  <meta content="6988c2613b6c7a3b164549138f77e6be060378e2" name="revision">
   <meta content="dark light" name="color-scheme">
 <style>
 :root {
@@ -2514,6 +2514,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
       <li><a href="#design-constexpr"><span class="secno">4.3</span> <span class="content">Constant Expressions</span></a>
       <li><a href="#design-__has_embed"><span class="secno">4.4</span> <span class="content"><code class="highlight"><c- n>__has_embed</c-></code></span></a>
       <li><a href="#design-endianness"><span class="secno">4.5</span> <span class="content">Bit Blasting: Endianness</span></a>
+      <li><a href="#design-macro.expand"><span class="secno">4.6</span> <span class="content">Macro Expansion: Vendor Direction</span></a>
      </ol>
     <li><a href="#implementation"><span class="secno">5</span> <span class="content">Implementation Experience</span></a>
     <li>
@@ -2589,6 +2590,8 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
       <li data-md>
        <p>Change the stable tag name from <code class="highlight"><c- p>[</c-><c- n>cpp</c-><c- p>.</c-><c- n>res</c-><c- p>]</c-></code> to <code class="highlight"><c- p>[</c-><c- n>cpp</c-><c- p>.</c-><c- n>embed</c-><c- p>]</c-></code>.</p>
      </ul>
+    <li data-md>
+     <p>Design change: expand everything after the <code class="highlight"><c- cp>#embed</c-></code>, not just the argument list.</p>
    </ul>
    <h3 class="heading settled" data-level="1.2" id="changelog-r13"><span class="secno">1.2. </span><span class="content">Revision 13 - December 12<sup>th</sup>, 2024</span><a class="self-link" href="#changelog-r13"></a></h3>
    <ul>
@@ -3225,6 +3228,18 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 <c- p>}</c->
 </pre>
    <p>If the same file during both translation and execution, <code class="highlight"><c- s>"foo.bin"</c-></code>, is used here, this program should always return <code class="highlight"><c- mi>0</c-></code>. This is what the wording below attempts to achieve. Note that this is always a concern already, due to <code class="highlight"><c- n>CHAR_BIT</c-></code> and other target environment-specific variables that already exist; implementations have always been responsible for handling differences between the host and the target and this directive is no different. If the <code class="highlight"><c- n>CHAR_BIT</c-></code> of the host vs. the target is the same, then the directive is more simple. If it is not, then an implementation will have to perform translation.</p>
+   <h3 class="heading settled" data-level="4.6" id="design-macro.expand"><span class="secno">4.6. </span><span class="content">Macro Expansion: Vendor Direction</span><a class="self-link" href="#design-macro.expand"></a></h3>
+   <p>As of February 14, both GCC and Clang vendors have indicated that they would like macro expansion to apply to everything after the name of a parameter. The previous wording in older revisions of this paper did not do this. Thus, the current behavior in this paper is now as follows:</p>
+<pre class="language-cpp highlight"><c- cp>#define prefix(ARG) suffix(ARG)</c->
+<c- cp>#define THE_ADDITION "teehee"</c->
+<c- cp>#define THE_RESOURCE ":3c"</c->
+<c- cp>#embed ":3c"        prefix(THE_ADDITION)</c->
+<c- cp>#embed THE_RESOURCE prefix(THE_ADDITION)</c->
+</pre>
+   <p>is equivalent to:</p>
+<pre class="language-cpp highlight"><c- cp>#embed ":3c" suffix("teehee")</c->
+<c- cp>#embed ":3c" suffix("teehee")</c->
+</pre>
    <h2 class="heading settled" data-level="5" id="implementation"><span class="secno">5. </span><span class="content">Implementation Experience</span><a class="self-link" href="#implementation"></a></h2>
    <p>An implementation of this functionality is available in branches of both GCC and Clang, accessible right now with an internet connection through the online utility Compiler Explorer. The Clang compiler with this functionality is called <a href="https://godbolt.org/z/x5vhTrqvs">"x86-64 clang (thephd.dev)"</a> in the Compiler Explorer UI:</p>
 <pre class="language-cpp highlight"><c- b>int</c-> <c- nf>main</c-> <c- p>()</c-> <c- p>{</c->
@@ -3331,6 +3346,8 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
      <p>the proposed feature test macro is <code class="highlight"><c- n>__cpp_pp_embed</c-></code> for the preprocessor functionality;</p>
     <li data-md>
      <p>takes a quote or chevron delimited header-name -- potentially from the expansion of a macro -- and uses it to find a unique resource in an implementation-defined manner;</p>
+    <li data-md>
+     <p>performs preprocessing macro expansion for all the arguments (and their names)</p>
     <li data-md>
      <p>behaves as if it produces a list of values suitable for the initialization of an array as well as initializes each <code class="highlight"><c- b>unsigned</c-> <c- b>char</c-></code> element according to the specific environment limits found in an implementation-defined manner;</p>
     <li data-md>
@@ -3521,19 +3538,19 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
         <p>A preprocessing directive of the form</p>
         <dl>
          <dd data-md>
-          <p><code class="highlight"><c- cp>#embed</c-></code> <code class="highlight"><c- s>"</c-></code> <em>q-char-sequence</em> <code class="highlight"><c- s>"</c-></code> <em>embed-parameter-seq</em><sub><em>opt</em></sub> <em>new-line</em></p>
+          <p><code class="highlight"><c- cp>#embed</c-></code> <code class="highlight"><c- s>"</c-></code> <em>q-char-sequence</em> <code class="highlight"><c- s>"</c-></code> <em>pp-tokens</em><sub><em>opt</em></sub> <em>new-line</em></p>
         </dl>
         <p>searches for a resource identified . How the places are specified or the resource identified is implementation-defined.</p>
         <p>If this search is not supported, or if the search fails, the directive is reprocessed as if it read</p>
         <dl>
          <dd data-md>
-          <p><code class="highlight"><c- cp>#embed</c-></code> <code class="highlight"><c- o>&lt;</c-></code> <em>h-char-sequence</em> <code class="highlight"><c- o>></c-></code> <em>embed-parameter-seq</em><sub><em>opt</em></sub> <em>new-line</em></p>
+          <p><code class="highlight"><c- cp>#embed</c-></code> <code class="highlight"><c- o>&lt;</c-></code> <em>h-char-sequence</em> <code class="highlight"><c- o>></c-></code> <em>pp-tokens</em><sub><em>opt</em></sub> <em>new-line</em></p>
         </dl>
         <p>with the identical contained sequence (including " characters, if any) from the original directive.</p>
        </div>
        <div class="wording-numbered"> <em>Recommended Practice</em>: A mechanism similar to, but distinct from, the implementation-defined search paths used for <code class="highlight"><c- cp>#include</c-></code> ([<a href="http://eel.is/c++draft/cpp.include">cpp.include</a>]) is encouraged. </div>
        <div class="wording-numbered">
-        <p>Either form of the <code class="highlight"><c- cp>#embed</c-></code> directive shall process the <em>pp-balanced-token-seq</em> of any <em>embed-parameter</em> in the optional <em>embed-parameter-seq</em> just as in normal text.</p>
+        <p>Either form of the <code class="highlight"><c- cp>#embed</c-></code> directive shall process the <em>pp-tokens</em>, if present, just as in normal text. Afterward, the <em>pp-tokens</em> shall have the form <em>embed-parameter-seq</em>.</p>
        </div>
        <div class="wording-numbered">
         <p>A <em>resource</em> is a source of data accessible from the translation environment. A resource has an <em>implementation-resource-width</em>, which is the implementation-defined size in bits of the resource. Let <em>implementation-resource-count</em> be implementation-resource-width divided by <code class="highlight"><c- n>CHAR_BIT</c-></code>. Every resource also has a <em>resource-count</em>, which is</p>
@@ -3545,7 +3562,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
            <p>otherwise, the implementation-resource-count. If the implementation-resource-width is not an integral multiple of <code class="highlight"><c- n>CHAR_BIT</c-></code>, the program is ill-formed.</p>
          </ul>
         </div>
-        <p>A resource is empty if the resource-count is zero.</p>
+        <p>A resource is <em>empty</em> if the resource-count is zero.</p>
        </div>
        <div class="wording-numbered">
         <p>[<em>Example</em>:</p>
@@ -3558,7 +3575,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
         <p>The <code class="highlight"><c- cp>#embed</c-></code> directive is replaced by a comma-delimited list of integer literals of type <code class="highlight"><c- b>int</c-></code>, unless otherwise modified by embed parameters ([<a href="#cpp.embed.param">cpp.embed.param</a>]).</p>
        </div>
        <div class="wording-numbered">
-        <p>The integer literals in the comma-delimited list correspond to <em>resource-count</em> consecutive calls to <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>fgetc</c-></code> ([<a href="http://eel.is/c++draft/cstdio.syn">cstdio.syn</a>]) from the resource, as a binary file. If any call to <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>fgetc</c-></code> returns <code class="highlight"><c- n>EOF</c-></code>, the program is ill-formed.</p>
+        <p>The integer literals in the comma-delimited list correspond to resource-count consecutive calls to <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>fgetc</c-></code> ([<a href="http://eel.is/c++draft/cstdio.syn">cstdio.syn</a>]) from the resource, as a binary file. If any call to <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>fgetc</c-></code> returns <code class="highlight"><c- n>EOF</c-></code>, the program is ill-formed.</p>
        </div>
        <div class="wording-numbered">
         <p><em>Recommended Practice</em>: The value of each integer literal should closely represent the bit stream of the resource unmodified. This can require an implementation to consider potential differences between translation and execution environments, as well as any other applicable sources of mismatch.</p>
@@ -3623,7 +3640,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
           <p><code class="highlight"><c- cp>#</c-></code> <code class="highlight"><c- n>embed</c-></code> <em>pp-tokens</em> <em>new-line</em></p>
         </dl>
         <p>(that does not match one of the two previous forms) is permitted. The preprocessing tokens after <code class="highlight"><c- n>embed</c-></code> in the directive are processed just as in normal text (i.e., each identifier currently defined as a macro name is replaced by its replacement list of preprocessing tokens). The directive resulting after all replacements of the third form shall match one of the two previous forms [<em>Note</em>: Adjacent <em>string-literal</em>s are not concatenated into a single <em>string-literal</em> (see the translation phases in [<a href="http://www.eel.is/c++draft/lex.phases">lex.phases</a>]); thus, an expansion that results in two <em>string-literal</em>s is an invalid directive. — <em>end Note</em>]. Any further processing as in normal text described for the two previous forms is not performed [<em>Note</em>: That is, processing as in normal text happens once and only once for the entire directive. — <em>end Note</em>].</p>
-        <p>[<em>Example</em>: If the directive matches the third form, the whole directive is replaced. However, if the directive matches the first two forms, only the <em>pp-balanced-token-seq</em>s of the <em>embed-parameter</em>s are replaced.</p>
+        <p>[<em>Example</em>: If the directive matches the third form, the whole directive is replaced. If the directive matches the first two forms, everything after the name is replaced.</p>
 <pre class="language-cpp highlight"><c- cp>#define prefix(ARG) suffix(ARG)</c->
 <c- cp>#define THE_ADDITION "teehee"</c->
 <c- cp>#define THE_RESOURCE ":3c"</c->
@@ -3631,7 +3648,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 <c- cp>#embed THE_RESOURCE prefix(THE_ADDITION)</c->
 </pre>
         <p>is equivalent to:</p>
-<pre class="language-cpp highlight"><c- cp>#embed ":3c" prefix("teehee")</c->
+<pre class="language-cpp highlight"><c- cp>#embed ":3c" suffix("teehee")</c->
 <c- cp>#embed ":3c" suffix("teehee")</c->
 </pre>
         <p>— <em>end Example</em>]</p>
@@ -3652,7 +3669,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
        <div class="wording-section" id="cpp.embed.param.limit">
         <div class="wording-section-header"> <span class="wording-clause-number">15.4.2.1</span> <span class="wording-clause-title"><code class="highlight"><c- n>limit</c-></code> parameter</span> <span class="wording-clause-stable-tag">[<b>cpp.embed.param.limit</b>]</span> </div>
         <div class="wording-numbered">
-         <p>An <em>embed-parameter</em> of the form <code class="highlight"><c- n>limit</c-> <c- p>(</c-> <em><c- n>pp</c-><c- o>-</c-><c- n>balanced</c-><c- o>-</c-><c- n>token</c-><c- o>-</c-><c- n>seq</c-></em> <c- p>)</c-></code> specifies the maximum possible number of elements in the comma-delimited list. It shall appear at most once in the <em>embed-parameter-seq</em>.</p>
+         <p>An <em>embed-parameter</em> of the form <code class="highlight"><c- n>limit</c-> <c- p>(</c-> <em><c- n>pp</c-><c- o>-</c-><c- n>balanced</c-><c- o>-</c-><c- n>token</c-><c- o>-</c-><c- n>seq</c-></em> <c- p>)</c-></code> specifies the maximum possible number of elements in the comma-delimited list. It shall appear at most once in the <em>embed-parameter-seq</em>. The token <code class="highlight"><c- n>defined</c-></code> shall not appear in the <em>constant-expression</em>.</p>
         </div>
         <div class="wording-numbered">
          <p>The <em>pp-balanced-token-seq</em> is evaluated as a <em>constant-expression</em> using the rules as described in conditional inclusion ([<a href="http://eel.is/c++draft/cpp.cond">cpp.cond</a>]), but without being processed as in normal text an additional time.</p>
@@ -3667,12 +3684,15 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 <c- cp>#endif </c->
 </pre>
          <p>— <em>end example</em>]</p>
+         <p>[<em>Example</em>:</p>
+<pre class="language-cpp highlight"><c- cp>#if __has_embed(&lt;data.dat> limit(__has_include("a.h")))</c->
+<c- c1>// ill-formed: __has_include [cpp.cond] cannot appear here</c->
+<c- cp>#endif </c->
+</pre>
+         <p>— <em>end example</em>]</p>
         </div>
         <div class="wording-numbered">
-         <p>The token <code class="highlight"><c- n>defined</c-></code> shall not appear in the <em>constant-expression</em>.</p>
-        </div>
-        <div class="wording-numbered">
-         <p>The <em>constant-expression</em> shall be an integral constant expression whose value is greater than or equal to zero. The aforementioned <em>resource-count</em> becomes</p>
+         <p>The <em>constant-expression</em> shall be an integral constant expression whose value is greater than or equal to zero. The aforementioned resource-count becomes</p>
          <div class="wording-numbered-list">
           <ul>
            <li data-md>
