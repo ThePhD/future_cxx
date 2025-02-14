@@ -1,11 +1,11 @@
 <pre class='metadata'>
 Title: Improved __attribute__((cleanup)) Through defer
 H1: Improved <code>__attribute__((cleanup))</code> Through <code>defer</code>
-Shortname: 3442
-Revision: 1
+Shortname: XX30
+Revision: 2
 !Previous Revisions: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3199.htm">n3199 (r0)</a>
 Status: P
-Date: 2024-12-12
+Date: 2025-02-25
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -30,6 +30,13 @@ path: resources/css/bikeshed-wording.html
 
 
 # Changelog # {#changelog}
+
+
+
+## Revision 2 - February 25<sup>th</sup>, 2025 ## {#changelog-r2}
+
+- Revert to disallowing `goto` (and reaffirm ban of `return`) from inside of a deferred block.
+- Document existing practice for attribute cleanup and try/finally around the ability to `goto` or otherwise break out of the "deferred" code in [[#design-ordering-jump.out]]
 
 
 
@@ -731,6 +738,64 @@ int main () {
 
 That `goto` jumps out of the second `defer` statement, and back into the main block. This would skip over executing of the first `defer` (due to the reverse-lexical-order of how defer blocks are run), which would result in unintuitive behavior. In order to cut this off, we simply do not allow compile-time jumps (`goto`, `break`, `continue`, or `return`) out of a `defer` block. Should more reasonable semantics be nailed down at a later date, we can go back and fill in these intentional blanks (which, generally, is not possible when something is made undefined behavior rather than a constraint violation).
 
+This technically breaks with existing practice. GCC and MSVC both allow forms of this using nested functions with the `__label__` extension, and MSVC provides only a warning.
+
+[GCC (godbolt):](https://godbolt.org/z/PrzjvPKKx)
+
+```cpp
+#include <stdio.h>
+#include <stdlib.h>
+
+int main () {
+	__label__ loop_endlessly_and_crash;
+	loop_endlessly_and_crash:;
+	void horrible_crimes(void* pp) {
+		void* p = *(void**)pp;
+		printf("before goto...\n");
+		goto loop_endlessly_and_crash;
+		printf("after goto...\n");
+		printf("deallocating...\n");
+		free(p);
+	}
+	[[gnu::cleanup(horrible_crimes)]] void* p = malloc(1);
+	printf("allocated...\n");
+	printf("before label...\n");
+	printf("after label...\n");
+	return 0;
+}
+```
+
+[MSVC (godbolt): ]()
+
+```cpp
+#include <stdio.h>
+#include <stdlib.h>
+
+int main (void) {
+	loop_endlessly_and_crash:;
+	void* p;
+	__try {
+		p = malloc(1);
+	}
+	__finally {
+		goto loop_endlessly_and_crash;
+		free(p);
+	}
+	return 0;
+}
+
+int main2 (void) {
+	__try {
+		return 1;
+	}
+	__finally {
+		return 5;
+	}
+}
+```
+
+Nevertheless, we think it's better to break with this existing practice, for now.
+
 
 ### `goto` and other Flow Control **over** an existing `defer` ### {#design-ordering-jump.over}
 
@@ -1089,7 +1154,7 @@ Jumps by means of `goto` in *E* shall not jump over a defer statement in *E*.
 
 <div class="wording-numbered">
 
-Jumps by means of `return` shall not exit *S*.
+Jumps by means of `goto` or `return` shall not exit *S*.
 </div>
 
 <div class="wording-clause-section-title">
@@ -1200,13 +1265,12 @@ int i () {
 
 int j () {
 	defer {
-		goto b; // okay: no constraint violation
+		goto b; // constraint violation
 		printf(" meow");
 	}
 	b:
 	printf("cat says");
-	return 1; // prints "cat says" over
-	// and over again to standard output
+	return 1;
 }
 
 int k () {

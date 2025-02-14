@@ -5,7 +5,7 @@
 	title: "Programming Languages — C — defer, a mechanism for general purpose, lexical scope-based undo",
 	authors: ("JeanHeyd Meneide"),
 	keywords: ("C", "defer", "ISO/IEC 9899", "Technical Specification", "Safety", "Resource"),
-	id: "N3328",
+	id: "XYZW",
 	ts_id: "XYZW",
 	abstract: [The advent of resource leaks in programs created with ISO/IEC 9899#index[ISO/IEC 9899] ⸺ Programming Languages, C has necessitated the need for better ways of tracking and automatically releasing resources in a given scope. This document provides a feature to address this need in a reliable, static, opt-in manner for implementations to furnish to programmers.],
 	doc
@@ -98,7 +98,7 @@ In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.
 
 *Description*
 
-Let _D_ be a defer statement#index[defer statement], _S_ be the secondary block of _D_ referred to as its deferred content, and _E_ be the enclosing block of _D_.
+Let _D_ be a defer statement#index[defer statement], _S_ be the secondary block of _D_, and _E_ be the enclosing block of _D_.
 
 *Constraints*
 
@@ -108,7 +108,7 @@ Jumps by means of ```c goto```#index("Keywords", "goto", apply-casing: false, di
 
 Jumps by means of ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) in _E_ shall not jump over a defer statement#index[defer statement] in _E_.
 
-Jumps by means of ```c return```#index("Keywords", "return", apply-casing: false, display:[```c return```]) shall not exit _S_.
+Jumps by means of ```c return```#index("Keywords", "return", apply-casing: false, display:[```c return```]) or ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) shall not exit _S_.
 
 *Semantics*
 
@@ -190,13 +190,12 @@ int i () {
 
 int j () {
 	defer {
-		goto b; // okay: no constraint violation
+		goto b; // constraint violation
 		printf(" meow");
 	}
 	b:
 	printf("cat says");
-	return 1; // prints "cat says" over
-	// and over again to standard output
+	return 1;
 }
 
 int k () {

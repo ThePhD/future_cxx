@@ -53,11 +53,15 @@ Examples are provided to illustrate possible forms of the constructions describe
 	id: "NXYZW",
 	ts_id: "ABCD",
 	stage: none,
+	date: none,
 	no_boilerplate: false,
 	contents
 ) = {
 if stage == none {
 	stage = "wd"
+}
+if date == none {
+	date = datetime.today()
 }
 let stage_enum = if stage == "wd" or stage == "working draft" { 0 }
 else if stage == "cd" or stage == "committee draft" { 1 }
@@ -90,7 +94,7 @@ set page(
 				#if footer != none [
 					#footer
 				] else [
-					© ISO #datetime.today().year() — All rights reserved. \
+					© ISO #date.year() — All rights reserved. \
 					#counter(page).display(here().page-numbering())
 				]
 			]
