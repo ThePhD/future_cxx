@@ -5,8 +5,8 @@
 	title: "Programming Languages — C — defer, a mechanism for general purpose, lexical scope-based undo",
 	authors: ("JeanHeyd Meneide"),
 	keywords: ("C", "defer", "ISO/IEC 9899", "Technical Specification", "Safety", "Resource"),
-	id: "XYZW",
-	ts_id: "XYZW",
+	id: "N3489",
+	ts_id: "25755",
 	abstract: [The advent of resource leaks in programs created with ISO/IEC 9899#index[ISO/IEC 9899] ⸺ Programming Languages, C has necessitated the need for better ways of tracking and automatically releasing resources in a given scope. This document provides a feature to address this need in a reliable, static, opt-in manner for implementations to furnish to programmers.],
 	doc
 )
@@ -108,7 +108,7 @@ Jumps by means of ```c goto```#index("Keywords", "goto", apply-casing: false, di
 
 Jumps by means of ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) in _E_ shall not jump over a defer statement#index[defer statement] in _E_.
 
-Jumps by means of ```c return```#index("Keywords", "return", apply-casing: false, display:[```c return```]) or ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) shall not exit _S_.
+Jumps by means of ```c return```#index("Keywords", "return", apply-casing: false, display:[```c return```]), ```c break```#index("Keywords", "break", apply-casing: false, display:[```c break```]), ```c continue```#index("Keywords", "continue", apply-casing: false, display:[```c continue```]) or ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) shall not exit _S_.
 
 *Semantics*
 
@@ -372,7 +372,31 @@ int main () {
 		defer free(p);
 		break;
 	}
-	return 2;
+	return 0;
+}
+```
+
+#example() Defer statement#index[Defer statement]s can not be exited by means of ```c break``` #index("Keywords", "break", apply-casing: false, display: [```c break```]) or ```c continue``` #index("Keywords", "continue", apply-casing: false, display: [```c continue```]).
+
+```c
+int main () {
+	switch (1) {
+	default:
+		defer {
+			break; // constraint violation
+		}
+	}
+	for (;;) {
+		defer {
+			break; // constraint violation
+		}
+	}
+	for (;;) {
+		defer {
+			continue; // constraint violation
+		}
+	}
+	return 0;
 }
 ```
 

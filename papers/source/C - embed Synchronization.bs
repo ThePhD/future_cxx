@@ -1,10 +1,10 @@
 <pre class='metadata'>
 Title: #embed synchronization
 H1: <code>#embed</code> synchronization
-Shortname: XX18
+Shortname: 3490
 Revision: 1
 Status: P
-Date: 2025-02-11
+Date: 2025-02-16
 Group: WG14
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
@@ -38,11 +38,15 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 1 - February 11<sup>th</sup>, 2025 ## {#changelog-r1}
+## Revision 1 - February 16<sup>th</sup>, 2025 ## {#changelog-r1}
 
+- Revise current strategy to fit results of GCC requests and C++ standardization.
+	- Directives are expanded after the name, unconditionally, all the time.
+	- `offset` parameter has additional examples and clarification of calculation.
 - Fix typos:
 	- "an" -> "a" 
 	- "2" -> "two"
+
 
 
 ## Revision 0 - December 23<sup>rd</sup>, 2024 ## {#changelog-r0}
@@ -54,12 +58,12 @@ path: resources/css/bikeshed-wording.html
 
 # Introduction and Motivation # {#intro}
 
-During the standardization discussion of `#embed` in WG21 in the last year for [[P1967]] and [[P3540]], several adjustments were requested to the behavior of `#embed` for niche cases. This paper synchronizes the behavior between what WG21 is going to see and what is contained in the current C23/C Working Draft.
+During the standardization discussion of `#embed` in WG21 in the last year for [[P1967]] and [[P3540]], several adjustments were requested to the behavior of `#embed` for niche cases. This paper synchronizes the behavior between what WG21 has voted into the C++26 Release and what is contained in the current C23/C Working Draft.
 
 The requested synchronizations are as follows:
 
 - No potential double-expansion of preprocessor parameters allowed in any way.
-- Preprocessor expansion of parameters always happens, not just for `limit`, and it is performed at the point of matching the directive and not during parameter processing.
+- Preprocessor expansion of parameters always happens, not just for `limit`, and it is performed for everything after the resource name instead of just for inside of the parameters (a previous design in the C++ proposal, revision 13).
 - Make it clear we're producing a sequence of (preprocessor) tokens, and not necessarily (post-processor, Phase 7) tokens.
 - Adding the extremely-popular and already-implemented `gnu::offset` and `clang::offset` parameters.
 
@@ -79,7 +83,7 @@ This wording is relative to C's latest working draft.
 
 ## Modify 6.10.2 Conditional inclusion ## {#wording-6.10.2}
 
-> <sup>7</sup> The resource (6.10.4) identified by the header-name preprocessing token sequence in each contained has_embed expression is searched for as if those preprocessing token were the pp-tokens in a `#embed` directive, except that no further macro expansion is performed. Such a directive shall satisfy the syntactic requirements of a `#embed` directive<ins> including any constraints from such preprocessor parameters (such as `defined` not being allowed within a `limit` parameter)</ins>. …
+> <sup>7</sup> The resource (6.10.4) identified by the header-name preprocessing token sequence in each contained has_embed expression is searched for as if those preprocessing token were the pp-tokens in a `#embed` directive, except that no additional macro expansion is performed. Such a directive shall satisfy the syntactic requirements of a `#embed` directive<ins> including any constraints from such preprocessor parameters (such as `defined` not being allowed within a `limit` parameter)</ins>. …
 
 
 
@@ -97,44 +101,72 @@ This wording is relative to C's latest working draft.
 > - <ins>an integer constant expression greater than zero determined by an implementation-defined embed parameter; or,</ins>
 > - <ins>`CHAR_BIT` (5.3.5.3.2).</ins>
 >
-> <ins>Let *implementation resource count* be `(resource width) / (embed element width)`. Let *resource count* initially be `(implementation resource count)`. Let *resource offset* initially be zero.</ins> The result of `(resource width) % (embed element width)` shall be zero.
+> <ins>Let *implementation resource count* be `(resource width) / (embed element width)`. Let *resource count* initially be `(implementation resource count)`. Let *resource offset* initially be zero.</ins> The result of `(resource width) % (embed element width)` shall be zero.<p></p>
 >
-> ...
+> <sup>4</sup> Embed parameters not specified in this document shall be implementation-defined. Implementation-defined embed parameters may change the subsequently-defined semantics of the directive; otherwise, #embed directives which do not contain implementation-defined embed parameters shall behave as described in this document.
+>
+> <del><sup>5</sup>A resource is considered empty when its resource width is zero.</del>
+> 
+> <del>Let embed element width be either:
+>
+> - an integer constant expression greater than zero determined by an implementation-defined embed parameter; or,
+> - CHAR_BIT (5.3.5.3.2).
+>
+> The result of (resource width) % (embed element width) shall be zero.</del>
 
 *📝 IMPORTANT Editor's Note: Replace all instances of "implementation resource width" with simply "resource width".*
 
 *📝 IMPORTANT Editor's Note: Delete all of ❡5 and ❡6, as its constraints have been moved up to just after ❡1 and redundant text has been eliminated, while a new definition for "empty" is defined in the semantics.*
 
 > **Semantics**
+> 
 > <ins><sup>5✨</sup> A resource is considered empty in one of the following cases:</ins>
 >
 > - <ins>its resource count is zero;</ins>
 > - <ins>or, its resource offset is greater than the implementation resource count.</ins>
 >
-> <sup><del>7</del><ins>6✨</ins></sup> The <del>expansion</del><ins>replacement</ins> of a `#embed` directive is a <ins>preprocessor </ins>token sequence <ins>in the form of a comma-delimited list of integer constant expressions, unless otherwise modified by embed parameters.</ins><del>formed from the list of integer constant expressions described later in this subclause. The group of tokens for each integer constant expression in the list is separated in the token sequence from the group of tokens for the previous integer constant expression in the list by a comma.</del> The sequence neither begins nor ends in a comma. <del>If the list of integer constant expressions is empty, the token sequence is empty. The directive is replaced by its expansion and, with the presence of certain embed parameters, additional or replacement token sequences.</del><ins>If the resource is empty, then the directive is not replaced by the comma-delimited list of integer constant expressions representing the resource. Otherwise, the resource offset indicates the first `(resource offset)` values (which would have been placed in the comma-delimited list had the resource offset been equivalent to zero) are discarded, ignored, and not part of the list. There shall be $max(0, min((resource\ count), (implementation\ resource\ count) - (resource\ offset)))$ integer constant expressions in the comma-delimited list, where $max$ and $min$ select the maximum and minimum value between two provided values, respectively. The value of each integer constant expression is determined in an implementation-defined manner, and is in the range from $0$ to $2^{embed\ element\ width} − 1$, inclusive.<sup>FOOTNOTE(For example, an embed element width of 8 will yield a range of values from 0 to 255, inclusive.)</sup> If:</ins>
+> <sup><del>7</del><ins>6✨</ins></sup> The <del>expansion</del><ins>replacement</ins> of a `#embed` directive is a <ins>preprocessor </ins>token sequence <ins>in the form of a comma-delimited list of integer constant expressions, unless otherwise modified by embed parameters.</ins><del>formed from the list of integer constant expressions described later in this subclause. The group of tokens for each integer constant expression in the list is separated in the token sequence from the group of tokens for the previous integer constant expression in the list by a comma.</del> The <del>sequence</del><ins>list</ins> neither begins nor ends in a comma. <del>If the list of integer constant expressions is empty, the token sequence is empty. The directive is replaced by its expansion and, with the presence of certain embed parameters, additional or replacement token sequences.</del><ins>If the resource is empty, then the directive is not replaced by the comma-delimited list of integer constant expressions representing the resource. Otherwise, the resource offset indicates the first `(resource offset)` values (which would have been placed in the comma-delimited list had the resource offset been equivalent to zero) are discarded, ignored, and not part of the list. There shall be $max(0, min((resource\ count), (implementation\ resource\ count) - (resource\ offset)))$ integer constant expressions in the comma-delimited list, where $max$ and $min$ select the maximum and minimum value between two provided values, respectively. The value of each integer constant expression is determined in an implementation-defined manner, and is in the range from $0$ to $2^{embed\ element\ width} − 1$, inclusive.<sup>FOOTNOTE(For example, an embed element width of 8 will yield a range of values from 0 to 255, inclusive.)</sup> If:</ins>
 >
 > - <ins>the list of integer constant expressions is used to initialize an array of a type compatible with `unsigned char`, or compatible with `char` if `char` cannot hold negative values; and,</ins>
 > - <ins>the embed element width is equal to `CHAR_BIT` (5.3.5.3.2),</ins>
 >
-> <ins>then the contents of the initialized elements of the array are as-if the resource’s binary data represented by the resource offset and the resource count, as a file, is `fread` (7.23.8.1) into the array at translation time.</ins>
+> <ins>then the contents of the initialized elements of the array are as-if the resource’s binary data represented by the resource offset and the resource count, as a file, is `fread` (7.23.8.1) into the array at translation time.</ins><p>
 >
-> ...
+> <del><sup>8</sup></del><ins><sup>7</sup></ins> A preprocessing directive of the form
 >
-> <sup><del>11</del><ins>10✨</ins></sup> Either form of the `#embed` directive <ins>shall process the preprocessor balanced token sequence of any embed parameter in the optional embed parameter sequence as in normal text, unless otherwise specified further in this subclause.</ins><del>specified previously behaves as specified later in this subclause. The values of the integer constant expressions in the expanded sequence are determined by an implementation-defined mapping of the resource’s data. Each integer constant expression’s value is in the range from 0 to (2embed element width) − 1, inclusive.<sup>207)</sup> If:</del>
+> `#` `embed` `<` *h-char-sequence* > <del>*embed-parameter-sequence*<sub>*opt*</sub></del><ins>*pp-tokens*<sub>*opt*</sub></ins> *new-line*
+> 
+> searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the `<` and `>`. The search for the named resource is done in an implementation-defined manner.
+> 
+> <del><sup>9</sup></del><ins><sup>8</sup></ins> A preprocessing directive of the form
+>
+> `#` `embed` `"` *q-char-sequence* `"` <del>*embed-parameter-sequence*<sub>*opt*</sub></del><ins>*pp-tokens*<sub>*opt*</sub></ins> new-line
+>
+> searches a sequence of implementation-defined places for a resource identified uniquely by the specified sequence between the `"` delimiters. The search for the named resource is done in an implementation-defined manner. If this search is not supported, or if the search fails, the directive is reprocessed as if it read
+>
+> `#` `embed` `<` *h-char-sequence* > <del>*embed-parameter-sequence*<sub>*opt*</sub></del><ins>*pp-tokens*<sub>*opt*</sub></ins> *new-line*
+>
+> with the identical contained q-char-sequence (including > characters, if any) from the original directive.
+>
+> <sup><del>10</del><ins>9</ins></sup> Either form of the `#embed` directive <ins>shall process any preprocessor tokens after the name, if present, as in normal text. The preprocessor tokens, if present, shall then have the form of an embed parameter sequence. The directive is then replaced as described previously in this subclause.</ins><del>specified previously behaves as specified later in this subclause. The values of the integer constant expressions in the expanded sequence are determined by an implementation-defined mapping of the resource’s data. Each integer constant expression’s value is in the range from 0 to (2embed element width) − 1, inclusive.<sup>207)</sup> If:</del>
 >
 > - <del>the list of integer constant expressions is used to initialize an array of a type compatible with `unsigned char`, or compatible with `char` if `char` cannot hold negative values; and,</del>
 > - <del>the embed element width is equal to `CHAR_BIT` (5.3.5.3.2),</del>
 >
 > <del>then the contents of the initialized elements of the array are as-if the resource’s binary data is `fread` (7.23.8.1) into the array at translation time.</del>
 >
-> <sup><del>12</del><ins>11✨</ins></sup> ... The preprocessing tokens after embed in the directive are processed just as in normal text. (Each identifier currently defined as a macro name is replaced by its replacement list of preprocessing tokens.) The directive resulting after all replacements shall match one of the two previous forms.<ins>If the directive matches one of the two previous forms after the directive is processed as in normal text, any further processing as in normal text described for the two previous forms is not performed.</ins> The method by which a sequence of preprocessing tokens between a `<` and a `>` preprocessing token pair or a pair of `"` characters is combined into a single resource name preprocessing token is implementation-defined.
+> <sup><del>11</del><ins>10</ins></sup> A preprocessing directive of the form
+>
+> `#` `embed` *pp-tokens* *new-line*
+>
+> (that does not match one of the two previous forms) is permitted. The preprocessing tokens after embed in the directive are processed just as in normal text. (Each identifier currently defined as a macro name is replaced by its replacement list of preprocessing tokens.) The directive resulting after all replacements shall match one of the two previous forms.<ins>If the directive matches one of the two previous forms after the directive is processed as in normal text, any further processing as in normal text described for the two previous forms is not performed.</ins> The method by which a sequence of preprocessing tokens between a `<` and a `>` preprocessing token pair or a pair of `"` characters is combined into a single resource name preprocessing token is implementation-defined.
 >
 > <ins><sup>12✨</sup> **NOTE** If the directive is processed as in normal text because it doesn't match the first two forms but matches the third, processing as in normal text happens once and only once for the entire directive, including its parameters.</ins>
 
 <blockquote> 
 <ins>
 
-<sup>13✨</sup> **EXAMPLE** If the directive matches one of the first two forms, then processing as in normal text only applies to the preprocessor balanced token sequence of any embed parameters. If the directive matches the third form, then processing as in normal text applies to the entire directive:
+<sup>13✨</sup> **EXAMPLE** &emsp; If the directive matches one of the first two forms, then processing as in normal text only applies to only any embed parameters. If the directive matches the third form, then processing as in normal text applies to the entire directive:
 
 ```cpp
 #define offset(ARG) limit(ARG)
@@ -148,8 +180,8 @@ This wording is relative to C's latest working draft.
 is equivalent to:
 
 ```cpp
-#embed ":3c" offset(2) prefix("teehee")
-#embed ":3c" limit(2)  suffix("teehee")
+#embed ":3c" limit(2) prefix("teehee")
+#embed ":3c" limit(2) prefix("teehee")
 ```
 </ins>
 </blockquote>
@@ -160,7 +192,7 @@ is equivalent to:
 
 > An embed parameter with a preprocessor parameter token that is one of the following is a *standard embed parameter*:
 >
-> limit	prefix	suffix	if_empty	<ins>offset</ins>
+> `limit`	`prefix`	`suffix`	`if_empty`	<ins>`offset`</ins>
 
 
 
@@ -168,7 +200,7 @@ is equivalent to:
 
 > ...
 >
-> <sup>3</sup>The standard embed parameter <del>with a preprocessor parameter token</del> `limit` denotes a balanced preprocessing token sequence <del>that will be used to compute the resource width.</del><ins>whose integer constant expression becomes the new value for the resource's resource count defined in 6.10.4.1. The integer constant expression is evaluated using the rules specified for conditional inclusion (6.10.2), but without doing any further processing as in normal text.</ins><del>Independently of any macro replacement done previously (e.g. when matching the form of #embed), the constant expression is evaluated after the balanced preprocessing token sequence is processed as in normal text, using the rules specified for conditional inclusion (6.10.2), with the exception that any defined macro expressions are not permitted.</del>
+> <sup>3</sup> The standard embed parameter <del>with a preprocessor parameter token</del> `limit` denotes a balanced preprocessing token sequence <del>that will be used to compute the resource width.</del><ins>whose integer constant expression becomes the new value for the resource's resource count defined in 6.10.4.1. The integer constant expression is evaluated using the rules specified for conditional inclusion (6.10.2), but without doing any further processing as in normal text.</ins><del>Independently of any macro replacement done previously (e.g. when matching the form of #embed), the constant expression is evaluated after the balanced preprocessing token sequence is processed as in normal text, using the rules specified for conditional inclusion (6.10.2), with the exception that any defined macro expressions are not permitted.</del>
 >
 > <del><sup>4</sup>The resource width is:</del>
 >
@@ -205,7 +237,7 @@ The `offset` standard embed parameter may appear zero times or one time in the e
 :: **(** *constant-expression* **)**
 
 
-and shall be an integer constant expression. The integer constant expression shall not evaluate to a value less than 0.
+and shall be an integer constant expression with a non-negative value.
 </div>
 
 <div class="wording-numbered">
@@ -219,12 +251,72 @@ Semantics
 
 <div class="wording-numbered">
 
+The `offset` standard embed parameter denotes a balanced preprocessing token sequence whose integer constant expression becomes the value of the resource's resource offset as defined in 6.10.4.1.
+</div>
+
+<div class="wording-numbered">
+
 The integer constant expression is evaluated using the rules specified for conditional inclusion (6.10.2), but without doing any further processing as in normal text.
 </div>
 
 <div class="wording-numbered">
 
-The `offset` standard embed parameter denotes a balanced preprocessing token sequence whose integer constant expression becomes the value of the resource's resource offset as defined in 6.10.4.1. The integer constant expression is evaluated using the rules specified for conditional inclusion (6.10.2), but without doing any further processing as in normal text.
+**EXAMPLE** &emsp; Using the same hypothetical resource that has an implementation resource count of at least 4 and is identified by `<sdk/jump.wav>`, the two arrays should have identical contents in certain positions after `offset` is applied.
+
+```cpp
+constexpr const unsigned char sound_signature[] = {
+#embed <sdk/jump.wav> limit(2+2)
+};
+
+constexpr const unsigned char truncated_sound_signature[] = {
+#embed <sdk/jump.wav> offset(2) limit(2)
+};
+
+static_assert(sizeof(sound_signature) == 4);
+static_assert(sizeof(truncated_sound_signature) == 2);
+static_assert(sound_signature[2] == truncated_sound_signature[0]);
+static_assert(sound_signature[3] == truncated_sound_signature[1]);
+```
+
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE** &emsp; Given a resource `<single_byte>` that has an implementation-resource-count of 1, the following directives:
+
+```cpp
+#embed <single_byte> offset(1) if_empty(44203)
+#embed <single_byte> limit(0)  offset(1) if_empty(44203)
+```
+
+are replaced with:
+
+```cpp
+42203
+42203
+```
+
+</div>
+
+<div class="wording-numbered">
+
+**EXAMPLE** &emsp; Given a resource `<single_byte>` that has an implementation-resource-count of 1, `__has_embed` will be considered empty despite `limit(1)`, as `offset(1)` has exhausted the implementation-resource-count:
+
+```cpp
+int f () {
+#if __has_embed(<single_byte> limit(1) offset(1) prefix(some tokens))\
+		== __STDC_EMBED_EMPTY__
+	// if <single_byte> exists, this
+	// conditional inclusion branch is taken and the function
+	// returns 0.
+	return 0;
+#else
+	// otherwise, the resource does not exist
+#error "The resource does not exist"
+#endif
+}
+```
+
 </div>
 
 </ins>
@@ -240,8 +332,8 @@ The `offset` standard embed parameter denotes a balanced preprocessing token seq
 			"Shepherd (Shepherd's Oasis)"
 		],
 		"title": "P1967 - Preprocessor Embed",
-		"href": "https://htephd.dev/_vendor/future_cxx/papers/d1967.html",
-		"date": "December 15th, 2024"
+		"href": "https://thephd.dev/_vendor/future_cxx/papers/d1967.html",
+		"date": "February 16th, 2025"
 	},
 	"p3540": {
 		"authors": [
@@ -250,7 +342,7 @@ The `offset` standard embed parameter denotes a balanced preprocessing token seq
 		],
 		"title": "P3540 - embed offset parameter",
 		"href": "https://htephd.dev/_vendor/future_cxx/papers/d3540.html",
-		"date": "December 15th, 2024"
+		"date": "February 16th, 2025"
 	}
 }
 </pre>

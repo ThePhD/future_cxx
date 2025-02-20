@@ -1,7 +1,7 @@
 <pre class='metadata'>
 Title: #embed offset parameter
 H1: <code>#embed</code> offset parameter
-Shortname: P3450
+Shortname: P3540
 Revision: 1
 Status: P
 Date: 2025-02-14
@@ -10,14 +10,21 @@ Audience: EWG
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
 URL: https://thephd.dev/_vendor/future_cxx/papers/d3540.html
-!Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/d3450.html">https://thephd.dev/_vendor/future_cxx/papers/d3540.html</a>
+!Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/d3540.html">https://thephd.dev/_vendor/future_cxx/papers/d3540.html</a>
 !Implementation: <a href="https://github.com/ThePhD/embed">GitHub ThePhD/embed</a>
-!Paper Source: <a href="https://github.com/ThePhD/future_cxx/blob/main/papers/source/d3450.bs">GitHub ThePhD/future_cxx</a>
+!Paper Source: <a href="https://github.com/ThePhD/future_cxx/blob/main/papers/source/d3540.bs">GitHub ThePhD/future_cxx</a>
 Metadata Order: Editor, Latest, Paper Source, Implementation, Project, Audience
 Markup Shorthands: markdown yes
 Toggle Diffs: no
 Abstract: An additional, user-supported embed parameter implemented in Clang and GCC for providing an offset.
 </pre>
+
+<script>
+MathJax = {
+	tex: {inlineMath: [['$', '$'], ['\\(', '\\)']]}
+};
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
 
 <pre class="include-raw">
 path: resources/css/bikeshed-wording.html
@@ -54,6 +61,19 @@ Originally, users asked to add this parameter, but only after C23 standardized. 
 
 
 
+# Design # {#design}
+
+The design of `offset(some-preprocessor-constant-value)` is straightforward:
+
+- `offset` discards `some-preprocessor-constant-value` items, up to the full size of the resource;
+- nothing happens if `some-preprocessor-constant-value` evaluates to `0`;
+- if `offset` is greater than or equal to the size of the resource, the resource is considered empty;
+- `limit` does not shrink the file to a given size before `offset`; `offset` is applied to the original file size (called the "implementation-resource-count" in the wording).
+
+These are the only tenets of the design, and match the practice for existing implementations.
+
+
+
 # Wording # {#wording}
 
 This wording is relative to C++'s latest working draft.
@@ -64,7 +84,8 @@ This wording is relative to C++'s latest working draft.
 
 The intent of the wording is to provide a preprocessing directive that:
 
-- allows an `offset` parameter skipping over a number of elements before beginning to write out elements to the comma-delimited list.
+- allows an `offset` parameter skipping over a number of elements before beginning to write out elements to the comma-delimited list;
+- and, applies to the actual size of the resource (and not to any applied `limit`).
 
 
 
@@ -92,6 +113,7 @@ The intent of the wording is to provide a preprocessing directive that:
 ### Add a new sub-clause §15.4.2.✨ under Resource Inclusion for Embed parameters for the new `offset` parameter [**cpp.embed.param.offset**] ### {#wording-specification-cpp.embed.param.offset}
 
 <blockquote class="quote-ins">
+<ins>
 <div id="cpp.embed.param.offset" class="wording-section">
 <div class="wording-section-header">
 <span class="wording-clause-number">15.4.2.✨</span>
@@ -113,10 +135,9 @@ The *pp-balanced-token-seq* is evaluated as a *constant-expression* using the ru
 
 The *constant-expression* shall be an integral constant expression whose value is greater than or equal to zero. It shall provide the value for *resource-offset*. The embed directive performs resource-offset consecutive calls to `std::fgetc` ([<a href="http://eel.is/c++draft/cstdio.syn">cstdio.syn</a>]) from the resource, as a binary file. If a call to `std::fgetc` returns `EOF`, the resouce is considered empty. Otherwise, the result of the call is discarded. The resource-count is changed to be
 
-- the value as computed from the `limit` *embed-parameter* ([<a href="https://thephd.dev/_vendor/future_cxx/papers/d1967.html#cpp.embed.param.limit">cpp.embed.param.limit</a>]) subtracted by resource-offset, if the `limit` *embed-parameter* is present.
-- Otherwise, the implementation-resource-count subtracted by the resource-offset.
+- the value is computed using the `limit` *embed-parameter* ([<a href="https://thephd.dev/_vendor/future_cxx/papers/d1967.html#cpp.embed.param.limit">cpp.embed.param.limit</a>]), if the `limit` *embed-parameter* is present. Let the value computed by the `limit` *embed-parameter* be *limit-value*. resource-count becomes $max(min(\text{limit-value}, \text{implementation-resource-count} - \text{resource-offset}), 0)$.
+- Otherwise, $max(\text{implementation-resource-count} - \text{resource-offset}, 0)$.
 
-If after this resource-count less than 0, then resource-count is set to zero and the resource is empty.
 </div>
 
 [*Example*:
@@ -128,12 +149,14 @@ constexpr const unsigned char sound_signature[] = {
 };
 
 constexpr const unsigned char truncated_sound_signature[] = {
-	// a hypothetical resource capable of expanding to four or more elements
+	// the same hypothetical resource capable of expanding to four or more elements
 #embed <sdk/jump.wav> offset(2) limit(2)
 };
 
 static_assert(sizeof(sound_signature) == 4);
 static_assert(sizeof(truncated_sound_signature) == 2);
+static_assert(sound_signature[2] == truncated_sound_signature[0]);
+static_assert(sound_signature[3] == truncated_sound_signature[1]);
 ```
 
 – *end example*]
@@ -148,6 +171,7 @@ static_assert(sizeof(truncated_sound_signature) == 2);
 ## Add a new example to the `if_empty` embed parameter [cpp.embed.if.empty] section ## {#wording-specification-if_empty.example}
 
 <blockquote class="quote-ins">
+<ins>
 
 [*Example*: Given a resource `<single_byte>` that has an implementation-resource-count of 1, the following directives:
 
@@ -166,12 +190,12 @@ are replaced with:
 – *end example*]
 
 
-[*Example*: Given a resource `<single_byte>` that has an implementation-resource-count of 1, the following directives:
+[*Example*: Given a resource `<single_byte>` that has an implementation-resource-count of 1, `__has_embed` will be considered empty despite `limit(1)`, as `offset(1)` has exhausted the implementation-resource-count:
 
 ```cpp
 int infinity_zero () {
-#if __has_embed(</owo/uwurandom> limit(1) offset(1) prefix(some tokens)) == __STDC_EMBED_EMPTY__
-	// if </owo/uwurandom> exists, this
+#if __has_embed(<single_byte> limit(1) offset(1) prefix(some tokens)) == __STDC_EMBED_EMPTY__
+	// if <single_byte> exists, this
 	// conditional inclusion branch is taken and the function
 	// returns 0.
 	return 0;
@@ -184,4 +208,5 @@ int infinity_zero () {
 
 – *end example*]
 
+</ins>
 </blockquote>
