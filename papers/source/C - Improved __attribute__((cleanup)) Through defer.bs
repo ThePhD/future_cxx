@@ -1,11 +1,11 @@
 <pre class='metadata'>
 Title: Improved __attribute__((cleanup)) Through defer
 H1: Improved <code>__attribute__((cleanup))</code> Through <code>defer</code>
-Shortname: 3488
-Revision: 2
-!Previous Revisions: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3199.htm">n3199 (r0)</a>
+Shortname: ABCE
+Revision: 3
+!Previous Revisions: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3199.htm">n33488 (r2)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3442.htm">n3442 (r1)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3199.htm">n3199 (r0)</a>
 Status: P
-Date: 2025-02-20
+Date: 2025-03-10
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -30,6 +30,13 @@ path: resources/css/bikeshed-wording.html
 
 
 # Changelog # {#changelog}
+
+
+
+## Revision 3 - March 10<sup>th</sup>, 2025 ## {#changelog-r3}
+
+- Switch to using `unlabeled-statement` in the wording, despite it being different from literally every other C construct in this fashion [[#design-syntax]].
+- Prepare for final publication.
 
 
 
@@ -229,11 +236,18 @@ We know for a fact that many C compilers are averse to taking control of hidden 
 The syntax of a `defer` block simply uses:
 
 *defer-statement*:
-:: **defer** *secondary-block*
+:: **defer** *deferred-block*
 
-A *secondary-block* is the same grammar term used for e.g. `if` statements, so all of the typical syntactic constructs — even the ones that look questionable — are allowed. We expect coding guidelines and build-failing tools to apply conformance to make these more legible (e.g., clang-tidy) and resistant to the usual failure cases.
+A *deferred-block* is just an *unlabeled-statement*. Notably, this is NOT the same grammar term that comes after `for`, `if`, `while`, and other such things. This is due to a preference poll and suggestions after looking at Jens Gustedt's [[n3497]], which changed it from being like every single other construct. What this bans is, specifically, are labels that start off the beginning of an (unbraced) block. So, for example, this is legal:
 
-We also chose the all-lowercase name `defer` for this feature. This is, technically, a breaking change. We do not mind swapping every instance of `defer` in this paper to be `_Defer`, or `_Cleanup`, or `_Meow`; the exactly spelling of the introductory keyword is of little consequence to us. We use `defer` in this paper to draw clear connections to the existing practice in other languages which use a similar keyword, such as the Go programming language. `defer`/`Defer` is also, as shown in the existing practice above, a very common spelling for this feature.
+```cpp
+if (1) meow1: f(); // perfectly fine
+defer meow2: g(); // constraint violation; illegal grammar
+```
+
+We don't think anyone will miss this, but it is different.
+
+We also chose the all-lowercase name `defer` for this feature. This is, technically, a breaking change. We do not mind swapping every instance of `defer` in this paper to be `_Defer`, or `_Cleanup`, or `_Meow`; the exact spelling of the introductory keyword is of little consequence to us. We use `defer` in this paper to draw clear connections to the existing practice in other languages which use a similar keyword, such as the Go programming language. `defer`/`Defer` is also, as shown in the existing practice above, a very common spelling for this feature.
 
 
 
@@ -654,7 +668,7 @@ They deserve tools and features that can cover their fallibility and make it dif
 
 ## `defer` Ordering? ## {#design-ordering}
 
-The code in a `defer` block runs after every other statement and expression in the block, save for other `defer`s (which execute in reverse-lexical order from whence they appeared). Nested `defer` statements execute at the end of the block for the `defer` they are within. It is recognized that nested `defer`s, for some people may be considered a sincere code smell. Therefore, there is optional [[#wording-optional.6.8.7|wording below (6.6)]] to allow for this if people rally behind this idea.
+The code in a `defer` block runs after every other statement and expression in the block, save for other `defer`s (which execute in reverse-lexical order from whence they appeared). Nested `defer` statements execute at the end of the block for the `defer` they are within.
 
 
 ### `defer` interleaved with `return` ? ### {#design-ordering-return}
@@ -711,9 +725,11 @@ int main () {
 `defer` statements cannot allow compile-time jumps out of themselves and into other `defer`s or out into a surrounding scope. Otherwise, that would damage the integrity of a sequence of defers:
 
 ```cpp
+#include <opt.h>
+
 int get_work_order();
 void rollback(int handle);
-void attempt_transaction(int handle0, int handle1);
+opt(int) attempt_transaction(int handle0, int handle1);
 
 int main () {
 	int very_important_handle = get_work_order();
@@ -993,18 +1009,25 @@ In the future, we expect that — should someone solve the tension between name 
 
 ## slimcc ## {#experience-slimcc}
 
-An implementation of `defer` was done in `slimcc` compiler here: https://github.com/fuhsnn/slimcc-defer#implementation-experience
+An implementation of `defer` was done in [slimcc compiler here: https://github.com/fuhsnn/slimcc-defer#implementation-experience](https://github.com/fuhsnn/slimcc-defer#implementation-experience).
 
-An implementation of `defer` was done inside of GCC and a custom compiler by Navi: https://social.vlhl.dev/objects/8dc9e399-5520-4542-967e-0fd87c07683f
+
+
+## GCC (Patched) ## {#experience-gcc}
+
+An implementation of `defer` was done inside of [GCC and a custom compiler by Navi: https://social.vlhl.dev/objects/8dc9e399-5520-4542-967e-0fd87c07683f](https://social.vlhl.dev/objects/8dc9e399-5520-4542-967e-0fd87c07683f).
+
+
+
+## eĿlipsis ## {#experience-eĿlipsis}
+
+An implementation of `defer` was done in the langauge-independent preprocessor called ["eĿlipsis" by Jens Gustedt: https://gustedt.gitlabpages.inria.fr/ellipsis/index.html](https://gustedt.gitlabpages.inria.fr/ellipsis/index.html).
 
 
 
 # Wording # {#wording}
 
 Wording is relative to the latest draft revision of the C Standard.
-
-Note: This wording uses the lowercase `defer` keyword directly in its wording. We recognize that this may not be suitable, and it is not an integral part of this proposal to type in `s/defer/_Defer/g` for us. It is just simpler to read in this form. If it is necessary to change it, we've got more than enough time to add `_Defer` and do the same `#include <stddefer.h>` to provide the convenience macro for the lowercase spelling.
-
 
 ## Modify §5.1.2.2.3 Program termination to ensure defers in `main` are run ## {#wording-5.1.2.2.3}
 
@@ -1097,6 +1120,12 @@ Syntax
 *secondary-block*:
 :: *statement*
 
+<ins>
+
+*deferred-block*:
+:: *unlabeled-statement*
+
+</ins>
 </div>
 </div>
 </blockquote>
@@ -1120,7 +1149,7 @@ Syntax
 <div class="wording-numbered">
 
 *defer-statement*:
-:: **defer** *secondary-block*
+:: **defer** *deferred-block*
 
 </div>
 
@@ -1130,7 +1159,7 @@ Description
 
 <div class="wording-numbered">
 
-Let *D* be a defer statement, *S* be the secondary block of *D* referred to as its deferred content, and *E* be the enclosing block of *D*.
+Let *D* be a defer statement, *S* be the defer block of *D* referred to as its deferred content, and *E* be the enclosing block of *D*.
 </div>
 
 <div class="wording-clause-section-title">
@@ -1183,7 +1212,7 @@ If *E* has any defer statements *D* that have been reached and their *S* have no
 - a function with the deprecated `_Noreturn` function specifier, or a function annotated with the `noreturn`/`_Noreturn` attribute, is called;
 - or, any signal `SIGABRT`, `SIGINT`, or `SIGTERM` occurs;
 
-then any such *S* are not run, unless otherwise specified by the implementation<sup>FN0✨)</sup>. Any other *D* that have not been reached are not run.
+then any such *S* are not run, unless otherwise specified by the implementation. Any other *D* that have not been reached are not run.
 </div>
 
 <div class="wording-numbered">
@@ -1356,9 +1385,9 @@ Conversions for the purposes of `return` are also computed before `defer` is ent
 bool f () {
 	double x = DBL_SNAN;
 	defer {
-		// fetestexcept (FE_INVALID) is nonzero because of the
+		// fetestexcept(FE_INVALID) is nonzero because of the
 		// comparison during the conversion to bool
-		assert(ftestexcept(FE_INVALID) != 0);
+		assert(fetestexcept(FE_INVALID) != 0);
 	}
 	return x;
 }
@@ -1402,6 +1431,26 @@ int main () {
 		printf(" says");
 	}
 	// "cat says meow" is printed to standard output
+	exit(0);
+}
+```
+
+```cpp
+#include <stdio.h>
+#include <stdlib.h>
+
+int main () {
+	{
+		const char* arr[] = {"cat", "kitty", "ferocious little baby"};
+		defer {
+			printf(" meow");
+		}
+		for (unsigned i = 0; i < 3; ++i)
+			defer printf("my %s, ", arr[i]);
+		printf("says");
+	}
+	// "my cat, my kitty, my ferocious little baby, says meow"
+	// is printed to standard output
 	exit(0);
 }
 ```
@@ -1532,46 +1581,6 @@ int main () {
 </blockquote>
 
 
-## OPTIONAL: Add to 6.8.7 Defer statements a new paragraph 3 additional constraint to reject multiply-nested `defer`. ## {#wording-optional.6.8.7}
-
-<blockquote>
-<div class="wording-clause-header">
-<span class="wording-clause-number">6.8.7</span> <span class="wording-clause-title">Defer statements</span>
-</div>
-
-<div class="wording-section">
-
-<div class="wording-clause-section-title">
-Syntax
-</div>
-
-<div class="wording-numbered">
-
-*defer-statement*:
-:: **defer** *secondary-block*
-
-</div>
-
-<div class="wording-clause-section-title">
-Description
-</div>
-
-<div class="wording-numbered">
-
-Let *D* be a defer statement, *S* be the secondary block of *D*, and *E* be the enclosing block of *D*.
-</div>
-
-<div class="wording-clause-section-title">
-Constraints
-</div>
-
-<div class="wording-newnumbered">
-
-<ins>A defer statement shall not appear within another defer statement.</ins>
-</div>
-
-</div>
-</blockquote>
 
 ## Modify Annex J's list of unspecified behaviors with non-local jump unspecified behavior (e.g. `longjmp`) ## {#wording-annex.j}
 
@@ -1612,6 +1621,16 @@ Note: 📝 For the editor to do within the Annex J unspecified behavior list.
 		"publisher": "ISO/IEC JTC1 SC22 WG14 — Programming Languages, C",
 		"href": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2542.pdf",
 		"date": "August 8th, 2020"
+	},
+	"n3497": {
+		"authors": [
+			"Jens Gustedt",
+			"INRIA and ICube, France"
+		],
+		"title": "Even Simpler defer for Direct Integration",
+		"publisher": "ISO/IEC JTC1 SC22 WG14 — Programming Languages, C",
+		"date": "February 16th, 2025",
+		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3497.htm"
 	},
 	"go-defer": {
 		"authors": [

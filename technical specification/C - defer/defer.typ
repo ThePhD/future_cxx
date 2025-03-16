@@ -5,9 +5,10 @@
 	title: "Programming Languages — C — defer, a mechanism for general purpose, lexical scope-based undo",
 	authors: ("JeanHeyd Meneide"),
 	keywords: ("C", "defer", "ISO/IEC 9899", "Technical Specification", "Safety", "Resource"),
-	id: "N3489",
+	id: "NABCD",
 	ts_id: "25755",
-	abstract: [The advent of resource leaks in programs created with ISO/IEC 9899#index[ISO/IEC 9899] ⸺ Programming Languages, C has necessitated the need for better ways of tracking and automatically releasing resources in a given scope. This document provides a feature to address this need in a reliable, static, opt-in manner for implementations to furnish to programmers.],
+	stage: "cd",
+	abstract: [The advent of resource leaks in programs created with ISO/IEC 9899#index[ISO/IEC 9899] ⸺ Programming Languages, C has necessitated the need for better ways of tracking and automatically releasing resources in a given scope. This document provides a feature to address this need in a reliable, translation-time, opt-in manner for implementations to furnish to programmers.],
 	doc
 )
 
@@ -71,7 +72,7 @@ In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.4.
 
 == Statements
 
-In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.8, implementations shall allow the unlabeled statement grammar production to produce a defer statement#index[defer statement].
+In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.8, implementations shall allow the unlabeled statement grammar production to produce a defer statement#index[defer statement] which contains a deferred block#index[deferred block].
 
 *Syntax*
 
@@ -85,20 +86,27 @@ In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.
 #index("unlabeled statement")
 #index("defer statement")
 
+#h(1em) _deferred-block_: \
+#list(marker: none, indent: 8em,
+	[_unlabeled-statement_]
+)
+#index("unlabeled statement")
+#index("deferred block")
+
 == Defer statements
 
 *Syntax*
 
 #h(1em) _defer-statement_: \
 #list(marker: none, indent: 8em,
-	[`defer` _secondary-block_]
+	[`defer` _deffered-block_]
 )
 #index("defer statement")
 #index(apply-casing: false, display: [```c defer```], "Keywords", "defer")
 
 *Description*
 
-Let _D_ be a defer statement#index[defer statement], _S_ be the secondary block of _D_, and _E_ be the enclosing block of _D_.
+Let _D_ be a defer statement#index[defer statement], _S_ be the deferred block of _D_, and _E_ be the enclosing block of _D_.
 
 *Constraints*
 
@@ -278,9 +286,9 @@ Conversions#index("conversions") for the purposes of return are also computed be
 bool f () {
 	double x = DBL_SNAN;
 	defer {
-		// fetestexcept (FE_INVALID) is nonzero because of the
+		// fetestexcept(FE_INVALID) is nonzero because of the
 		// comparison during the conversion to bool
-		assert(ftestexcept(FE_INVALID) != 0);
+		assert(fetestexcept(FE_INVALID) != 0);
 	}
 	return x;
 }
@@ -323,6 +331,26 @@ int main () {
 		printf(" says");
 	}
 	// "cat says meow" is printed to standard output
+	exit(0);
+}
+```
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+int main () {
+	{
+		const char* arr[] = {"cat", "kitty", "ferocious little baby"};
+		defer {
+			printf(" meow");
+		}
+		for (unsigned i = 0; i < 3; ++i)
+			defer printf("my %s, ", arr[i]);
+		printf("says");
+	}
+	// "my cat, my kitty, my ferocious little baby, says meow"
+	// is printed to standard output
 	exit(0);
 }
 ```
@@ -433,8 +461,8 @@ int main () {
 
 In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.10.10, an implementation shall define the following macro names:
 
-/ `__STDC_DEFER_TS___`: The integer literal `1`.
-#index(display: [```c __STDC_DEFER_TS__```], "macros", "__STDC_DEFER_TS__")
+/ `__STDC_DEFER_TS25755___`: The integer literal `1`.
+#index(display: [```c __STDC_DEFER_TS__```], "macros", "__STDC_DEFER_TS25755__")
 
 
 
