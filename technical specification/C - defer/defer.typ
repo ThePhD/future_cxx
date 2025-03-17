@@ -99,7 +99,7 @@ In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.
 
 #h(1em) _defer-statement_: \
 #list(marker: none, indent: 8em,
-	[`defer` _deffered-block_]
+	[`defer` _deferred-block_]
 )
 #index("defer statement")
 #index(apply-casing: false, display: [```c defer```], "Keywords", "defer")
@@ -127,11 +127,11 @@ When execution reaches a defer statement#index[defer statement] _D_, its _S_ is 
 
 The execution is done just before leaving the enclosing block _E_. In particular ```c return``` expressions (and conversion to return values)#index("conversions") are calculated before executing _S_.
 
-Multiple defer statement#index[defer statement]s execute in the reverse lexical order they appeared in _E_. Within a single defer statement#index[defer statement] _D_, if _D_ contains one or more defer statement#index[defer statement]s of its own, then these defer statement#index[defer statement]s are also executed in reverse lexical order at the end of _S_, recursively, according to the rules of this clause.
+Multiple defer statement#index[defer statement]s execute in the reverse order they appeared in _E_. Within a single defer statement#index[defer statement] _D_, if _D_ contains one or more defer statement#index[defer statement]s of its own, then these defer statement#index[defer statement]s are also executed in reverse order at the end of _S_, recursively, according to the rules of this clause.
 
-If _E_ has any defer statement#index[defer statement]s _D_ that have been reached and their _S_ have not yet executed, but the program is terminated or leaves _E_ through any means including:
+If _E_ has any defer statement#index[defer statement]s _D_ that have been reached and their _S_ have not yet executed, but the program is terminated or leaves _E_ through any of the following means:
 
-- a function with the deprecated `_Noreturn` function specifier, or a function annotated with the `noreturn` or `_Noreturn` attribute, is called#index(initial: "n", display: [`_Noreturn`], apply-casing: false, "_Noreturn")#index(apply-casing: false, display: [`noreturn`], "noreturn");
+- a function with the `_Noreturn` function specifier, or a function annotated with the `noreturn` or `_Noreturn` attribute, is called#index(initial: "n", display: [`_Noreturn`], apply-casing: false, "_Noreturn")#index(apply-casing: false, display: [`noreturn`], "noreturn");
 - or, any signal `SIGABRT`, `SIGINT`, or `SIGTERM` occurs#index("signal");
 
 then any such _S_ are not run, unless otherwise specified by the implementation. Any other _D_ that have not been reached are not run.
@@ -141,7 +141,7 @@ then any such _S_ are not run, unless otherwise specified by the implementation.
 If a non-local jump #index("non-local jump") is used within _E_ but before the execution of _D_:
 
 - if execution leaves _E_, _S_ will not be executed;
-- otherwise, if control returns to a point in _E_ and causes _D_ to be reached more than once, there is no effect.
+- otherwise, if control returns to a point in _E_ and causes _D_ to be reached more than once, the effect is the same as reaching _D_ only once.
 
 #note() The "execution" of a defer statement#index[defer statement] only lets the program know that _S_ will be run on any exit from that scope. There is no observable side effect to repeat from reaching _D_, as the manifestation of any of the effects of _S_ will happen if and only if _E_ is exited or terminated as previously specified.
 
@@ -151,7 +151,7 @@ If a non-local jump #index("non-local jump") is executed from _S_ and control le
 If a non-local jump #index("non-local jump") is executed outside of any _D_ and:
 
 - it jumps into any _S_;
-- or, it jumps over any _D_;
+- or, it jumps over any _D_ within _E_;
 
 the behavior is unspecified#index("unspecified behavior").
 
@@ -355,7 +355,7 @@ int main () {
 }
 ```
 
-#example() Defer statement#index[Defer statement]s execute in reverse lexical order, and nested defer statement#index[defer statement]s execute in reverse lexical order but at the end of the defer statement#index[defer statement] they were invoked within. The following program:
+#example() Defer statement#index[Defer statement]s execute in reverse order, and nested defer statement#index[defer statement]s execute in reverse order but at the end of the defer statement#index[defer statement] they were invoked within. The following program:
 
 ```c
 int main () {
