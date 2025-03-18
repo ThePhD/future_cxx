@@ -72,7 +72,7 @@ In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.4.
 
 == Statements
 
-In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.8, implementations shall allow the unlabeled statement grammar production to produce a defer statement#index[defer statement] which contains a deferred block#index[deferred block].
+In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.8, implementations shall allow the unlabeled statement grammar production to produce a defer statement#index[defer statement] which contains a deferred block#index[deferred block]. A deferred block is also considered a _block_ just like a primary block or a secondary block.
 
 *Syntax*
 
