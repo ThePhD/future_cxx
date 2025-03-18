@@ -129,21 +129,12 @@ The execution is done just before leaving the enclosing block _E_. In particular
 
 Multiple defer statement#index[defer statement]s execute in the reverse order they appeared in _E_. Within a single defer statement#index[defer statement] _D_, if _D_ contains one or more defer statement#index[defer statement]s of its own, then these defer statement#index[defer statement]s are also executed in reverse order at the end of _S_, recursively, according to the rules of this clause.
 
-If _E_ has any defer statement#index[defer statement]s _D_ that have been reached and their _S_ have not yet executed, but the program is terminated or leaves _E_ through any of the following means:
-
-- a function with the `_Noreturn` function specifier, or a function annotated with the `noreturn` or `_Noreturn` attribute, is called#index(initial: "n", display: [`_Noreturn`], apply-casing: false, "_Noreturn")#index(apply-casing: false, display: [`noreturn`], "noreturn");
-- or, any signal `SIGABRT`, `SIGINT`, or `SIGTERM` occurs#index("signal");
-
-then any such _S_ are not run, unless otherwise specified by the implementation. Any other _D_ that have not been reached are not run.
-
-#note() The execution of deferred statements upon non-local jumps (i.e., `longjmp` and `setjmp` described in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §7.13)#index("non-local jump") or program termination is a technique sometimes known as "unwinding" or "stack unwinding", and some implementations perform it. See also ISO/IEC 14882#index[ISO/IEC 14882] Programming languages — C++ [except.ctor].
-
 If a non-local jump #index("non-local jump") is used within _E_ but before the execution of _D_:
 
 - if execution leaves _E_, _S_ will not be executed;
 - otherwise, if control returns to a point in _E_ and causes _D_ to be reached more than once, the effect is the same as reaching _D_ only once.
 
-#note() The "execution" of a defer statement#index[defer statement] only lets the program know that _S_ will be run on any exit from that scope. There is no observable side effect to repeat from reaching _D_, as the manifestation of any of the effects of _S_ will happen if and only if _E_ is exited or terminated as previously specified.
+#note() The "execution" of a defer statement#index[defer statement] only lets the program know that _S_ will be run on any exit from that scope. There is no observable side effect to repeat from reaching _D_, as the manifestation of any of the effects of _S_ will happen if and only if _E_ is exited or terminated after reaching *D*, as previously specified.
 
 
 If a non-local jump #index("non-local jump") is executed from _S_ and control leaves _S_, the behavior is undefined#index("undefined behavior").
@@ -154,6 +145,15 @@ If a non-local jump #index("non-local jump") is executed outside of any _D_ and:
 - or, it jumps over any _D_ in its respective _E_;
 
 the behavior is undefined#index("undefined behavior").
+
+If _E_ has any defer statement#index[defer statement]s _D_ that have been reached and their _S_ have not yet executed, but the program is terminated or leaves _E_ through any means not specified previously, including but not limited to:
+
+- a function with the `_Noreturn` function specifier, or a function annotated with the `noreturn` or `_Noreturn` attribute, is called#index(initial: "n", display: [`_Noreturn`], apply-casing: false, "_Noreturn")#index(apply-casing: false, display: [`noreturn`], "noreturn");
+- or, any signal `SIGABRT`, `SIGINT`, or `SIGTERM` occurs#index("signal");
+
+then any such _S_ are not run, unless otherwise specified by the implementation. Any other _D_ that have not been reached are not run.
+
+#note() The execution of deferred statements upon non-local jumps (i.e., `longjmp` and `setjmp` described in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §7.13)#index("non-local jump") or program termination is a technique sometimes known as "unwinding" or "stack unwinding", and some implementations perform it. See also ISO/IEC 14882#index[ISO/IEC 14882] Programming languages — C++ [except.ctor].
 
 #example() Defer statement#index[Defer statement]s cannot be jumped over.#index("Keywords", "goto", apply-casing: false, display:[```c goto```])
 
