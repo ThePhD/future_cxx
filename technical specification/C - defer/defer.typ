@@ -146,14 +146,14 @@ If a non-local jump #index("non-local jump") is used within _E_ but before the e
 #note() The "execution" of a defer statement#index[defer statement] only lets the program know that _S_ will be run on any exit from that scope. There is no observable side effect to repeat from reaching _D_, as the manifestation of any of the effects of _S_ will happen if and only if _E_ is exited or terminated as previously specified.
 
 
-If a non-local jump #index("non-local jump") is executed from _S_ and control leaves _S_, the behavior is unspecified#index("unspecified behavior").
+If a non-local jump #index("non-local jump") is executed from _S_ and control leaves _S_, the behavior is undefined#index("undefined behavior").
 
 If a non-local jump #index("non-local jump") is executed outside of any _D_ and:
 
 - it jumps into any _S_;
-- or, it jumps over any _D_ within _E_;
+- or, it jumps over any _D_ in its respective _E_;
 
-the behavior is unspecified#index("unspecified behavior").
+the behavior is undefined#index("undefined behavior").
 
 #example() Defer statement#index[Defer statement]s cannot be jumped over.#index("Keywords", "goto", apply-casing: false, display:[```c goto```])
 
@@ -169,9 +169,10 @@ int f () {
 }
 
 int g () {
-	return printf("cat says");
-	defer { printf(" meow"); } // okay: no constraint violation, not executed
 	// print "cat says" to standard output
+	return printf("cat says");
+	defer { printf(" meow"); } // okay: no constraint violation,
+	// not executed
 }
 
 int h () {
@@ -263,6 +264,26 @@ int p () {
 	b:;
 	printf("cat says");
 	return 1; // prints "cat says"
+}
+
+int q () {
+	{
+		defer { printf(" meow"); }
+		b:
+	}
+	goto b; // constraint violation
+	printf("cat says");
+	return 1;
+}
+
+int r () {
+	{
+		b:
+		defer { printf("cat says"); }
+	}
+	goto b; // ok
+	printf(" meow");
+	return 1; // prints "cat says" repeatedly
 }
 ```
 
