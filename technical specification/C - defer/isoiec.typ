@@ -152,12 +152,14 @@ show outline.entry: entry => {
 		}
 		let fill = box(width: 1fr, entry.fill)
 		let entry_content = entry.indented(number, [#elem.body #fill #entry.page()], gap: 1.5em)
-		if entry.level == 1 {
-			strong(entry_content)
-		}
-		else {
-			entry_content
-		}
+		link(elem.location(),
+			if entry.level == 1 {
+				strong(entry_content)
+			}
+			else {
+				entry_content
+			}
+		)
 	}
 	else {
 		entry
@@ -189,7 +191,8 @@ Specification
 
 #align(bottom, [
 	Reference Number \
-	ISO/DIS TS #ts_id #if stage != "published" [: Working Draft #id] else if stage_enum == 1 [: Committee Draft #id] else if stage_enum == 2 [: Draft International Standard #id]
+	ISO/DIS TS #ts_id #if stage != "published" [: Working Draft #id] else if stage_enum == 1 [: Committee Draft #id] else if stage_enum == 2 [: Draft International Standard #id] \
+	#if stage != "published" [ Project Editor: #authors ]
 ])
 ],
 [ISO/ TC22/SC22 \

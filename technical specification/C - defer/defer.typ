@@ -3,7 +3,7 @@
 
 #show: doc => isoiec(
 	title: "Programming Languages — C — defer, a mechanism for general purpose, lexical scope-based undo",
-	authors: ("JeanHeyd Meneide"),
+	authors: ("JeanHeyd Meneide (wg14@soasis.org)"),
 	keywords: ("C", "defer", "ISO/IEC 9899", "Technical Specification", "Safety", "Resource"),
 	id: "NABCD",
 	ts_id: "25755",
@@ -162,16 +162,16 @@ then any such _S_ are not run, unless otherwise specified by the implementation.
 
 int f () {
 	goto b; // constraint violation
-	defer { printf(" meow"); }
+	defer { puts(" meow"); }
 	b:
-	printf("cat says");
+	puts("cat says");
 	return 1;
 }
 
 int g () {
 	// print "cat says" to standard output
-	return printf("cat says");
-	defer { printf(" meow"); } // okay: no constraint violation,
+	return puts("cat says");
+	defer { puts(" meow"); } // okay: no constraint violation,
 	// not executed
 }
 
@@ -179,50 +179,50 @@ int h () {
 	goto b;
 	{
 		// okay: no constraint violation
-		defer { printf(" meow"); }
+		defer { puts(" meow"); }
 	}
 	b:
-	printf("cat says");
+	puts("cat says");
 	return 1; // prints "cat says" to standard output
 }
 
 int i () {
 	{
-		defer { printf("cat says"); }
+		defer { puts("cat says"); }
 		// okay: no constraint violation
 		goto b;
 	}
 	b:
-	printf(" meow");
+	puts(" meow");
 	return 1; // prints "cat says meow" to standard output
 }
 
 int j () {
 	defer {
 		goto b; // constraint violation
-		printf(" meow");
+		puts(" meow");
 	}
 	b:
-	printf("cat says");
+	puts("cat says");
 	return 1;
 }
 
 int k () {
 	defer {
 		return 5; // constraint violation
-		printf(" meow");
+		puts(" meow");
 	}
-	printf("cat says");
+	puts("cat says");
 	return 1;
 }
 
 int l () {
 	defer {
 		b:
-		printf(" meow");
+		puts(" meow");
 	}
 	goto b; // constraint violation
-	printf("cat says");
+	puts("cat says");
 	return 1;
 }
 
@@ -230,59 +230,59 @@ int m () {
 	goto b; // okay: no constraint violation
 	{
 		b:
-		defer { printf("cat says"); }
+		defer { puts("cat says"); }
 	}
-	printf(" meow");
+	puts(" meow");
 	return 1; // prints "cat says meow" to standard output
 }
 
 int n () {
 	goto b; // constraint violation
 	{
-		defer { printf(" meow"); }
+		defer { puts(" meow"); }
 		b:
 	}
-	printf("cat says");
+	puts("cat says");
 	return 1;
 }
 
 int o () {
 	{
-		defer printf("cat says");
+		defer puts("cat says");
 		goto b;
 	}
 	b:;
-	printf(" meow");
+	puts(" meow");
 	return 1; // prints "cat says meow"
 }
 
 int p () {
 	{
 		goto b;
-		defer printf(" meow");
+		defer puts(" meow");
 	}
 	b:;
-	printf("cat says");
+	puts("cat says");
 	return 1; // prints "cat says"
 }
 
 int q () {
 	{
-		defer { printf(" meow"); }
+		defer { puts(" meow"); }
 		b:
 	}
 	goto b; // constraint violation
-	printf("cat says");
+	puts("cat says");
 	return 1;
 }
 
 int r () {
 	{
 		b:
-		defer { printf("cat says"); }
+		defer { puts("cat says"); }
 	}
 	goto b; // ok
-	printf(" meow");
+	puts(" meow");
 	return 1; // prints "cat says" repeatedly
 }
 ```
@@ -315,10 +315,9 @@ bool f () {
 }
 ```
 
-#example() It is implementation-defined if defer statement#index[defer statement]s will execute if the exiting / non-returning functions detailed previously#index("program termination") are called.
+#example() It is not defined if defer statement#index[defer statement]s will execute if the exiting / non-returning functions detailed previously#index("program termination") are called.
 
 ```c
-#include <stdio.h>
 #include <stdlib.h>
 
 int f () {
@@ -345,11 +344,11 @@ int main () {
 int main () {
 	{
 		defer {
-			printf(" meow");
+			puts(" meow");
 		}
 		if (true)
-			defer printf("cat");
-		printf(" says");
+			defer puts("cat");
+		puts(" says");
 	}
 	// "cat says meow" is printed to standard output
 	exit(0);
@@ -364,15 +363,18 @@ int main () {
 	{
 		const char* arr[] = {"cat", "kitty", "ferocious little baby"};
 		defer {
-			printf(" meow");
+			puts(" meow");
 		}
 		for (unsigned i = 0; i < 3; ++i)
-			defer printf("my %s, ", arr[i]);
-		printf("says");
+			defer printf("my %s,\n", arr[i]);
+		puts("says");
 	}
-	// "my cat, my kitty, my ferocious little baby, says meow"
+	// "my cat,
+	// my kitty,
+	// my ferocious little baby,
+	// says meow"
 	// is printed to standard output
-	exit(0);
+	return 0;
 }
 ```
 
@@ -482,14 +484,18 @@ int main () {
 
 In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.10.10, an implementation shall define the following macro names:
 
-/ `__STDC_DEFER_TS25755___`: The integer literal `1`.
+/ `__STDC_DEFER_TS25755__`: The integer literal `1`.
 #index(display: [```c __STDC_DEFER_TS__```], "macros", "__STDC_DEFER_TS25755__")
 
 
 
 = Library
 
-The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 7 apply without any additional requirements in this document.
+The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 7 apply with additional requirements in this document.
+
+== The `thrd_create` function
+
+In addition to the description and return requirements in the document, when `thrd_start_t func` parameter is invoked and it is returned from, it behaves as if it also runs any defer statements before invoking `thrd_exit` with the returned value.
 
 #heading(
 	numbering: none,
