@@ -1,0 +1,461 @@
+<pre class='metadata'>
+Title: Thread Attributes - Implementation Extensible and ABI-Resistant
+Shortname: XX20
+Revision: 0
+!Previous Revisions: None
+Status: D
+Date: 2025-03-23
+Group: WG14
+!Proposal Category: Change Request, Feature Request  
+!Target: C2y
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Transparent%20Aliases.html
+!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-Transparent%20Aliases.bs">GitHub</a>
+Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
+Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+Abstract: 
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<div class="pagebreak"></div>
+
+
+
+
+
+# Revision History # {#changelog}
+
+
+
+## Revision 0 - March 23<sup>rd</sup>, 2025 ## {#changelog-r0}
+
+- Initial release. ✨
+
+
+
+
+# Introduction & Motivation # {#motivation}
+
+It is impossible to set the name, stack size, stack address + size, (scheduler) priority, processor affinity, and more of a thread in standard C or C++, despite this being both widely available and critical necessities in C and C++ programs. After Bruce Dawson pinged a few C++ standards committee members in circa 2019/2020 asking about thread names, C++ -- particularly, Corentin Jabot -- embarked on an adventure to provide such attributes to their version of C11's threads, `std::thread`. The effort was marred by platform incompatibilities, specific wording nits, and -- most glaringly -- ABI issues and API wars, resulting in no less than three (3) papers:
+
+- [P2019 - https://wg21.link/p2019](https://wg21.link/p2019)
+- [P3072 - https://wg21.link/p3072](https://wg21.link/p3072)
+- [P3022 - https://wg21.link/p3022](https://wg21.link/p3022)
+
+They take many approaches to the problem, trying to offer a varying level of ease of use alongside high type safety. The most mature of the papers -- P2019 -- has reached its eighth revision after first being published on March 2nd, 2020 and has not seen success. In that time:
+
+- Programming Languages and their standard libraries such as Swift, Java, C#, Haskell, C#, Rust, D, Perl, and many other languages either already supported or support using threads with an explicit stack size parameter and names;
+- For C and C++, augmentation/replacement standard libraries like Qt, Boost, POCO, Chromium, Bloomberg Basic Development Environment, Intel TBB, Folly, TensorFlow, KallistaOS (Dreamcast OS), tinycthread, and many replace C++11 and C11 threads with their own abstraction in order to do threading.
+
+Importantly, in the case of C11 threads, many of them need to rewrite the entire set of thread primitives because of (a) poor support for `<threads.h>` until very recently (as of writing: only Apple does not support C11 `<threads.h>`; MSVC runtime, OpenBSD, FreeBSD, NetBSD, glibc, musl-libc, Bionic (Android), and more all support `<threads.h>`); and, (b) many platforms do not support changing stack sizes, names, and more after thread creation. Therefore, an API cannot simply add `set_threadname` or `get_threadname`, or similar stack size parameters, with a thread handle parameter as shown by the POSIX Threads implementations; many implementations have wildly different getting and setting properties and most -- including Windows Threads -- mostly require you to set that information on thread creation, not after-the-fact. A table -- [from P2019](https://wg21.link/p2019) -- is reproduced here:
+
+<table>
+	<thead>
+	<tr>
+		<th>Platform</th>
+		<th>At Creation</th>
+		<th>After</th>
+		<th>Query</th>
+	</tr>
+	</thead>
+	<tbody>
+	<tr>
+		<td>Linux</td>
+		<td colspan="2">`pthread_setname_np`<sup><a href="">0</a></sup></td>
+		<td>`pthread_getname_np`</td>
+	</tr>
+	<tr>
+		<td>QNX</td>
+		<td colspan="2">`pthread_setname_np`</td>
+		<td>`pthread_getname_np`</td>
+	</tr>
+	<tr>
+		<td>NetBSD</td>
+		<td colspan="2">`pthread_setname_np`</td>
+		<td>`pthread_getname_np`</td>
+	</tr>
+	<tr>
+		<td>Win32</td>
+		<td></td>
+		<td>`SetThreadDescription`<sup><a href="">1</a></sup></td>
+		<td>`GetThreadDescription`<sup><a href="">1</a></sup></td>
+	</tr>
+	<tr>
+		<td>Darwin</td>
+		<td></td>
+		<td>`pthread_setname_np`<a href=""><sup>2</sup></a></td>
+		<td>`pthread_getname_np`</td>
+	</tr>
+	<tr>
+		<td>Fuchsia</td>
+		<td>`zx_thread_create`</td>
+		<td></td>
+		<td></td>
+	</tr>
+	<tr>
+		<td>Android</td>
+		<td>`JavaVMAttachArgs`<a href=""><sup>3</sup></a></td>
+		<td></td>
+		<td></td>
+	</tr>
+	<tr>
+		<td>FreeBSD</td>
+		<td colspan="2">`pthread_setname_np`</td>
+		<td></td>
+	</tr>
+	<tr>
+		<td>OpenBSD</td>
+		<td colspan="2">`pthread_setname_np`</td>
+		<td></td>
+	</tr>
+	<tr>
+		<td>RTEMS <a href=""><sup>4</sup></a></td>
+		<td>`pthread_setname_np`</td>
+		<td>`pthread_setname_np`</td>
+		<td>`pthread_getname_np`</td>
+	</tr>
+	<tr>
+		<td>FreeRTOS</td>
+		<td>`xTaskCreate`</td>
+		<td></td>
+		<td>`pcTaskGetName`</td>
+	</tr>
+	<tr>
+		<td>VxWorks</td>
+		<td>`taskSpawn`</td>
+		<td></td>
+		<td></td>
+	</tr>
+	<tr>
+		<td>eCos</td>
+		<td>`cyg_thread_create`</td>
+		<td></td>
+		<td></td>
+	</tr>
+	<tr>
+		<td>Plan 9</td>
+		<td>`threadsetname`<a href=""><sup>5</sup></a></td>
+		<td>`threadsetname`<a href=""><sup>5</sup></a></td>
+		<td></td>
+	</tr>
+	<tr>
+		<td>Haiku</td>
+		<td>`spawn_thread`</td>
+		<td>`rename_thread`</td>
+		<td>`get_thread_info`</td>
+	</tr>
+	<tr>
+		<td>Keil RTX</td>
+		<td>`osThreadNew`</td>
+		<td></td>
+		<td>`osThreadGetName`</td>
+	</tr>
+	<tr>
+		<td>WebAssembly</td>
+		<td></td>
+		<td></td>
+		<td></td>
+	</tr>
+</tbody>
+</table>
+
+<br/>
+
+<div style="font-size: small">
+<a id=""><sup>0</sup></a> - GLIBC 2.12+, MUSL<br/>
+<a id=""><sup>1</sup></a> - Since Windows 10 1607 - In older versions, a name can be set only when a debugger is attached, by throwing an exception from the calling thread. See [https://stackoverflow.com/a/59490438/877556](Windows Documentation) and [this article by Bruce Dawson](https://randomascii.wordpress.com/2015/10/26/thread-naming-in-windows-time-for-something-better/).<br/>
+<a id=""><sup>2</sup></a> - Can only be called from the new thread.<br/>
+<a id=""><sup>3</sup></a> - See [https://stackoverflow.com/a/59490438/877556](https://stackoverflow.com/a/59490438/877556).<br/>
+<a id=""><sup>4</sup></a> - Since 2017.<br/>
+<a id=""><sup>5</sup></a> - Can only be called from the new thread.<br/>
+</div>
+
+Similarly, a lot of APIs suffer from ABI issues; `pthread_attr_t` is meant to be ABI-resistant and an opaque type, but implementation still have to contend with issues improving or widening the amount of information it can store without breaking things. C++ `std::thread`'s and P2019, in its attempts to be ABI-resistant, have met a ton of pushback from all kinds of people trying to simplify or reduce the API space and avoid the templated constructors, desperate for a simpler interface and -- in some cases -- ignoring ABI issues with structures similar in purpose to `pthread_attr_t`.
+
+For C11 threads, these same concerns were voiced during the 2019 Ithaca discussion of Kamil Ryatorwski's paper 
+
+It is clear that this area has strong vendor concerns around extensibility, and even strong constraints around the ability to do this both before thread startup and during thread running.
+
+This paper provides an ABI that is standards-expandable, vendor-extensible, and resistant to Application Binary Interface (ABI) lock-in. It allows vendors to provide more direct ways to adding parameters without compromising current implementations and their structures. 
+
+
+
+
+
+# Design # {#design}
+
+The design is based off an existing API that has proved successful in not replacing but *supplementing* existing implementations without causing undue burden or breaking the ABIs of existing interfaces. It has been shown to:
+
+- set name (in UTF-8/16/32, Execution, Wide Execution, and "direct" forms);
+- set detached state (to have a thread start in a detached state, (critical for MSVC));
+- set the stack size (taken as a parameter during startup for MSVC and for POSIX threads);
+- and, set the stack buffer (a pointer plus size, usable for POSIX threads but not necessarily for MSVC itself).
+
+The API relies on 2 core language features to work:
+
+- the pointer to the first member of a structure is identical to the pointer of the structure itself;
+- and, casting from that first member to a pointer based on the value of that first member is well-defined behavior.
+
+In particular, there is a `thrd_attr_kind` enumeration type that is the first member of a structure. It is a tag that tells the implementation what to cast a pointer of that type to, in order to interpret the full structure. It is also the first member of every thread attribute structure, which means it has the same address as the structure itself. This allows an array of `thrd_attr_kind` pointers to be passed to `thrd_create_attrs` that can be used as a standard and well-defined type-punning point and a sort of "tag" to determine which structure to cast to internally. The full enumeration and API looks as such:
+
+```cpp
+#include <threads.h>
+#include <stdint.h>
+
+typedef enum thrd_attr_kind : int_least32_t {
+	thrd_attr_kind_name              = 0,
+	thrd_attr_kind_name_sized        = 1,
+	thrd_attr_kind_mcname            = 2,
+	thrd_attr_kind_mcname_sized      = 3,
+	thrd_attr_kind_mwcname           = 4,
+	thrd_attr_kind_mwcname_sized     = 5,
+	thrd_attr_kind_c8name            = 6,
+	thrd_attr_kind_c8name_sized      = 7,
+	thrd_attr_kind_c16name           = 8,
+	thrd_attr_kind_c16name_sized     = 9,
+	thrd_attr_kind_c32name           = 10,
+	thrd_attr_kind_c32name_sized     = 11,
+	thrd_attr_kind_stack_size        = 32,
+	thrd_attr_kind_detached          = 256,
+
+	thrd_attr_kind_implementation_defined = 0xFFFF,
+} thrd_attr_kind;
+
+typedef struct thrd_attr_name {
+	thrd_attr_kind kind;
+	const void* name;
+} thrd_attr_name;
+
+typedef struct thrd_attr_name_sized {
+	thrd_attr_kind kind;
+	size_t size;
+	const void* name;
+} thrd_attr_name_sized;
+
+typedef struct thrd_attr_mcname {
+	thrd_attr_kind kind;
+	const char* name;
+} thrd_attr_mcname;
+
+typedef struct thrd_attr_mcname_sized {
+	thrd_attr_kind kind;
+	size_t size;
+	const char* name;
+} thrd_attr_mcname_sized;
+
+typedef struct thrd_attr_mwcname {
+	thrd_attr_kind kind;
+	const wchar_t* name;
+} thrd_attr_mwcname;
+
+typedef struct thrd_attr_mwcname_sized {
+	thrd_attr_kind kind;
+	size_t size;
+	const wchar_t* name;
+} thrd_attr_mwcname_sized;
+
+typedef struct thrd_attr_c8name {
+	thrd_attr_kind kind;
+	const char8_t* name;
+} thrd_attr_c8name;
+
+typedef struct thrd_attr_c8name_sized {
+	thrd_attr_kind kind;
+	size_t size;
+	const char8_t* name;
+} thrd_attr_c8name_sized;
+
+typedef struct thrd_attr_c16name {
+	thrd_attr_kind kind;
+	const char16_t* name;
+} thrd_attr_c16name;
+
+typedef struct thrd_attr_c16name_sized {
+	thrd_attr_kind kind;
+	size_t size;
+	const char16_t* name;
+} thrd_attr_c16name_sized;
+
+typedef struct thrd_attr_c32name {
+	thrd_attr_kind kind;
+	const char32_t* name;
+} thrd_attr_c32name;
+
+typedef struct thrd_attr_c32name_sized {
+	thrd_attr_kind kind;
+	size_t size;
+	const char32_t* name;
+} thrd_attr_c32name_sized;
+
+typedef struct thrd_attr_stack_size {
+	thrd_attr_kind kind;
+	size_t size;
+} thrd_attr_stack_size;
+
+typedef struct thrd_attr_detached {
+	thrd_attr_kind kind;
+	bool detached;
+} thrd_attr_detached;
+
+int thrd_create_attrs(thrd_start_func func, void* arg, size_t n, const thrd_attr_kind *attrs[static n]);
+```
+
+
+
+## Thread Attribute Kind & ABI-Resistance ## {#design-attr_kind}
+
+The thread attribute kind has 65,536 reserved values [0, 65'535] for the standard, and 2,147,418,112 reserved values [65'636, 2'147'483'647] for implementation-defined attributes. An implementation can add more attributes to cover more cases and information that the standard could not conceivably provide a unified interface for, such as:
+
+- stack address + stack size (POSIX Threads);
+- starting "Suspended" (Win32 Threads);
+- setting implementation-specific processor/core affinity (Win32 and POSIX Threads);
+- setting implementation-specific scheduler or thread priority (many different values for POSIX, fixed set of enumeration values for Win32);
+- setting commit vs. reserved stack size values (Win32 Threads);
+
+and so much more. 65 thousand values for the standard more than covers the set of interfaces WG14 could possibly manage to standardize (one per standard structure), and 2.1 billion values (one per implementation-defined structure) gives implementations plenty of room to play around and not conflict with each other (hopefully they are nice and send each other e-mails so avoid potential conflicts, as they should in this day and age).
+
+This design is also ABI-resistant. If structures need to change, rather than trying to change them in-line and suffering from a problem of adding members or otherwise disturbing how reads and writes of such structures will be treated, a new one can be added seamlessly and without pain both on the standard side and the implementation side.
+
+Each enumeration is given a fixed value to prevent ABI disagreements for serialization purposes between platforms. The values themselves do not matter, and so any of them can be adjusted. The enumeration should fit a 32-bit signed integer, and so platforms with a 16 bit integer may need to use implementation-specific tricks or rely on C23's enumeration specification abilities.
+
+
+
+## Thread Attributes ## {#design-attrs}
+
+Thread attributes are structures paired with one of the enumeration names that represent a specific kind of transformation to a thread. The standard will define several thread attribute structures, though the specification says that an implementation can process -- but ignore -- the desired effects of each attribute. This is mostly to allow for embedded implementations that do not care for keeping this information around, and keeps the cost of this paper to 0 for implementations that do not care.
+
+There are 14 different provided structures and 14 different enumeration constants to go with them:
+
+- `thrd_attr_stack_size`: takes a `size_t` and communicates the size (in bytes) of the stack.
+- `thrd_attr_detached`: takes a `bool` and communicates that the thread should be detached at the very start.
+- `thrd_attr_c8name`, `thrd_attr_c8name_sized`: takes a `const char8_t*` or a `const char8_t*` + `size_t`, respectively. It represents a UTF-8-encoded name. The name is converted to the desired internal encoding of the thread name. Must be terminated by a null `char8_t` value, or not contain a null `char8_t` value within the buffer denoted by the range, respectively. The pointer may be null.
+- `thrd_attr_c16name`, `thrd_attr_c16name_sized`: takes a `const char16_t*` or a `const char16_t*` + `size_t`, respectively. It represents a UTF-16-encoded name. The name is converted to the desired internal encoding of the thread name. Must be terminated by a null `char16_t` value, or not contain a null `char16_t` value within the buffer denoted by the range, respectively. The pointer may be null.
+- `thrd_attr_c32name`, `thrd_attr_c32name_sized`: takes a `const char32_t*` or a `const char32_t*` + `size_t`, respectively. It represents a UTF-32-encoded name. The name is converted to the desired internal encoding of the thread name. Must be terminated by a null `char32_t` value, or not contain a null `char32_t` value within the buffer denoted by the range, respectively. The pointer may be null.
+- `thrd_attr_mcname`, `thrd_attr_mcname_sized`: takes a `const char*` or a `const char*` + `size_t`, respectively. It represents an execution encoding-encoded name. The name is converted to the desired internal encoding of the thread name. Must be terminated by a null `char` value, or not contain a null `char` value within the buffer denoted by the range, respectively. The pointer may be null.
+- `thrd_attr_mwcname`, `thrd_attr_mwcname_sized`: takes a `const wchar_t*` or a `const wchar_t*` + `size_t`, respectively. It represents a wide execution-encoded name. The name is converted to the desired internal encoding of the thread name. Must be terminated by a null `wchar_t` value, or not contain a null `wchar_t` value within the buffer denoted by the range, respectively. The pointer may be null.
+- `thrd_attr_name`, `thrd_attr_name_sized`: takes a `const void*` or a `const void*` + `size_t`, respectively, and has its value copied directly into the thread. It's performs no transformations or permutations on the name. The pointed-to data must not have a sequence of zero bytes of a length chosen by the implementation (typically 1 on POSIX implementations and 2 on Windows implementations). This is explicitly for sending data directly to the threading API without any conversions.
+
+
+
+### `thrd_attr_stack_size` ## {#design-attrs-thrd_attr_stack_size}
+
+This attribute is necessary because most platforms have a way to set the stack size, but sometimes can only do it at the start of the thread. Therefore, it needs to be passed in at creation time and let the implementation decide how and when to apply it. There are additional APIs for controlling the entire stack (with both a pointer and a size), but this is not as universal so a `thrd_attr_stack_storage` attribute with both a `size_t` and a `void*` are not being proposed.
+
+Note that the `size_t` passed by `thrd_attr_stack_size` is, more or less, a suggestion: many platforms will change or round the value up to a lower limit, or make sure it is a multiple of an internal implementation size or alignment (e.g., page-aligned or 64-byte aligned). Additionally, implementations may also implement guard pages around the stack as well. Therefore, even if the implementation honors it, the final size is still entirely implementation-defined, and the specification is written to reflect this.
+
+
+
+### `thrd_attr_detached` ## {#design-attrs-thrd_attr_detached}
+
+This attribute is necessary because some platforms (e.g., Windows/MSVC) have issues with getting the proper thread control rights *after* creating the thread from a different thread in order to properly detach the thread. With this passed to the creation of the thread, a thread can be detached properly and follow POSIX semantics on creation, whereas otherwise it might not work from sinde the given `thrd_t`, as documented by [[msvc-threads-h|Visual C++ Library Maintainer Charlie Barto|]]:
+
+> A key difference between our implementation and C11 threads implementations based on pthreads is that threads can not detach themselves using `thrd_current()` and `thrd_detach()`. This is because of a fundamental difference in how threads work on Windows vs Unix descendants and we would require a shared datastructure that tracks thread handles to implement the typical behavior.
+
+Given this behavior, it's better to provide this as an on-creation technique, where the original thread's `HANDLE` is still present and this can be invoked properly.
+
+
+
+### `thrd_attr_{mwc/mc/c(8|16|32)name}` ## {#design-attrs-thrd_attr_name}
+
+The name attributes are necessary because platforms differ **wildly** in how they can set the name. Some can only set the name inside of the thread after it has been started (many POSIX thread implementations); others can create a thread in suspended mode and then set all of the necessary information (Win32 Threads, IBM-styled POSIX threads).
+
+Furthermore, the actual internal storage, encoding, and more of threads varies across implementations. Win32 stores 16-bit `WCHAR`/`wchar_t` internally, which is more suitable to a UTF-16 or Wide Literal/Execution Encoding string on their platforms, while POSIX platforms tend to simply absorb any byte string with no encoding except that `\0` is not part of it. Most of these APIs rely explicitly on null termination.
+
+Thusly, to not unduly disadvantage any platform, we provide the 5 typical encodings that can be mapped to the internals of the implementation however they like. For example, POSIX platforms can take UTF-32, UTF-16, and Wide Execution encoded strings and convert them to UTF-8 or Execution encoded byte strings so that the null termination character is only a single byte and the whole name can be serialized properly. Windows can take UTF-32, UTF-8, and Execution encoded strings and convert them into 16-bit UTF-16/Wide Execution strings so that it has a proper 2-byte null terminator.
+
+Finally, for individuals who feel confident that their name will closely match the platform's semantics, there is a plain `thrd_attr_name`, which holds a `const void*`. This can just be copied directly into an implementation, and the consequences will be whatever happens.
+
+As a very, very important point: the strings passed in through these functions have no lifetime implications after `thrd_create_with_attrs` returns. They can be rewritten, changed, adjusted, or freed once the `thrd_create_with_attrs` function returns: all implementations tend to copy the names into some form of internal data.
+
+If there is appetite to provide a string just via pointer where the lifetime of that string must be kept alive for the duration of the thread, additional attribute types can be created to offer that to standard users. The goal would, of course, be for implementations that do not have any internal storage to hold onto the smallest possible string VIA pointer alone and simply let the user manage both the data and the lifetime. However, we have encountered no platforms that have requested this hypothetical optimization, so a special `thrd_attr_static_name` structure has not been provided.
+
+
+
+## "Where is the `get`-style API?" ## {#design-get}
+
+We do not provide the `get`/`query` APIs in this paper. Much like thread creation, there are various APIs for getting a thread name, or its priority, or whether or not its detached. Some do not provide *any* API at all (a few of the BSDs). Getters also include the issue of synchronization, or possible Time Of Check vs. Time Of Use (TOCTOU) issues.
+
+We leave getter/query APIs to future papers after ironing out this paper.
+
+
+
+## "How does this API handle errors?" ## {#design-errors}
+
+In short: they don't. Not really, anyhow.
+
+The implementation-defined and conditionally-supported nature of this, plus the sheer amount of implementation divergence, means that it is difficult to perform error reporting for things that go wrong. There are a couple of things that complicate error reporting:
+
+- information
+
+
+
+# Wording # {#wording}
+
+The following wording is against the latest draft of the C standard.
+
+
+
+## Modify §7.29.1 "Introduction" to add the new structures and an enumeration ## {#wording-7.29.1}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.29.1</span><span class="wording-clause-title">Introduction</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-numbered">
+
+</div>
+
+</div>
+
+</div>
+</blockquote>
+
+
+## Add a new sub-clause "§7.29.5.✨ The `thrd_create_attrs` function" after "The `thrd_create` function" ## {#wording-7.29.5.✨}
+
+<blockquote>
+<ins>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.29.5.✨</span><span class="wording-clause-title">The `thrd_create_attrs` function</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Description
+</div>
+
+<div class="wording-numbered">
+
+</div>
+
+</div>
+
+</div>
+</ins>
+</blockquote>
+
+
+<pre class="biblio">
+{
+	"msvc-threads-h": {
+		"authors": [
+			"Charlie Barto",
+			"Microsoft"
+		],
+		"title": "MSVC C11 threads.h",
+		"publisher": "Microsoft",
+		"href": "https://devblogs.microsoft.com/cppblog/c11-threads-in-visual-studio-2022-version-17-8-preview-2/",
+		"date": "September 26th, 2023"
+	}
+}
+</pre>

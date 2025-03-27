@@ -162,16 +162,16 @@ then any such _S_ are not run, unless otherwise specified by the implementation.
 
 int f () {
 	goto b; // constraint violation
-	defer { puts(" meow"); }
+	defer { fputs(" meow", stdout); }
 	b:
-	puts("cat says");
+	fputs("cat says", stdout);
 	return 1;
 }
 
 int g () {
 	// print "cat says" to standard output
-	return puts("cat says");
-	defer { puts(" meow"); } // okay: no constraint violation,
+	return fputs("cat says", stdout);
+	defer { fputs(" meow", stdout); } // okay: no constraint violation,
 	// not executed
 }
 
@@ -179,50 +179,50 @@ int h () {
 	goto b;
 	{
 		// okay: no constraint violation
-		defer { puts(" meow"); }
+		defer { fputs(" meow", stdout); }
 	}
 	b:
-	puts("cat says");
+	fputs("cat says", stdout);
 	return 1; // prints "cat says" to standard output
 }
 
 int i () {
 	{
-		defer { puts("cat says"); }
+		defer { fputs("cat says", stdout); }
 		// okay: no constraint violation
 		goto b;
 	}
 	b:
-	puts(" meow");
+	fputs(" meow", stdout);
 	return 1; // prints "cat says meow" to standard output
 }
 
 int j () {
 	defer {
 		goto b; // constraint violation
-		puts(" meow");
+		fputs(" meow", stdout);
 	}
 	b:
-	puts("cat says");
+	fputs("cat says", stdout);
 	return 1;
 }
 
 int k () {
 	defer {
 		return 5; // constraint violation
-		puts(" meow");
+		fputs(" meow", stdout);
 	}
-	puts("cat says");
+	fputs("cat says", stdout);
 	return 1;
 }
 
 int l () {
 	defer {
 		b:
-		puts(" meow");
+		fputs(" meow", stdout);
 	}
 	goto b; // constraint violation
-	puts("cat says");
+	fputs("cat says", stdout);
 	return 1;
 }
 
@@ -230,59 +230,59 @@ int m () {
 	goto b; // okay: no constraint violation
 	{
 		b:
-		defer { puts("cat says"); }
+		defer { fputs("cat says", stdout); }
 	}
-	puts(" meow");
+	fputs(" meow", stdout);
 	return 1; // prints "cat says meow" to standard output
 }
 
 int n () {
 	goto b; // constraint violation
 	{
-		defer { puts(" meow"); }
+		defer { fputs(" meow", stdout); }
 		b:
 	}
-	puts("cat says");
+	fputs("cat says", stdout);
 	return 1;
 }
 
 int o () {
 	{
-		defer puts("cat says");
+		defer fputs("cat says", stdout);
 		goto b;
 	}
 	b:;
-	puts(" meow");
+	fputs(" meow", stdout);
 	return 1; // prints "cat says meow"
 }
 
 int p () {
 	{
 		goto b;
-		defer puts(" meow");
+		defer fputs(" meow", stdout);
 	}
 	b:;
-	puts("cat says");
+	fputs("cat says", stdout);
 	return 1; // prints "cat says"
 }
 
 int q () {
 	{
-		defer { puts(" meow"); }
+		defer { fputs(" meow", stdout); }
 		b:
 	}
 	goto b; // constraint violation
-	puts("cat says");
+	fputs("cat says", stdout);
 	return 1;
 }
 
 int r () {
 	{
 		b:
-		defer { puts("cat says"); }
+		defer { fputs("cat says", stdout); }
 	}
 	goto b; // ok
-	puts(" meow");
+	fputs(" meow", stdout);
 	return 1; // prints "cat says" repeatedly
 }
 ```
@@ -344,11 +344,11 @@ int main () {
 int main () {
 	{
 		defer {
-			puts(" meow");
+			fputs(" meow", stdout);
 		}
 		if (true)
-			defer puts("cat");
-		puts(" says");
+			defer fputs("cat", stdout);
+		fputs(" says", stdout);
 	}
 	// "cat says meow" is printed to standard output
 	exit(0);
@@ -363,11 +363,11 @@ int main () {
 	{
 		const char* arr[] = {"cat", "kitty", "ferocious little baby"};
 		defer {
-			puts(" meow");
+			fputs(" meow", stdout);
 		}
 		for (unsigned i = 0; i < 3; ++i)
 			defer printf("my %s,\n", arr[i]);
-		puts("says");
+		fputs("says", stdout);
 	}
 	// "my cat,
 	// my kitty,
