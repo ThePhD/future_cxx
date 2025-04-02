@@ -1504,9 +1504,9 @@ Possible extra rowspan handling
     }
   </style>
   <meta content="Bikeshed version c3a8ac783, updated Wed Jul 24 12:20:06 2024 -0700" name="generator">
-  <link href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Transparent%20Aliases.html" rel="canonical">
+  <link href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Thread%20Attributes%20-%20Implementation%20Extensible%20and%20ABI-Resistant.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="0203242cab1194580ba06d95a81beeca7e2923a8" name="revision">
+  <meta content="adbd22e43c47ff91522b40eead01fcaec1ee7904" name="revision">
   <meta content="dark light" name="color-scheme">
 <style>
 :root {
@@ -2370,7 +2370,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
      <dd class="editor p-author h-card vcard"><a class="p-name fn u-email email" href="mailto:phdofthehouse@gmail.com">JeanHeyd Meneide</a>
      <dd class="editor p-author h-card vcard"><a class="p-name fn u-email email" href="mailto:shepherd@soasis.org">Shepherd (Shepherd's Oasis LLC)</a>
      <dt>Paper Source:
-     <dd><a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-Transparent%20Aliases.bs">GitHub</a>
+     <dd><a href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Thread%20Attributes%20-%20Implementation%20Extensible%20and%20ABI-Resistant.bs">GitHub</a>
      <dt>Issue Tracking:
      <dd><a href="https://github.com/ThePhD/future_cxx/issues">GitHub</a>
      <dt>Project:
@@ -2409,6 +2409,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
        </ol>
       <li><a href="#design-get"><span class="secno">3.3</span> <span class="content">"Where is the <code class="highlight"><c- n>get</c-></code>-style API?"</span></a>
       <li><a href="#design-errors"><span class="secno">3.4</span> <span class="content">"How does this API handle errors?"</span></a>
+      <li><a href="#design-others"><span class="secno">3.5</span> <span class="content">Other Designs?</span></a>
      </ol>
     <li><a href="#implementation"><span class="secno">4</span> <span class="content">Implementation Experience</span></a>
     <li>
@@ -2452,7 +2453,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
     <li data-md>
      <p>For C and C++, augmentation/replacement standard libraries like Qt, Boost, POCO, Chromium, Bloomberg Basic Development Environment, Intel TBB, Folly, TensorFlow, KallistaOS (Dreamcast OS), tinycthread, and many replace C++11 and C11 threads with their own abstraction in order to do threading.</p>
    </ul>
-   <p>Importantly, in the case of C11 and C++11 threads, many of them need to rewrite the entire set of thread primitives because of (a) poor support for <code class="highlight"><c- o>&lt;</c-><c- n>threads</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code> until very recently (as of writing: only Apple does not support C11 <code class="highlight"><c- o>&lt;</c-><c- n>threads</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code>; MSVC runtime, OpenBSD, FreeBSD, NetBSD, glibc, musl-libc, Bionic (Android), and more all support <code class="highlight"><c- o>&lt;</c-><c- n>threads</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code>); and, (b) many platforms do not support changing stack sizes, names, and more after thread creation. Therefore, an API cannot simply add <code class="highlight"><c- n>set_threadname</c-></code> or <code class="highlight"><c- n>get_threadname</c-></code>, or similar stack size parameters, with a thread handle parameter as shown by the POSIX Threads implementations; many implementations have wildly different getting and setting properties and most -- including Windows Threads -- mostly require you to set that information on thread creation, not after-the-fact. A table -- <a data-link-type="biblio" href="#biblio-p2019" title="P2019 - Thread Attributes">from P2019</a> -- is reproduced here:</p>
+   <p>Importantly, in the case of C11 and C++11 threads, many of them need to rewrite the entire set of thread primitives because of (a) poor support for <code class="highlight"><c- o>&lt;</c-><c- n>threads</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code> until very recently (as of writing: only Apple does not support C11 <code class="highlight"><c- o>&lt;</c-><c- n>threads</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code>; MSVC runtime, OpenBSD, FreeBSD, NetBSD, glibc, musl-libc, Bionic (Android), and more all support <code class="highlight"><c- o>&lt;</c-><c- n>threads</c-><c- p>.</c-><c- n>h</c-><c- o>></c-></code>); and, (b) many platforms do not support changing stack sizes, names, and more after thread creation. Therefore, an API cannot simply add <code class="highlight"><c- n>set_threadname</c-></code> or <code class="highlight"><c- n>get_threadname</c-></code>, or similar stack size parameters, with a thread handle parameter as shown by the POSIX Threads implementations. In fact, many implementations have wildly different getting and setting properties and most -- including Windows Threads -- mostly require you to set that information on thread creation, not after-the-fact. A table -- <a data-link-type="biblio" href="#biblio-p2019" title="P2019 - Thread Attributes">from P2019</a> -- is reproduced here:</p>
    <table>
     <thead>
      <tr>
@@ -2463,15 +2464,18 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
     <tbody>
      <tr>
       <td>Linux
-      <td colspan="2"><code class="highlight"><c- n>pthread_setname_np</c-></code><sup>0</sup>
+      <td>
+      <td><code class="highlight"><c- n>pthread_setname_np</c-></code><sup>0</sup>
       <td><code class="highlight"><c- n>pthread_getname_np</c-></code>
      <tr>
       <td>QNX
-      <td colspan="2"><code class="highlight"><c- n>pthread_setname_np</c-></code>
+      <td>
+      <td><code class="highlight"><c- n>pthread_setname_np</c-></code>
       <td><code class="highlight"><c- n>pthread_getname_np</c-></code>
      <tr>
       <td>NetBSD
-      <td colspan="2"><code class="highlight"><c- n>pthread_setname_np</c-></code>
+      <td>
+      <td><code class="highlight"><c- n>pthread_setname_np</c-></code>
       <td><code class="highlight"><c- n>pthread_getname_np</c-></code>
      <tr>
       <td>Win32
@@ -2495,15 +2499,17 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
       <td>
      <tr>
       <td>FreeBSD
-      <td colspan="2"><code class="highlight"><c- n>pthread_setname_np</c-></code>
+      <td>
+      <td><code class="highlight"><c- n>pthread_setname_np</c-></code>
       <td>
      <tr>
       <td>OpenBSD
-      <td colspan="2"><code class="highlight"><c- n>pthread_setname_np</c-></code>
+      <td>
+      <td><code class="highlight"><c- n>pthread_setname_np</c-></code>
       <td>
      <tr>
       <td>RTEMS <sup>4</sup>
-      <td><code class="highlight"><c- n>pthread_setname_np</c-></code>
+      <td>
       <td><code class="highlight"><c- n>pthread_setname_np</c-></code>
       <td><code class="highlight"><c- n>pthread_getname_np</c-></code>
      <tr>
@@ -2544,7 +2550,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    </table>
    <p><br></p>
    <div style="font-size: small"> <sup>0</sup> - GLIBC 2.12+, MUSL<br> <sup>1</sup> - Since Windows 10 1607 - In older versions, a name can be set only when a debugger is attached, by throwing an exception from the calling thread. See [https://stackoverflow.com/a/59490438/877556](Windows Documentation) and <a href="https://randomascii.wordpress.com/2015/10/26/thread-naming-in-windows-time-for-something-better/">this article by Bruce Dawson</a>.<br> <sup>2</sup> - Can only be called from the new thread.<br> <sup>3</sup> - See <a href="https://stackoverflow.com/a/59490438/877556">https://stackoverflow.com/a/59490438/877556</a>.<br> <sup>4</sup> - Since 2017.<br> <sup>5</sup> - Can only be called from the new thread.<br> </div>
-   <p>Similarly, a lot of APIs suffer from ABI issues; <code class="highlight"><c- n>pthread_attr_t</c-></code> is meant to be ABI-resistant and an opaque type, but implementation still have to contend with issues improving or widening the amount of information it can store without breaking things. C++ <code class="highlight"><c- n>std</c-><c- o>::</c-><c- kr>thread</c-></code>’s and P2019, in its attempts to be ABI-resistant, have met a ton of pushback from all kinds of people trying to simplify or reduce the API space and avoid the templated constructors, desperate for a simpler interface and -- in some cases -- ignoring ABI issues with structures similar in purpose to <code class="highlight"><c- n>pthread_attr_t</c-></code>.</p>
+   <p>Similarly, a lot of APIs suffer from ABI issues; <code class="highlight"><c- n>pthread_attr_t</c-></code> is meant to be ABI-resistant and an opaque type, but implementation still have to contend with issues improving or widening the amount of information it can store without breaking things. C++ <code class="highlight"><c- n>std</c-><c- o>::</c-><c- kr>thread</c-></code>’s and P2019, in its attempts to be ABI-resistant, have met a ton of pushback from all kinds of people trying to simplify or reduce the API space and avoid the templated constructors, desperate for a simpler interface and -- in some cases -- ignoring ABI issues with structures similar in purpose to <code class="highlight"><c- n>pthread_attr_t</c-></code>. This has been a consistent theme even among early papers that simply just tried to standardize existing practice without addressing their deficiencies, such as C++'s even earlier papers <a data-link-type="biblio" href="#biblio-p0320" title="Thread Constructor Attributes">[P0320]</a> and <a data-link-type="biblio" href="#biblio-n2178" title="Proposed Text for Chapter 30, Thread Support Library [threads]">[N2178]</a>.</p>
    <p>For C11 threads, these same concerns were voiced during the 2019 Ithaca discussion of Kamil Ryatorwski’s paper <a data-link-type="biblio" href="#biblio-n2419" title="N2419 -">[N2419]</a>.</p>
    <p>It is clear that this area has strong vendor concerns around extensibility, and even strong constraints around the ability to do this both before thread startup and during thread running.</p>
    <p>This paper provides an ABI that is standards-expandable, vendor-extensible, and resistant to Application Binary Interface (ABI) lock-in. It allows vendors to provide more direct ways to adding parameters without compromising current implementations and their structures.</p>
@@ -2734,7 +2740,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    <p>We leave getter/query APIs to future papers after ironing out this paper.</p>
    <h3 class="heading settled" data-level="3.4" id="design-errors"><span class="secno">3.4. </span><span class="content">"How does this API handle errors?"</span><a class="self-link" href="#design-errors"></a></h3>
    <p>An important part of having thread attributes is recognizing that implementations have wildly different handling strategies, even for attributes that are spiritually the same on most platforms. For example, <code class="highlight"><c- n>stack_size</c-></code> is something that can be honored on all implementations we know about, including the Dreamcast Console implementation of threads. Unfortunately, the exact handling of the number actually differs on platforms.</p>
-   <p>Win32 thread implementations will round the value up as alignment or to meat a minimum stack size. But, POSIX thread implementations simply error and ignore the provided size, and in some versions of glibc it will round the value <em>down</em> for alignment purposes (despite that not being allowed by the specification). This fact means that a number passed in to <code class="highlight"><c- n>thrd_attr_stack_size</c-></code> and propagated through the <code class="highlight"><c- n>thrd_create_attrs</c-></code> function can and will silently fail on a POSIX implementation while working on a Win32 implementation.</p>
+   <p>Win32 thread implementations will round the value up as alignment or to meet a minimum stack size. But, POSIX thread implementations simply error and ignore the provided size, and in some versions of glibc it will round the value <em>down</em> for alignment purposes (despite that not being allowed by the specification). This fact means that a number passed in to <code class="highlight"><c- n>thrd_attr_stack_size</c-></code> and propagated through the <code class="highlight"><c- n>thrd_create_attrs</c-></code> function can and will silently fail on a POSIX implementation while working on a Win32 implementation.</p>
    <p>The solution to this problem is the specification of a <code class="highlight"><c- n>thrd_attr_err_func</c-></code> function type, and taking a pointer to such a function in any given <code class="highlight"><c- n>thrd_create_attrs_err</c-><c- p>(...)</c-></code>. There will be cases where users do not care at all about attribute errors, either because they checked beforehand or because such failures don’t really concern them at all and the usage of such attributes are just nonchalant suggestions: in those cases, users can pass a function <code class="highlight"><c- n>accept_everything</c-></code> to <code class="highlight"><c- n>thrd_create_attrs_err</c-><c- p>(...)</c-></code>, pass <code class="highlight">NULL</code> which will do the same thing, or simply call <code class="highlight"><c- n>thrd_create_attrs</c-></code> which will do the same thing.</p>
    <p>Similarly, users can pick and choose the kinds of errors they care about:</p>
 <pre class="language-cpp highlight"><c- cp>#include</c-> &lt;threads.h>
@@ -2806,6 +2812,8 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 </pre>
    <p>This code will stop thread creation if <code class="highlight"><c- n>stack_size_attr</c-></code> is not handled properly (e.g., the implementation does not recognize it OR the implementation tries to set the stack size but reports an error, like <code class="highlight"><c- n>pthread_attr_setstacksize</c-></code> would). It will explicitly acknowledge and ignore an issue with the thread name (but ignore it for the purposes of the implementation). This gives users the ultimate control over what is going on, in the form of a final say on whether or not thread creation should proceed.</p>
    <p>The function passed in, <code class="highlight"><c- n>handle_attribute_errors</c-></code>, is invoked on the same thread as the call to <code class="highlight"><c- n>thrd_create_attrs_err</c-></code>. This is to prevent needing additional synchronization accesses and checks.</p>
+   <h3 class="heading settled" data-level="3.5" id="design-others"><span class="secno">3.5. </span><span class="content">Other Designs?</span><a class="self-link" href="#design-others"></a></h3>
+   <p>There are other ways this API can be shaped. Unfortunately, most of those changes are not worth their bang or their buck: <a href="https://ztdthread.rtfd.io/en/latest/design/alternatives.html">see the library documentation here</a>.</p>
    <h2 class="heading settled" data-level="4" id="implementation"><span class="secno">4. </span><span class="content">Implementation Experience</span><a class="self-link" href="#implementation"></a></h2>
    <p>This was implemented in <a data-link-type="biblio" href="#biblio-ztdthread" title="ztd.thread">[ztd.thread]</a> as a proof of concept. It is tested on Win32, MacOS/Darwin, and Ubuntu/glibc in an automated fashion (GitHub CI) and by-hand on Win32/ARM64, Debian/glibc, Debian/musl-libc, and FreeBSD.</p>
    <p><a href="https://ztdthread.rtfd.io">Documentation for the library is contained here</a>.</p>
@@ -3029,7 +3037,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
       <p>NOTE  Implementations are expected to pass the closest analogous error code from the <code class="highlight"><c- n>thrd_error</c-></code>, <code class="highlight"><c- n>thrd_nomem</c-></code>, <code class="highlight"><c- n>thrd_timedout</c-></code>, or <code class="highlight"><c- n>thrd_busy</c-></code> enumeration constants that is related to any implementation-specific errors that occur during thread creation and thread attribute processing.</p>
      </div>
      <div class="wording-numbered">
-      <p>Returning from <code class="highlight"><c- n>func</c-></code> has the same behavior as invoking <code class="highlight"><c- n>thrd_exit</c-></code> with the value returned from <code class="highlight"><c- n>func</c-></code>. All thread attributes are processed before the completion of <code class="highlight"><c- n>thrd_create_attrs_err</c-></code>. <code class="highlight"><c- n>err_func</c-></code> is always executed on the same thread that invoked <code class="highlight"><c- n>thrd_create_attrs_err</c-></code>. The completion of the <code class="highlight"><c- n>thrd_create_attrs_err</c-></code> function synchronizes with the beginning of the execution of the new thread.</p>
+      <p>Returning from <code class="highlight"><c- n>func</c-></code> has the same behavior as invoking <code class="highlight"><c- n>thrd_exit</c-></code> with the value returned from <code class="highlight"><c- n>func</c-></code>. All thread attributes are processed before the completion of <code class="highlight"><c- n>thrd_create_attrs_err</c-></code>. <code class="highlight"><c- n>err_func</c-></code> is always executed on the same thread that invoked <code class="highlight"><c- n>thrd_create_attrs_err</c-></code>. The completion of the <code class="highlight"><c- n>thrd_create_attrs_err</c-></code> function synchronizes with the beginning of the execution of <code class="highlight"><c- n>func</c-></code> in the new thread.</p>
      </div>
      <div class="wording-clause-section-title"> Returns </div>
      <div class="wording-numbered">
@@ -3172,8 +3180,12 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
   <dl>
    <dt id="biblio-msvc-threads-h">[MSVC-THREADS-H]
    <dd>Charlie Barto; Microsoft. <a href="https://devblogs.microsoft.com/cppblog/c11-threads-in-visual-studio-2022-version-17-8-preview-2/"><cite>MSVC C11 threads.h</cite></a>. September 26th, 2023. URL: <a href="https://devblogs.microsoft.com/cppblog/c11-threads-in-visual-studio-2022-version-17-8-preview-2/">https://devblogs.microsoft.com/cppblog/c11-threads-in-visual-studio-2022-version-17-8-preview-2/</a>
+   <dt id="biblio-n2178">[N2178]
+   <dd>Peter Dimov. <a href="https://wg21.link/n2178"><cite>Proposed Text for Chapter 30, Thread Support Library [threads]</cite></a>. March 3rd, 2007. URL: <a href="https://wg21.link/n2178">https://wg21.link/n2178</a>
    <dt id="biblio-n2419">[N2419]
    <dd>Kamil Rytarowski. <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n2419.htm"><cite>N2419 -</cite></a>. September 3rd, 2019. URL: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n2419.htm">https://www.open-std.org/JTC1/SC22/WG14/www/docs/n2419.htm</a>
+   <dt id="biblio-p0320">[P0320]
+   <dd>Vicente J. Botet Escribá. <a href="https://wg21.link/p0320"><cite>Thread Constructor Attributes</cite></a>. October 12th, 2016. URL: <a href="https://wg21.link/p0320">https://wg21.link/p0320</a>
    <dt id="biblio-p2019">[P2019]
    <dd>Corentin Jabot. <a href="https://wg21.link/p2019"><cite>P2019 - Thread Attributes</cite></a>. September 9th, 2024. URL: <a href="https://wg21.link/p2019">https://wg21.link/p2019</a>
    <dt id="biblio-p3022">[P3022]
