@@ -56,7 +56,7 @@ and so much more are not `int`-typed. This results in a lot of excessive (and, i
 
 It is also important for strings that are not null terminated, such as substring functionality and parsing/searching. Needing to make sure things are null terminated is a huge burden, and while the `int` precision modifier helps, the constant casting hides potential overflow errors from high quality of implementation libraries and makes its use dubious.
 
-This proposal is to allow the typical integer length modifiers (`hh`, `h`, `l`, `j`, `z`, `t`, `wN`, and `wfN`) to be applied to the precision modifier when the precision modifier uses an asterisks (i.e., `.*`).
+This proposal is to allow the typical integer length modifiers (`hh`, `h`, `l`, `j`, `z`, `t`, `wN`, and `wfN`) to be applied to the precision modifier when the precision modifier uses an asterisk (i.e., `.*`).
 
 
 
@@ -71,7 +71,7 @@ Given the following grammar (using the notation from POSIX, where things enclose
 
 :: `%` `[argument$]` `[flags]` `[width]` `[ . [length modifier] precision]` `[length modifier]` `conversion-specifier`
 
-This is the easiest place for this to be where it won't be ambiguous. In particular, placing it in other locations could have it confused for a `conversion-specifier`, and putting it up ahead of the `[flags]`/`[argument$]` but having it apply to the `.precision` itself means that we would preclude having such a modifier on `[width]` itself. (This paper does not propose this for `[width]`, just for asterisks-based `.*` precision).
+This is the easiest place for this to be where it won't be ambiguous. In particular, placing it in other locations could have it confused for a `conversion-specifier`, and putting it up ahead of the `[flags]`/`[argument$]` but having it apply to the `.precision` itself means that we would preclude having such a modifier on `[width]` itself. (This paper does not propose this for `[width]`, just for asterisk-based `.*` precision).
 
 Therefore, this design slots it into the one place it can have no negative impact and would be unambiguous: after the `.`, but before the `*` of precision:
 
@@ -102,16 +102,19 @@ Thankfully, this is actually less of a problem than was previously surmised. In 
 
 int main() {
 	enum { COUNT = 10, BYTESIZE = INT_MAX / COUNT };
-	char str = (char)malloc(BYTESIZE + 1);
+	char* str = (char*)malloc(BYTESIZE + 1);
 	for (size_t i = 0; i < BYTESIZE; ++i) {
 		str[i] = 'a';
 	}
 	str[BYTESIZE]                          = '\0';
 	FILE* f                                = fopen("/dev/null", "w+");
-	[[maybe_unused]] int write_value       = fprintf(f, "%.*s", BYTESIZE, str);
-	[[maybe_unused]] int large_write_value = fprintf(f, "%.s %.s %.s %.s %.s %.s %.s %.s %.s %.s %*.s",
-		BYTESIZE, str, BYTESIZE, str, BYTESIZE, str, BYTESIZE, str, BYTESIZE, str, BYTESIZE, str, BYTESIZE, str,
-		BYTESIZE, str, BYTESIZE, str, BYTESIZE, str, BYTESIZE, str);
+	[[maybe_unused]] int write_value       = fprintf(f,
+		"%.*s", BYTESIZE, str);
+	[[maybe_unused]] int large_write_value = fprintf(f,
+		"%.s %.s %.s %.s %.s %.s %.s %.s %.s %.s %*.s",
+		BYTESIZE, str, BYTESIZE, str, BYTESIZE, str, BYTESIZE, str,
+		BYTESIZE, str, BYTESIZE, str, BYTESIZE, str, BYTESIZE, str,
+		BYTESIZE, str, BYTESIZE, str, BYTESIZE, str);
 	free(str);
 	assert(write_value == BYTESIZE); // Well.
 	assert(large_write_value < 0); // ... Okay.
@@ -135,13 +138,13 @@ This proposal cannot change the return value's type (as that is an ABI break), b
 
 int main() {
 	const size_t BYTESIZE = ((size_t)INTMAX) + 1; 
-	char str = (char)malloc(BYTESIZE + 1);
+	char* str = (char*)malloc(BYTESIZE + 1);
 	for (size_t i = 0; i < BYTESIZE; ++i) {
 		str[i] = 'a';
 	}
-	str[BYTESIZE]                          = '\0';
-	FILE* f                                = fopen("/dev/null", "w+");
-	[[maybe_unused]] int write_value       = fprintf(f, "%.*s", (int)BYTESIZE, str);
+	str[BYTESIZE]                    = '\0';
+	FILE* f                          = fopen("/dev/null", "w+");
+	[[maybe_unused]] int write_value = fprintf(f, "%.*s", (int)BYTESIZE, str);
 	free(str);
 	assert(write_value < 0); // might not trigger, actually!
 	return 0;
@@ -150,7 +153,30 @@ int main() {
 
 This is an error. But, we will never see it as an error anymore: the explicit cast inserted into the code for the express purpose of matching the type means that the error is now *hidden* from us. We can avoid hard-to-detect truncation errors that happen from potential `(int)BYTESIZE` code. Rather than (erroneously) casting and truncating the value of a `size_t` into an `int` type or similar, it will instead be actually checked by `fprintf`, `wfprintf`, and similar.
 
-This is a notably improvement because `(int)some_too_big_size` is seen as an **explicit** choice on the part of the developer, made to silence warnings. Casting is too big of a hammer and too large of a club for this feature set.
+This is a notably improvement because `(int)some_too_big_size` is seen as an **explicit** choice on the part of the developer, made to silence warnings. Casting is too big of a hammer and too large of a club for this feature set; supplying the size without truncation directly to the function allows for existing quality of implementation to catch this error:
+
+```cpp
+#include <stdio.h>
+#include <stdlib.h>
+#include <limits.h>
+#include <assert.h>
+
+int main() {
+	const size_t BYTESIZE = ((size_t)INTMAX) + 1; 
+	char* str = (char*)malloc(BYTESIZE + 1);
+	for (size_t i = 0; i < BYTESIZE; ++i) {
+		str[i] = 'a';
+	}
+	str[BYTESIZE]                    = '\0';
+	FILE* f                          = fopen("/dev/null", "w+");
+	[[maybe_unused]] int write_value = fprintf(f, "%.z*s", BYTESIZE, str);
+	free(str);
+	assert(write_value < 0); // triggers on high quality-of-implementation again!!
+	return 0;
+}
+```
+
+This forms the basis of this proposal.
 
 
 
@@ -274,11 +300,11 @@ Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion 
 </tr>
 
 <tr>
-<td>`wN`</td> <td>Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to an integer argument with a specific width where `N` is a positive decimal integer with no leading zeros (the argument will have been promoted according to the integer promotions, but its value shall be converted to the unpromoted type); or that a following `n` conversion specifier applies to a pointer to an integer type argument with a width of `N` bits. <ins>If it is followed by an asterisks then it specifies that the corresponding argument is of `N`-bit integer type. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of `N`-bit unsigned integer type.</ins> All minimum-width integer types (7.22.2.3) and exact-width integer types (7.22.2.2) defined in the header `<stdint.h>` shall be supported. Other supported values of N are implementation-defined.</td>
+<td>`wN`</td> <td>Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to an integer argument with a specific width where `N` is a positive decimal integer with no leading zeros (the argument will have been promoted according to the integer promotions, but its value shall be converted to the unpromoted type); or that a following `n` conversion specifier applies to a pointer to an integer type argument with a width of `N` bits. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of `N`-bit integer type. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of `N`-bit unsigned integer type.</ins> All minimum-width integer types (7.22.2.3) and exact-width integer types (7.22.2.2) defined in the header `<stdint.h>` shall be supported. Other supported values of N are implementation-defined.</td>
 </tr>
 
 <tr>
-<td>`wfN`</td> <td>Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a fastest minimum-width integer argument with a specific width where `N` is a positive decimal integer with no leading zeros (the argument will have been promoted according to the integer promotions, but its value shall be converted to the unpromoted type); or that a following `n` conversion specifier applies to a pointer to a fastest minimum-width integer type argument with a width of `N` bits. <ins>If it is followed by an asterisks then it specifies that the corresponding argument is of `N`-bit fastest minimum-width integer type. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of `N`-bit fastest minimum-width unsigned integer type.</ins> All fastest minimum-width integer types (7.22.2.4) defined in the header `<stdint.h>` shall be supported. Other supported values of N are implementation-defined.</td>
+<td>`wfN`</td> <td>Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a fastest minimum-width integer argument with a specific width where `N` is a positive decimal integer with no leading zeros (the argument will have been promoted according to the integer promotions, but its value shall be converted to the unpromoted type); or that a following `n` conversion specifier applies to a pointer to a fastest minimum-width integer type argument with a width of `N` bits. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of `N`-bit fastest minimum-width integer type. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of `N`-bit fastest minimum-width unsigned integer type.</ins> All fastest minimum-width integer types (7.22.2.4) defined in the header `<stdint.h>` shall be supported. Other supported values of N are implementation-defined.</td>
 </tr>
 </table>
 
