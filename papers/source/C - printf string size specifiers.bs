@@ -1,0 +1,296 @@
+<pre class='metadata'>
+Title: printf string size specifiers (and general precision length modifiers)
+H1: <code>printf</code> string size specifiers
+Shortname: XX22
+Revision: 0
+!Previous Revisions: None
+Status: D
+Date: 2025-04-02
+Group: WG14
+!Proposal Category: Change Request, Feature Request  
+!Target: C2y
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20printf%20string%20size%20specifiers.html
+!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20printf%20string%20size%20specifiers.bs">GitHub</a>
+Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
+Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+Abstract: 
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<div class="pagebreak"></div>
+
+
+
+
+
+# Revision History # {#changelog}
+
+
+
+## Revision 0 - March 23<sup>rd</sup>, 2025 ## {#changelog-r0}
+
+- Initial release. ✨
+
+
+
+
+# Introduction & Motivation # {#motivation}
+
+It is impossible to use anything other than an `int` for the *precision* (size) of a string specifier, whether it's used with `%*.s` or `%*.ls`. Normally, this should not be a problem because `fprintf` and many other `<stdio.h>` and other I/O functions in C only ever return `int`. The problem is, most:
+
+- containers
+- strings
+- size calculations
+- stream offsets
+- large buffer indices
+- `countof(...)` and `sizeof(...)` operations
+
+and so much more are not `int`-typed. This results in a lot of excessive (and, in some ways, dangerous) casting for working with the I/O output functions. The simple, easy-integration fix is to simply allow precision with `.*` to include a size modifier, such that while `%.*s` is a string sized by an `int`, `%.z*s` represents a string sized by a `size_t`.
+
+It is also important for strings that are not null terminated, such as substring functionality and parsing/searching. Needing to make sure things are null terminated is a huge burden, and while the `int` precision modifier helps, the constant casting hides potential overflow errors from high quality of implementation libraries and makes its use dubious.
+
+This proposal is to allow the typical integer length modifiers (`hh`, `h`, `l`, `j`, `z`, `t`, `wN`, and `wfN`) to be applied to the precision modifier when the precision modifier uses an asterisks (i.e., `.*`).
+
+
+
+
+# Design # {#design}
+
+Given the following grammar (using the notation from POSIX, where things enclosed in `[ ]` are optional):
+
+:: `%` `[argument$]` `[flags]` `[width]` `[ . precision]` `[length modifier]` `conversion-specifier`
+
+(`[argument$]` is a POSIX extension), then the logical place in the grammar to place the `length modifier` that applies specifically to the `precision` argument is:
+
+:: `%` `[argument$]` `[flags]` `[width]` `[ . [length modifier] precision]` `[length modifier]` `conversion-specifier`
+
+This is the easiest place for this to be where it won't be ambiguous. In particular, placing it in other locations could have it confused for a `conversion-specifier`, and putting it up ahead of the `[flags]`/`[argument$]` but having it apply to the `.precision` itself means that we would preclude having such a modifier on `[width]` itself. (This paper does not propose this for `[width]`, just for asterisks-based `.*` precision).
+
+Therefore, this design slots it into the one place it can have no negative impact and would be unambiguous: after the `.`, but before the `*` of precision:
+
+```cpp
+extern size_t big_honkin_number;
+
+int main () {
+	char* str = malloc(big_honkin_number);
+	// ...
+	int result = printf("%.z*s", big_honkin_number, str); // no cast needed
+	// ...
+	free(str);
+	return 0;
+}
+```
+
+
+
+## "But `fprintf` and friends only return `int`, isn't this a problem?" ## {#design-overflow}
+
+Thankfully, this is actually less of a problem than was previously surmised. In fact, this proposal actively makes it *less* of a problem than the cast-based solution. Consider the existence of a `"/dev/null"` file that can be written to and this program:
+
+```cpp
+#include <stdio.h>
+#include <stdlib.h>
+#include <limits.h>
+#include <assert.h>
+
+int main() {
+	enum { COUNT = 10, BYTESIZE = INT_MAX / COUNT };
+	char str = (char)malloc(BYTESIZE + 1);
+	for (size_t i = 0; i < BYTESIZE; ++i) {
+		str[i] = 'a';
+	}
+	str[BYTESIZE]                          = '\0';
+	FILE* f                                = fopen("/dev/null", "w+");
+	[[maybe_unused]] int write_value       = fprintf(f, "%.*s", BYTESIZE, str);
+	[[maybe_unused]] int large_write_value = fprintf(f, "%.s %.s %.s %.s %.s %.s %.s %.s %.s %.s %*.s",
+		BYTESIZE, str, BYTESIZE, str, BYTESIZE, str, BYTESIZE, str, BYTESIZE, str, BYTESIZE, str, BYTESIZE, str,
+		BYTESIZE, str, BYTESIZE, str, BYTESIZE, str, BYTESIZE, str);
+	free(str);
+	assert(write_value == BYTESIZE); // Well.
+	assert(large_write_value < 0); // ... Okay.
+	return 0;
+}
+```
+
+For both `write_value` and `large_write_value`, the individual sizes of the strings are not what is ultimately the problem here. In fact, each of these is an `int`-typed value (as per the rules for `enum` constants and their values in both old and new C) are fully within the bounds. But, `large_write_value` effectively creates a situation where, over the course of the 11 strings written, the last write is large enough that it triggers overflow.
+
+While there is no hard requirement in any standard that mandates rigorous checking, most implementations do check if the write will eventually overflow the `int` and either return `-1` with an appropriate `errno` value or some other negative value. There is no constraint or recommended practice to check for overflow, but glibc, musl-libc, and many more can and do check for this case and report it. We see here that even with purely `int`-typed writes, we get the same error to happen on these platforms: all of them return a negative integer value.
+
+**What this means, ultimately, is that it is not the type length that matters more, but the actual value!**
+
+This proposal cannot change the return value's type (as that is an ABI break), but allowing a `size_t` type for the length modifier is actually an improvement to security. Since most implementations are doing value/overflow checking here, being able to pass in a (too-large) `size_t` directly and letting the overflow checks inherit in most implementations catch it and return a negative number. For example, observe the following (too large) string being written, but written in the "typical" way that string sizes get passed to formatted I/O functions like `printf`:
+
+```cpp
+#include <stdio.h>
+#include <stdlib.h>
+#include <limits.h>
+#include <assert.h>
+
+int main() {
+	const size_t BYTESIZE = ((size_t)INTMAX) + 1; 
+	char str = (char)malloc(BYTESIZE + 1);
+	for (size_t i = 0; i < BYTESIZE; ++i) {
+		str[i] = 'a';
+	}
+	str[BYTESIZE]                          = '\0';
+	FILE* f                                = fopen("/dev/null", "w+");
+	[[maybe_unused]] int write_value       = fprintf(f, "%.*s", (int)BYTESIZE, str);
+	free(str);
+	assert(write_value < 0); // might not trigger, actually!
+	return 0;
+}
+```
+
+This is an error. But, we will never see it as an error anymore: the explicit cast inserted into the code for the express purpose of matching the type means that the error is now *hidden* from us. We can avoid hard-to-detect truncation errors that happen from potential `(int)BYTESIZE` code. Rather than (erroneously) casting and truncating the value of a `size_t` into an `int` type or similar, it will instead be actually checked by `fprintf`, `wfprintf`, and similar.
+
+This is a notably improvement because `(int)some_too_big_size` is seen as an **explicit** choice on the part of the developer, made to silence warnings. Casting is too big of a hammer and too large of a club for this feature set.
+
+
+
+## Other Positions? ## {#design-modifier.position}
+
+There were a couple of other choices for this insofar as where to put the "length modifier" type. Unfortunately, for all of these:
+
+1. `"%z.*s"`
+2. `"%.*zs"`
+
+There can be minor conflicts in the grammar or ambiguity of application. For (1), it's unclear whether that is meant to apply to a potential `[width]` argument or the desired `[.precision]` argument (which determines whether it should be a formatting error or not). This could block future improvements or modifications to the `printf` syntax that would allow for different types for the `[width]` argument. It is not being proposed in this paper, however; this paper is concerned mostly with enabling the use case of typical string and substring data.
+
+For (2), the problem is that it's unclear when parsing certain things, such as `"%.*zu"`, whether it's a modifier on the size for the `.*` or it's the traditional, current meaning as a precision modifier of `int` type for a `zu` type (e.g., `int`-specified padding on a `size_t` argument.) Given the [[#design|grammar]], having it appear before the `*` is both the most grammatically safe and implementable choice (without disambiguation and backwards-compatibility break rules). It also appears before what it modifies -- the `*` -- which allows a future where some other position can be chosen to modify a potential `[width]` modifier or other `printf` extensions.
+
+
+
+
+# Wording # {#wording}
+
+The following wording is against the latest draft of the C standard.
+
+
+
+## Modify §7.23.6.2 "The `fprintf` function" ## {#wording-7.23.6.2}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.23.6.2</span><span class="wording-clause-title">The `fprintf` function</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
+<div class="wording-numbered">
+
+```c
+#include <stdio.h>
+int fprintf(FILE * restrict stream, const char * restrict format, ...);
+```
+</div>
+
+<div class="wording-clause-section-title">
+Description
+</div>
+
+<div class="wording-numbered">
+...
+
+...
+</div>
+
+<div class="wording-numbered-4 wording-numbered">
+
+Each conversion specification is introduced by the character %. After the %, the following appear in sequence: 
+
+- ...
+- An optional *precision* that gives the minimum number of digits to appear for the `b`, `B`, `d`, `i`, `o`, `u`, `x`, and `X` conversions, the number of digits to appear after the decimal-point character for `a`, `A`, `e`, `E`, `f`, and `F` conversions, the maximum number of significant digits for the `g` and `G` conversions, or the maximum number of bytes to be written for `s` conversions. The precision takes the form of a period (`.`)<ins>optionally</ins> followed <del>either by an asterisk * (described later) or by an optional nonnegative decimal integer;</del><ins> by one of:</ins>
+	- <ins>an optional length modifier followed by a an asterisk `*` (described later);</ins>
+	- <ins>an optional length modifier followed by a `u` and an `*` (described later);</ins>
+	- <ins>or, a nonnegative decimal integer.</ins>
+
+:: If only the period is specified, the precision is taken as zero. If a precision appears with any other conversion specifier, the behavior is undefined.
+
+- ...
+
+</div>
+
+<div class="wording-numbered-5 wording-numbered">
+
+As noted previously, a field width<del>, or precision, or both,</del> may be indicated with an asterisk.<ins> A precision may be indicated with an asterisk or a lowercase `u` followed by an asterisk.</ins><del>In this case</del><ins>An asterisks means</ins> an `int` argument supplies the field width<del> or precision</del>. <ins>If the precision is an asterisk, an `int` argument or an argument of signed integer type (indicated by an optional length modifier) supplies the precision. If the precision is a `u` followed by an asterisk, an `unsigned int` argument or an argument of unsigned integer type (indicated by an optional length modifier) supplies the precision.</ins> The arguments specifying field width, or precision, or both, shall appear (in that order) before the argument (if any) to be converted. A negative field width argument is taken as a `-` flag followed by a positive field width. A negative precision argument is taken as if the precision were omitted.
+</div>
+
+<div class="wording-numbered">
+
+...
+</div>
+
+<div class="wording-numbered">
+
+The length modifiers and their meanings are:
+
+<table style="padding: 15px;">
+<tr>
+<th style="width:13%"></th>
+<th></th>
+</tr>
+<tr>
+<td>
+`hh`
+</td>
+<td>
+Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a signed char or unsigned char argument (the argument will have been promoted according to the integer promotions, but its value shall be converted to `signed char` or `unsigned char` before printing); or that a following `n` conversion specifier applies to a pointer to a `signed char` argument. <ins>If it is followed by an asterisk, then it specifies that the corresponding argument is of type `signed char`. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of type `unsigned char`.</ins>
+</td>
+</tr>
+
+<tr>
+<td>`h`</td> <td>Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a `short int` or `unsigned short int` argument (the argument will have been promoted according to the integer promotions, but its value shall be converted to `short int` or `unsigned short int` before printing); or that a following `n` conversion specifier applies to a pointer to a `short int` argument. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of type `short int`. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of type `unsigned short int`.</ins></td>
+</tr>
+
+<tr>
+<td>`l` (ell)</td> <td>Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a `long int` or `unsigned long int` argument; that a following n conversion specifier applies to a pointer to a `long int` argument; that a following `c` conversion specifier applies to a `wint_t` argument; that a following s conversion specifier applies to a pointer to a `wchar_t` argument; or has no effect on a following `a`, `A`, `e`, `E,` `f`, `F`, `g`, or `G` conversion specifier. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of type `long int`. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of type `unsigned long int`.</ins></td>
+</tr>
+
+<tr>
+<td>`ll` (ell-ell)</td> <td>Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a `long long int` or `unsigned long long int` argument; or that a following `n` conversion specifier applies to a pointer to a `long long int` argument. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of type `long long int`. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of type `unsigned long long int`.</ins></td>
+</tr>
+
+<tr>
+<td>`j`</td> <td> Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to an `intmax_t` or `uintmax_t` argument; or that a following n conversion specifier applies to a pointer to an `intmax_t` argument. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of type `intmax_t`. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of type `uintmax_t`.</ins></td>
+</tr>
+
+<tr>
+<td>`z`</td> <td>Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a size_t or the corresponding signed integer type argument; or that a following `n` conversion specifier applies to a pointer to a signed integer type corresponding to `size_t` argument. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of the corresponding signed type of `size_t`. If it is followed by a `u` and then an asterisk, then it specifies that the corresponding argument is of type `size_t`.</ins></td>
+</tr>
+
+<tr>
+<td>`t`</td> <td>Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a `ptrdiff_t` or the corresponding unsigned integer type argument; or that a following `n` conversion specifier applies to a pointer to a `ptrdiff_t` argument. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of type `ptrdiff_t`. If it is followed by a `u` and then an asterisk, then it specifies that the corresponding argument is of the corresponding unsigned type of `ptrdiff_t`.</ins></td>
+</tr>
+
+<tr>
+<td>`wN`</td> <td>Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to an integer argument with a specific width where `N` is a positive decimal integer with no leading zeros (the argument will have been promoted according to the integer promotions, but its value shall be converted to the unpromoted type); or that a following `n` conversion specifier applies to a pointer to an integer type argument with a width of `N` bits. <ins>If it is followed by an asterisks then it specifies that the corresponding argument is of `N`-bit integer type. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of `N`-bit unsigned integer type.</ins> All minimum-width integer types (7.22.2.3) and exact-width integer types (7.22.2.2) defined in the header `<stdint.h>` shall be supported. Other supported values of N are implementation-defined.</td>
+</tr>
+
+<tr>
+<td>`wfN`</td> <td>Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a fastest minimum-width integer argument with a specific width where `N` is a positive decimal integer with no leading zeros (the argument will have been promoted according to the integer promotions, but its value shall be converted to the unpromoted type); or that a following `n` conversion specifier applies to a pointer to a fastest minimum-width integer type argument with a width of `N` bits. <ins>If it is followed by an asterisks then it specifies that the corresponding argument is of `N`-bit fastest minimum-width integer type. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of `N`-bit fastest minimum-width unsigned integer type.</ins> All fastest minimum-width integer types (7.22.2.4) defined in the header `<stdint.h>` shall be supported. Other supported values of N are implementation-defined.</td>
+</tr>
+</table>
+
+If a length modifier appears with any conversion specifier other than as specified previously, the behavior is undefined.
+</div>
+
+</div>
+</blockquote>
+
+
+<pre class="biblio">
+{
+	
+}
+</pre>
