@@ -214,8 +214,8 @@ In particular, there is a `thrd_attr_kind` enumeration type that is the first me
 #include <stdint.h>
 
 typedef enum thrd_attr_kind : int_least32_t {
-	thrd_attr_kind_name              = 0,
-	thrd_attr_kind_name_sized        = 1,
+	thrd_attr_kind_native_name              = 0,
+	thrd_attr_kind_native_name_sized        = 1,
 	thrd_attr_kind_mcname            = 2,
 	thrd_attr_kind_mcname_sized      = 3,
 	thrd_attr_kind_mwcname           = 4,
@@ -232,16 +232,16 @@ typedef enum thrd_attr_kind : int_least32_t {
 	thrd_attr_kind_implementation_defined = 0xFFFF,
 } thrd_attr_kind;
 
-typedef struct thrd_attr_name {
+typedef struct thrd_attr_native_name {
 	thrd_attr_kind kind;
 	const void* name;
-} thrd_attr_name;
+} thrd_attr_native_name;
 
-typedef struct thrd_attr_name_sized {
+typedef struct thrd_attr_native_name_sized {
 	thrd_attr_kind kind;
 	size_t size;
 	const void* name;
-} thrd_attr_name_sized;
+} thrd_attr_native_name_sized;
 
 typedef struct thrd_attr_mcname {
 	thrd_attr_kind kind;
@@ -351,7 +351,7 @@ There are 14 different provided structures and 14 different enumeration constant
 - `thrd_attr_c32name`, `thrd_attr_c32name_sized`: takes a `const char32_t*` or a `const char32_t*` + `size_t`, respectively. It represents a UTF-32-encoded name. The name is converted to the desired internal encoding of the thread name. Must be terminated by a null `char32_t` value, or not contain a null `char32_t` value within the buffer denoted by the range, respectively. The pointer may be null.
 - `thrd_attr_mcname`, `thrd_attr_mcname_sized`: takes a `const char*` or a `const char*` + `size_t`, respectively. It represents an execution encoding-encoded name. The name is converted to the desired internal encoding of the thread name. Must be terminated by a null `char` value, or not contain a null `char` value within the buffer denoted by the range, respectively. The pointer may be null.
 - `thrd_attr_mwcname`, `thrd_attr_mwcname_sized`: takes a `const wchar_t*` or a `const wchar_t*` + `size_t`, respectively. It represents a wide execution-encoded name. The name is converted to the desired internal encoding of the thread name. Must be terminated by a null `wchar_t` value, or not contain a null `wchar_t` value within the buffer denoted by the range, respectively. The pointer may be null.
-- `thrd_attr_name`, `thrd_attr_name_sized`: takes a `const void*` or a `const void*` + `size_t`, respectively, and has its value copied directly into the thread. It's performs no transformations or permutations on the name. The pointed-to data must not have a sequence of zero bytes of a length chosen by the implementation (typically 1 on POSIX implementations and 2 on Windows implementations). This is explicitly for sending data directly to the threading API without any conversions.
+- `thrd_attr_native_name`, `thrd_attr_native_name_sized`: takes a `const void*` or a `const void*` + `size_t`, respectively, and has its value copied directly into the thread. It's performs no transformations or permutations on the name. The pointed-to data must not have a sequence of zero bytes of a length chosen by the implementation (typically 1 on POSIX implementations and 2 on Windows implementations). This is explicitly for sending data directly to the threading API without any conversions.
 
 
 
@@ -373,7 +373,7 @@ Given this behavior, it's better to provide this as an on-creation technique, wh
 
 
 
-### `thrd_attr_{mwc/mc/c(8|16|32)name}` ### {#design-attrs-thrd_attr_name}
+### `thrd_attr_{mwc/mc/c(8|16|32|native)name}` ### {#design-attrs-thrd_attr_name}
 
 The name attributes are necessary because platforms differ **wildly** in how they can set the name. Some can only set the name inside of the thread after it has been started (many POSIX thread implementations); others can create a thread in suspended mode and then set all of the necessary information (Win32 Threads, IBM-styled POSIX threads).
 
@@ -381,7 +381,7 @@ Furthermore, the actual internal storage, encoding, and more of threads varies a
 
 Thusly, to not unduly disadvantage any platform, we provide the 5 typical encodings that can be mapped to the internals of the implementation however they like. For example, POSIX platforms can take UTF-32, UTF-16, and Wide Execution encoded strings and convert them to UTF-8 or Execution encoded byte strings so that the null termination character is only a single byte and the whole name can be serialized properly. Windows can take UTF-32, UTF-8, and Execution encoded strings and convert them into 16-bit UTF-16/Wide Execution strings so that it has a proper 2-byte null terminator.
 
-Finally, for individuals who feel confident that their name will closely match the platform's semantics, there is a plain `thrd_attr_name`, which holds a `const void*`. This can just be copied directly into an implementation, and the consequences will be whatever happens.
+Finally, for individuals who feel confident that their name will closely match the platform's semantics, there is a plain `thrd_attr_native_name`, which holds a `const void*`. This can just be copied directly into an implementation, and the consequences will be whatever happens.
 
 As a very, very important point: the strings passed in through these functions have no lifetime implications after `thrd_create_with_attrs` returns. They can be rewritten, changed, adjusted, or freed once the `thrd_create_with_attrs` function returns: all implementations tend to copy the names into some form of internal data anyways.
 
@@ -534,16 +534,16 @@ thrd_attr_err_func_t
 which is the function pointer type `int (const thrd_attr_kind*, int, void*)` that is passed to `thrd_create_attrs_err` to handle errors in thread attribute application;
 
 ```c
-typedef struct thrd_attr_name {
+typedef struct thrd_attr_native_name {
 	thrd_attr_kind kind;
 	const void* name;
-} thrd_attr_name;
+} thrd_attr_native_name;
 
-typedef struct thrd_attr_name_sized {
+typedef struct thrd_attr_native_name_sized {
 	thrd_attr_kind kind;
 	size_t size;
 	const void* name;
-} thrd_attr_name_sized;
+} thrd_attr_native_name_sized;
 
 typedef struct thrd_attr_mcname {
 	thrd_attr_kind kind;
@@ -625,8 +625,8 @@ which represent standard thread attribute structures that are described in 7.29.
 The enumeration constants part of `thrd_attr_kind` are
 
 ```c
-thrd_attr_kind_name              = 0
-thrd_attr_kind_name_sized        = 1
+thrd_attr_kind_native_name              = 0
+thrd_attr_kind_native_name_sized        = 1
 thrd_attr_kind_mcname            = 2
 thrd_attr_kind_mcname_sized      = 3
 thrd_attr_kind_mwcname           = 4
@@ -682,7 +682,7 @@ The thread attributes `thrd_attr_mcname`, `thrd_attr_mwcname`, `thrd_attr_c8name
 
 <div class="wording-numbered">
 
-The thread attribute `thrd_attr_name` provides an untyped pointer whose value is meant to be used directly by the implementation to set the name of the thread. It has an implementation-defined encoding. If the `name` field is a null pointer, there is no effect. Otherwise, the pointer shall be null terminated by a sequence of 0 bytes. The number of 0-valued bytes that make up the sequence of that null terminator is implementation-defined. The thread attribute `thrd_attr_name_sized` is the same, except that the number of bytes in the `name` field is equal to the value of the `size` field. The `name` field must not contain the implementation-defined null termination byte sequence in the range denoted by the `name` and `size` fields. Honoring the request is conditionally supported.
+The thread attribute `thrd_attr_native_name` provides an untyped pointer whose value is meant to be used directly by the implementation to set the name of the thread. It has an implementation-defined encoding. If the `name` field is a null pointer, there is no effect. Otherwise, the pointer shall be null terminated by a sequence of 0 bytes. The number of 0-valued bytes that make up the sequence of that null terminator is implementation-defined. The thread attribute `thrd_attr_native_name_sized` is the same, except that the number of bytes in the `name` field is equal to the value of the `size` field. The `name` field must not contain the implementation-defined null termination byte sequence in the range denoted by the `name` and `size` fields. Honoring the request is conditionally supported.
 </div>
 
 <div class="wording-numbered">
