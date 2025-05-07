@@ -1,0 +1,547 @@
+<pre class='metadata'>
+Title: _Any_func - A Universal Function Pointer Storage Type
+H1: <code>_Any_func</code> - A Universal Function Pointer Storage Type
+Shortname: XX26
+Revision: 0
+!Previous Revisions: None
+Status: D
+Date: 2025-05-06
+Group: WG14
+!Proposal Category: Change Request, Feature Request  
+!Target: C2y
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20_Funcptr_t.html
+!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20_Funcptr_t.bs">GitHub</a>
+Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
+Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+Abstract: 
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<div class="pagebreak"></div>
+
+
+
+
+
+# Revision History # {#changelog}
+
+
+
+## Revision 0 - May 6<sup>th</sup>, 2025 ## {#changelog-r0}
+
+- Initial release. ✨
+
+
+
+
+# Introduction & Motivation # {#motivation}
+
+The majority of the motivation is the same as it was 30 years ago, 20 years, and 10 years ago. In [[n2230]], Martin Sebor captured the core of the motivation:
+
+> ... A void pointer is not convertible to a function pointer, and conversely, function pointers aren't convertible to void*. It is conceivable that an implementation may (and some, in fact, do) define function pointers to have a different size or representation than void*, and such conversions could result in the corruption of the opriginal value.
+>
+> However, C does not specify an analogous generic function pointer. Unlike object types, a pointer to a function of one type can be converted to a pointer to a function of any other type and back with no change. This is a useful guarantee that makes function pointers safely interchangeable (except to call a function, of course). At the same time, the absence of a generic function pointer analogous to void* has led to a proliferation of workarounds in applications, libraries, and implementations alike. ...
+
+Popular distributions, operating systems, and platforms such as POSIX, Windows/NT, and many other platforms require that a data pointer (`void*`) is the same size as **any** function pointer (`R(*)(Args...)`). But, for many other platforms, function pointers are not the same size as data pointers altogether, either because there are multiple data segments and the data pointers are larger or -- less common but still present -- because function pointers are larger than data pointers. Rather than try to force `void*` to change to patch this hole (which would be a very fundamental ABI break on many platforms), this proposal focuses instead on following in [[n2230]]'s footsteps and proposing a (core language) type to satisfy this need properly.
+
+
+
+
+# Design # {#design}
+
+The goal of this paper is to provide a single type, `_Any_func`, from the core language. It's a core language type that is incomplete by itself, much like `void`. Additionally, a pointer to `_Any_func` has the requirement that it is large enough to hold any function pointer type, and is implicitly convertible from and to any such pointer type, much like its `void*` counterpart. It is modeled directly after `void*` and modifies the same places in the wording.
+
+
+
+## Is It Callable? ## {#design.callable}
+
+It is  NOT callable.
+
+KnR functions had a serious flaw where despite being usable as "omni" function pointer types (ignoring the issue of return values and potential mismatches there): KnR functions had a different ABI than `...` functions and were not required to have the same ABI as other function types. For example, a function `int func(int arg0, double arg1);` was not required to have the exact same calling convention, register allocation, and other important binary details as a KnR function `int func2();`. Similarly, a function `int func3(...);` or `int func4(int arg0, ...);` was not required to have the same ABI details as either `func` or `func2`, even under the circumstances that they were all called like so:
+
+```cpp
+int a = 0;
+double b = 1;
+func(a, b);
+func2(a, b);
+func3(a, b);
+func4(a, b);
+```
+
+Storing `func` in a KnR function pointer `int(*)()` and then calling it as such was not required to work in any version of C (it's explicitly undefined behavior in every version of C, see "6.3.3.3 Pointers" in the latest working draft and similar paragraphs in C23, C17, and further back). It just so happens that it *did* happen to work (though technically can and could fail in invisible-to-the-Abstract-Machine ways) for the vast majority of existing C code, due to how most ABIs tend to be designed. (There were ABI issues between `func2` and `func3`, in particular when people would define `time_t time()` as a KnR function on some platforms while competing with `time_t time(time_t* arg)` and similar definitions on various extern-and-exported-interface libraries.)
+
+
+
+## Library Modifications ## {#design.library}
+
+The library needs further modification to allow for passing this new pointer type in, since `%p` by itself is specified to handle just `void*`. Since function pointer types and `void*` may not be the same size, a new entry is required to not taint the ABI of these functions, particularly of `fprintf` and `fscanf`.
+
+There were a bunch of potential candidates but a lot of them had problems both because of existing uses in implementations or down-stream, or they were novel new modifiers. For example, `%lp` is already being used by CHERI, while `%q` is already taken by typical POSIX shell-based `printf` for quotable strings. To further disadvantage `%q`, it -- despite being a logical new letter next to `%p` -- is taken by BSD and still has some existing uses, even though the type it's used for (`quad_t`) has long since been aliased to a "proper" type by now. Trying to sneak in `%Lp` is awkward thanks to implementation already moving in on `%lp`, especially if printing address spaces as part of pointers because a thing where length modifiers and precision get used to represent it. `%Ip` seems nice for the mnemonic "instruction pointer", but `i` is already a normal conversion specifier and `I` is novel in this space.
+
+Thusly, we settled for `%jp` in this proposal. It can be read mnemonically as "jump pointer", which is reminiscent of assembly `jmp` and for assembly junkies gives the feeling of both `jmp` and `call`. `j` is also, already, a length modifier and has no known uses in the wild in combination with `%p`. It is the best we can do given the Wild Wild West of specifiers and modifiers in the C-and-derivative ecosystem, at this point.
+
+
+
+## `...ptr` in the name or an incomplete type? ## {#design.ptr}
+
+The goal of this design was to feel as close to `void*` as possible, since that is what this type represents. This means that we wanted to have the `*` present to have it look and feel just like a regular pointer type under regular pointer rules, rather than having it be part of the name. Since this is a core language type and a not a library definition, we need this is a better way of working with and definition the type. It also helps in putting this type into the specification, as all we have to do is mirror exactly the specification style and places that "A pointer to `void`" and "`void*`" exist in the current standard.
+
+
+
+## Naming ## {#design.naming}
+
+The name chosen here is the one that had the no clashes in both its reserved form `_Foo_bar` and it's header form `foo_bar`. The following **other** names were considered and searched for in public (and some private) code repositories for their prevalence as possible name candidates:
+
+- `_Func_ptr_t` with `func_ptr_t` (with no `*` required for use)
+- `_Any_func_ptr_t` with `any_func_ptr_t` (with no `*` required for use)
+- `_Fn_ptr_t` with `fn_ptr_t` (with no `*` required for use)
+- `_Fn` with `fn` or `stdc_fn` (user adds `*` to make pointer)
+- `_Func` with `func` or `std_func_t` (user adds `*` to make pointer)
+- `_Func_t` with `func_t` or `stdc_func_t` (user adds `*` to make pointer)
+
+Many of these had issues with existing standard library type names (e.g. `_Fn` and `_Func` for C++ type names in templates and typedefs for standard or standard-adjacent libraries) or had common names that, even if hidden behind a header include, would result in undue naming burden on potential downstream users (`fn_ptr_t` or `fn` or `func_t`). Other permutations of these names, including ones with `_Storage_`/`_storage` or `_Void` and `_void`, either clashed with existing code or became undesirably long.
+
+
+# Wording # {#wording}
+
+The following wording is against the latest draft of the C standard.
+
+
+
+## Modify §6.2.5 "Types" ## {#wording-6.2.5}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.5.2</span><span class="wording-clause-title">Types</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-numbered">
+
+...
+</div>
+
+<div>
+
+...
+</div>
+
+
+<ins>
+<div class="wording-newnumbered wording-numbered-25">
+
+The `_Any_func` type comprises the concept of a function; it is an incomplete object type that cannot be completed.
+</div>
+</ins>
+
+<div>
+
+...
+</div>
+
+
+<div class="wording-numbered wording-numbered-33">
+
+A pointer to `void` shall have the same representation and alignment requirements as a pointer to a character type.<sup>41)</sup> Similarly, pointers to qualified or unqualified versions of compatible types shall have the same representation and alignment requirements. <ins>A pointer to `_Any_func` shall have an alignment and representation suitable for the storage of any function pointer type.</ins> All pointers to structure types shall have the same representation and alignment requirements as each other. All pointers to union types shall have the same representation and alignment requirements as each other. Pointers to other types may not have the same representation or alignment requirements.
+</div>
+
+</div>
+</blockquote>
+
+
+
+## Modify §6.3.3.3 "Pointers" ## {#wording-6.3.3.3}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.3.3.3</span><span class="wording-clause-title">Pointers</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-numbered">
+...
+</div>
+
+<div>
+...
+</div>
+
+<ins>
+<div class="wording-newnumbered wording-numbered-9">
+
+A pointer to `_Any_func` can be converted to or from a pointer to any function type. A pointer to any function type can be converted to a pointer to `_Any_func` and back again; the result shall compare equal to the original pointer.
+</div>
+</ins>
+
+
+</div>
+</blockquote>
+
+
+
+## Modify §6.4.2 "Keywords" to add a new keyword ## {#wording-6.4.2}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.4.2</span><span class="wording-clause-title">Keywords</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
+<div class="wording-numbered">
+
+*keyword*: one of
+
+:: ... &emsp; &emsp; &emsp; &emsp; &emsp; ... &emsp; &emsp; &emsp; &emsp; &emsp; ... &emsp; &emsp; &emsp; &emsp; &emsp; ... &emsp; &emsp; &emsp; &emsp; &emsp; `while`
+:: ... &emsp; &emsp; &emsp; &emsp; &emsp; ... &emsp; &emsp; &emsp; &emsp; &emsp; ... &emsp; &emsp; &emsp; &emsp; &emsp; ... &emsp; &emsp; &emsp; &emsp; &emsp; <ins>`_Any_func`</ins>
+:: ... &emsp; &emsp; &emsp; &emsp; &emsp; ... &emsp; &emsp; &emsp; &emsp; &emsp; ... &emsp; &emsp; &emsp; &emsp; &emsp; ... &emsp; &emsp; &emsp; &emsp; &emsp; `_Atomic`
+:: ... &emsp; &emsp; &emsp; &emsp; &emsp; ... &emsp; &emsp; &emsp; &emsp; &emsp; ... &emsp; &emsp; &emsp; &emsp; &emsp; ... &emsp; &emsp; &emsp; &emsp; &emsp; ...
+
+</div>
+
+</div>
+</blockquote>
+
+
+
+## Modify §6.5.16 "Conditional operator" ## {#wording-6.5.16}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.5.16</span><span class="wording-clause-title">Conditional operator</span>
+</div>
+
+<div class="wording-section">
+
+<div>
+...
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div>
+...
+</div>
+
+<div class="wording-numbered wording-numbered-3">
+
+One of the following shall hold: ...
+
+- ...<del>; or</del>
+- one operand is a pointer to an object type and the other is a pointer to a qualified or unqualified version of `void`<del>.</del><ins>; or</ins>
+- <ins>one operand is a pointer to a function type and the other is a pointer to a qualified or unqualified version of `_Any_func`.</ins>
+
+</div>
+
+<div>
+...
+</div>
+
+<div class="wording-numbered wording-numbered-7">
+
+If both the second and third operands are pointers, the result type is a pointer to a type qualified with all the type qualifiers of the types referenced by both operands; if one is a null pointer constant (other than a pointer) or has type `nullptr_t` and the other is a pointer, the result type is the pointer type; if both the second and third operands have `nullptr_t` type, the result also has that type. Furthermore, if both operands are pointers to compatible types or to differently qualified versions of compatible types, the result type is a pointer to an appropriately qualified version of the composite type; if one operand is <ins>either </ins>a null pointer constant <ins>or a pointer to qualified or unqualified `_Any_func`</ins>, the result has the type of the other operand; otherwise, one operand is a pointer to `void` or a qualified version of `void`, in which case the result type is a pointer to an appropriately qualified version of `void`.
+</div>
+
+</div>
+</blockquote>
+
+
+
+
+## Modify §6.5.17.2 "Simple assignment" ## {#wording-6.5.17.2}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.5.17.2</span><span class="wording-clause-title">Simple assignment</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+
+One of the following shall hold: ...
+
+- ...
+- the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) one operand is a pointer to an object type, and the other is a pointer to a qualified or unqualified version of `void`, and the type pointed to by the left operand has all the qualifiers of the type pointed to by the right operand;
+- <ins>the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) one operand is a pointer to a function type, and the other is a pointer to a qualified or unqualified version of `_Any_func`, and the type pointed to by the left operand has all the qualifiers of the type pointed to by the right operand;</ins>
+- ...
+
+</div>
+
+
+</div>
+</blockquote>
+
+
+
+
+## Modify §7.24.6.2 "The `fprintf` function" ## {#wording-7.24.6.2}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.24.6.2</span><span class="wording-clause-title">The `fprintf` function</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
+<div class="wording-numbered">
+
+```c
+#include <stdio.h>
+int fprintf(FILE * restrict stream, const char * restrict format, ...);
+```
+</div>
+
+<div class="wording-clause-section-title">
+Description
+</div>
+
+<div class="wording-numbered">
+
+...
+</div>
+
+<div class="wording-numbered wording-numbered-7">
+
+The length modifiers and their meanings are:
+
+<table class="printf-specifiers">
+<tr>
+<th></th>
+<th></th>
+</tr>
+<tr>
+<td>
+...
+</td>
+<td>
+...
+</td>
+</tr>
+
+<tr>
+<td>
+`j`
+</td>
+<td>
+Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to an `intmax_t` or `uintmax_t` argument; <del>or</del> that a following `n` conversion specifier applies to a pointer to an `intmax_t` argument<ins>; or, a following `p` conversion specifier applies to an `_Any_func*` argument</ins>.
+</td>
+</tr>
+
+<tr>
+<td>
+...
+</td>
+<td>
+...
+</td>
+</tr>
+</table>
+</div>
+
+<div class="wording-numbered wording-numbered-8">
+
+The conversion specifiers and their meanings are:
+
+<table class="printf-specifiers">
+<tr>
+<th></th>
+<th></th>
+</tr>
+<tr>
+<td>
+...
+</td>
+<td>
+...
+</td>
+</tr>
+
+<tr>
+<td>
+`p`
+</td>
+<td>
+The argument shall be a pointer to `void`<del> or </del>,a pointer to a character type<ins> or a pointer to `_Any_func`</ins>. The value of the pointer is converted to a sequence of printing characters, in an implementation-defined manner.
+</td>
+</tr>
+
+<tr>
+<td>
+...
+</td>
+<td>
+...
+</td>
+</tr>
+</table>
+</div>
+
+</div>
+</blockquote>
+
+### NOTE: IDENTICAL CHANGES TO `fwprintf`! ### {#wording-7.24.6.2-fwprintf}
+
+
+### NOTE: UPDATE ANNEX J UNDEFINED BEHAVIOR (Number 34)! ### {#wording-7.24.6.2-annex.j}
+
+
+
+
+## Modify §7.24.6.3 "The `fscanf` function" ## {#wording-7.24.6.3}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.24.6.3</span><span class="wording-clause-title">The `fscanf` function</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Synopsis
+</div>
+
+<div class="wording-numbered">
+
+```c
+#include <stdio.h>
+int fscanf(FILE * restrict stream, const char * restrict format, ...);
+```
+</div>
+
+<div class="wording-clause-section-title">
+Description
+</div>
+
+<div class="wording-numbered">
+
+...
+</div>
+
+<div class="wording-numbered wording-numbered-11">
+
+The length modifiers and their meanings are:
+
+<table class="printf-specifiers">
+<tr>
+<th></th>
+<th></th>
+</tr>
+<tr>
+<td>
+...
+</td>
+<td>
+...
+</td>
+</tr>
+
+<tr>
+<td>
+`j`
+</td>
+<td>
+Specifies that a following `b`, `d`, `i`, `o`, `u`, `x`, `X`, or `n` conversion specifier applies to an argument with type pointer to `intmax_t` or `uintmax_t`<ins>; or, a following `p` conversion specifier applies to an argument with type pointer to pointer of `_Any_func`</ins>.
+</td>
+</tr>
+
+<tr>
+<td>
+...
+</td>
+<td>
+...
+</td>
+</tr>
+</table>
+</div>
+
+<div class="wording-numbered wording-numbered-12">
+
+In the following, the type of the corresponding argument for a conversion specifier shall be a pointer
+to a type determined by the length modifiers, if any, or specified by the conversion specifier. The
+conversion specifiers and their meanings are:
+
+<table class="printf-specifiers">
+<tr>
+<th></th>
+<th></th>
+</tr>
+<tr>
+<td>
+...
+</td>
+<td>
+...
+</td>
+</tr>
+
+<tr>
+<td>
+`p`
+</td>
+<td>
+Matches an implementation-defined set of sequences, which should be the same as the set of sequences that may be produced by the `%p`<ins> or `%jp`</ins> conversion of the `fprintf` function. The corresponding argument shall be a pointer to a pointer of void<ins>; or, with the `j` length modifier, a pointer to pointer of `_Any_func`</ins>. The input item is converted to a pointer value in an implementation-defined manner. If the input item is a value converted earlier during the same program execution, the pointer that results shall compare equal to that value; otherwise the behavior of the `%p`<ins> or `%jp`</ins> conversion is undefined.
+</td>
+</tr>
+
+<tr>
+<td>
+...
+</td>
+<td>
+...
+</td>
+</tr>
+</table>
+</div>
+
+</div>
+</blockquote>
+
+
+### NOTE: IDENTICAL EDITS TO `fwscanf`! ### {#wording-7.24.6.3-fwscanf}
+
+
+### NOTE: UPDATE ANNEX J UNDEFINED BEHAVIOR (Number 36)! ### {#wording-7.24.6.3-annex.j}
+
+
+
+
+
+<pre class="biblio">
+{
+	"n2230": {
+		"authors": [
+			"Martin Sebor"
+		],
+		"title": "n2230 - Generic Function Pointer",
+		"date": "March 26th, 2018",
+		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n2230.htm"
+	}
+}
+</pre>
