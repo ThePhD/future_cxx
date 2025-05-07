@@ -83,15 +83,23 @@ Storing `func` in a KnR function pointer `int(*)()` and then calling it as such 
 
 The library needs further modification to allow for passing this new pointer type in, since `%p` by itself is specified to handle just `void*`. Since function pointer types and `void*` may not be the same size, a new entry is required to not taint the ABI of these functions, particularly of `fprintf` and `fscanf`.
 
-There were a bunch of potential candidates but a lot of them had problems both because of existing uses in implementations or down-stream, or they were novel new modifiers. For example, `%lp` is already being used by CHERI, while `%q` is already taken by typical POSIX shell-based `printf` for quotable strings. To further disadvantage `%q`, it -- despite being a logical new letter next to `%p` -- is taken by BSD and still has some existing uses, even though the type it's used for (`quad_t`) has long since been aliased to a "proper" type by now. Trying to sneak in `%Lp` is awkward thanks to implementation already moving in on `%lp`, especially if printing address spaces as part of pointers because a thing where length modifiers and precision get used to represent it. `%Ip` seems nice for the mnemonic "instruction pointer", but `i` is already a normal conversion specifier and `I` is novel in this space.
+There were a bunch of potential candidates but a lot of them had problems both because of existing uses in implementations or down-stream, or they were novel new modifiers. For example, `%lp` is already being used by CHERI, while `%q` is already taken by typical POSIX shell-based `printf` for quotable strings. To further disadvantage `%q`, it -- despite being a logical new letter next to `%p` -- is taken by BSD and still has some existing uses, even though the type it's used for (`quad_t`) has long since been aliased to a "proper" type by now. Trying to sneak in `%Lp` is awkward thanks to implementation already moving in on `%lp`, especially if printing address spaces as part of pointers because a thing where length modifiers and precision get used to represent it. `%Ip` seems nice for the mnemonic "instruction pointer", but `i` is already a normal conversion specifier and `I` is novel in this space as a modifier and a not a standalone conversion specifier.
 
 Thusly, we settled for `%jp` in this proposal. It can be read mnemonically as "jump pointer", which is reminiscent of assembly `jmp` and for assembly junkies gives the feeling of both `jmp` and `call`. `j` is also, already, a length modifier and has no known uses in the wild in combination with `%p`. It is the best we can do given the Wild Wild West of specifiers and modifiers in the C-and-derivative ecosystem, at this point.
 
 
 
-## `...ptr` in the name or an incomplete type? ## {#design.ptr}
+## `...ptr` In the Name or a Pointer to Incomplete Type? ## {#design.ptr}
 
-The goal of this design was to feel as close to `void*` as possible, since that is what this type represents. This means that we wanted to have the `*` present to have it look and feel just like a regular pointer type under regular pointer rules, rather than having it be part of the name. Since this is a core language type and a not a library definition, we need this is a better way of working with and definition the type. It also helps in putting this type into the specification, as all we have to do is mirror exactly the specification style and places that "A pointer to `void`" and "`void*`" exist in the current standard.
+The goal of this design was to feel as close to `void*` as possible, since that is what this type represents. This means that we wanted to have the `*` present to have it look and feel just like a regular pointer type under regular pointer rules, rather than having it be part of the name. Since this is a core language type and a not a library definition, we preferred to define it closer to `void` than anything else. It also helps in putting this type into the specification, as all we have to do is mirror exactly the specification style and places that "A pointer to `void`" and "`void*`" exist in the current standard. This eases integration and is -- after first explanation -- immediately understandable to those who have been using `void*` as the omni-object pointer.
+
+
+
+## Giving `void*` Additional Powers ## {#design.voidptr}
+
+Furthermore, as this is defined in the core language, we can also provide a core language predefined macro for whether or not `void*` -> `some_function_type*` and vice-versa is an allowable, legal translation. This also allows us to put wording in the core language that blesses such an (implicit) conversion, given that it's highly prevalent on a wide variety of architectures. It is often seen as a "gotcha" that this conversion doesn't work, and users have been asking for this change for a very long time. We obviously do not want to make things worse for embedded platforms or make them non-conforming; they are an important bedrock of C.
+
+Implementations which define the conditionally-supported environment macro `__STDC_IMPLICIT_ANY_FUNC_PTR_TO_VOID_PTR__` enables the `void*` 🔄 `some_function_type*` 🔄 `_Any_func*` chain of changes. This would simply not be defined for implementations that could not handle it (e.g. 16-bit Texas Instrument DSPs or 8-bit multi-address-space chips that have 21 bit function pointers but 16 bit memory addresses). Most modern implementations -- Windows/NT since forever and POSIX since the 90s with XSI extensions (and just simply required by POSIX 2018) -- would have this defined, and users could `#error` inside of an `#if` check if their code happens to rely on this property.
 
 
 
@@ -180,6 +188,16 @@ A pointer to `void` shall have the same representation and alignment requirement
 
 A pointer to `_Any_func` can be converted to or from a pointer to any function type. A pointer to any function type can be converted to a pointer to `_Any_func` and back again; the result shall compare equal to the original pointer.
 </div>
+
+<div class="wording-newnumbered">
+
+If and only if `__STDC_IMPLICIT_ANY_FUNC_PTR_TO_VOID_PTR__` is defined and has a strictly positive value, a pointer to `_Any_func` can be converted to or from a pointer to `void`. A pointer to `void` can be converted to a pointer to `_Any_func` and back again; the result shall compare equal to the original pointer.
+</div>
+
+<div class="wording-newnumbered">
+
+If and only if `__STDC_IMPLICIT_ANY_FUNC_PTR_TO_VOID_PTR__` is defined and has a strictly positive value, a pointer to `void` can be converted to or from a pointer to any function type. A pointer to any function type can be converted to a pointer to `void` and back again; the result shall compare equal to the original pointer.
+</div>
 </ins>
 
 
@@ -243,7 +261,9 @@ Constraints
 One of the following shall hold: ...
 
 - ...<del>; or</del>
-- one operand is a pointer to an object type and the other is a pointer to a qualified or unqualified version of `void`<del>.</del><ins>; or</ins>
+- one operand is a pointer to an object type and the other is a pointer to a qualified or unqualified version of `void`<del>.</del><ins>;</ins>
+- <ins>if and only if `__STDC_IMPLICIT_ANY_FUNC_PTR_TO_VOID_PTR__` is defined and has a strictly positive value, one operand is a pointer to a function type and the other is a pointer to a qualified or unqualified version of `void`; or</ins>
+- <ins>if and only if `__STDC_IMPLICIT_ANY_FUNC_PTR_TO_VOID_PTR__` is defined and has a strictly positive value, one operand is a pointer to `_Any_func` and the other is a pointer to a qualified or unqualified version of `void`; or</ins>
 - <ins>one operand is a pointer to a function type and the other is a pointer to a qualified or unqualified version of `_Any_func`.</ins>
 
 </div>
@@ -283,11 +303,64 @@ One of the following shall hold: ...
 
 - ...
 - the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) one operand is a pointer to an object type, and the other is a pointer to a qualified or unqualified version of `void`, and the type pointed to by the left operand has all the qualifiers of the type pointed to by the right operand;
+- <ins>if and only if `__STDC_IMPLICIT_ANY_FUNC_PTR_TO_VOID_PTR__` is defined and has a strictly positive value and the left operand is atomic, qualified, or unqualified pointer to `_Any_func`, and the other is a pointer to a qualified or unqualified version of `void`, and the type pointed to by the left operand has all the qualifiers of the type pointed to by the right operand;</ins>
 - <ins>the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) one operand is a pointer to a function type, and the other is a pointer to a qualified or unqualified version of `_Any_func`, and the type pointed to by the left operand has all the qualifiers of the type pointed to by the right operand;</ins>
+- <ins>if and only if `__STDC_IMPLICIT_ANY_FUNC_PTR_TO_VOID_PTR__` is defined and has a strictly positive value, the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) one operand is a pointer to an function type, and the other is a pointer to a qualified or unqualified version of `void`, and the type pointed to by the left operand has all the qualifiers of the type pointed to by the right operand;</ins>
 - ...
 
 </div>
 
+
+</div>
+</blockquote>
+
+
+
+## Modify §6.10.10.3 "Environment macros" ## {#wording-6.10.10.3}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.10.10.3</span><span class="wording-clause-title">Environment macros</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-numbered">
+
+The following macro names are conditionally defined by the implementation:
+
+<table class="printf-specifiers">
+<tr>
+<th></th>
+<th></th>
+</tr>
+<tr>
+<td>
+...
+</td>
+<td>
+...
+</td>
+</tr>
+
+<tr>
+<td>
+<ins>`__STDC_IMPLICIT_ANY_FUNC_PTR_TO_VOID_PTR__`</ins>
+</td>
+<td>
+<ins>A strictly positive integer constant expression if an implementation supports converting any function pointer type, or a pointer to `_Any_func`, to `void*` implicitly and vice-versa (6.3.3.3, 6.5.17.2).</ins>
+</td>
+</tr>
+
+<tr>
+<td>
+...
+</td>
+<td>
+...
+</td>
+</tr>
+</table>
 
 </div>
 </blockquote>
