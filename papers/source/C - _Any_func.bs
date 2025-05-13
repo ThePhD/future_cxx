@@ -60,7 +60,7 @@ The goal of this paper is to provide a single type, `_Any_func`, from the core l
 
 
 
-## Is It Callable? ## {#design.callable}
+## Is It Callable? ## {#design-callable}
 
 It is  NOT callable.
 
@@ -79,9 +79,12 @@ Storing `func` in a KnR function pointer `int(*)()` and then calling it as such 
 
 
 
-## Library Modifications ## {#design.library}
+## Library Modifications ## {#design-library}
 
-The library needs further modification to allow for passing this new pointer type in, since `%p` by itself is specified to handle just `void*`. Since function pointer types and `void*` may not be the same size, a new entry is required to not taint the ABI of these functions, particularly of `fprintf` and `fscanf`.
+The library needs further modification to allow for passing this new pointer type in, since `%p` by itself is specified to handle just `void*`. Since function pointer types and `void*` may not be the same size, a new entry is required to not taint the ABI of these functions, particularly of `fprintf` and `fscanf`. There is also discussion of `uintptr_t` and `intptr_t`; implementations may need additional integer types to handle this, and so these are provided under `uintfuncptr_t` and `intfuncptr_t` (and are as optional as their counterparts).
+
+
+### `%jp` for `fprintf` and `fscanf` ### {#design-library-fprintf.fscanf}
 
 There were a bunch of potential candidates but a lot of them had problems both because of existing uses in implementations or down-stream, or they were novel new modifiers. For example, `%lp` is already being used by CHERI, while `%q` is already taken by typical POSIX shell-based `printf` for quotable strings. To further disadvantage `%q`, it -- despite being a logical new letter next to `%p` -- is taken by BSD and still has some existing uses, even though the type it's used for (`quad_t`) has long since been aliased to a "proper" type by now. Trying to sneak in `%Lp` is awkward thanks to implementation already moving in on `%lp`, especially if printing address spaces as part of pointers because a thing where length modifiers and precision get used to represent it. `%Ip` seems nice for the mnemonic "instruction pointer", but `i` is already a normal conversion specifier and `I` is novel in this space as a modifier and a not a standalone conversion specifier.
 
@@ -89,17 +92,17 @@ Thusly, we settled for `%jp` in this proposal. It can be read mnemonically as "j
 
 
 
-## `...ptr` In the Name or a Pointer to Incomplete Type? ## {#design.ptr}
+## `...ptr` In the Name or a Pointer to Incomplete Type? ## {#design-ptr}
 
 The goal of this design was to feel as close to `void*` as possible, since that is what this type represents. This means that we wanted to have the `*` present to have it look and feel just like a regular pointer type under regular pointer rules, rather than having it be part of the name. Since this is a core language type and a not a library definition, we preferred to define it closer to `void` than anything else. It also helps in putting this type into the specification, as all we have to do is mirror exactly the specification style and places that "A pointer to `void`" and "`void*`" exist in the current standard. This eases integration and is -- after first explanation -- immediately understandable to those who have been using `void*` as the omni-object pointer.
 
 
 
-## Giving `void*` Additional Powers ## {#design.voidptr}
+## Giving `void*` Additional Powers ## {#design-voidptr}
 
 Furthermore, as this is defined in the core language, we can also provide a core language predefined macro for whether or not `void*` -> `some_function_type*` and vice-versa is an allowable, legal translation. This also allows us to put wording in the core language that blesses such an (implicit) conversion, given that it's highly prevalent on a wide variety of architectures. It is often seen as a "gotcha" that this conversion doesn't work, and users have been asking for this change for a very long time. We obviously do not want to make things worse for embedded platforms or make them non-conforming; they are an important bedrock of C.
 
-Implementations which define the conditionally-supported environment macro `__STDC_IMPLICIT_ANY_FUNC_PTR_TO_VOID_PTR__` enables the `void*` 🔄 `some_function_type*` 🔄 `_Any_func*` chain of changes. This would simply not be defined for implementations that could not handle it (e.g. 16-bit Texas Instrument DSPs or 8-bit multi-address-space chips that have 21 bit function pointers but 16 bit memory addresses). Most modern implementations -- Windows/NT since forever and POSIX since the 90s with XSI extensions (and just simply required by POSIX 2018) -- would have this defined, and users could `#error` inside of an `#if` check if their code happens to rely on this property.
+Each implementation can support the level that is appropriate for their platform. Some basic support is already supported for 2 of the conversions, both as per this proposal and as per the original purpose of the type since 1989: `void*` to any object pointer (and back) always reports at least `__STDC_PTR_REPR_CONVERTIBLE__` (a value of 1), and `_Any_func*` to any function pointer (and back) always reports at least `__STDC_PTR_REPR_CONVERTIBLE__` (a value of 1). However, conversion between `void*` and `_Any_func*` need not be supported (reports `__STDC_PTR_REPR_INCOMPATIBLE__`), as that is not guaranteed to work on all platforms. that could not handle it (e.g. 16-bit Texas Instrument DSPs or 8-bit multi-address-space chips that have 21 bit function pointers but 16 bit memory addresses). Most modern implementations -- Windows/NT since forever and POSIX since the 90s with XSI extensions (and just simply required by POSIX 2018) -- would have this defined, and users could `#error` inside of an `#if` check if their code happens to rely on this property.
 
 
 
@@ -115,6 +118,14 @@ The name chosen here is the one that had the no clashes in both its reserved for
 - `_Func_t` with `func_t` or `stdc_func_t` (user adds `*` to make pointer)
 
 Many of these had issues with existing standard library type names (e.g. `_Fn` and `_Func` for C++ type names in templates and typedefs for standard or standard-adjacent libraries) or had common names that, even if hidden behind a header include, would result in undue naming burden on potential downstream users (`fn_ptr_t` or `fn` or `func_t`). Other permutations of these names, including ones with `_Storage_`/`_storage` or `_Void` and `_void`, either clashed with existing code or became undesirably long.
+
+
+
+# Existing Practice # {#existing.practice}
+
+This proposal does not change any existing implementation's requirements or abilities. It is purely a formalization of existing practice that has existed both at the hardware and platform/ABI levels since time immemorial (at least 1972, by our estimate). Function pointer types have, for a long time, not been convertible to `void*` and most compilers in their `/W4`, `-Wall`, `-pedantic`, or `--conformance` modes have been issuing errors for `void*` and function pointer conversions but allowing it without warning or error in other cases. Several hardware and software platforms provide a unified data address space (Windows for some 31 years, POSIX with XSI since time immemorial/POSIX:2018, and many other platforms). The goal of this proposal is to solidify this existing practice into the C standard while still preserving the principles and practices of exotic hardware that still exists today: that is, DSPs and Microprocessors by exotic chipmakers and platform vendors (e.g., Texas Instruments) can still continue to vend chips with 16-bit data pointers and 23/24-bit function pointers (or otherwise) and typical Harvard Architectures can still be supported under this paradigm.
+
+
 
 
 # Wording # {#wording}
@@ -146,7 +157,7 @@ The following wording is against the latest draft of the C standard.
 <ins>
 <div class="wording-newnumbered wording-numbered-25">
 
-The `_Any_func` type comprises the concept of a function; it is an incomplete object type that cannot be completed.
+The `_Any_func` type comprises the concept of a function; it is a function type unlike any other and has no return type and no parameter types. It cannot be called.
 </div>
 </ins>
 
@@ -166,6 +177,140 @@ A pointer to `void` shall have the same representation and alignment requirement
 
 
 
+## Add a new section §6.2.6.3✨"Pointer types" under §6.2.6 "Representation of types" ## {#wording-6.2.6.3}
+
+<blockquote class="quote-ins">
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.2.6.3✨</span><span class="wording-clause-title">Pointer types</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-numbered">
+For certain pointer types, there are three levels of increasing *representation equivalence* between them:
+
+- *incompatible representation equivalence*, where they do not have a common alignment and representation and cannot be converted to one another and back without preserving its value;
+- *convertible representation equivalence*, where they do not have a common alignment and representation but can be converted to one another and back with preserving its value; or,
+- *correspoding representation equivalence*, where they have a compatible alignment and representation.
+
+This property is communicative in both conversion directions for the two pointer types. Each of these levels correspond to the predefined macros `__STDC_PTR_REPR_INCOMPATIBLE__`, `__STDC_PTR_REPR_CONVERTIBLE__`, and `__STDC_PTR_REPR_CORRESPONDING__` (6.10.10.2), respectively. Representation equivalence can be compared against other representation equivalences; higher values subsume the permissions and properties of lower values, except for incompatible representation equivalence which has no permissions and provides no additional properties.
+</div>
+
+<div class="wording-numbered">
+
+Two pointer types with incompatible representation equivalences cannot be converted implicitly from one to another and back. An explicit conversion from a pointer of the first type to the second type and then back to the first type can possibly result in a pointer with a different representation that does not compare equal to the original.
+</div>
+
+<div class="wording-numbered">
+
+Two pointer types with convertible representation equivalences can be converted implicitly or explicitly from one to another and back. A conversion, implicit or explicit, from a pointer of the first type to the second type and then back to the first type shall result in a pointer comparing equal to the the original. The alignment and representation of the first and second pointer types can possibly not be be equivalent or similar.
+</div>
+
+<div class="wording-numbered">
+
+Two pointer types with corresponding representation equivalences have equivalent alignments and representations. A conversion, implicit or explicit, from a pointer of the first type to the second type shall result in two pointers whose object representations are identical.
+</div>
+
+<div class="wording-numbered">
+
+NOTE 1 &emsp;&emsp;Typically, the byte array of two pointers that have corresponding representation equivalences compare equal after conversions, except for any padding bits which have unspecified values.
+</div>
+
+<div class="wording-numbered">
+
+Outside of what is defined in 6.3.3.3 and 6.5, representation equivalence is implementation defined and any operations or conversions associated with such representation equivalences are conditionally supported. The representation equivalence between:
+
+- pointers to `_Any_func` and pointers to function types characterizes the value of `__STDC_PTR_COMPAT_ANY_FUNC_AND_FUNC__`; 
+- pointers to `_Any_func` and pointers to `void` characterizes the value of `__STDC_PTR_COMPAT_ANY_FUNC_AND_VOID__`;
+- pointers to function types and pointers to `void` characterizes the value of `__STDC_PTR_COMPAT_FUNC_AND_VOID__`; and,
+- pointers to object types and pointers to `void` characterizes the value of `__STDC_PTR_COMPAT_OBJECT_AND_VOID__`.
+
+</div>
+
+<div class="wording-numbered">
+
+NOTE 2 &emsp;&emsp;The file-scope declarations
+
+```cpp
+static_assert(__STDC_PTR_COMPAT_OBJECT_AND_VOID__
+                >= __STDC_PTR_REPR_CONVERTIBLE__);
+static_assert(__STDC_PTR_COMPAT_ANY_FUNC_AND_FUNC__
+                >= __STDC_PTR_REPR_CONVERTIBLE__);
+```
+
+do not provoke a constraint violation on any implementation. However, the following file scope declarations potentially trigger constraint violations on implementations:
+
+```cpp
+// "Any_func *" may be incompatible to "void *",
+// and vice-versa
+static_assert(__STDC_PTR_COMPAT_ANY_FUNC_AND_VOID__
+                != __STDC_PTR_REPR_INCOMPATIBLE__);
+// "void *" may be incompatible to one or more
+// function pointer types, and vice-versa
+static_assert(__STDC_PTR_COMPAT_FUNC_AND_VOID__
+                != __STDC_PTR_REPR_INCOMPATIBLE__);
+```
+</div>
+
+<div class="wording-numbered">
+
+EXAMPLE &emsp;&emsp; The following program potentially exhibits undefined behavior without corresponding representation equivalence:
+
+```cpp
+#include <stdarg.h>
+
+struct toto* p = nullptr;
+
+int f(...) {
+	va_list ap;
+	va_start(ap);
+	void* arg = va_arg(ap, void*); // possible undefined behavior
+	if (arg == p) {
+		// this code might not be reached.
+		va_end(ap);
+		return 0;
+	}
+	va_end(ap);
+	return 1;
+}
+
+int main () {
+	return f(p); // not guaranteed to return 0
+}
+```
+
+More practically, on a hosted implementation, the following program potentially needs corresponding representation equivalence to print with the expected implementation-defined behavior:
+
+```cpp
+#include <stdio.h>
+
+int main () {
+	static_assert(__STDC_PTR_COMPAT_OBJECT_AND_VOID__ == __STDC_PTR_REPR_CORRESPONDING__,
+		"Corresponding representation equivalence is required.");
+	struct toto* p = nullptr;
+	printf("%p\n", p);
+	return 0;
+}
+```
+
+Otherwise, a cast to `void*` may be required to ensure well-defined behavior on a hosted implementation:
+
+```cpp
+#include <stdio.h>
+
+int main () {
+	struct toto* p = nullptr;
+	printf("%p\n", (void*)p); // cast first to perform appropriate conversion
+	return 0;
+}
+```
+</div>
+
+</div>
+</blockquote>
+
+
+
 ## Modify §6.3.3.3 "Pointers" ## {#wording-6.3.3.3}
 
 <blockquote>
@@ -176,7 +321,17 @@ A pointer to `void` shall have the same representation and alignment requirement
 <div class="wording-section">
 
 <div class="wording-numbered">
+
+<ins>A pointer to `void` and a pointer to any object type shall have at least convertible representation equivalence (6.2.6.3✨).</ins>A pointer to `void` can be converted to or from a pointer to any object type. A pointer to any object type can be converted to a pointer to void and back again; the result shall compare equal to the original pointer.
+</div>
+
+<div>
 ...
+</div>
+
+<div class="wording-numbered wording-numbered-3">
+
+An integer constant expression with the value `0`, such an expression cast to type `void *`,<ins>such an expression cast to type `_Any_func *`,</ins> or the predefined constant `nullptr` is called a null pointer constant.<sup>57)</sup> If a null pointer constant or a value of the type `nullptr_t` (which is necessarily the value `nullptr`) is converted to a pointer type, the resulting pointer, called a *null pointer*, is guaranteed to compare unequal to a pointer to any object or function.
 </div>
 
 <div>
@@ -186,17 +341,17 @@ A pointer to `void` shall have the same representation and alignment requirement
 <ins>
 <div class="wording-newnumbered wording-numbered-9">
 
-A pointer to `_Any_func` can be converted to or from a pointer to any function type. A pointer to any function type can be converted to a pointer to `_Any_func` and back again; the result shall compare equal to the original pointer.
+A pointer to `_Any_func` and a pointer to any other function type shall have at least convertible representation equivalence (6.2.6.3✨). A pointer to any function type can be converted to a pointer to `_Any_func` and back again and vice-versa; the result shall compare equal to the original pointer.
 </div>
 
 <div class="wording-newnumbered">
 
-If and only if `__STDC_IMPLICIT_ANY_FUNC_PTR_TO_VOID_PTR__` is defined and has a strictly positive value, a pointer to `_Any_func` can be converted to or from a pointer to `void`. A pointer to `void` can be converted to a pointer to `_Any_func` and back again; the result shall compare equal to the original pointer.
+If a pointer to `_Any_func` and pointer to `void` have at least convertible representation equivalence (6.2.6.3✨), a pointer to `_Any_func` can be converted to or from a pointer to `void`. A pointer to `void` can be converted to a pointer to `_Any_func` and back again and vice-versa; the result shall compare equal to the original pointer.
 </div>
 
 <div class="wording-newnumbered">
 
-If and only if `__STDC_IMPLICIT_ANY_FUNC_PTR_TO_VOID_PTR__` is defined and has a strictly positive value, a pointer to `void` can be converted to or from a pointer to any function type. A pointer to any function type can be converted to a pointer to `void` and back again; the result shall compare equal to the original pointer.
+If a pointer to any function type and pointer to `void` have at least convertible representation equivalence (6.2.6.3✨), a pointer to `void` can be converted to or from a pointer to any function type. A pointer to any function type can be converted to a pointer to `void` and back again and vice-versa; the result shall compare equal to the original pointer.
 </div>
 </ins>
 
@@ -234,6 +389,49 @@ Synopsis
 </blockquote>
 
 
+## Modify §6.5.10 "Equality operators" ## {#wording-6.5.10}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.5.10</span><span class="wording-clause-title">Equality operators</span>
+</div>
+
+<div class="wording-section">
+
+<div>
+...
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered wording-numbered-2">
+
+One of the following shall hold: ...
+
+- ...
+- one operand is a pointer to an object type and the other is a pointer to a qualified or unqualified version of `void`;
+- <ins>one operand is a pointer to a function type and the other is a pointer to `_Any_func`;</ins>
+- <ins>if pointers to function types and pointers to `void` have at least convertible representation equivalence, one operand is a pointer to a function type and the other is a pointer to a qualified or unqualified version of `void`;</ins>
+- <ins>if pointers to `_Any_func` and pointers to `void` have at least convertible representation equivalence, one operand is a pointer to `_Any_func` and the other is a pointer to `void`;</ins>
+- ...
+
+</div>
+
+<div>
+...
+</div>
+
+<div class="wording-numbered wording-numbered-6">
+
+Otherwise, at least one operand is a pointer. If one operand is a pointer and the other is a null pointer constant or has type `nullptr_t`, they compare equal if the former is a null pointer. If one operand is a pointer to an object type and the other is a pointer to a qualified or unqualified version of `void`, the former is converted to the type of the latter. <ins>If one operand is a pointer to a function type and the other is a pointer to `_Any_func`, the former is converted to the type of the latter. If pointers to `void` and pointers to `_Any_func` have at least convertible representation equivalence, one operand is a pointer to `_Any_func`, and the other operand is a pointer to qualified or unqualified `void`, the former is converted to the type of the latter. If pointers to `void` and pointers to function types have at least convertible representation equivalence, one operand is a pointer to function type, and the other operand is a pointer to qualified or unqualified `void`, the former is converted to the type of the latter.</ins>
+</div>
+
+</div>
+</blockquote>
+
+
 
 ## Modify §6.5.16 "Conditional operator" ## {#wording-6.5.16}
 
@@ -262,9 +460,9 @@ One of the following shall hold: ...
 
 - ...<del>; or</del>
 - one operand is a pointer to an object type and the other is a pointer to a qualified or unqualified version of `void`<del>.</del><ins>;</ins>
-- <ins>if and only if `__STDC_IMPLICIT_ANY_FUNC_PTR_TO_VOID_PTR__` is defined and has a strictly positive value, one operand is a pointer to a function type and the other is a pointer to a qualified or unqualified version of `void`; or</ins>
-- <ins>if and only if `__STDC_IMPLICIT_ANY_FUNC_PTR_TO_VOID_PTR__` is defined and has a strictly positive value, one operand is a pointer to `_Any_func` and the other is a pointer to a qualified or unqualified version of `void`; or</ins>
-- <ins>one operand is a pointer to a function type and the other is a pointer to a qualified or unqualified version of `_Any_func`.</ins>
+- <ins>if pointer to function types have at least convertible representation equivalence to a pointer to `void`, one operand is a pointer to a function type and the other is a pointer to a qualified or unqualified version of `void`;</ins>
+- <ins>if pointer to `_Any_func` have at least convertible representation equivalence to a pointer to `void`, one operand is a pointer to `_Any_func` and the other is a pointer to a qualified or unqualified version of `void`; or</ins>
+- <ins>one operand is a pointer to a function type and the other is a pointer to `_Any_func`.</ins>
 
 </div>
 
@@ -274,7 +472,7 @@ One of the following shall hold: ...
 
 <div class="wording-numbered wording-numbered-7">
 
-If both the second and third operands are pointers, the result type is a pointer to a type qualified with all the type qualifiers of the types referenced by both operands; if one is a null pointer constant (other than a pointer) or has type `nullptr_t` and the other is a pointer, the result type is the pointer type; if both the second and third operands have `nullptr_t` type, the result also has that type. Furthermore, if both operands are pointers to compatible types or to differently qualified versions of compatible types, the result type is a pointer to an appropriately qualified version of the composite type; if one operand is <ins>either </ins>a null pointer constant <ins>or a pointer to qualified or unqualified `_Any_func`</ins>, the result has the type of the other operand; otherwise, one operand is a pointer to `void` or a qualified version of `void`, in which case the result type is a pointer to an appropriately qualified version of `void`.
+If both the second and third operands are pointers, the result type is a pointer to a type qualified with all the type qualifiers of the types referenced by both operands; if one is a null pointer constant (other than a pointer) or has type `nullptr_t` and the other is a pointer, the result type is the pointer type; if both the second and third operands have `nullptr_t` type, the result also has that type. Furthermore, if both operands are pointers to compatible types or to differently qualified versions of compatible types, the result type is a pointer to an appropriately qualified version of the composite type; if one operand is a null pointer constant, the result has the type of the other operand<del>; otherwise, one operand is a pointer to `void` or a qualified version of `void`, in which case the result type is a pointer to an appropriately qualified version of `void`</del>.<ins>If one operand is a pointer to object type and the other is a pointer to qualified or unqualified `void`, the result type is a pointer to an appropriately qualified version of `void`. If one operand is a pointer to function type and the other is a pointer to `_Any_func`, the result type is a pointer to `_Any_func`. If one operand is a pointer to function type, the other is a pointer to qualified or unqualified `void`, and the types of both operands have at least convertible representation equivalence, the result type is a pointer to an appropriately qualified `void`. If one operand is a pointer to `_Any_func`, the other is a pointer to qualified or unqualified `void`, and the types of both operands have at least convertible representation equivalence, the result type is a pointer to an appropriately qualified `void`.</ins>
 </div>
 
 </div>
@@ -303,9 +501,9 @@ One of the following shall hold: ...
 
 - ...
 - the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) one operand is a pointer to an object type, and the other is a pointer to a qualified or unqualified version of `void`, and the type pointed to by the left operand has all the qualifiers of the type pointed to by the right operand;
-- <ins>if and only if `__STDC_IMPLICIT_ANY_FUNC_PTR_TO_VOID_PTR__` is defined and has a strictly positive value and the left operand is atomic, qualified, or unqualified pointer to `_Any_func`, and the other is a pointer to a qualified or unqualified version of `void`, and the type pointed to by the left operand has all the qualifiers of the type pointed to by the right operand;</ins>
 - <ins>the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) one operand is a pointer to a function type, and the other is a pointer to a qualified or unqualified version of `_Any_func`, and the type pointed to by the left operand has all the qualifiers of the type pointed to by the right operand;</ins>
-- <ins>if and only if `__STDC_IMPLICIT_ANY_FUNC_PTR_TO_VOID_PTR__` is defined and has a strictly positive value, the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) one operand is a pointer to an function type, and the other is a pointer to a qualified or unqualified version of `void`, and the type pointed to by the left operand has all the qualifiers of the type pointed to by the right operand;</ins>
+- <ins>if a pointer to `_Any_func` has at least convertible representation equivalence to pointer to `void`, and the left operand is atomic, qualified, or unqualified pointer to `_Any_func`, and the other is a pointer to a qualified or unqualified version of `void`, and the type pointed to by the left operand has all the qualifiers of the type pointed to by the right operand;</ins>
+- <ins>if pointers to function types have at least convertible representation equivalence to pointer to `void`, the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) one operand is a pointer to an function type, and the other is a pointer to a qualified or unqualified version of `void`, and the type pointed to by the left operand has all the qualifiers of the type pointed to by the right operand;</ins>
 - ...
 
 </div>
@@ -316,24 +514,25 @@ One of the following shall hold: ...
 
 
 
-## Modify §6.10.10.3 "Environment macros" ## {#wording-6.10.10.3}
+## Modify §6.10.10.2 "Predefined macros" ## {#wording-6.10.10.2}
 
 <blockquote>
 <div class="wording-clause-header">
-<span class="wording-clause-number">6.10.10.3</span><span class="wording-clause-title">Environment macros</span>
+<span class="wording-clause-number">6.10.10.2</span><span class="wording-clause-title">Predefined macros</span>
 </div>
 
 <div class="wording-section">
 
 <div class="wording-numbered">
 
-The following macro names are conditionally defined by the implementation:
+The following macro names shall be defined by the implementation:
 
 <table class="printf-specifiers">
 <tr>
 <th></th>
 <th></th>
 </tr>
+
 <tr>
 <td>
 ...
@@ -345,10 +544,73 @@ The following macro names are conditionally defined by the implementation:
 
 <tr>
 <td>
-<ins>`__STDC_IMPLICIT_ANY_FUNC_PTR_TO_VOID_PTR__`</ins>
+<ins>`__STDC_PTR_COMPAT_ANY_FUNC_AND_FUNC__`</ins>
 </td>
 <td>
-<ins>A strictly positive integer constant expression if an implementation supports converting any function pointer type, or a pointer to `_Any_func`, to `void*` implicitly and vice-versa (6.3.3.3, 6.5.17.2).</ins>
+<ins>One of `__STDC_PTR_REPR_INCOMPATIBLE__`, `__STDC_PTR_REPR_CONVERTIBLE__`, or `__STDC_PTR_REPR_CORRESPONDING__` tied to the level of representation eqvuialence (6.2.6.3✨) between `_Any_func *` and all function pointer types (6.3.3.3).</ins>
+</td>
+</tr>
+
+<tr>
+<td>
+<ins>`__STDC_PTR_COMPAT_ANY_FUNC_AND_VOID__`</ins>
+</td>
+<td>
+<ins>One of `__STDC_PTR_REPR_INCOMPATIBLE__`, `__STDC_PTR_REPR_CONVERTIBLE__`, or `__STDC_PTR_REPR_CORRESPONDING__` tied to the level of representation eqvuialence (6.2.6.3✨) between `_Any_func *` and `void *` (6.3.3.3).</ins>
+</td>
+</tr>
+
+<tr>
+<td>
+<ins>`__STDC_PTR_COMPAT_FUNC_AND_VOID__`</ins>
+</td>
+<td>
+<ins>One of `__STDC_PTR_REPR_INCOMPATIBLE__`, `__STDC_PTR_REPR_CONVERTIBLE__`, or `__STDC_PTR_REPR_CORRESPONDING__` tied to the level of representation eqvuialence (6.2.6.3✨) between all function pointer types and `void *` (6.3.3.3).</ins>
+</td>
+</tr>
+
+<tr>
+<td>
+<ins>`__STDC_PTR_COMPAT_OBJECT_AND_VOID__`</ins>
+</td>
+<td>
+<ins>One of `__STDC_PTR_REPR_INCOMPATIBLE__`, `__STDC_PTR_REPR_CONVERTIBLE__`, or `__STDC_PTR_REPR_CORRESPONDING__` tied to the level of representation eqvuialence (6.2.6.3✨) between all object pointer types and `void *` (6.3.3.3).</ins>
+</td>
+</tr>
+
+<tr>
+<td>
+...
+</td>
+<td>
+...
+</td>
+</tr>
+
+<tr>
+<td>
+<ins>`__STDC_PTR_REPR_INCOMPATIBLE__`</ins>
+</td>
+<td>
+<ins>The integer literal `0`, indicating incompatible representation equivalence (6.2.6.3✨).</ins>
+</td>
+</tr>
+
+<tr>
+<td>
+<ins>`__STDC_PTR_REPR_CONVERTIBLE__`</ins>
+</td>
+<td>
+<ins>The integer literal `1`, indicating convertible representation equivalence (6.2.6.3✨).</ins>
+</td>
+</tr>
+
+<tr>
+<td>
+<ins>`__STDC_PTR_REPR_CORRESPONDING__`</ins>
+</td>
+<td>
+<ins>The integer literal `2`, indicating corresponding representation equivalence (6.2.6.3✨).</ins>
 </td>
 </tr>
 
@@ -366,6 +628,178 @@ The following macro names are conditionally defined by the implementation:
 </blockquote>
 
 
+
+## Modify §7.8.2 "Macros for format specifiers" ## {#wording-7.8.2}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.8.2</span><span class="wording-clause-title">Macros for format specifiers</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-numbered">
+
+...
+</div>
+
+<div class="wording-numbered">
+
+The `fprintf` macros for signed integers are:
+
+:: ... &emsp; ... &emsp; ... &emsp; ... &emsp; `PRIdPTR` <ins>&emsp; `PRIdFUNCPTR`</ins>
+:: ... &emsp; ... &emsp; ... &emsp; ... &emsp; `PRIiPTR` <ins>&emsp; `PRIiFUNCPTR`</ins>
+
+</div>
+
+<div class="wording-numbered">
+
+The `fprintf` macros for unsigned integers are:
+
+:: ... &emsp; ... &emsp; ... &emsp; ... &emsp; `PRIbPTR` <ins>&emsp; `PRIbFUNCPTR`</ins>
+:: ... &emsp; ... &emsp; ... &emsp; ... &emsp; `PRIoPTR` <ins>&emsp; `PRIoFUNCPTR`</ins>
+:: ... &emsp; ... &emsp; ... &emsp; ... &emsp; `PRIuPTR` <ins>&emsp; `PRIuFUNCPTR`</ins>
+:: ... &emsp; ... &emsp; ... &emsp; ... &emsp; `PRIxPTR` <ins>&emsp; `PRIxFUNCPTR`</ins>
+:: ... &emsp; ... &emsp; ... &emsp; ... &emsp; `PRIXPTR` <ins>&emsp; `PRIXFUNCPTR`</ins>
+
+</div>
+
+<div class="wording-numbered">
+
+The following `fprintf` macros for unsigned integer types are optional:
+
+:: ... &emsp; ... &emsp; ... &emsp; ... &emsp; `PRIBPTR` <ins>&emsp; `PRIBFUNCPTR`</ins>
+
+...
+</div>
+
+
+<div class="wording-numbered">
+
+The `fscanf` macros for signed integers are
+
+:: ... &emsp; ... &emsp; ... &emsp; ... &emsp; `SCNdPTR` <ins>&emsp; `SCNdFUNCPTR`</ins>
+:: ... &emsp; ... &emsp; ... &emsp; ... &emsp; `SCNiPTR` <ins>&emsp; `SCNiFUNCPTR`</ins>
+
+</div>
+
+
+<div class="wording-numbered">
+
+The `fscanf` macros for unsigned integers are:
+
+:: ... &emsp; ... &emsp; ... &emsp; ... &emsp; `SCNbPTR` <ins>&emsp; `SCNbFUNCPTR`</ins>
+:: ... &emsp; ... &emsp; ... &emsp; ... &emsp; `SCNoPTR` <ins>&emsp; `SCNoFUNCPTR`</ins>
+:: ... &emsp; ... &emsp; ... &emsp; ... &emsp; `SCNuPTR` <ins>&emsp; `SCNuFUNCPTR`</ins>
+:: ... &emsp; ... &emsp; ... &emsp; ... &emsp; `SCNxPTR` <ins>&emsp; `SCNxFUNCPTR`</ins>
+
+</div>
+
+</div>
+</blockquote>
+
+
+
+## Modify §7.17.6 "Atomic integer types" ## {#wording-7.17.6}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.17.6</span><span class="wording-clause-title">Atomic integer types</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-numbered">
+
+For each line in Table 7.6,<sup>307)</sup> the atomic type name is declared as a type that has the same representation and alignment requirements as the corresponding direct type.<sup>308)</sup>
+
+
+<table class="printf-specifiers">
+Table 7.6 — <ins>Atomic type</ins><del>Type</del> name equivalency
+<tr>
+<th>Atomic typename</th>
+<th>Direct name</th>
+</tr>
+
+<tr>
+<td>
+...
+</td>
+<td>
+...
+</td>
+</tr>
+
+<tr>
+<td>
+<ins>`atomic_uintfuncptr_t`</ins>
+</td>
+<td>
+<ins>`_Atomic uintfuncptr_t`</ins>
+</td>
+</tr>
+
+<tr>
+<td>
+...
+</td>
+<td>
+...
+</td>
+</tr>
+</table>
+
+</div>
+
+</div>
+</blockquote>
+
+
+
+## Modify §7.23.2.5 "Integer types capable of holding object pointers" ## {#wording-7.23.2.5}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.23.2.5</span><span class="wording-clause-title">Integer types capable of holding object pointers</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-numbered">
+
+The following type designates a signed integer type, other than a bit-precise integer type, with the property that any valid pointer to `void` can be converted to this type, then converted back to pointer to `void`, and the result will compare equal to the original pointer:
+
+```cpp
+intptr_t
+```
+
+The following type designates an unsigned integer type, other than a bit-precise integer type, with the property that any valid pointer to `void` can be converted to this type, then converted back to pointer to `void`, and the result will compare equal to the original pointer:
+
+```cpp
+uintptr_t
+```
+
+<ins>
+
+The following type designates a signed integer type, other than a bit-precise integer type, with the property that any valid pointer to `_Any_func` can be converted to this type, then converted back to pointer to `_Any_func`, and the result will compare equal to the original pointer:
+
+```cpp
+intfuncptr_t
+```
+
+The following type designates an unsigned integer type, other than a bit-precise integer type, with the property that any valid pointer to `_Any_func` can be converted to this type, then converted back to pointer to `_Any_func`, and the result will compare equal to the original pointer:
+
+```cpp
+uintfuncptr_t
+```
+
+</ins>
+
+These types are optional.
+</div>
+
+</div>
+</blockquote>
 
 
 ## Modify §7.24.6.2 "The `fprintf` function" ## {#wording-7.24.6.2}
@@ -421,7 +855,7 @@ The length modifiers and their meanings are:
 `j`
 </td>
 <td>
-Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to an `intmax_t` or `uintmax_t` argument; <del>or</del> that a following `n` conversion specifier applies to a pointer to an `intmax_t` argument<ins>; or, a following `p` conversion specifier applies to an `_Any_func*` argument</ins>.
+Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to an `intmax_t` or `uintmax_t` argument;<ins> that a following `p` conversion specifier applies to an `_Any_func*` argument;</ins> or that a following `n` conversion specifier applies to a pointer to an `intmax_t` argument.
 </td>
 </tr>
 
@@ -459,7 +893,7 @@ The conversion specifiers and their meanings are:
 `p`
 </td>
 <td>
-The argument shall be a pointer to `void`<del> or </del>,a pointer to a character type<ins> or a pointer to `_Any_func`</ins>. The value of the pointer is converted to a sequence of printing characters, in an implementation-defined manner.
+The argument shall be a pointer to `void`<ins>, a pointer to `_Any_func`, </ins>or a pointer to a character type. The value of the pointer is converted to a sequence of printing characters, in an implementation-defined manner.
 </td>
 </tr>
 
