@@ -56,7 +56,9 @@ Popular distributions, operating systems, and platforms such as POSIX, Windows/N
 
 # Design # {#design}
 
-The goal of this paper is to provide a single type, `_Any_func`, from the core language. It's a core language type that is incomplete by itself, much like `void`. Additionally, a pointer to `_Any_func` has the requirement that it is large enough to hold any function pointer type, and is implicitly convertible from and to any such pointer type, much like its `void*` counterpart. It is modeled directly after `void*` and modifies the same places in the wording.
+The goal of this paper is to provide a single type, `_Any_func`, from the core language. It's a core language type that is incomplete by itself, much like `void`. Additionally, a pointer to `_Any_func` has the requirement that it is large enough to hold any function pointer type, and is implicitly convertible from and to any such pointer type, much like its `void*` counterpart. It is modeled directly after `void*` and modifies the same places in the wording, as well as a few other places.
+
+Finally, in noticing `void*` on popular implementations has all these powers we are trying to give `_Any_func*` here, we expanded the concept of `void*` to allow for a larger and wider variety of (implicit) conversions. Recognizing that all platforms may not have the ability to, we made conversions specifically between `_Any_func*` and `void*` as well as `void*` and `some_function_type*` optional.
 
 
 
@@ -79,30 +81,26 @@ Storing `func` in a KnR function pointer `int(*)()` and then calling it as such 
 
 
 
-## Library Modifications ## {#design-library}
-
-The library needs further modification to allow for passing this new pointer type in, since `%p` by itself is specified to handle just `void*`. Since function pointer types and `void*` may not be the same size, a new entry is required to not taint the ABI of these functions, particularly of `fprintf` and `fscanf`. There is also discussion of `uintptr_t` and `intptr_t`; implementations may need additional integer types to handle this, and so these are provided under `uintfuncptr_t` and `intfuncptr_t` (and are as optional as their counterparts).
-
-
-### `%jp` for `fprintf` and `fscanf` ### {#design-library-fprintf.fscanf}
-
-There were a bunch of potential candidates but a lot of them had problems both because of existing uses in implementations or down-stream, or they were novel new modifiers. For example, `%lp` is already being used by CHERI, while `%q` is already taken by typical POSIX shell-based `printf` for quotable strings. To further disadvantage `%q`, it -- despite being a logical new letter next to `%p` -- is taken by BSD and still has some existing uses, even though the type it's used for (`quad_t`) has long since been aliased to a "proper" type by now. Trying to sneak in `%Lp` is awkward thanks to implementation already moving in on `%lp`, especially if printing address spaces as part of pointers because a thing where length modifiers and precision get used to represent it. `%Ip` seems nice for the mnemonic "instruction pointer", but `i` is already a normal conversion specifier and `I` is novel in this space as a modifier and a not a standalone conversion specifier.
-
-Thusly, we settled for `%jp` in this proposal. It can be read mnemonically as "jump pointer", which is reminiscent of assembly `jmp` and for assembly junkies gives the feeling of both `jmp` and `call`. `j` is also, already, a length modifier and has no known uses in the wild in combination with `%p`. It is the best we can do given the Wild Wild West of specifiers and modifiers in the C-and-derivative ecosystem, at this point.
-
-
-
-## `...ptr` In the Name or a Pointer to Incomplete Type? ## {#design-ptr}
-
-The goal of this design was to feel as close to `void*` as possible, since that is what this type represents. This means that we wanted to have the `*` present to have it look and feel just like a regular pointer type under regular pointer rules, rather than having it be part of the name. Since this is a core language type and a not a library definition, we preferred to define it closer to `void` than anything else. It also helps in putting this type into the specification, as all we have to do is mirror exactly the specification style and places that "A pointer to `void`" and "`void*`" exist in the current standard. This eases integration and is -- after first explanation -- immediately understandable to those who have been using `void*` as the omni-object pointer.
-
-
-
 ## Giving `void*` Additional Powers ## {#design-voidptr}
 
 Furthermore, as this is defined in the core language, we can also provide a core language predefined macro for whether or not `void*` -> `some_function_type*` and vice-versa is an allowable, legal translation. This also allows us to put wording in the core language that blesses such an (implicit) conversion, given that it's highly prevalent on a wide variety of architectures. It is often seen as a "gotcha" that this conversion doesn't work, and users have been asking for this change for a very long time. We obviously do not want to make things worse for embedded platforms or make them non-conforming; they are an important bedrock of C.
 
-Each implementation can support the level that is appropriate for their platform. Some basic support is already supported for 2 of the conversions, both as per this proposal and as per the original purpose of the type since 1989: `void*` to any object pointer (and back) always reports at least `__STDC_PTR_REPR_CONVERTIBLE__` (a value of 1), and `_Any_func*` to any function pointer (and back) always reports at least `__STDC_PTR_REPR_CONVERTIBLE__` (a value of 1). However, conversion between `void*` and `_Any_func*` need not be supported (reports `__STDC_PTR_REPR_INCOMPATIBLE__`), as that is not guaranteed to work on all platforms. that could not handle it (e.g. 16-bit Texas Instrument DSPs or 8-bit multi-address-space chips that have 21 bit function pointers but 16 bit memory addresses). Most modern implementations -- Windows/NT since forever and POSIX since the 90s with XSI extensions (and just simply required by POSIX 2018) -- would have this defined, and users could `#error` inside of an `#if` check if their code happens to rely on this property.
+Therefore, we define a new concept "*representation equivalence*" so that we can support the notion of conversion not only between `_Any_func*` and `void*`, but `void*` and any function pointer type. This also further helps us because we can specify properties beyond what is currently blessed by the C standard, and make allowances for the popular platforms which form the overwhelming super majority of platforms that developers work on, even in C:
+
+- `__STDC_PTR_REPR_INCOMPATIBLE__` (value 0, "incompatible representation equivalence").
+- `__STDC_PTR_REPR_CONVERTIBLE__` (value 1, "convertible representation equivalence" - what is guaranteed by basic C conformance today with `void*` and object pointers).
+- `__STDC_PTR_REPR_CORRESPONDING__` (value 2, "corresponding representation equivalence" - what Windows, POSIX:2018, etc. platforms guarantee but have to warn/error about in strictly-conforming C).
+
+These predefined macros and their definitions are then applied to four new different predefined macros, which has one of the above 3 value macros as its definition:
+
+- `__STDC_PTR_COMPAT_ANY_FUNC_AND_FUNC__` -- describes equivalence for `_Any_func*` and all function pointer types; must be at least `__STC_PTR_REPR_CONVERTIBLE__` (this proposal and matches `void*` wit object pointers). Can be upgraded to `__STDC_PTR_REPR_CORRESPONDING__` by an implementation.
+- `__STDC_PTR_COMPAT_ANY_FUNC_AND_VOID__` -- describes equivalence between `_Any_func*` and `void*`; can be `__STDC_PTR_REPR_INCOMPATIBLE__`.
+- `__STDC_PTR_COMPAT_FUNC_AND_VOID__` -- describes equivalence between any function pointer and `void*`; can be `__STDC_PTR_REPR_INCOMPATIBLE__`.
+- `__STDC_PTR_COMPAT_OBJECT_AND_VOID__`  describes equivalence for all object pointers and `void*`; must be at least `__STC_PTR_REPR_CONVERTIBLE__` (guaranteed by wording in C standard currently). Can be upgraded to `__STDC_PTR_REPR_CORRESPONDING__` by an implementation.
+
+Each implementation can support the level that is appropriate for their platform. Some basic support is already supported for 2 of the conversions, both as per this proposal and as per the original purpose of the type since 1989: `void*` to any object pointer (and back) always reports at least `__STDC_PTR_REPR_CONVERTIBLE__` (a value of 1), and `_Any_func*` to any function pointer (and back) always reports at least `__STDC_PTR_REPR_CONVERTIBLE__` (a value of 1). However, conversion between `void*` and `_Any_func*` need not be supported (reports `__STDC_PTR_REPR_INCOMPATIBLE__` (a value of 0)), as that is not guaranteed to work on all platforms. This is useful for implementations that decide they do not want to take on an impossible task where object/data pointers and function/code points address completely different kinds of memory. Implementations that can not handle it (e.g. 16-bit Texas Instrument DSPs or 8-bit multi-address-space chips that have 21 bit function pointers but 16 bit memory addresses). Most modern implementations -- Windows/NT since forever and POSIX since the 90s with XSI extensions (and just simply required by POSIX 2018) -- would have this defined, and users could `#error` inside of an `#if` check if their code happens to any more advanced properties.
+
+Finally, implementations that opt into having at least convertible representation equivalence for `void*` and `_Any_func*` should be able to use those types in conversions without constraint violations. Similarly, there is additional wording to allow for any function pointer type to work with (implicit) assignment to `void*` or vice-versa if the representation equivalence is high enough. This standardizes existing practice, where many implementations do not warn or error on the constraint violation of for unrelated pointer types.
 
 
 
@@ -118,6 +116,34 @@ The name chosen here is the one that had the no clashes in both its reserved for
 - `_Func_t` with `func_t` or `stdc_func_t` (user adds `*` to make pointer)
 
 Many of these had issues with existing standard library type names (e.g. `_Fn` and `_Func` for C++ type names in templates and typedefs for standard or standard-adjacent libraries) or had common names that, even if hidden behind a header include, would result in undue naming burden on potential downstream users (`fn_ptr_t` or `fn` or `func_t`). Other permutations of these names, including ones with `_Storage_`/`_storage` or `_Void` and `_void`, either clashed with existing code or became undesirably long.
+
+
+
+## `...ptr` In the Name or a Pointer to Incomplete Type? ## {#design-ptr}
+
+The goal of this design was to feel as close to `void*` as possible, since that is what this type represents. This means that we wanted to have the `*` present to have it look and feel just like a regular pointer type under regular pointer rules, rather than having it be part of the name. Since this is a core language type and a not a library definition, we preferred to define it closer to `void` than anything else. It also helps in putting this type into the specification, as all we have to do is mirror exactly the specification style and places that "A pointer to `void`" and "`void*`" exist in the current standard. This eases integration and is -- after first explanation -- immediately understandable to those who have been using `void*` as the omni-object pointer.
+
+
+
+## Library Modifications ## {#design-library}
+
+The library needs further modification to allow for passing this new pointer type in, since `%p` by itself is specified to handle just `void*`. Since function pointer types and `void*` may not be the same size, a new entry is required to not taint the ABI of these functions, particularly of `fprintf` and `fscanf`. There is also discussion of `uintptr_t` and `intptr_t`; implementations may need additional integer types to handle this, and so these are provided under `uintfuncptr_t` and `intfuncptr_t` (and are as optional as their counterparts).
+
+
+### `%jp` for `fprintf` and `fscanf` ### {#design-library-fprintf.fscanf}
+
+There were a bunch of potential candidates but a lot of them had problems both because of existing uses in implementations or down-stream, or they were novel new modifiers. For example, `%lp` is already being used by CHERI, while `%q` is already taken by typical POSIX shell-based `printf` for quotable strings. To further disadvantage `%q`, it -- despite being a logical new letter next to `%p` -- is taken by BSD and still has some existing uses, even though the type it's used for (`quad_t`) has long since been aliased to a "proper" type by now. Trying to sneak in `%Lp` is awkward thanks to implementation already moving in on `%lp`, especially if printing address spaces as part of pointers because a thing where length modifiers and precision get used to represent it. `%Ip` seems nice for the mnemonic "instruction pointer", but `i` is already a normal conversion specifier and `I` is novel in this space as a modifier and a not a standalone conversion specifier.
+
+Thusly, we settled for `%jp` in this proposal. It can be read mnemonically as "jump pointer", which is reminiscent of assembly `jmp` and for assembly junkies gives the feeling of both `jmp` and `call`. `j` is also, already, a length modifier and has no known uses in the wild in combination with `%p`. It is the best we can do given the Wild Wild West of specifiers and modifiers in the C-and-derivative ecosystem, at this point.
+
+
+### `(u)intfuncptr_t` and printing/scanning macros ### {#design-library-uintfuncptr_t} 
+
+Given that we have a new pointer type for functions, individuals will want to manipulate the numeric representation of these pointers. The reason for this is simple: in the GCC extension, `void(*)(void)` is used as a generic catch-all function pointer storage type, but **also** has incrementing ability as part of its extension behavior. `_Any_func*` does not have such powers, and it was not added to the Additive Operators in the wording. Thus, in order to appropriately manipulate such pointers -- while knowing that there is not `char*` or `unsigned char*` analogue for this like with `void*` -- we have to employ the other means of address manipulation through a new integer type. `(u)intfuncptr_t` is exactly like `(u)intptr_t`, just with `func` in the name. It's optional as well.
+
+The `_MAX` macros for this type are already taken care of by blanket specification. The only additional specification needed is for `_WIDTH`, which is straightforward to write.
+
+Finally, `PRI(i/u/U/x/X/b/B/o)FUNCPTR` macros for printing and similar `SCN(i/u/x/b/o)FUNCPTR` macros for scanning macros were added to the appropriate headers. This rounds out full library support for I/O with these numbers, mirroring `uintptr_t` support.
 
 
 
@@ -796,6 +822,34 @@ uintfuncptr_t
 </ins>
 
 These types are optional.
+</div>
+
+</div>
+</blockquote>
+
+
+## Modify §7.23.3.5 "Width of integer types capable of holding <del>object</del> pointer types" ## {#wording-7.23.3.5}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">7.23.3.5</span><span class="wording-clause-title">Width of integer types capable of holding <del>object</del> pointer types</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-numbered">
+
+```cpp
+INTPTR_WIDTH                           exactly UINTPTR_WIDTH
+UINTPTR_WIDTH                          16
+```
+<ins>
+```cpp
+INTFUNCPTR_WIDTH                       exactly UINTFUNCPTR_WIDTH
+UINTFUNCPTR_WIDTH                      8
+```
+</ins>
+
 </div>
 
 </div>
