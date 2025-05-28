@@ -1,11 +1,11 @@
 <pre class='metadata'>
 Title: printf string size specifiers (and general precision length modifiers)
 H1: <code>printf</code> string size specifiers
-Shortname: XX22
+Shortname: 3555
 Revision: 0
 !Previous Revisions: None
 Status: D
-Date: 2025-05-06
+Date: 2025-05-27
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -34,7 +34,7 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 0 - May 6<sup>th</sup>, 2025 ## {#changelog-r0}
+## Revision 0 - May 27<sup>th</sup>, 2025 ## {#changelog-r0}
 
 - Initial release. ✨
 
@@ -126,9 +126,9 @@ For both `write_value` and `large_write_value`, the individual sizes of the stri
 
 While there is no hard requirement in any standard that mandates rigorous checking, most implementations do check if the write will eventually overflow the `int` and either return `-1` with an appropriate `errno` value or some other negative value. There is no constraint or recommended practice to check for overflow, but glibc, musl-libc, and many more can and do check for this case and report it. We see here that even with purely `int`-typed writes, we get the same error to happen on these platforms: all of them return a negative integer value.
 
-**What this means, ultimately, is that it is not the type length that matters more, but the actual value!**
+**What this means, ultimately, is that it is not the type of the length that matters more, but the actual value!**
 
-This proposal cannot change the return value's type (as that is an ABI break), but allowing a `size_t` type for the length modifier is actually an improvement to security. Since most implementations are doing value/overflow checking here, being able to pass in a (too-large) `size_t` directly and letting the overflow checks inherit in most implementations catch it and return a negative number. For example, observe the following (too large) string being written, but written in the "typical" way that string sizes get passed to formatted I/O functions like `printf`:
+This proposal cannot change the return value's type for `printf` or `fprintf` or any of its family of functions (as that is an ABI break), but allowing a `size_t` type for the length modifier is actually an improvement to security. Since most implementations are doing value/overflow checking here, being able to pass in a (too-large) `size_t` directly and letting the overflow checks inherit in most implementations catch it and return a negative number. For example, observe the following (too large) string being written, but written in the "typical" way that string sizes get passed to formatted I/O functions like `printf`:
 
 ```cpp
 #include <stdio.h>
@@ -151,9 +151,9 @@ int main() {
 }
 ```
 
-This is an error. But, we will never see it as an error anymore: the explicit cast inserted into the code for the express purpose of matching the type means that the error is now *hidden* from us. We can avoid hard-to-detect truncation errors that happen from potential `(int)BYTESIZE` code. Rather than (erroneously) casting and truncating the value of a `size_t` into an `int` type or similar, it will instead be actually checked by `fprintf`, `wfprintf`, and similar.
+This is an error. But, we will never see it as an error anymore: the explicit cast inserted into the code for the express purpose of matching the type means that the error is now *hidden* from us. Compilers cannot warn on it (except using tracing analysis which flags `BYTESIZE` as being truncated by the cast) without generating excessive false positives, as casting *is* seen as the way to get around this problem and intentional on the part of the user. Thus, by allowing the `size_t` value directly. We can avoid hard-to-detect truncation errors that happen from potential `(int)BYTESIZE` code. Rather than (erroneously) casting and truncating the value of a `size_t` into an `int` type or similar, it will instead be actually checked by `fprintf`, `wfprintf`, and similar.
 
-This is a notably improvement because `(int)some_too_big_size` is seen as an **explicit** choice on the part of the developer, made to silence warnings. Casting is too big of a hammer and too large of a club for this feature set; supplying the size without truncation directly to the function allows for existing quality of implementation to catch this error:
+This is a notably improvement because `(int)some_too_big_size` is seen as an **explicit** choice on the part of the developer, made to silence warnings or other diagnostics. Casting is too big of a hammer and too large of a club for this feature set; supplying the size without truncation directly to the function allows for existing quality of implementation to catch this error:
 
 ```cpp
 #include <stdio.h>
@@ -176,7 +176,7 @@ int main() {
 }
 ```
 
-This forms the basis of this proposal.
+The paper aims to allow high quality library implementations to catch this class of errors and let them error on it, while making things less cumbersome for the user. This forms the basis of this proposal.
 
 
 
