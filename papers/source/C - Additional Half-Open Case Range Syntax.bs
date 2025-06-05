@@ -1,0 +1,348 @@
+<pre class='metadata'>
+Title: Additional Half-Open case Range Syntax
+H1: Additional Half-Open <code>case</code> Range Syntax
+Shortname: XX56
+Revision: 0
+!Previous Revisions: None
+Status: D
+Date: 2025-06-05
+Group: WG14
+!Proposal Category: Change Request, Feature Request  
+!Target: C2y
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20_Funcptr_t.html
+!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20_Funcptr_t.bs">GitHub</a>
+Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
+Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+Abstract: 
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<div class="pagebreak"></div>
+
+
+
+
+
+# Revision History # {#changelog}
+
+
+
+## Revision 0 - May 30<sup>th</sup>, 2025 ## {#changelog-r0}
+
+- Initial release. ✨
+
+
+
+
+# Introduction & Motivation # {#motivation}
+
+During the WG14 Minneapolis 2024 meeting, a long-standing existing practice was accepted into C2y for denoting a range of values to `switch` on:
+
+```cpp
+switch (n) {
+case 1 ... 10:
+	something ();
+	break;
+}
+```
+
+This is good, and synchronizes the standard with widespread current implementations and extensions. However, there is a distinct problem in that `case 1 ... 10`  denotes a fully inclusive range, that counts for both 1 and 10. This leads to unfortunate syntax and behaviors to make a range of 1 element, or a range of no elements:
+
+```cpp
+switch (n) {
+case 1 ... 10:
+	something ();
+	break;
+case 11 ... 11:
+	something ();
+	break;
+case 21 ... 12:
+	not_correct();
+	break;
+}
+```
+
+The second is a case range of 1 element: `11`. The third is an empty case range: it puts the high value first and the low value second. Unfortunately, this is error-prone and problematic because it's a common user error: accidentally typing the wrong value first or getting closely-related values incorrect is a thing that can happen very often.
+
+This problem with the current, existing case range design supported in C compilers resulted in the discussion on Monday, September 30th during the WG14 meeting where it was discussed in what ways this could be mitigated. The ultimate problem is that it was impossible to provide a Constraint for accidentally swapping the High and Low values of the case range expression because it was a relied-upon means of creating an empty range through Macro Usage:
+
+```cpp
+#ifndef NUM_APPLES
+/* default value */
+#define NUM_APPLES 5
+#endif
+
+switch (apple_val) {
+	case 0 ... NUM_APPLES:
+		/* do something */
+		break;
+}
+
+// ...
+```
+
+Part of this idiom is that users can do `-DNUM_APPLES=-1` and that will "turn off" everything in the `/* do something */` portion of the `switch`'s `case` label. Therefore, the recommendation that was cultivated during the Minneapolis meeting was "do not warn if it's a macro because it was probably intentional, otherwise warn because it is likely a mistake". Briefly ignoring non-fused implementation concerns (separated preprocessor vs. front-end with the front-end generating errors for things it does not understand may or may not be macro values), there is a much heavier concern that the moment one uses macros, implementations may stop warning on things that are mistakes. Similarly, this leads to other questions: what if it's a `constexpr` variable, does that silence warnings? A `sizeof` expression that generates a constant value? There's many different ways that this could go wrong.
+
+The better way to handle this is by having it be a Constraint (i.e., typically an error in most implementations). The use cases above are valid and are part of existing practice, so this paper instead proposes a different syntax for "half-open ranges", as has been done in other languages that have encountered this same problem and moved to get around this issue.
+
+
+
+
+# Design # {#design}
+
+We cannot replace the existing syntax as it has strong existing practice, so we provide an alternative syntax to give us the power that we need. The syntax chosen in this proposal is `..<`, which is meant to clearly illustrate half-open/half-inclusive ("one less than the end") ranges. The reasons for choosing this syntax are simple:
+
+- it is a token sequence not present in C or C++ and therefore can be safely integrated in most languages;
+- it is not valid as part of any valid syntactic form of of parseable language construct in C or C++;
+- it is visually similar to `...` while being distinct enough to not be missed like just having two dots `..`;
+- and, the less than symbol matches nicely with the idea that it is "from `low-value` up to (but not including) `high-value`", similar to for loop syntax.
+
+For these reasons, we settled with `..<`. This provides us with a way of accessing a constraint violation without changing the meaning of existing code. It allows us to properly diagnose the following problem:
+
+```cpp
+extern int n;
+extern void f();
+
+int main () {
+	switch(n) {
+	case 8...7: // mistake: probably diagnosed!
+		f();
+		break;
+	}
+	switch(n) {
+	case 8..<7: // mistake: constraint violation!
+		f();
+		break;
+	}
+	return 0;
+}
+
+```
+
+and ALSO allows us to diagnose it even if the name comes from a macro or a `constexpr` variable, which provides a proper out from the way thorny diagnostics implementers were brainstorming at the Minneapolis 2024 meeting:
+
+```cpp
+extern int n;
+extern void f();
+
+#define LO 0
+#define HI 50
+
+constexpr int lo = 60;
+constexpr int hi = 99;
+
+int main () {
+	switch(n) {
+	case HI...LO-1: // mistake: not diagnosed
+	// Minneapolis 2024 recommended: NOT diagnose!!
+	case hi...lo-1: // mistake: not diagnosed
+	// Minneapolis 2024 recommended: NOT diagnose!!
+		f();
+		break;
+	}
+	switch(n) {
+	case HI..<LO: // mistake: constraint violated!
+	case hi..<lo: // mistake: constraint violated!
+		f();
+		break;
+	}
+	return 0;
+}
+```
+
+
+
+# Existing Practice # {#existing}
+
+Currently, no C compiler implementers the additional case range syntax. We are proposing this purely to mitigate the existing problem with the case ranges and to allow for better error checking for existing compilers based on the previous extension.
+
+Previously, [[n3370]]'s older iterations had suggestions for a half-open range. It was dropped for expedience purposes of standardization. However, we believe it would still be a good idea.
+
+
+
+
+
+# Wording # {#wording}
+
+The following wording is against the latest draft of the C standard.
+
+
+
+## Modify §6.6.2 "Constant range expressions" ## {#wording-6.6.2}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.6.2</span><span class="wording-clause-title">Constant Range Expressions</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+
+*constant-range-expression*:
+:: *constant-expression* `...` *constant-expression*
+:: <ins>*constant-expression* `..<` *constant-expression*
+
+</div>
+
+<div class="wording-clause-section-title">
+Description
+</div>
+
+<div class="wording-numbered">
+
+...
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+The constant expressions shall be integer constant expressions.<ins>For a half-open range, the first constant expression shall be less than or equal to the second constant expression.</ins>
+</div>
+
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered wording-numbered-4">
+
+The values described by the `...` operator form a *closed range*, which contains all integer values in sequence starting from and including the first, low value, up to and including the second, high value.<sup>123)</sup>
+</div>
+
+<ins>
+<div class="wording-newnumbered">
+
+The values described by the `..<` operator form a *half-open range*, which contains all integer values in sequence starting from and including the first, low value, up to but not including the second, high value.<sup>123✨)</sup>
+</div>
+</ins>
+
+<div>
+<span class="footnote"><sup>123)</sup> A range is not itself usable as a value and therefore does not have any specific type or representation, or perform any
+type conversion.</span>
+</div>
+<div>
+<ins>
+<span class="footnote"><sup>123✨)</sup> A range is not itself usable as a value and therefore does not have any specific type or representation, or perform any
+type conversion.</span>
+</ins>
+</div>
+
+<div class="wording-numbered wording-numbered-5">
+
+<del>If</del><ins>For closed ranges, if</ins> the arithmetic value of the first constant expression is greater than the one of the second, the range described by the constant range expression is empty.<ins>For half-open ranges, if the arithmetic value of the first constant expression is equal to the one of the second, the range described by the constant range expression is empty.</ins>
+</div>
+
+
+<div class="wording-clause-section-title">
+Recommended Practice
+</div>
+
+<div class="wording-numbered">
+
+Implementations are encouraged to emit a diagnostic message when a <ins>closed </ins>range is empty.
+</div>
+
+<div class="wording-numbered">
+
+...
+</div>
+
+<div class="wording-numbered wording-numbered-8">
+
+EXAMPLE 2&emsp;&emsp;&emsp;&emsp;<del>Because a range expression describes a closed range, it is possible to match past-the-end values such as the size of an array:</del><ins>Range expressions which describe closed ranges allow matching past-the-end values of a sufficiently-sized array, while range expressions which describe half-open ranges will not reference past the end of a sufficiently sized array:</ins>
+
+```cpp
+constexpr const int N = 42;
+int arr[N];
+switch (i) {
+	case 0 ... N: // matches the past-the-end range of arr
+		f (arr[i]); // not OK, will dereference arr[N]
+		g (&arr[i]); // may be OK depending on purpose
+		break;
+}
+switch (i) {
+	case 0 ... N - 1: // only matches the valid element range of arr
+		f (arr[i]); // OK
+		break;
+}
+```
+<ins>
+
+```cpp
+switch (i) {
+	case 0 ..< N: // only matches the valid element range of arr
+		f (arr[i]); // OK
+		break;
+}
+```
+</ins>
+</div>
+
+<div class="wording-numbered">
+...
+</div>
+
+<ins>
+<div class="wording-newnumbered wording-numbered-10">
+
+EXAMPLE 4&emsp;&emsp;&emsp;&emsp;Half-open ranges can provide better constraints for specific scenarios, such as working naturally with values that are not valid when accidentally flipped:
+
+```cpp
+extern int n;
+extern void f(int val);
+
+constexpr int lo = -40;
+constexpr int hi = 50; 
+
+int main () {
+	switch (n) {
+		case hi...lo-1: // mistake: no constraint violation
+			f(n);
+		break;
+	}
+	switch (n) {
+		case hi..<lo: // mistake: constraint violation
+			f(n);
+		break;
+	}
+	return 0;
+}
+```
+</div>
+</ins>
+
+
+</div>
+</blockquote>
+
+
+
+
+
+<pre class="biblio">
+{
+	"n3370": {
+		"authors": [
+			"Alex Celeste"
+		],
+		"title": "n3370 - Case range expressions, v3.1",
+		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3370.htm",
+		"publisher": "ISO/IEC JTC1 SC22 WG14"
+	}
+}
+</pre>
