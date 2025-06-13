@@ -298,6 +298,26 @@ int main () {
 }
 ```
 
+This is important for proper resource management in conjunction with potentially complex return expressions.
+
+```c
+#include <stdlib.h>
+#include <stddef.h>
+
+int f(size_t n, void* buf) {
+	/* ... */
+	return 0;
+}
+
+int main () {
+	const int size = 20;
+	void* buf = malloc(size);
+	defer { free(buf); }
+	return use_buffer(size, buf); // buffer is not freed until AFTER
+	// use_buffer returns
+}
+```
+
 Conversions#index("conversions") for the purposes of return are also computed before ```c defer```#index(apply-casing: false, display: [```c defer```], "Keywords", "defer") is entered.
 
 ```c
@@ -485,7 +505,7 @@ int main () {
 In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.10.10, an implementation shall define the following macro names:
 
 / `__STDC_DEFER_TS25755__`: The integer literal `1`.
-#index(display: [```c __STDC_DEFER_TS__```], "macros", "__STDC_DEFER_TS25755__")
+#index(display: [```c __STDC_DEFER_TS__```], "macros", "__STDC_DEFER_TS__")
 
 
 

@@ -1,7 +1,7 @@
 <pre class='metadata'>
 Title: printf string size specifiers (and general precision length modifiers)
 H1: <code>printf</code> string size specifiers
-Shortname: 3555
+Shortname: XX39
 Revision: 0
 !Previous Revisions: None
 Status: D
@@ -34,6 +34,13 @@ path: resources/css/bikeshed-wording.html
 
 
 
+## Revision 1 - May 27<sup>th</sup>, 2025 ## {#changelog-r1}
+
+- Change from using `u*` to `^` to avoid ambiguities in parsing with `.u*` as the modifier for unsigned integer precision modifiers for length. Previous discussion around `u*` is moved to [[#design-why.u.star.fails]]
+- Alternative syntaxes [[#design-alternatives]] are discussed in the proposal. If any of them seem appealing, one of them can be voted on.
+
+
+
 ## Revision 0 - May 27<sup>th</sup>, 2025 ## {#changelog-r0}
 
 - Initial release. ✨
@@ -52,11 +59,11 @@ It is impossible to use anything other than an `int` for the *precision* (size) 
 - large buffer indices
 - `countof(...)` and `sizeof(...)` operations
 
-and so much more are not `int`-typed. This results in a lot of excessive (and, in some ways, dangerous) casting for working with the I/O output functions. The simple, easy-integration fix is to simply allow precision with `.*` to include a size modifier, such that while `%.*s` is a string sized by an `int`, `%.z*s` represents a string sized by a `size_t`.
+and so much more are not `int`-typed. This results in a lot of excessive (and, in some ways, dangerous) casting for working with the I/O output functions. The simple, easy-integration fix is to simply allow precision with `.*` to include a size modifier, such that while `%.*s` is a string sized by an `int`, `%.z*s` represents a string sized by (the signed version of) a `size_t`.
 
 It is also important for strings that are not null terminated, such as substring functionality and parsing/searching. Needing to make sure things are null terminated is a huge burden, and while the `int` precision modifier helps, the constant casting hides potential overflow errors from high quality of implementation libraries and makes its use dubious.
 
-This proposal is to allow the typical integer length modifiers (`hh`, `h`, `l`, `j`, `z`, `t`, `wN`, and `wfN`) to be applied to the precision modifier when the precision modifier uses an asterisk (i.e., `.*`).
+This proposal is to allow the typical integer length modifiers (`hh`, `h`, `l`, `j`, `z`, `t`, `wN`, and `wfN`) to be applied to the precision modifier when the precision modifier uses an asterisk (i.e., `.*`). This proposal also adds a new precision argument modifier to replace `^`, for indicating an unsigned type for a precision modifier. We choose this character due to not being burdened by existing implementation extensions and being able to scale to other locations (e.g., as the field width).
 
 
 
@@ -71,7 +78,7 @@ Given the following grammar (using the notation from POSIX, where things enclose
 
 :: `%` `[argument$]` `[flags]` `[width]` `[ . [length modifier] precision]` `[length modifier]` `conversion-specifier`
 
-This is the easiest place for this to be where it won't be ambiguous. In particular, placing it in other locations could have it confused for a `conversion-specifier`, and putting it up ahead of the `[flags]`/`[argument$]` but having it apply to the `.precision` itself means that we would preclude having such a modifier on `[width]` itself. (This paper does not propose this for `[width]`, just for asterisk-based `.*` precision).
+This is the easiest place for this to be where it won't be ambiguous. In particular, placing it in other locations could have it confused for a `conversion-specifier`, and putting it up ahead of the `[flags]`/`[argument$]` but having it apply to the `.precision` itself means that we would preclude having such a modifier on `[width]` itself. (This paper does not propose this for `[width]`, just for asterisk-based `.*` and the newly-proposed `.^` precisions).
 
 Therefore, this design slots it into the one place it can have no negative impact and would be unambiguous: after the `.`, but before the `*` of precision:
 
@@ -81,7 +88,7 @@ extern size_t big_honkin_number;
 int main () {
 	char* str = malloc(big_honkin_number);
 	// ...
-	int result = printf("%.z*s", big_honkin_number, str); // no cast needed
+	int result = printf("%.z^s", big_honkin_number, str); // no cast needed
 	// ...
 	free(str);
 	return 0;
@@ -169,7 +176,7 @@ int main() {
 	}
 	str[BYTESIZE]                    = '\0';
 	FILE* f                          = fopen("/dev/null", "w+");
-	[[maybe_unused]] int write_value = fprintf(f, "%.z*s", BYTESIZE, str);
+	[[maybe_unused]] int write_value = fprintf(f, "%.z^s", BYTESIZE, str);
 	free(str);
 	assert(write_value < 0); // triggers on high quality-of-implementation again!!
 	return 0;
@@ -184,12 +191,55 @@ The paper aims to allow high quality library implementations to catch this class
 
 There were a couple of other choices for this insofar as where to put the "length modifier" type. Unfortunately, for all of these:
 
-1. `"%z.*s"`
-2. `"%.*zs"`
+1. `"%z.^s"`
+2. `"%.^zs"`
 
 There can be minor conflicts in the grammar or ambiguity of application. For (1), it's unclear whether that is meant to apply to a potential `[width]` argument or the desired `[.precision]` argument (which determines whether it should be a formatting error or not). This could block future improvements or modifications to the `printf` syntax that would allow for different types for the `[width]` argument. It is not being proposed in this paper, however; this paper is concerned mostly with enabling the use case of typical string and substring data.
 
 For (2), the problem is that it's unclear when parsing certain things, such as `"%.*zu"`, whether it's a modifier on the size for the `.*` or it's the traditional, current meaning as a precision modifier of `int` type for a `zu` type (e.g., `int`-specified padding on a `size_t` argument.) Given the [[#design|grammar]], having it appear before the `*` is both the most grammatically safe and implementable choice (without disambiguation and backwards-compatibility break rules). It also appears before what it modifies -- the `*` -- which allows a future where some other position can be chosen to modify a potential `[width]` modifier or other `printf` extensions.
+
+
+
+## Why `.u*s` and `.zu*s` Fails ## {#design-why.u.star.fails}
+
+This proposal previously used `"%.zu*s"` to specify a `const char*` string with a `size_t` length, or `"%.u*s"` for a `const char*` string with an `unsigned int` length. The problem is that, while mnemonically `.u*` was really good for "unsigned numeric precision argument", has an immediately problem: the `u`. `"%.u*s` can be parsed as BOTH:
+
+- `"%.u"` formatted integer with `*s` text;
+- or, `"%.u*s"` formatted `const char*` string with `unsigned int` length.
+
+This is a problem due to `u` not being a *modifier* but a *conversion specifier* in C. Design-wise, if `u` simply modified `x` or `d` to make it go from being a "signed" value to an "unsigned" value, this could never happen. But C did not go down that path: instead, `unsigned` anything is treated as a wholly separate conversion specifier and thus as a terminating sequence for a simple grammar. So, this proposal chooses `^` because it is less characters than `**` and more aesthetically pleasing than `**`. No known extensions seem to be using `^` as a character either, so this clears any ambiguity while leaving the character `^` in a deliberate location that, for implementations which are thorough in their checking, can produce formatting violations for it.
+
+
+
+
+## Syntax Alternatives ## {#design-alternatives}
+
+The alternatives here are (potentially) viable choices that can be chosen instead. Briefly, the pros and cons of such characters are discussed. If they are popular, we plan to poll WG14 about them.
+
+- `"%.z**s"`;
+- `"%.z^s"`;
+- or, `"%.z+s"`.
+
+
+### `^` ### {#design-alternatives-caret}
+
+The caret is what this proposal uses. It's a single character so it doesn't require any changes to a potential lookahead buffer for handling this sort of thing like `**` might do by itself. It's also aesthetically pleasing, at least in the author's opinion (or, rather, it's the last ugly). It can be used in the field width position as well without creating ambiguities, which leaves this as something that can be used in the future if more creative uses of the field width modifiers is considered.
+
+The negative is that its the new character. While there's currently no reported collision with existing practice and extensions, new characters means there's less room to maneuver in the future.
+
+
+### `**` ### {#design-alternatives-double.asterisks}
+
+The double asterisk is a potential choice. It does not use a new character but instead doubles up the current one in the current position. It can be used as a field width as well. It's novel and does not provide for ambiguities. As an already-used character, it does not provide any chance to clash with existing practice or extensions.
+
+The negative is that its a double-character and (in the author's opinion) a bit ugly to look at.
+
+
+### `+` ### {#design-alternatives-plus}
+
+The plus is a potential choice. It's a single character so it doesn't require any changes to a potential lookahead buffer for handling this sort of thing like `**` might do by itself. It's aesthetically pleasing and somewhat resembles the idea of an "unsigned" (positive) value. As an already-used character, it does not provide any chance to clash with existing practice or extensions.
+
+The negative is that it is very questionable whether or not this can be a field width, as `%+` is already a valid introductory sequence and is ambiguous on wether that is the old `+` for adding a sign to an integer or a new `+` for allowing an integer of a different (unsigned) type to be the field width. This means that the concept of a "length modifier" for the precision cannot be extended to the field width in the future without contorting the concept or once again creating new rules for that specific situation.
 
 
 
@@ -237,8 +287,8 @@ Each conversion specification is introduced by the character %. After the %, the
 
 - ...
 - An optional *precision* that gives the minimum number of digits to appear for the `b`, `B`, `d`, `i`, `o`, `u`, `x`, and `X` conversions, the number of digits to appear after the decimal-point character for `a`, `A`, `e`, `E`, `f`, and `F` conversions, the maximum number of significant digits for the `g` and `G` conversions, or the maximum number of bytes to be written for `s` conversions. The precision takes the form of a period (`.`)<ins>optionally</ins> followed <del>either by an asterisk * (described later) or by an optional nonnegative decimal integer;</del><ins> by one of:</ins>
-	- <ins>an optional length modifier followed by a an asterisk `*` (described later);</ins>
-	- <ins>an optional length modifier followed by a `u` and an `*` (described later);</ins>
+	- <ins>an optional length modifier followed by an asterisk `*` (described later);</ins>
+	- <ins>an optional length modifier followed by a caret`^` (described later);</ins>
 	- <ins>or, a nonnegative decimal integer.</ins>
 
 :: If only the period is specified, the precision is taken as zero. If a precision appears with any other conversion specifier, the behavior is undefined.
@@ -249,7 +299,7 @@ Each conversion specification is introduced by the character %. After the %, the
 
 <div class="wording-numbered-5 wording-numbered">
 
-As noted previously, a field width<del>, or precision, or both,</del> may be indicated with an asterisk.<ins> A precision may be indicated with an asterisk or a lowercase `u` followed by an asterisk.</ins><del>In this case</del><ins>An asterisks means</ins> an `int` argument supplies the field width<del> or precision</del>. <ins>If the precision is an asterisk, an `int` argument or an argument of signed integer type (indicated by an optional length modifier) supplies the precision. If the precision is a `u` followed by an asterisk, an `unsigned int` argument or an argument of unsigned integer type (indicated by an optional length modifier) supplies the precision.</ins> The arguments specifying field width, or precision, or both, shall appear (in that order) before the argument (if any) to be converted. A negative field width argument is taken as a `-` flag followed by a positive field width. A negative precision argument is taken as if the precision were omitted.
+As noted previously, a field width<del>, or precision, or both,</del> may be indicated with an asterisk.<ins> A precision may be indicated with an asterisk or a caret.</ins><del>In this case</del><ins>An asterisks means</ins> an `int` argument supplies the field width<del> or precision</del>. <ins>If the precision is an asterisk, an `int` argument or an argument of signed integer type (indicated by an optional length modifier) supplies the precision. If the precision is a caret '^', an `unsigned int` argument or an argument of unsigned integer type (indicated by an optional length modifier) supplies the precision.</ins> The arguments specifying field width, or precision, or both, shall appear (in that order) before the argument (if any) to be converted. A negative field width argument is taken as a `-` flag followed by a positive field width. A negative precision argument is taken as if the precision were omitted.
 </div>
 
 <div class="wording-numbered">
@@ -271,7 +321,7 @@ The length modifiers and their meanings are:
 `hh`
 </td>
 <td>
-Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a signed char or unsigned char argument (the argument will have been promoted according to the integer promotions, but its value shall be converted to `signed char` or `unsigned char` before printing); or that a following `n` conversion specifier applies to a pointer to a `signed char` argument. <ins>If it is followed by an asterisk, then it specifies that the corresponding argument is of type `signed char`. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of type `unsigned char`.</ins>
+Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a signed char or unsigned char argument (the argument will have been promoted according to the integer promotions, but its value shall be converted to `signed char` or `unsigned char` before printing); or that a following `n` conversion specifier applies to a pointer to a `signed char` argument. <ins>If it is followed by an asterisk, then it specifies that the corresponding argument is of type `signed char`. If it is followed by a caret, it specifies that the corresponding argument is of type `unsigned char`.</ins>
 </td>
 </tr>
 
@@ -280,7 +330,7 @@ Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion 
 `h`
 </td>
 <td>
-Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a `short int` or `unsigned short int` argument (the argument will have been promoted according to the integer promotions, but its value shall be converted to `short int` or `unsigned short int` before printing); or that a following `n` conversion specifier applies to a pointer to a `short int` argument. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of type `short int`. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of type `unsigned short int`.</ins>
+Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a `short int` or `unsigned short int` argument (the argument will have been promoted according to the integer promotions, but its value shall be converted to `short int` or `unsigned short int` before printing); or that a following `n` conversion specifier applies to a pointer to a `short int` argument. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of type `short int`. If it is followed by a caret '^', it specifies that the corresponding argument is of type `unsigned short int`.</ins>
 </td>
 </tr>
 
@@ -289,7 +339,7 @@ Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion 
 `l` (ell)
 </td>
 <td>
-Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a `long int` or `unsigned long int` argument; that a following n conversion specifier applies to a pointer to a `long int` argument; that a following `c` conversion specifier applies to a `wint_t` argument; that a following s conversion specifier applies to a pointer to a `wchar_t` argument; or has no effect on a following `a`, `A`, `e`, `E,` `f`, `F`, `g`, or `G` conversion specifier. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of type `long int`. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of type `unsigned long int`.</ins>
+Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a `long int` or `unsigned long int` argument; that a following n conversion specifier applies to a pointer to a `long int` argument; that a following `c` conversion specifier applies to a `wint_t` argument; that a following s conversion specifier applies to a pointer to a `wchar_t` argument; or has no effect on a following `a`, `A`, `e`, `E,` `f`, `F`, `g`, or `G` conversion specifier. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of type `long int`. If it is followed by a caret '^', it specifies that the corresponding argument is of type `unsigned long int`.</ins>
 </td>
 </tr>
 
@@ -298,7 +348,7 @@ Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion 
 `ll` (ell-ell)
 </td>
 <td>
-Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a `long long int` or `unsigned long long int` argument; or that a following `n` conversion specifier applies to a pointer to a `long long int` argument. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of type `long long int`. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of type `unsigned long long int`.</ins>
+Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a `long long int` or `unsigned long long int` argument; or that a following `n` conversion specifier applies to a pointer to a `long long int` argument. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of type `long long int`. If it is followed by a caret '^', it specifies that the corresponding argument is of type `unsigned long long int`.</ins>
 </td>
 </tr>
 
@@ -307,7 +357,7 @@ Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion 
 `j`
 </td>
 <td>
-Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to an `intmax_t` or `uintmax_t` argument; or that a following n conversion specifier applies to a pointer to an `intmax_t` argument. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of type `intmax_t`. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of type `uintmax_t`.</ins>
+Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to an `intmax_t` or `uintmax_t` argument; or that a following n conversion specifier applies to a pointer to an `intmax_t` argument. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of type `intmax_t`. If it is followed by a caret '^', it specifies that the corresponding argument is of type `uintmax_t`.</ins>
 </td>
 </tr>
 
@@ -316,7 +366,7 @@ Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion 
 `z`
 </td>
 <td>
-Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a size_t or the corresponding signed integer type argument; or that a following `n` conversion specifier applies to a pointer to a signed integer type corresponding to `size_t` argument. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of the corresponding signed type of `size_t`. If it is followed by a `u` and then an asterisk, then it specifies that the corresponding argument is of type `size_t`.</ins>
+Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a size_t or the corresponding signed integer type argument; or that a following `n` conversion specifier applies to a pointer to a signed integer type corresponding to `size_t` argument. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of the corresponding signed type of `size_t`. If it is followed by a caret '^', then it specifies that the corresponding argument is of type `size_t`.</ins>
 </td>
 </tr>
 
@@ -325,7 +375,7 @@ Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion 
 `t`
 </td>
 <td>
-Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a `ptrdiff_t` or the corresponding unsigned integer type argument; or that a following `n` conversion specifier applies to a pointer to a `ptrdiff_t` argument. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of type `ptrdiff_t`. If it is followed by a `u` and then an asterisk, then it specifies that the corresponding argument is of the corresponding unsigned type of `ptrdiff_t`.</ins>
+Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a `ptrdiff_t` or the corresponding unsigned integer type argument; or that a following `n` conversion specifier applies to a pointer to a `ptrdiff_t` argument. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of type `ptrdiff_t`. If it is followed by a caret '^', then it specifies that the corresponding argument is of the corresponding unsigned type of `ptrdiff_t`.</ins>
 </td>
 </tr>
 
@@ -334,7 +384,7 @@ Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion 
 `wN`
 </td>
 <td>
-Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to an integer argument with a specific width where `N` is a positive decimal integer with no leading zeros (the argument will have been promoted according to the integer promotions, but its value shall be converted to the unpromoted type); or that a following `n` conversion specifier applies to a pointer to an integer type argument with a width of `N` bits. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of `N`-bit integer type. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of `N`-bit unsigned integer type.</ins> All minimum-width integer types (7.22.2.3) and exact-width integer types (7.22.2.2) defined in the header `<stdint.h>` shall be supported. Other supported values of N are implementation-defined.
+Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to an integer argument with a specific width where `N` is a positive decimal integer with no leading zeros (the argument will have been promoted according to the integer promotions, but its value shall be converted to the unpromoted type); or that a following `n` conversion specifier applies to a pointer to an integer type argument with a width of `N` bits. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of `N`-bit integer type. If it is followed by a caret '^', it specifies that the corresponding argument is of `N`-bit unsigned integer type.</ins> All minimum-width integer types (7.22.2.3) and exact-width integer types (7.22.2.2) defined in the header `<stdint.h>` shall be supported. Other supported values of N are implementation-defined.
 </td>
 </tr>
 
@@ -343,7 +393,7 @@ Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion 
 `wfN`
 </td>
 <td>
-Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a fastest minimum-width integer argument with a specific width where `N` is a positive decimal integer with no leading zeros (the argument will have been promoted according to the integer promotions, but its value shall be converted to the unpromoted type); or that a following `n` conversion specifier applies to a pointer to a fastest minimum-width integer type argument with a width of `N` bits. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of `N`-bit fastest minimum-width integer type. If it is followed by a `u` and then an asterisk, it specifies that the corresponding argument is of `N`-bit fastest minimum-width unsigned integer type.</ins> All fastest minimum-width integer types (7.22.2.4) defined in the header `<stdint.h>` shall be supported. Other supported values of N are implementation-defined.
+Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a fastest minimum-width integer argument with a specific width where `N` is a positive decimal integer with no leading zeros (the argument will have been promoted according to the integer promotions, but its value shall be converted to the unpromoted type); or that a following `n` conversion specifier applies to a pointer to a fastest minimum-width integer type argument with a width of `N` bits. <ins>If it is followed by an asterisk then it specifies that the corresponding argument is of `N`-bit fastest minimum-width integer type. If it is followed by a caret '^', it specifies that the corresponding argument is of `N`-bit fastest minimum-width unsigned integer type.</ins> All fastest minimum-width integer types (7.22.2.4) defined in the header `<stdint.h>` shall be supported. Other supported values of N are implementation-defined.
 </td>
 </tr>
 </table>
