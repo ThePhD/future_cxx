@@ -1,23 +1,23 @@
 <pre class='metadata'>
 Title: Additional Half-Open case Range Syntax
 H1: Additional Half-Open <code>case</code> Range Syntax
-Shortname: 3588
-Revision: 0
-!Previous Revisions: None
-Status: D
-Date: 2025-06-05
+Shortname: 3601
+Revision: 1
+!Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3588.htm">n3588 (r0)</a>
+Status: P
+Date: 2025-06-22
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
-URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20_Funcptr_t.html
-!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20_Funcptr_t.bs">GitHub</a>
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Additional%20Half-Open%20Case%20Range%20Syntax.html
+!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Additional%20Half-Open%20Case%20Range%20Syntax.bs">GitHub</a>
 Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
 Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
 Markup Shorthands: markdown yes
 Toggle Diffs: no
-Abstract: 
+Abstract: An additional syntax for case ranges to enable better constraint violations.
 </pre>
 
 <pre class="include-raw">
@@ -31,6 +31,14 @@ path: resources/css/bikeshed-wording.html
 
 
 # Revision History # {#changelog}
+
+
+
+## Revision 1 - June 22<sup>nd</sup>, 2025 ## {#changelog-r1}
+
+- Add wording for single-tokenization for Punctuators ([[#wording-6.4.7]]).
+- Explain additional motivations in [[#design-existing]].
+
 
 
 
@@ -112,12 +120,12 @@ extern void f();
 
 int main () {
 	switch(n) {
-	case 8...7: // mistake: probably diagnosed!
+	case 8 ... 7: // mistake: probably diagnosed!
 		f();
 		break;
 	}
 	switch(n) {
-	case 8..<7: // mistake: constraint violation!
+	case 8 ..< 7: // mistake: constraint violation!
 		f();
 		break;
 	}
@@ -140,22 +148,77 @@ constexpr int hi = 99;
 
 int main () {
 	switch(n) {
-	case HI...LO-1: // mistake: not diagnosed
+	case HI ... LO-1: // mistake: not diagnosed
 	// Minneapolis 2024 recommendation: DO NOT diagnose!!
-	case hi...lo-1: // mistake: not diagnosed
+	case hi ... lo-1: // mistake: not diagnosed
 	// Minneapolis 2024 recommendation: DO NOT diagnose!!
 		f();
 		break;
 	}
 	switch(n) {
-	case HI..<LO: // mistake: constraint violated!
-	case hi..<lo: // mistake: constraint violated!
+	case HI ..< LO: // mistake: constraint violated!
+	case hi ..< lo: // mistake: constraint violated!
 		f();
 		break;
 	}
 	return 0;
 }
 ```
+
+
+
+## Existing Error/Warning Implementations ## {#design-existing}
+
+As it turns out, despite the recommendations and discussion of the Minneapolis 2024 meeting from implementers, the actual implementations only have 2 extremes:
+
+- always warn/error, all the time;
+- or, never warn, ever.
+
+GCC and Clang (since at least version 4 and version 3.8, respectively, all the way through their "trunk" versions) **always** warn on empty ranges. This means that implementations believe that empty ranges are problematic, but by the design of the feature cannot issue a stronger diagnostic due to the design (and the fact that empty ranges are, in fact, configurable). It does not matter if the range comes from a constant variable (implementation-defined `const` variable) or a macro or something is written literally: the implementations ALWAYS warn. This is in line with many other compilers with a higher quality of implementation. NVC, Chibicc, SDCC, Arduino Mega (avr-gcc), and others also ALWAYS warn/error on this, with no flags (other than the standard or macro defining flags) specified:
+
+```cpp
+extern int n;
+extern void f(void);
+
+#define LO 0
+#define HI 50
+
+#if HAVE_CONSTEXPR
+constexpr int lo = 60;
+constexpr int hi = 99;
+#endif
+#if HAVE_CONSTANTS
+static const int lo_impl = 100;
+static const int hi_impl = 241;
+#endif
+
+int main () {
+	switch(n) {
+#if HAVE_CONSTANTS
+	case hi_impl ... lo_impl-1: // Minneapolis 2024 recommendation: DO NOT diagnose!!
+#endif
+	case HI ... LO-1: // Minneapolis 2024 recommendation: DO NOT diagnose!!
+#if HAVE_CONSTEXPR
+	case hi ... lo-1: // Minneapolis 2024 recommendation: DO NOT diagnose!!
+#endif
+		f();
+		break;
+	}
+#if 0
+	switch(n) {
+	case HI ..< LO: // mistake: constraint violated!
+	case hi ..< lo: // mistake: constraint violated!
+		f();
+		break;
+	}
+#endif
+	return 0;
+}
+```
+
+([Godbolt: https://godbolt.org/z/rxvas4d4e](https://godbolt.org/z/rxvas4d4e))
+
+Some other compilers checked don't bother warning at all, but across most implementations this is either a soft warning or a hard error, which matches the Recommended Practice but does not capture the actual hard-erroring implementations. It also doesn't catch the fact that most compilers warn **unconditionally**, which means that there's actually less appetite to let this kind of code through than was surmised at the Minneapolis 2024 meeting. This points to the idea that maybe a stronger design is needed and necessary, here.
 
 
 
@@ -221,7 +284,7 @@ We chose `..<` because it is visually indicative of "less than" and works fairly
 
 # Existing Practice # {#existing}
 
-Currently, no C compiler implementers the additional case range syntax. We are proposing this purely to mitigate the existing problem with the case ranges and to allow for better error checking for existing compilers based on the previous extension.
+Currently, no C compiler implements the additional case range syntax. We are proposing this purely to mitigate the existing problem with the case ranges and to allow for better error checking for existing compilers based on the previous extension.
 
 Previously, [[n3370]]'s older iterations had suggestions for a half-open range. It was dropped for expedience purposes of standardization. However, we believe it would still be a good idea.
 
@@ -232,6 +295,37 @@ Previously, [[n3370]]'s older iterations had suggestions for a half-open range. 
 # Wording # {#wording}
 
 The following wording is against the latest draft of the C standard.
+
+
+
+## Modify §6.4.7 "Punctuators" ## {#wording-6.4.7}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.4.7</span><span class="wording-clause-title">Punctuators</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+
+*punctuator*: one of
+:: `[` `]` `(` `)` `{` `}` `.` `->`
+:: `++` `--` `&` `*` `+` `-` `~` `!`
+:: `/` `%` `<<` `>>` `<` `>` `<=` `>=` `==` `!=` `^` `|` `&&` `||`
+:: `?` `:` `::` `;` `...`<ins> `..<` </ins>
+:: `=` `*=` `/=` `%=` `+=` `-=` `<<=` `>>=` `&=` `^=` `|=`
+:: `,` `#` `##`
+:: `<:` `:>` `<%` `%>` `%:` `%:%:`
+
+</div>
+
+</div>
+</blockquote>
 
 
 
@@ -373,12 +467,12 @@ constexpr int hi = 50;
 
 int main () {
 	switch (n) {
-		case hi...lo-1: // mistake: no constraint violation
+		case hi ... lo-1: // mistake: no constraint violation (recommended practice: diagnose)
 			f(n);
 		break;
 	}
 	switch (n) {
-		case hi..<lo: // mistake: constraint violation
+		case hi ..< lo: // mistake: constraint violation
 			f(n);
 		break;
 	}
