@@ -1,7 +1,7 @@
 <pre class='metadata'>
 Title: printf string size specifiers (and general precision length modifiers)
 H1: <code>printf</code> string size specifiers
-Shortname: XX89
+Shortname: 3626
 Revision: 2
 !Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3591.htm">n3591 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3555.htm">n3555 (r0)</a>
 Status: P
@@ -249,6 +249,52 @@ The negative is that its a double-character and (in the author's opinion) a bit 
 The plus is a potential choice. It's a single character so it doesn't require any changes to a potential lookahead buffer for handling this sort of thing like `**` might do by itself. It's aesthetically pleasing and somewhat resembles the idea of an "unsigned" (positive) value. As an already-used character, it does not provide any chance to clash with existing practice or extensions.
 
 The negative is that it is very questionable whether or not this can be a field width, as `%+` is already a valid introductory sequence and is ambiguous on whether that is the old `+` for adding a sign to an integer or a new `+` for allowing an integer of a different (unsigned) type to be the field width. This means that the concept of a "length modifier" for the precision cannot be extended to the field width in the future without contorting the concept or once again creating new rules for that specific situation.
+
+
+
+
+# Implementation Concerns # {#implementation}
+
+A few developers at a large C standard library vendor stated that they could not implement this for fear of backwards compatibility breaks for their existing users. This goes against what is the understanding of the engineering from the authors of this paper. A standard way to solve the problem with be under [Transparent Aliases](https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Transparent%20Aliases.html), which has not yet been standard. But, as the Transparent Aliases paper states, there are several dozen ways to solve this problem in a way where old, already-compiled code is backwards-compatible, including a way that works across almost all target platforms (and with a macro **absolutely** does work across all target platforms).
+
+Assembly labels -- `asm` labels -- provide a way to add new runtime and compile-time changes to existing functions both inside and outside the standard while maintaining traditional behavior. Here is a short, simple, compilable example for having 2 different `fprintf` functions with differing behaviors: one which caters to an older already-compiled programs under the exact binary name `_fprintf` that old binaries expect; and, one which uses the binary name `_fprintf_v2`. A macro is used to determine which one the C source code identifier `fprintf` connects to.
+
+`fprintf.h`
+```cpp
+typedef struct FILE FILE;
+
+#if _USE_OLD_FPRINTF
+extern __attribute__ ((visibility ("visible")))
+int fprintf(FILE * restrict __stream, const char *restrict __format, ...) __asm("_fprintf");
+#else
+extern __attribute__ ((visibility ("visible")))
+int fprintf(FILE *restrict __stream, const char *restrict __format, ...) __asm("_fprintf_v2");
+#endif
+```
+
+`fprintf_original.c`
+```cpp
+#include <fprintf.h>
+
+extern __attribute__ ((visibility ("visible")))
+int fprintf(FILE *restrict __stream, const char *restrict __format, ...) {
+	/* COMPATIBILITY implementation here... */
+	return 0;
+}
+```
+
+`fprintf_v2.c`
+```cpp
+#include <fprintf.h>
+
+extern __attribute__ ((visibility ("visible")))
+int fprintf_v2(FILE *restrict __stream, const char *restrict __format, ...) {
+	/* BREAKING implementation here... */
+	return 0;
+}
+```
+
+All of these are compiled into the same shared object / dynamic link library, and it solves the problem. Therefore, we do not consider this an implementation impediment, especially since the only platforms which will have this problem are larger platforms that attempt to maintain backwards compatibility and can afford the extra function definition for impactful changes.
 
 
 
