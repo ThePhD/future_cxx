@@ -138,15 +138,13 @@ The notable benefits of this approach were:
 Unfortunately, the early and enduring design of this feature -- in order to enable some of the benefits listed above -- very quickly ran afoul of early security concerns, and soon earned itself a big CVE due to the way it worked. In particular, the implementation strategy for a nested function is a brilliant piece of engineering that runs afoul of one of the only enduring security mitigations that has not fallen by the wayside: Non-Executable Stacks. To understanding why this matters, a brief description of what (Non-)Executable Stacks are, and why they are important.
 
 
-### Non-Executable Stacks ### {#into-nested.functions-security}
+### Non-Executable Stacks ### {#intro-nested.functions-security}
 
-In C, a common practice to leverage lots of hot-patching, assembly hot-fixing, direct opcode injection, and more, programs frequently made use of stack-based data buffers where they also dumped their programs. This meant that programs would have programs start reading from their stack with the instruction pointer, allowing programs to dynamically inject behavior into a currently running program either in parts or -- if that data came from outside sources -- a fully dynamic sort of live-coding. The problem with this approach was that if a normal user could use the stack to make the program do a set of behaviors, so could a malicious actor: this was the easiest and widest branch of attacks upon C programs, and it was an endemic issue given the extremely large number of stack-based, fixed-sixed buffers or -- in the C99 timeframe -- variable-length arrays. Commandeering programs was as easy as finding a place where naïve programmers and hackers employed the now-deprecated `gets`, or where input was loaded in a too-relaxed way into a stack buffer. Overrunning the buffer and gaining control of the program by getting a `jmp` instruction to jump not back to some expected place in the stack but instead to a piece of a new program written by malicious inputs into the program made it easy to exploit C programs day in and day out, over and over again.
+In C, a common practice to leverage lots of hot-patching, assembly hot-fixing, direct opcode injection, and more, programs frequently made use of stack-based data buffers where they also dumped their programs. This meant that binaries would read from their stack with the instruction pointer, allowing programs to dynamically inject behavior into a currently running program either in parts or -- if that data came from outside sources -- a fully dynamic sort of live-machine coding. The problem with this approach was that if a normal user could use the stack to make the program do a set of behaviors, so could a malicious actor: this was the easiest and widest branch of attacks upon C programs, and it was an endemic issue given the extremely large number of stack-based, fixed-sixed buffers or -- after the advent of C99 -- variable-length arrays. Commandeering programs was as easy as finding a place where naïve programmers and hackers employed the now-deprecated `gets`, or where input was loaded in a too-relaxed way into a stack buffer. Overrunning the buffer and gaining control of the program by getting a `jmp` instruction to jump not back to some expected place in the stack but instead to a piece of a new program written by malicious inputs into the program made it easy to exploit C programs day in and day out, over and over again.
 
 Then, compiler developers, operating system vendors, and runtime loader designers came up with one killer fix: making the program stack non-executable.
 
-Without an executable stack, it did not matter how many buffers were overflowed: code that was inadvertently overtaken by a buffer overflow did not have the ability to point to data written into a buffer that was also on the stack and start running. Such runs would be considered entirely and wholly illegal, and it would blow up the program. Most programs, whether using VLAs or not, loved to keep (small)-ish buffers on the stack that they constantly wrote data into in response to user input or read data (such as configuration files or network input). Preventing such buffers that were the overwhelming target of exploits from running -- even if they contained the perfect shellcode to do so -- permanently crippled red teamers in this regard.
-
-Unlike Address Space Layout Randomization (ASLR) and several other run-time mitigations, non-executable stacks have been both the cheapest and most enduring security wins in the last 50 years of computing. Marking sections of memory as unable to be run as part of the program permanently shifted the landscape of targeted exploits to be focused almost exclusively on buffer overrun-into-heap-exploitation bugs, as well as trying to find sequences of logic to put programs in a state of disrepair that ultimately grant attackers either a Denial of Service (DoS) attack or full control VIA Remote Code Execution (RCE). Exploits were now exceedingly harder and required orchestration of multiple carefully-crafted scenarios to hit the "Weird Machine" state so coveted by red teamers/exploiters, except in one instance: when a programmer used a Nested Function.
+Without an executable stack, it did not matter how many buffers were overflowed or how many `jmp` pointers were overtaken by malicious data overwriting parts of the program stack through inadequately-sized user buffers. Code that was inadvertently overtaken by a buffer overflow did not have the ability to point to data written into a buffer that was also on the stack and start running. Such runs would be considered entirely and wholly illegal, and it would blow up the program with a `SEGMENTATION FAULT` or other issue. Most programs, whether using VLAs or not, loved to keep (small)-ish buffers on the stack that they constantly wrote data into in response to user input or read data (such as configuration files or network input). Preventing the ability of a poorly written program that did not guard against all forms of malicious input from turning into an easy Remote Code Execution issue was a gigantic security win. The overwhelming majority of exploits running at the time were effectively halted, even if they contained the perfect shellcode to do so. This permanently crippled red teamers, and completely changed both the simplicity and the power in basic code failures.
 
 
 ### Early Design Flaw: Nested Functions turn the stack Executable! ### {#intro-nested.functions-design}
@@ -190,7 +188,51 @@ The secret of this is in the brilliance of the original design: since it was so 
 
 Unfortunately, this required the stack, still, to be executable in order to function.
 
-This is the critical issue that has resulted in most other vendors not picking up the feature. Compilers want to work flawlessly with GCC-compiled code: this means that compiling a nested function and passing it to a function pointer has to result in a (somewhat) similar Application Binary Interface (ABI) that can be used as applications expect. This means the decision to make GCC nested functions trampoline from the stack are non-ignorable details that cannot be ignored. This is the primary reason Clang and other vendors have refused to implement Nested Functions, chiefly citing security concerns and the inability to develop a worthwhile ABI that is compatible.
+This is the critical issue that has resulted in most other vendors not picking up the feature. Compilers want to work flawlessly with GCC-compiled code: this means that compiling a nested function and passing it to a function pointer has to result in a (somewhat) similar Application Binary Interface (ABI) that can be used as applications expect. This means the decision to make GCC nested functions trampoline from the stack are non-ignorable details that cannot be ignored. This is the primary reason Clang and other vendors have refused to implement Nested Functions, chiefly citing security concerns and the inability to develop a worthwhile ABI that is compatible. Just how prevalent are the security issues that Clang and other vendors avoided by refusing to implement the GNU Nested Functions extension? Well...
+
+#### The Prevalence of Executable Stack and GNU Nested Functions #### {#intro-nested.functions-security-popularity}
+
+A ton of users relied on or otherwise kept using Executable Stacks, even into today. While the non-executable stack fix was deployed to great success in the early 2020s, some platforms -- particularly, Linux and similar POSIX-based platforms -- kept this up. This clashed with users who became far too comfortable with the issues related to Executable Stack:
+
+> Year of Linux desktop will never happen as long as glibc is de-facto standard libc. As far as I know, this regression is wontfix, so many games just won't work anymore. 
+>
+> Imagine being a game dev from 5 years ago and making a native Linux version of your game in a good faith, that's 100% a net-negative money-wise, only for it to stop working in a couple years. Backward compatibility on Linux does not exist as far as regular users concerned, and the only way to make software that works in years to come is to make it for Windows, and hopefully let Valve and Wine teams handle the rest.
+> 
+> --  February 19, 2025, [Valentin Ignatev](https://twitter.com/valigo_gg/status/1892189377830220025)
+
+Briefly ignoring the extreme hyperbole: note the dates and the mentioned time of this tweet. 5 years ago; e.g. developed in 2020, with the complaint happening in 2025. The tweet included a screenshot from the article titled "*The glibc 2.41 update has been causing problems for Linux gaming*" ([[gamingonlinux-dawe]]). Windows and MacOS have been disabling executable stacks globally, by default, for years and refusing to load such applications. This complaint happened when glibc stopped forcefully setting executable stack, even if the tweet that garnered the public push back did not mention WHY these games were breaking. This talks to the severe need for a solution in this space that is not security breaking, and even telling folks to simply "turn on executable stack" for themselves is not wonderful:
+
+> ... Don't just take my advice on it though if you're a developer or gamer reading this, always look up what you're doing fully. Run at your own risk. ...
+> 
+> -- February 13, 2025, [Article Author Liam Dawe](https://www.gamingonlinux.com/2025/02/the-glibc-2-41-update-has-been-causing-problems-for-linux-gaming/)
+
+Unfortunately, this lax approach to security -- especially for video games -- has resurfaced quite a few truly unfornate bugs. Popular Windows games such as Dark Souls: PREPARE TO DIE Edition and Call of Duty: WWII have exploitable Remote Code Execution (RCE) bugs in their code. One of them seems to be getting patched, but the other -- in Dark Souls -- is not going to be patched out. The idea that glibc -- or platforms in general -- can take a lax position to security on devices, even for something as "frivolous" as the (multi-billion dollar revenue) video game industry is simply not tenable. From a highly skilled Vision & Graphics engineer commenting on the controversy caused by the glibc 2.41 update:
+
+> glibc is in the right here. iirc windows and mac DEP policy disabled executable stack by default for the past ~20 years or so. shocked this was not already the case in linux userland
+> 
+> -- February 21, 2025 [awr](https://twitter.com/awr_hey/status/1892874306776158494)
+
+The engineer in charge of pushing the change and looking over the situation commented on the article and general attitude represented by Mr. Ignatev:
+
+> It is interesting that the headline did not get into details why I made this change: [https://sourceware.org/pipermail/libc-alpha/2024-December/163146.html](https://sourceware.org/pipermail/libc-alpha/2024-December/163146.html)
+>
+> In a short: the old behavior was used in a know RCE described in CVE-2023-38408.
+> 
+> -- February 20, 2025, [Adhemerval Zanella](https://twitter.com/adhemerval/status/1892348528531231025)
+
+It is important to know that many other developers do not share this perception. Even as far back as 2018, when Microsoft kept up its Security Posture in its Windows Subsystem for Linux, people railed against the high-security default of refusing to work with programs that allowed executable stack ([[WSL-no-executable-stack]]):
+
+> The accepted trade-off is to have a non-executable stack be default but have an executable stack for programs which need them. Not supporting this is just a deficiency in WSL.
+>
+> - August 7, 2018, [Martin Uecker](https://github.com/microsoft/WSL/issues/286#issuecomment-411092033)
+
+Who's perspective is correct?
+
+#### The Standard Is To Blame #### {#intro-nested.functions-security-blame}
+
+This proposal agrees with both Mr. Zanella and Ms. Awr, and disagrees with Mr. Uecker and Mr. Ignatev; it is impossible to pretend like this is not a problem with more and more exploits taking advantage of not only executable stack, but directly targeting "harmless" software that makes use of it (such as video games). But, even more importantly, the real culprit here is ISO C. There were many alternatives to executable stack-based GNU Nested Functions, and other such entrapments. However, because of how convenient GNU Nested Functions are and how accepted they are in the GNU ecosystem, it has led to multiple security vulnerabilities that should have never existed in the first place ([[#appendix-executable.stack.cves]]).
+
+Unlike Address Space Layout Randomization (ASLR) and several other run-time mitigations, non-executable stacks have been both the cheapest and most enduring security wins in the last 50 years of computing. Marking sections of memory as unable to be run as part of the program permanently shifted the landscape of targeted exploits to be focused almost exclusively on buffer overrun-into-heap-exploitation bugs, as well as trying to find sequences of logic to put programs in a state of disrepair that ultimately grant attackers either a Denial of Service (DoS) attack or full control VIA Remote Code Execution (RCE). Exploits were now exceedingly harder and required orchestration of multiple carefully-crafted scenarios to hit the "Weird Machine" state so coveted by red teamers/exploiters. This is not the case for executable stack, specifically with the most common way to access them: GNU Nested Functions.
 
 
 ### Alternative Nested Function Implementations ### {#intro-nested.functions-alternative.implementations}
@@ -308,10 +350,7 @@ ADVISEMENT: The actual manifestation of the undefined behavior in this program i
 
 This is a critical failure of Nested Functions: it only ever "captures" function values *by-name* / *by-reference*. There is no option to capture *by-value*, and therefore the transportation and use of these function pointers to asynchronous code or "up" the call stack means it is fundamentally dangerous. This was not a huge problem in the early days of C, where programs were very flat and it was easy to always "move" function calls up. Unfortunately, we now have asynchronous programming, coroutine libraries / green threading models, callbacks that are saved and invoked much, much later in a program, and all sorts of models for shared code. This is the part of Nested Functions that cannot be saved; it is an intrinsic part of the design that unfortunately will always lead to Undefined Behavior because there is no way to get around that limitations in the GNU Nested Functions design. This is another serious problem that ultimately make it impossible to consider Nested Functions as THE solution for all of the C ecosystem.
 
-NOTE: As a general rule of thumb, if the entity being designed has the ability to be transferred out of its current scope (Blocks, Nested Functions, Lambdas, ...) then it must as a rule allow for determining how it interacts with the scope it is nested in. The answer for function calls in most languages is "cannot interact with its surrounding scope", which simplifies the problem. But, the whole point of these features IS t interact with the surrounding scope, and so care must be taken to make it work better.
-
-
-### Ecosystem Holdout ### {#intro-nested.functions-ecosystem}
+NOTE: As a general rule of thumb, if the entity being designed has the ability to be transferred out of its current scope (Blocks, Nested Functions, Lambdas, ...) then it must as a rule allow for determining how it interacts with the scope it is nested in. The answer for function calls in most languages is "cannot interact with its surrounding scope", which simplifies the problem. But, the whole point of these features IS to interact with the surrounding scope, and so care must be taken to make it work better.
 
 
 
@@ -336,9 +375,9 @@ void apple_qsort(
 	int (^comp)(const void* left, const void* right)
 );
 
-static int in_reverse = 0;
-
 int main(int argc, char* argv[]) {
+	int in_reverse = 0;
+
 	if (argc > 1) {
 		char* r_loc = strchr(argv[1], 'r');
 		if (r_loc != NULL) {
@@ -371,7 +410,7 @@ The special `function_type^` and `return_type (identifier^)(argument0, argumentN
 
 Apple Blocks are, at their core, dynamic objects that engage in type-erasure at the top-most level. Where C++ lambdas are completely non-type-erased and each contains a unique type, and where Nested Functions are completely type-erased behind normal function pointers with executable stacks + trampolines, Blocks are callbacks that are unique but have all of their type information erased and carted around in a **new** function pointer-like construct: the block. Block types are denoted by the `^` in their function type name, and typically are cheaply copiable **handles** to a heap-stored callable.
 
-NOTE: The layout of the heap-stored callable is dictated by Apple, and has been reverse-engineered and deconstructed many times. There used to be working links to the Rich Text Files governing what it looks like from Apple's Opensource Website, but all of those links (e.g.: [https://opensource.apple.com/source/libclosure/libclosure-59/BlockSpec.rtf](https://opensource.apple.com/source/libclosure/libclosure-59/BlockSpec.rtf)) return 404 error codes now. Thankfully, there's an open source mirror available on GitHub with [readable text here: https://github.com/apple-opensource-mirror/libclosure/blob/master/BlockImplementation.txt](https://github.com/apple-opensource-mirror/libclosure/blob/master/BlockImplementation.txt). In order to understand the layout, one would need to read the released Apple Public License and freely-available source code, to get the most up to date picture.
+NOTE: The layout of the heap-stored callable is dictated by Apple, and has been reverse-engineered and deconstructed many times. There used to be working links to the Rich Text Files governing what it looks like from Apple's Opensource Website, but all of those links (e.g.: [https://opensource.apple.com/source/libclosure/libclosure-59/BlockSpec.rtf](https://opensource.apple.com/source/libclosure/libclosure-59/BlockSpec.rtf)) return 404 error codes now. Thankfully, there's an open source mirror available on GitHub with [readable text here: https://github.com/apple-opensource-mirror/libclosure/blob/master/BlockImplementation.txt](https://github.com/apple-opensource-mirror/libclosure/blob/master/BlockImplementation.txt). In order to understand the layout, one would need to read the released Apple Public License and freely-available source code, to get the most up to date picture. Some of this work has been done by the Clang Team, and is the most up-to-date, thorough specification for it is stored in with the Clang documentation ([[clang-blocks-spec]]).
 
 Of course, all of this is just to illustrate the problem: while Microsoft as a platform may not need to care, GCC and Clang both tend to occupy the same hardware and software spaces. Even if one compiler or another figured out how to be clever, the base layout -- and the premise of blocks being a **handle** to a heap, and not a compile-time sized object -- means that some form of dynamic allocation or heap is required. This is a net-negative for memory-constrained environments, and in implementations that attempt to be ABI-compatible with the original Apple Blocks implementation will be forced to lay their blocks out in the way that Apple has already specified.
 
@@ -655,7 +694,9 @@ All in all, however, these two things are safe: either a copy is happening and i
 
 As a matter of optimization, Blocks do not necessarily have to pollute the heap. And indeed, most immediately invocations of a block or pass-down (rather than pass-up) invocations that are visible will be optimized into a direct call. Unfortunately, this is not something that is encouraged by the general design of Apple Blocks and Objective-C or Objective-C++. Because taking the address or passing the function along leaves it open to how far the handle-to-some-heap Block-typed object might be passed, compilers have to correctly (and pessimistically) generate the full, indirect-function-call representation as a matter of course. `Block_copy` also needs to be used, explicitly, in many cases, making it not much better in regular C code.
 
-Swift solves this problem while still being compatible with Objective-C and C++ by making it so every "Block" or "Closure" type must be annotated if it "escapes" beyond the compiler's knowledge, otherwise the program just refuses to compile ([[swift-escapes]]). This allows aggressive optimization to be applied by-default, with weaker static analysis-based optimizations or escape analysis optimization only acting as a fallback in the `@escaping`-annotated case. The annotation also makes it so `Block_copy` does not need to be invoked and rather than having to copy it to a heap version of itself, it is simply put in the right format and place, ready to interop cleanly with C, C++, Objective-C or Objective-C++.
+Swift solves this problem while still being compatible with Objective-C and C++ by making it so every "Block" or "Closure" type must be annotated if it "escapes" beyond the compiler's knowledge, otherwise the program just refuses to compile ([[swift-escapes]]). This allows aggressive optimization to be applied by-default, with weaker static analysis-based optimizations or escape analysis optimization only acting as a fallback in the `@escaping`-annotated case. The annotation also makes it so `Block_copy` does not need to be invoked and rather than having to copy it to a heap version of itself, it is simply put in the right format and place, ready to interoperate cleanly with C, C++, Objective-C or Objective-C++.
+
+In the opposite direction, the C-style attribute that can be used to say "the closure never escapes", which enables optimizations for crunching the object down and assuming that it never is invoked outside of the function. This is available through the `NS_NOESCAPE` macro, which expands to `__attribute__((noescape))` and can be used to gain better binary size and reduce indirection for code execution speed where possible.
 
 
 
@@ -1058,14 +1099,14 @@ Regardless the form that the `make`/`destroy` functions take, this sort of intri
 
 
 
-## Executable Stack CVEs ## {#appendix-executable.stack}
+## Executable Stack CVEs ## {#appendix-executable.stack.cves}
 
 WARNING: THIS SECTION IS INCOMPLETE.
 
 The following CVEs are related to executable stack issues.
 
-- CVE 2017-100376: https://www.cve.org/CVERecord?id=CVE-2017-1000376
-
+- [CVE 2017-100376: https://www.cve.org/CVERecord?id=CVE-2017-1000376](https://www.cve.org/CVERecord?id=CVE-2017-1000376)
+- [CVE 2023-38408: https://www.cve.org/CVERecord?id=CVE-2023-38408](https://www.cve.org/CVERecord?id=CVE-2023-38408)
 
 <pre class="biblio">
 {
@@ -1146,6 +1187,16 @@ The following CVEs are related to executable stack issues.
 		"date": "March 11th, 2016",
 		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n2030.pdf"
 	},
+	"clang-blocks-spec": {
+		"authors": [
+			"The Clang Team",
+			"LLVM and Contributors",
+			"Apple"
+		],
+		"title": "Clang + LLVM (Latest): Block Implementation Specification",
+		"date": "July 8th, 2025",
+		"href": "https://clang.llvm.org/docs/Block-ABI-Apple.html"
+	},
 	"swift-escapes": {
 		"authors": [
 			"Swift Development Team and Contributors",
@@ -1220,6 +1271,24 @@ The following CVEs are related to executable stack issues.
 		"title": "Lambdas, Nested Functions, and Blocks, oh my!",
 		"date": "July 16th, 2021",
 		"href": "https://thephd.dev/lambdas-nested-functions-block-expressions-oh-my"
+	},
+	"gamingonlinux-dawe": {
+		"authors": [
+			"Liam Dawe"
+		],
+		"title": "The glibc 2.41 update has been causing problems for Linux gaming",
+		"date": "February 13th, 2025",
+		"href": "https://www.gamingonlinux.com/2025/02/the-glibc-2-41-update-has-been-causing-problems-for-linux-gaming/"
+	},
+	"wsl-no-executable-stack": {
+		"authors": [
+			"Microsoft",
+			"WSL Authors and Contributors",
+			"Martin Uecker"
+		],
+		"title": "fis-gtm does not run due to missing support for executable stack",
+		"date": "August 7th, 2018",
+		"href": "https://github.com/Microsoft/WSL/issues/286"
 	}
 }
 </pre>
