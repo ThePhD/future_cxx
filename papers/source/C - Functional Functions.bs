@@ -210,7 +210,7 @@ Unfortunately, this lax approach to security -- especially for video games -- ha
 
 > glibc is in the right here. iirc windows and mac DEP policy disabled executable stack by default for the past ~20 years or so. shocked this was not already the case in linux userland
 > 
-> -- February 21, 2025 [awr](https://twitter.com/awr_hey/status/1892874306776158494)
+> -- February 21, 2025 [A. W. R.](https://twitter.com/awr_hey/status/1892874306776158494)
 
 The engineer in charge of pushing the change and looking over the situation commented on the article and general attitude represented by Mr. Ignatev:
 
@@ -230,27 +230,26 @@ Whose perspective is correct?
 
 #### The Standard Is To Blame #### {#intro-nested.functions-security-blame}
 
-This proposal agrees with both Mr. Zanella and Ms. Awr, and disagrees with Mr. Uecker and Mr. Ignatev; it is impossible to pretend like this is not a problem with more and more exploits taking advantage of not only executable stack, but directly targeting "harmless" software that makes use of it (such as video games). But, even more importantly, the real culprit here is ISO C. There were many alternatives to executable stack-based GNU Nested Functions, and other such entrapments. However, because of how convenient GNU Nested Functions are and how accepted they are in the GNU ecosystem, it has led to multiple security vulnerabilities that should have never existed in the first place ([[#appendix-executable.stack.cves]]).
+This proposal agrees with both Mr. Zanella and Ms. A.W.R., and disagrees with Dr. Uecker and Mr. Ignatev; it is impossible to pretend like this is not a problem with more and more exploits taking advantage of not only executable stack, but directly targeting "harmless" software that makes use of it (such as video games). But, even more importantly, the real culprit here is ISO C. There were many alternatives to executable stack-based GNU Nested Functions, and other such entrapments. However, because of how convenient GNU Nested Functions are and how accepted they are in the GNU ecosystem, it has led to multiple security vulnerabilities that should have never existed in the first place ([[#appendix-executable.stack.cves]]).
 
 Unlike Address Space Layout Randomization (ASLR) and several other run-time mitigations, non-executable stacks have been both the cheapest and most enduring security wins in the last 50 years of computing. Marking sections of memory as unable to be run as part of the program permanently shifted the landscape of targeted exploits to be focused almost exclusively on buffer overrun-into-heap-exploitation bugs, as well as trying to find sequences of logic to put programs in a state of disrepair that ultimately grant attackers either a Denial of Service (DoS) attack or full control VIA Remote Code Execution (RCE). Exploits were now exceedingly harder and required orchestration of multiple carefully-crafted scenarios to hit the "Weird Machine" state so coveted by red teamers/exploiters. This is not the case for executable stack, specifically with the most common way to access them: GNU Nested Functions.
 
 
 ### Alternative Nested Function Implementations ### {#intro-nested.functions-alternative.implementations}
 
-We have already discussed the first and most popular attempt which leaves the stack executable. Because of the negative security properties of this, there were two more attempts, one still on-going ([[#intro-nested.functions-alternative.implementations-attempt-three]]) and one with limited success that requires the entire world to be recompiled or face potential ABI breaks ([[#intro-nested.functions-alternative.implementations-attempt-two]]).
+We have already discussed the first and most popular attempt which leaves the stack executable. Because of the negative security properties of this, there were two more attempts, one still on-going ([[#intro-nested.functions-alternative.implementations-attempt.three]]) and one with limited success that requires the entire world to be recompiled or face potential ABI breaks ([[#intro-nested.functions-alternative.implementations-attempt.two]]).
 
-#### Attempt 2 #### {#intro-nested.functions-alternative.implementations-attempt-two}
+#### Attempt 2 #### {#intro-nested.functions-alternative.implementations-attempt.two}
 
 An Ada-style Function Descriptors implementation was attempted. The problem with this change for GCC is that it uses a bit (the lowest bit, which traditionally is always 0) in the function pointer itself to mark the function pointer as one that is relying on the Function Descriptor technology. Setting the lowest bit on the function pointer means that it is unsafe to call directly, and therefore every function call must first be masked with `func_ptr & ~0b1ull` before being called. This is a runtime cost and a general-purpose pessimization that applies to ALL function pointers, making the Function Descriptor approach unsuitable for solving the ABI problem both internally with existing GCC code and to the satisfaction of other developers.
 
-#### Attempt 3 #### {#intro-nested.functions-alternative.implementations-attempt-three}
+#### Attempt 3 #### {#intro-nested.functions-alternative.implementations-attempt.three}
 
-A third attempted implementation of Nested Functions attempts to use a separately-allocated trampoline: this either comes from a stack that is setup at program load time in coordination with the compiler and whose exclusive purpose is to be a memory region for both trampolines and a slot for a `void*` environment/context; OR, comes from a dynamic allocation to serve as the function pointer plus a `void*` environment/context pointer. These approaches simply do not work because it is unclear when, if ever, the function pointer will stop being used. However, one part of Nested Functions -- the fact that they refer to everything *by name* / "*capture by reference*" all of the things they use -- means that this can be sufficiently approximated by simply stating that GNU Nested Functions will deallocate such a trampoline (or shrink the stack it was cut from) when the enclosing block that was used for the nested function is gone.
+A third attempted implementation of Nested Functions attempts to use a separately-allocated trampoline: this either comes from a stack that is setup at program load time in coordination with the compiler and whose exclusive purpose is to be a memory region for both trampolines and a slot for a `void*` environment/context; OR, comes from a dynamic allocation to serve as the function pointer plus a `void*` environment/context pointer. These approaches simply do not work in the general case because it is unclear when, if ever, the function pointer will stop being used. However, one part of Nested Functions -- the fact that they refer to everything *by name* / "*capture by reference*" all of the things they use -- means that this can be sufficiently approximated by simply stating that GNU Nested Functions will deallocate such a trampoline (or shrink the stack it was cut from) when the enclosing block that was used for the nested function is gone. (Of course, this means that the function pointer will exhibit the exact same lifetime issues as with the current stack, so it solves some problems but leaves others in the table.)
 
-There is also the slight issue that using a separated trampoline that is on a separate heap or a separate stack *might* need (but is not necessarily required) a secondary level of indirection. The original, executable stack implementation of GNU Nested Functions prevents this because both the code and the variables are in-line: having a separated trampoline may require such a trampoline to first load the right function call with `__builtin_call_with_static_chain` [[builtin_call_with_static_chain_gcc|compiler intrinsic]] within the code of the trampoline to have the code work properly without making the original stack executable.
+There is also the slight issue that using a separated trampoline that is on a separate heap or a separate stack *might* need (but is not necessarily required) a secondary level of indirection. The original, executable stack implementation of GNU Nested Functions prevents this because both the code and the variables are in-line: having a separated trampoline may require such a trampoline to first load the right function call with `__builtin_call_with_static_chain` [[builtin_call_with_static_chain_gcc|compiler intrinsic]] within the code of the trampoline to have the code work properly.
 
-
-### A Possible 4th Attempt: Explicit User Control ### {#intro-nested.functions-user.control}
+#### A Possible 4th Attempt: Explicit User Control #### {#intro-nested.functions-user.control}
 
 An experimental technique for allocating a trampoline can be done by having an `_Any_func*` pointer, as is being standardized by using an in-progress proposal [[_Any_func]]. Then, rather than needing to implicitly create a trampoline on usage, a user can instead requested it and control the allocation explicitly, while passing it back. A fictional example of such an intrinsic -- called `__gnu_make_trampoline` -- is seen here:
 
@@ -836,7 +835,7 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-This, unfortunately, also makes them susceptible to location just like Blocks; the moment of creation during execution is the state they capture when using unadorned identifiers `in_reverse` and `=` captures. This code would capture `in_reverse` before it happens.
+This, unfortunately, also makes them susceptible to location just like Blocks; the moment of creation during execution is the state they capture when using unadorned identifiers `in_reverse` and `=` captures. This code would capture `in_reverse` before any important modifications happens.
 
 ```cpp
 #define __STDC_WANT_LIB_EXT1__ 1
@@ -849,8 +848,9 @@ This, unfortunately, also makes them susceptible to location just like Blocks; t
 auto make_compare(int argc, char* argv[]) {
 	int in_reverse = 0;
 	
-	// explicitly capture in the "[ ]" of the lambda
-	auto compare = [in_reverse](const void* untyped_left, const void* untyped_right) {
+	// "capture all variables" annotation `=` -- same as writing the flat name of
+	// every object currently in-scope.
+	auto compare = [=](const void* untyped_left, const void* untyped_right) {
 		const int* left = (const int*)untyped_left;
 		const int* right = (const int*)untyped_right;
 		return (in_reverse) ? *right - *left : *left - *right;
@@ -886,6 +886,49 @@ int main(int argc, char* argv[]) {
 
 Like Apple Blocks a lambda with captures is safe to return with the by-value capture (if one briefly ignores the need for `Block_copy` to reseat the memory of a Block). Additionally, it is better here because there is no usage of the heap in the above code example. The only problem is that this requires a feature that was proposed for C23 but didn't make it (along with Lambdas not making it): deduced return types. There was consensus to have the feature, but the feature was bundled with the set of Lambda proposals, and thus fell through during the final stretch of C23. Therefore, a proposal for inferring the type of a function return should be separated from the previous proposals (such as [[n2923]]) in order to accommodate such behavior in C.
 
+One of the things that's better about Lambdas over Apple Blocks is that they *also* allow for *by-name* capture, just like Nested Functions do. So, this code -- despite having the lambda defined in `main` and before `in_reverse` is changed -- will work as expected:
+
+```cpp
+#include <stdlib.h>
+#include <string.h>
+#include <stddef.h>
+
+int main(int argc, char* argv[]) {
+	int in_reverse = 0;
+
+	// & is by-reference capture
+	auto compare = [&](const void* untyped_left, const void* untyped_right) {
+		const int* left = (const int*)untyped_left;
+		const int* right = (const int*)untyped_right;
+		return (in_reverse) ? *right - *left : *left - *right;
+	};
+
+	if (argc > 1) {
+		char* r_loc = strchr(argv[1], 'r');
+		if (r_loc != NULL) {
+			ptrdiff_t r_from_start = (r_loc - argv[1]);
+			if (r_from_start == 1 && argv[1][0] == '-' && strlen(r_loc) == 1) {
+				in_reverse = 1;
+			} 
+		}
+	}
+	
+	int list[] = { 2, 11, 32, 49, 57, 20, 110, 203 };
+	
+	auto compare_trampoline = [](const void* left, const void* right, void* userdata) {
+		typeof(compare)* p_compare = userdata;
+		return (*p_compare)(left, right);
+	};
+	qsort_s(list, (sizeof(list)/sizeof(*list)), sizeof(*list), compare_trampoline, &compare);
+	
+	return list[0];
+}
+```
+
+ADVISEMENT: This will invoke undefined behavior in the case of moving this *by-name* capturing lambda into a function and then returning it. Capturing a name with `&some_identifier` (or using the "default capture" of `&` by itself) always captures by pointer of the variable.
+
+Even if it is more explicit that in the Nested Functions case, the danger is still present and so care must still be exercised. The good news is that a user can actually choose how to handle this, exactly like Blocks do; the doubly-good news is that doing so does not change the way Lambdas work. They are still complete, whole objects.
+
 
 ### What About Lifetime / Destructors? ### {#intro-lambdas-destructors}
 
@@ -893,7 +936,17 @@ A common criticism of Lambdas and their unique type, whole-object approach is th
 
 C APIs will always provide a user with provided functions a way to know when something must be cleaned up. For example, the Lua C API has an allocation function that is specifically called with a "new size" parameter of `0`, it means memory passed in must be freed; that's how it communicates what the current action is. Similarly, ev/libev -- with `ev_set_allocator` -- provides a hook to allow a user to manage the memory of the library, while also providing **several** statuses in callbacks for watchers (`initialized`/`pending`/`running`/`stopped`/etc.). Even for standard C, `thrd_create` passes a `void*` user data to the `func` that gets run on the new thread: a user must allocate and then pass the user data to the thread, and it becomes the thread's responsibility to manage the lifetime of that type in a manner that is threadsafe.
 
-Any C API worth its salt, when dealing with convoluted lifetimes, provides to a given callback (through its parameters) or a separate callback (for more full-fledged APIs) that notifies the API that its finished or done with a specific operation, and therefore safe to close things out. The secondary alternative is, of course, statically sourcing lifetime until the user themselves guarantees all resources can be safely freed using some outside knowledge (e.g., an explicit set of calls after the start of the library to cleanup/close/stop the library). This is not just a point with lambdas: every attempt at solving this problem has to engage with this. Whether it's using `Block_copy` to ensure the lifetime of an Apple Block, or `malloc` to make sure a `struct` type being pointed to by a `void*` is accessible after a dispatch to an asynchronous function call
+Any C API worth its salt, when dealing with convoluted lifetimes, provides to a given callback (through its parameters) a notification that the memory is not usable anymore, OR a separate callback (for more full-fledged APIs) that notifies the API that its finished or done with a specific operation, and therefore safe to close things out. The secondary alternative is, of course, statically sourcing lifetime until the user themselves guarantees all resources can be safely freed using some outside knowledge (e.g., an explicit set of calls after the start of the library to cleanup/close/stop the library). This is not just a point with lambdas: every attempt at solving this problem has to engage with this. Whether it's using `Block_copy` to ensure the lifetime of an Apple Block, or `malloc` to make sure a `struct` type being pointed to by a `void*` is accessible after a dispatch to an asynchronous function call. This is simply not a problem unique to lambdas: lifetime tracking and safety will always be a problem in C because C has no extended concept of lifetime duration beyond Effective Types.
+
+Any problem with lifetime is going to be present in every single iteration of the solution to this problem, and is going to manifest in different ways:
+
+- UB if you return a GNU Nested Function pointer that works with variables in the function scope being exited;
+- UB if you return an Apple Blocks pointer without `Block_copy`;
+- UB if you capture things that go out of scope in general;
+- UB if you cast to the wrong `struct` inside of an ISO C function to access a user data `void*` pointer;
+- UB if you *by-name* capture in a lambda and leave the scope;
+
+and so on, and so forth. That's a C-intrinsic problem, and the only thing any design in this space can do is offer better tools or better control to manage or avoid such problems where possible.
 
 
 
