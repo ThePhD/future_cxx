@@ -144,7 +144,11 @@ In C, a common practice to leverage lots of hot-patching, assembly hot-fixing, d
 
 Then, compiler developers, operating system vendors, and runtime loader designers came up with one killer fix: making the program stack non-executable.
 
-Without an executable stack, it did not matter how many buffers were overflowed or how many `jmp` pointers were overtaken by malicious data overwriting parts of the program stack through inadequately-sized user buffers. Code that was inadvertently overtaken by a buffer overflow did not have the ability to point to data written into a buffer that was also on the stack and start running. Such runs would be considered entirely and wholly illegal, and it would blow up the program with a `SEGMENTATION FAULT` or other issue. Most programs, whether using VLAs or not, loved to keep (small)-ish buffers on the stack that they constantly wrote data into in response to user input or read data (such as configuration files or network input). Preventing the ability of a poorly written program that did not guard against all forms of malicious input from turning into an easy Remote Code Execution issue was a gigantic security win. The overwhelming majority of exploits running at the time were effectively halted, even if they contained the perfect shellcode to do so. This permanently crippled red teamers, and completely changed both the simplicity and the power in basic code failures.
+Without an executable stack, it did not matter how many buffers were overflowed or how many `jmp` pointers were overtaken by malicious data overwriting parts of the program stack through inadequately-sized user buffers. Code that was inadvertently overtaken by a buffer overflow did not have the ability to point to data written into a buffer that was also on the stack and start running. Such runs would be considered entirely and wholly illegal, and it would blow up the program with a `SEGMENTATION FAULT` or other issue.
+
+NOTE: This does not mitigate ALL stack-based exploits completely. It just eliminated the bottom-of-the-barrel, 70% ones; instead, folks now had to use what was already on the stack in terms of data to try and trick the program's own logic to enter an unexpected state and, summarily put it into a vulnerable position. The kickoff from that vulnerable position to either abuse another vulnerability (e.g. an improperly checked heap pointer) to then elevate to the point of illicit code execution ([[solar-non-executable-stack-exploits]]).
+
+Most programs, whether using VLAs or not, loved to keep (small)-ish buffers on the stack that they constantly wrote data into in response to user input or read data (such as configuration files or network input). Preventing the ability of a poorly written program that did not guard against all forms of malicious input from turning into an easy Remote Code Execution issue was a gigantic security win. The overwhelming majority of exploits running at the time were effectively halted, even if they contained the perfect shellcode to do so. This permanently crippled red teamers, and completely changed both the simplicity and the power in basic code failures.
 
 
 ### Early Design Flaw: Nested Functions turn the stack Executable! ### {#intro-nested.functions-design}
@@ -206,7 +210,7 @@ Briefly ignoring the extreme hyperbole: note the dates and the mentioned time of
 > 
 > -- February 13, 2025, [Article Author Liam Dawe](https://www.gamingonlinux.com/2025/02/the-glibc-2-41-update-has-been-causing-problems-for-linux-gaming/)
 
-Unfortunately, this lax approach to security -- especially for video games -- has resurfaced quite a few truly unfornate bugs. Popular Windows games such as Dark Souls: PREPARE TO DIE Edition and Call of Duty: WWII have exploitable Remote Code Execution (RCE) bugs in their code. One of them seems to be getting patched, but the other -- in Dark Souls -- is not going to be patched out. The idea that glibc -- or platforms in general -- can take a lax position to security on devices, even for something as "frivolous" as the (multi-billion dollar revenue) video game industry is simply not tenable. From a highly skilled Vision & Graphics engineer commenting on the controversy caused by the glibc 2.41 update:
+Unfortunately, this lax approach to security -- especially for video games -- has resurfaced quite a few truly unfornate bugs. Popular Windows games such as Dark Souls: PREPARE TO DIE Edition and Call of Duty: WWII have exploitable Remote Code Execution (RCE) bugs in their code. One of them seems to be getting patched, but the other -- in Dark Souls -- is not going to be patched out. The idea that glibc -- or platforms in general -- can take a lax position to security on devices, even for something as "frivolous" as the (multi-billion dollar revenue) video game industry is simply not tenable. From a highly skilled Rendering Engineer commenting on the controversy caused by the glibc 2.41 update:
 
 > glibc is in the right here. iirc windows and mac DEP policy disabled executable stack by default for the past ~20 years or so. shocked this was not already the case in linux userland
 > 
@@ -248,6 +252,9 @@ An Ada-style Function Descriptors implementation was attempted. The problem with
 A third attempted implementation of Nested Functions attempts to use a separately-allocated trampoline: this either comes from a stack that is setup at program load time in coordination with the compiler and whose exclusive purpose is to be a memory region for both trampolines and a slot for a `void*` environment/context; OR, comes from a dynamic allocation to serve as the function pointer plus a `void*` environment/context pointer. These approaches simply do not work in the general case because it is unclear when, if ever, the function pointer will stop being used. However, one part of Nested Functions -- the fact that they refer to everything *by name* / "*capture by reference*" all of the things they use -- means that this can be sufficiently approximated by simply stating that GNU Nested Functions will deallocate such a trampoline (or shrink the stack it was cut from) when the enclosing block that was used for the nested function is gone. (Of course, this means that the function pointer will exhibit the exact same lifetime issues as with the current stack, so it solves some problems but leaves others in the table.)
 
 There is also the slight issue that using a separated trampoline that is on a separate heap or a separate stack *might* need (but is not necessarily required) a secondary level of indirection. The original, executable stack implementation of GNU Nested Functions prevents this because both the code and the variables are in-line: having a separated trampoline may require such a trampoline to first load the right function call with `__builtin_call_with_static_chain` [[builtin_call_with_static_chain_gcc|compiler intrinsic]] within the code of the trampoline to have the code work properly.
+
+NOTE: As of early 2025 in GCC 14, GCC selected a heap-based implementation that got rid of the executable stack. This requires some amount of dynamic allocation in cases where it cannot prove that the function is only passed down or if it is not used immediately. It can be turned on with `-ftrampoline-impl=heap`.
+
 
 #### A Possible 4th Attempt: Explicit User Control #### {#intro-nested.functions-user.control}
 
@@ -1332,6 +1339,14 @@ The following CVEs are related to executable stack issues.
 		"title": "fis-gtm does not run due to missing support for executable stack",
 		"date": "August 7th, 2018",
 		"href": "https://github.com/Microsoft/WSL/issues/286"
+	},
+	"solar-non-executable-stack-exploits": {
+		"authors": [
+			"solar FALSE COM (Solar Designer)"
+		],
+		"title": "Getting around non-executable stack (and fix)",
+		"date": "August 10th, 1997",
+		"href": "https://seclists.org/bugtraq/1997/Aug/63"
 	}
 }
 </pre>
