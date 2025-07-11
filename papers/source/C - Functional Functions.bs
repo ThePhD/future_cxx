@@ -16,7 +16,7 @@ Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
 Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
 Markup Shorthands: markdown yes
 Toggle Diffs: no
-Abstract: Nested Functions (GCC), Blocks (Clang & Apple-derived compilers), Wide Function Pointers (Borland and existing C library functions), and Lambdas (C++) provide a series of takes on how to, effectively, bundle functions with data in different ways and transport that information to the caller. This proposal goes through the existing practice and enumerations their tradeoffs so as to propose the best possible solution to the problem space at hand.
+Abstract: Nested Functions (GCC), Blocks (Clang & Apple-derived compilers), Wide Function Pointers (Borland and existing C library functions), and Lambdas (C++) provide a series of takes on how to, effectively, bundle functions with data in different ways and transport that information to the caller. This proposal goes through the existing practice and enumerate their tradeoffs so as to propose the best possible solution to the problem space at hand.
 </pre>
 
 <pre class="include-raw">
@@ -32,7 +32,7 @@ path: resources/css/bikeshed-wording.html
 
 
 
-# Revision 0 - July 4<sup>th</sup>, 2025 # {#changelog-r0}
+# Revision 0 - July 11<sup>th</sup>, 2025 # {#changelog-r0}
 
 - Initial release. ✨
 
@@ -41,7 +41,7 @@ path: resources/css/bikeshed-wording.html
 
 # Introduction and Motivation # {#intro}
 
-A colloquial overview (but with a bit less technical depth) of these options is available as a [writeup here](https://thephd.dev/lambdas-nested-functions-block-expressions-oh-my) ([[lambdas-nested-functions-block-expressions-oh-my]]).
+A colloquial overview (but with a bit less technical depth) of these options is available as a [writeup here](https://thephd.dev/lambdas-nested-functions-block-expressions-oh-my) ([[lambdas-nested-functions-block-expressions-oh-my]]), though it was written in 2021 before Heap-based trampolines existed and some of the other proposals discussed here existed. We keep it as a gentler, milder introduction to the problem space written with a much less serious prose.
 
 C has had an extremely long and somewhat complicated history of wanting to pair a set of data with a given function call. Early problems first started with the standardization of C89's `qsort`, which only took a single function pointer argument and no way to pass data through for additional constraints:
 
@@ -89,13 +89,153 @@ There were multiple limiting factors in getting data into the function outside o
 - `static` data was the most popular ISO Standard C way of handling this in `qsort`-style APIs, resulting in a large number of (`inline`) `static` global variables throughout early programs using clever tricks to duplicate variables VIA `fork`-style or loading several translation units with different `static` variables;
 - and, `_Thread_local` in the case of avoiding contention on variables when multithreading was formally introduced circa C11.
 
+Still, despite these limitations, normal, ISO C standard functions by themselves have static lifetimes, and that means it's safe to do things inside a function and return function pointers:
+
+```cpp
+#include <stdlib.h>
+#include <string.h>
+#include <stddef.h>
+
+static int in_reverse = 0;
+
+typedef int (compare_fn_t)(const void* left, const void* right);
+
+int compare(const void* untyped_left, const void* untyped_right) {
+	const int* left = (const int*)untyped_left;
+	const int* right = (const int*)untyped_right;
+	return (in_reverse) ? *right - *left : *left - *right;
+}
+
+compare_fn_t* make_compare (int argc, char* argv[]) {
+	if (argc > 1) {
+		char* r_loc = strchr(argv[1], 'r');
+		if (r_loc != NULL) {
+			ptrdiff_t r_from_start = (r_loc - argv[1]);
+			if (r_from_start == 1 && argv[1][0] == '-' && strlen(r_loc) == 1) {
+				in_reverse = 1;
+			} 
+		}
+	}
+	return compare;
+}
+
+int main(int argc, char* argv[]) {
+	
+	int list[] = { 2, 11, 32, 49, 57, 20, 110, 203 };
+	compare_fn_t* compare_fn = make_compare(argc, argv);
+	qsort(list, (sizeof(list)/sizeof(*list)), sizeof(*list), compare_fn);
+	
+	return list[0];
+}
+```
+
 This was, unfortunately, both bug-generating and limiting due to the data sharing issues. Concerns and problems around sharing data only grew in time as each program had to manage larger and larger swaths of 1980's-style global variable soups, something that has famously ended up being used as a sign of negative code quality in legal matters. When global variables became more discouraged towards C95 and C99 to prevent unintended data clobbering or sharing, a new extension was cooked up by GCC to handle this program. Similar to an Ada feature but spun directly for C at the time, it was a feature lovingly dubbed Nested Functions.
 
 
 
+## Preamble ## {#intro-preamble}
+
+Before we talk about GNU Nested Functions, Apple Blocks, C++ Lambdas, or anything else, there's a few examples similar to the `qsort` one that will be used above. The purpose of these examples will be to talk about:
+
+- whether or not there's a way to use these things in expressions by themselves;
+- whether or not there's a way to manage the lifetime of an object in a dynamic or safe fashion;
+- and, whether or not there's a way to make these things work with a single function pointer, function pointer + `void*` user data, or otherwise.
+
+The one returning a function pointer seems utterly frivolous in the above for `make_compare`, but is meant as a proxy to determine how to handle dynamic lifetime of functions, where a closure needs to outlive the scope in which it was created or returned. This serves as a stand-in for code similar to returning things "up" the stack, or where the closure is meant to be invoked at some later point like in asynchronous code. That is how the current landscape is going to be evaluated.
+
+To aid in this evaluation, in the final section of this introduction, we will be filling out this table of features to see what each ecosystem brings to the table in terms of features. Most of the categories are self-explanatory, but there is explanations below for each one regardless:
+
+<table class="basic"><thead>
+<tr>
+<th>Feature</th>
+<th>GNU Nested Functions</th>
+<th>Apple Blocks</th>
+<th>C++-Style Lambdas</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Capture By-Name</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Capture By-Value</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Selective Capture</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Safe to Return</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Relocatable to Heap<br>(Lifetime Management)</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Usable Directly as Expression</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Immediately Invokable</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Convertible to Function Pointer</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Convertible to "Wide" Function Type</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Access to Non-Erased Object/Type</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Recursion Possible</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody></table>
+
+- Capture By-Name: can refer to an object directly, as if working with it as an l-value or dereferencing a pointer to that object. Sometimes also called "capture by reference".
+- Capture By-Value: can refer to a copy of an object from within the function time, at some fixed point in time. The lifetime of the captured object is tied to the closure rather than the scope it comes from.
+- Selective Capture: can pick and choose what to capture and how it gets captured.
+- Safe to Return: part of the dynamic lifetime problem, but is there a way to write this closure type such that it is safe to return?
+- Relocatable to Heap (Lifetime Management): if it is possible to extend or otherwise change the lifetime of a closure so that it can last longer, either by copying or relocating the closure.
+- Usable Directly as Expression: whether or not the closure can appear as a function argument or something else.
+- Immediately Invokable: whether or not the closure can be immediately invoked, usually without naming it.
+- Convertible to Function Pointer: whether or not the closure can be converted to a function pointer of an identical signature to be called.
+- Convertible to "Wide" Function Type: whether or not the closure can be converted to a "wide" function pointer type, now or into the future.
+- Access to Non-Erased Object/Type: can use and store the closure object without erasing the type or the object first.
+
+
 ## GNU Nested Functions ## {#intro-nested.functions}
 
-Nested Functions ([[nested-functions]]) were the logical extension of function definition syntax pulled down into the local level. Despite being the oldest functions-with-data attempt, it only has one proposal by Martin Uecker done recently ([[n2661]]). The goal was very simple, and during the C89 timeframe imminently doable due to the absence of a deep understanding of security implications for machines not yet being actively exploited in both civilian and military contexts. The syntax of a function definition within a block scope created a function that could be called in the obvious way but still reference surrounding block scope objects *by name*:
+Nested Functions ([[nested-functions]]) were the logical extension of function definition syntax pulled down into the local level. Despite being the oldest functions-with-data attempt (30+ years), it only has one proposal by Dr. Martin Uecker done recently ([[n2661]]) and is not widely adopted as an extension across C compilers. The goal was very simple, and during the C89 timeframe imminently doable due to the absence of a deep understanding of security implications for machines not yet being actively exploited in both civilian and military contexts. The syntax of a function definition within a block scope created a function that could be called in the obvious way but still reference surrounding block scope objects *by name*:
 
 ```cpp
 #include <stdlib.h>
@@ -140,15 +280,15 @@ Unfortunately, the early and enduring design of this feature -- in order to enab
 
 ### Non-Executable Stacks ### {#intro-nested.functions-security}
 
-In C, a common practice to leverage lots of hot-patching, assembly hot-fixing, direct opcode injection, and more, programs frequently made use of stack-based data buffers where they also dumped their programs. This meant that binaries would read from their stack with the instruction pointer, allowing programs to dynamically inject behavior into a currently running program either in parts or -- if that data came from outside sources -- a fully dynamic sort of live-machine coding. The problem with this approach was that if a normal user could use the stack to make the program do a set of behaviors, so could a malicious actor: this was the easiest and widest branch of attacks upon C programs, and it was an endemic issue given the extremely large number of stack-based, fixed-sixed buffers or -- after the advent of C99 -- variable-length arrays. Commandeering programs was as easy as finding a place where naïve programmers and hackers employed the now-deprecated `gets`, or where input was loaded in a too-relaxed way into a stack buffer. Overrunning the buffer and gaining control of the program by getting a `jmp` instruction to jump not back to some expected place in the stack but instead to a piece of a new program written by malicious inputs into the program made it easy to exploit C programs day in and day out, over and over again.
+In C, a common practice to leverage lots of hot-patching, assembly hot-fixing, direct opcode injection, and more, programs frequently made use of stack-based data buffers where they also dumped their programs. This meant that binaries would read from their stack with the instruction pointer, allowing programs to dynamically inject behavior into a currently running program either in parts or -- if that data came from outside sources -- a fully dynamic sort of live-machine coding. The problem with this approach was that if a normal user could use the stack to make the program do a set of behaviors, so could a malicious actor: this was the easiest and widest branch of attacks upon C programs, and it was an endemic issue given the extremely large number of stack-based, fixed-sized buffers or -- after the advent of C99 -- variable-length arrays. Commandeering programs was as easy as finding a place where naïve programmers and hackers employed the now-deprecated `gets`, or where input was loaded in a too-relaxed way into a stack buffer. Overrunning the buffer and gaining control of the program by getting a `jmp` instruction to jump not back to some expected place in the stack but instead to a piece of a new program written by malicious inputs into the program made it easy to exploit C programs day in and day out, over and over again.
 
 Then, compiler developers, operating system vendors, and runtime loader designers came up with one killer fix: making the program stack non-executable.
 
 Without an executable stack, it did not matter how many buffers were overflowed or how many `jmp` pointers were overtaken by malicious data overwriting parts of the program stack through inadequately-sized user buffers. Code that was inadvertently overtaken by a buffer overflow did not have the ability to point to data written into a buffer that was also on the stack and start running. Such runs would be considered entirely and wholly illegal, and it would blow up the program with a `SEGMENTATION FAULT` or other issue.
 
-NOTE: This does not mitigate ALL stack-based exploits completely. It just eliminated the bottom-of-the-barrel, 70% ones; instead, folks now had to use what was already on the stack in terms of data to try and trick the program's own logic to enter an unexpected state and, summarily put it into a vulnerable position. The kickoff from that vulnerable position to either abuse another vulnerability (e.g. an improperly checked heap pointer) to then elevate to the point of illicit code execution ([[solar-non-executable-stack-exploits]]).
+NOTE: This does not mitigate ALL stack-based exploits completely. It just eliminated the bottom-of-the-barrel, 70% ones; instead, folks now had to use what was already on the stack in terms of data to try and trick the program's own logic to enter an unexpected state and, summarily put it into a vulnerable position. The kickoff from that vulnerable position to either abuse another vulnerability (e.g. an improperly checked heap pointer) to then elevate to the point of illicit code execution ([[solar-non-executable-stack-exploits]]). Both formally and informally, this is known as [Return-Oriented Programming (ROP)](https://en.wikipedia.org/wiki/Return-oriented_programming).
 
-Most programs, whether using VLAs or not, loved to keep (small)-ish buffers on the stack that they constantly wrote data into in response to user input or read data (such as configuration files or network input). Preventing the ability of a poorly written program that did not guard against all forms of malicious input from turning into an easy Remote Code Execution issue was a gigantic security win. The overwhelming majority of exploits running at the time were effectively halted, even if they contained the perfect shellcode to do so. This permanently crippled red teamers, and completely changed both the simplicity and the power in basic code failures.
+Most programs, whether using VLAs or not, loved to keep (small)-ish buffers on the stack that they constantly wrote data into in response to user input or read data (such as configuration files or network input). Preventing the ability of a poorly written program that did not guard against all forms of malicious input from turning into an easy Remote Code Execution issue was a gigantic security win. The overwhelming majority of exploits running at the time were effectively halted, even if they contained the perfect shell code to do so. This permanently crippled exploiters relying on simple exploits that could inject executable shell code almost directly into the stack; it completely changed both the simplicity and the power dynamic for exploiters in basic scenarios, forcing a deeper understanding of program mechanisms for the purpose of exploitation.
 
 
 ### Early Design Flaw: Nested Functions turn the stack Executable! ### {#intro-nested.functions-design}
@@ -210,7 +350,7 @@ Briefly ignoring the extreme hyperbole: note the dates and the mentioned time of
 > 
 > -- February 13, 2025, [Article Author Liam Dawe](https://www.gamingonlinux.com/2025/02/the-glibc-2-41-update-has-been-causing-problems-for-linux-gaming/)
 
-Unfortunately, this lax approach to security -- especially for video games -- has resurfaced quite a few truly unfornate bugs. Popular Windows games such as Dark Souls: PREPARE TO DIE Edition and Call of Duty: WWII have exploitable Remote Code Execution (RCE) bugs in their code. One of them seems to be getting patched, but the other -- in Dark Souls -- is not going to be patched out. The idea that glibc -- or platforms in general -- can take a lax position to security on devices, even for something as "frivolous" as the (multi-billion dollar revenue) video game industry is simply not tenable. From a highly skilled Rendering Engineer commenting on the controversy caused by the glibc 2.41 update:
+Unfortunately, this lax approach to security -- especially for video games -- has resurfaced quite a few truly unfortunate bugs. Popular Windows games such as Dark Souls: PREPARE TO DIE Edition and Call of Duty: WWII have exploitable Remote Code Execution (RCE) bugs in their code. One of them seems to be getting patched, but the other -- in Dark Souls -- is not going to be patched out. The idea that glibc -- or platforms in general -- can take a lax position to security on devices, even for something as "frivolous" as the (multi-billion dollar revenue) video game industry is simply not tenable. From a highly skilled Rendering Engineer commenting on the controversy caused by the glibc 2.41 update:
 
 > glibc is in the right here. iirc windows and mac DEP policy disabled executable stack by default for the past ~20 years or so. shocked this was not already the case in linux userland
 > 
@@ -230,13 +370,15 @@ It is important to know that many other developers do not share this perception.
 >
 > - August 7, 2018, [Martin Uecker](https://github.com/microsoft/WSL/issues/286#issuecomment-411092033)
 
+NOTE: This does not necessarily mean that Uecker wanted an executable stack in all programs. It's just that for backwards compatibility purposes, it should be *allowed* to happened rather than fully banned, which is the opposite opinion of how WSL1, SELinux, BSDs, and many other operating system loaders work.
+
 Whose perspective is correct?
 
 #### The Standard Is To Blame #### {#intro-nested.functions-security-blame}
 
 This proposal agrees with both Mr. Zanella and Ms. A.W.R., and disagrees with Dr. Uecker and Mr. Ignatev; it is impossible to pretend like this is not a problem with more and more exploits taking advantage of not only executable stack, but directly targeting "harmless" software that makes use of it (such as video games). But, even more importantly, the real culprit here is ISO C. There were many alternatives to executable stack-based GNU Nested Functions, and other such entrapments. However, because of how convenient GNU Nested Functions are and how accepted they are in the GNU ecosystem, it has led to multiple security vulnerabilities that should have never existed in the first place ([[#appendix-executable.stack.cves]]).
 
-Unlike Address Space Layout Randomization (ASLR) and several other run-time mitigations, non-executable stacks have been both the cheapest and most enduring security wins in the last 50 years of computing. Marking sections of memory as unable to be run as part of the program permanently shifted the landscape of targeted exploits to be focused almost exclusively on buffer overrun-into-heap-exploitation bugs, as well as trying to find sequences of logic to put programs in a state of disrepair that ultimately grant attackers either a Denial of Service (DoS) attack or full control VIA Remote Code Execution (RCE). Exploits were now exceedingly harder and required orchestration of multiple carefully-crafted scenarios to hit the "Weird Machine" state so coveted by red teamers/exploiters. This is not the case for executable stack, specifically with the most common way to access them: GNU Nested Functions.
+Unlike Address Space Layout Randomization (ASLR) and several other run-time mitigations, non-executable stacks have been both the cheapest and most enduring security wins in the last 50 years of computing. Marking sections of memory as unable to be run as part of the program permanently shifted the landscape of targeted exploits to be focused almost exclusively on buffer overrun-into-heap-exploitation bugs or through Return-Oriented Programming (ROP) gadgets and exploits, as well as trying to find sequences of logic to put programs in a state of disrepair that ultimately grant attackers either a Denial of Service (DoS) attack or full control VIA Remote Code Execution (RCE). Exploits were now exceedingly harder and required orchestration of multiple carefully-crafted scenarios to hit the "Weird Machine" state so coveted by exploiters. This is not the case for executable stack, specifically with the most common way to access them: GNU Nested Functions.
 
 
 ### Alternative Nested Function Implementations ### {#intro-nested.functions-alternative.implementations}
@@ -253,7 +395,7 @@ A third attempted implementation of Nested Functions attempts to use a separatel
 
 There is also the slight issue that using a separated trampoline that is on a separate heap or a separate stack *might* need (but is not necessarily required) a secondary level of indirection. The original, executable stack implementation of GNU Nested Functions prevents this because both the code and the variables are in-line: having a separated trampoline may require such a trampoline to first load the right function call with `__builtin_call_with_static_chain` [[builtin_call_with_static_chain_gcc|compiler intrinsic]] within the code of the trampoline to have the code work properly.
 
-NOTE: As of early 2025 in GCC 14, GCC selected a heap-based implementation that got rid of the executable stack. This requires some amount of dynamic allocation in cases where it cannot prove that the function is only passed down or if it is not used immediately. It can be turned on with `-ftrampoline-impl=heap`.
+NOTE: As of early 2025 in GCC 14, GCC selected a heap-based implementation that got rid of the executable stack. This requires some amount of dynamic allocation in cases where it cannot prove that the function is only passed down, not have its address taken in a meaningful way, or if it is not used immediately (as determined by the optimizer). It can be turned on with `-ftrampoline-impl=heap`.
 
 
 #### A Possible 4th Attempt: Explicit User Control #### {#intro-nested.functions-user.control}
@@ -348,7 +490,7 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-In this example, we have simply moved the `in_reverse` and `compare` generation into a function, for ease-of-use. One can imagine that we need to create this sort of function mutliple times, from perhaps different sources of data. GNU Nested Functions allow us to do this and to return the function "up" the call stack. The problem, of course, is that Nested Functions (in a heap-based implementation or the current executable stack implementation) both point to the current "function frame" that it is created in. That is, while `make_compare` -- once it has returned -- is no longer alive and all of its automatic storage durations have died, the `compare` function pointer is still there and passed up the stack. This means that all accesses to `in_reverse` are accessing memory that is no longer alive, and it is effectively Undefined Behavior.
+In this example, we have simply moved the `in_reverse` and `compare` generation into a function, for ease-of-use. One can imagine that we need to create this sort of function multiple times, from perhaps different sources of data. GNU Nested Functions allow us to do this and to return the function "up" the call stack. The problem, of course, is that Nested Functions (in a heap-based implementation or the current executable stack implementation) both point to the current "function frame" that it is created in. That is, while `make_compare` -- once it has returned -- is no longer alive and all of its automatic storage durations have died, the `compare` function pointer is still there and passed up the stack. This means that all accesses to `in_reverse` are accessing memory that is no longer alive, and it is effectively Undefined Behavior.
 
 ADVISEMENT: The actual manifestation of the undefined behavior in this program is very clear: adding the `-r` argument to make `in_reverse` turn to `1` does not have any [effect on the program anymore](https://godbolt.org/z/81d7Tqn1E):<br/>[https://godbolt.org/z/81d7Tqn1E](https://godbolt.org/z/81d7Tqn1E)
 
@@ -360,7 +502,7 @@ NOTE: As a general rule of thumb, if the entity being designed has the ability t
 
 ## Apple Blocks ## {#intro-blocks}
 
-Blocks are an approach to having functions and data that originate from Objective-C ([[apple-blocks]]) and are associated with Apple's Clang. They were proposed a long time ago in an overview of Apple Extensions for C by Garst in 2009 ([[n1370]]), refined into a specific proposal in 2010 ([[n1451]] [[n1457]]). It was later **further** refined into a proper "Closures" proposal, and the name changed ([[n2030]]). However, none of these papers made the standard.
+Blocks are an approach to having functions and data that originate from Objective-C ([[apple-blocks]]) and are associated with Apple's Clang. They were proposed a long time ago in an overview of Apple Extensions for C by Garst in 2009 ([[n1370]]), refined into a specific proposal in 2010 ([[n1451]] [[n1457]]). It was later **further** refined into a proper "Closures" proposal, and the name changed ([[n2030]]). However, none of these papers made the standard and despite a brief moment where GCC maintained a Blocks runtime, the extension has not been adopted outside of the C / Objective-C ecosystem (and the Blocks extension is no longer allowed or used at the moment).
 
 Because there is a wealth of proposals and literature talking about Blocks, their implementation, their runtime, and more (see [an answer discussing the intrinsics and implementation bits for Blocks](https://stackoverflow.com/a/65775152)), rather than inform proposal readers how they work and why they are not suitable for ISO C, this proposal will focus exclusively on why they are not usable for the whole C ecosystem.
 
@@ -373,11 +515,6 @@ Unlike GNU Nested Functions, Block definitions are an expression. That means tha
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
-
-void apple_qsort(
-	void* ptr, size_t count, size_t size,
-	int (^comp)(const void* left, const void* right)
-);
 
 int main(int argc, char* argv[]) {
 	int in_reverse = 0;
@@ -394,7 +531,7 @@ int main(int argc, char* argv[]) {
 	
 	int list[] = { 2, 11, 32, 49, 57, 20, 110, 203 };
 	
-	apple_qsort(list, (sizeof(list)/sizeof(*list)), sizeof(*list),
+	qsort_b(list, (sizeof(list)/sizeof(*list)), sizeof(*list),
 		^(const void* untyped_left, const void* untyped_right) {
 			const int* left = (const int*)untyped_left;
 			const int* right = (const int*)untyped_right;
@@ -406,14 +543,14 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-The special `function_type^` and `return_type (identifier^)(argument0, argumentN...)` are Block types, whch are special types that act as a **handle** to a Block. Blocks are not just a simplistic combination of a function and a context, however: much more effort is put into making them safe at execution time, and that is done by putting everything related to Blocks behind a hefty runtime.
+The special `function_type^` and `return_type (identifier^)(argument0, argumentN...)` are Block types, which are special types that act as a **handle** to a Block. Blocks are not just a simplistic combination of a function and a context, however: much more effort is put into making them safe at execution time, and that is done by putting everything related to Blocks behind a hefty runtime.
 
 
 ### Runtime Required ### {#intro-blocks-runtime}
 
 Apple Blocks are, at their core, dynamic objects that engage in type-erasure at the top-most level. Where C++ lambdas are completely non-type-erased and each contains a unique type, and where Nested Functions are completely type-erased behind normal function pointers with executable stacks + trampolines, Blocks are callbacks that are unique but have all of their type information erased and carted around in a **new** function pointer-like construct: the block. Block types are denoted by the `^` in their function type name, and typically are cheaply copiable **handles** to a heap-stored callable.
 
-NOTE: The layout of the heap-stored callable is dictated by Apple, and has been reverse-engineered and deconstructed many times. There used to be working links to the Rich Text Files governing what it looks like from Apple's Opensource Website, but all of those links (e.g.: [https://opensource.apple.com/source/libclosure/libclosure-59/BlockSpec.rtf](https://opensource.apple.com/source/libclosure/libclosure-59/BlockSpec.rtf)) return 404 error codes now. Thankfully, there's an open source mirror available on GitHub with [readable text here: https://github.com/apple-opensource-mirror/libclosure/blob/master/BlockImplementation.txt](https://github.com/apple-opensource-mirror/libclosure/blob/master/BlockImplementation.txt). In order to understand the layout, one would need to read the released Apple Public License and freely-available source code, to get the most up to date picture. Some of this work has been done by the Clang Team, and is the most up-to-date, thorough specification for it is stored in with the Clang documentation ([[clang-blocks-spec]]).
+NOTE: The layout of the heap-stored callable is dictated by Apple, and has been reverse-engineered and deconstructed many times. Some of this work has been done by the Clang Team, and is the most up-to-date, thorough specification for it is stored in with the Clang documentation ([[clang-blocks-spec]]).
 
 Of course, all of this is just to illustrate the problem: while Microsoft as a platform may not need to care, GCC and Clang both tend to occupy the same hardware and software spaces. Even if one compiler or another figured out how to be clever, the base layout -- and the premise of blocks being a **handle** to a heap, and not a compile-time sized object -- means that some form of dynamic allocation or heap is required. This is a net-negative for memory-constrained environments, and in implementations that attempt to be ABI-compatible with the original Apple Blocks implementation will be forced to lay their blocks out in the way that Apple has already specified.
 
@@ -577,7 +714,7 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-The first thing to note is that, because this cannot be translated to a single function pointer, we cannot use `qsort`. This means that using such a function without creating some kind of special trampoline is off-limits to us. Again, this is something that could be solved by the introduction of an explicit heap-based trampoline creator ([[#appendix-make.trampoline]]). One would need to introduce a "wide function pointer" type -- which is exactly what `function_type^` is -- and change `qsort`'s signature to use it for the callback.
+The first thing to note is that, because this cannot be translated to a single function pointer, we cannot use `qsort`. This means that using such a function without creating some kind of special trampoline is off-limits to us. Again, this is something that could be solved by the introduction of an explicit heap-based trampoline creator ([[#appendix-make.trampoline]]). Or, one would need to introduce a "wide function pointer" type -- which is exactly what `function_type^` is -- and change `qsort`'s signature to use it for the callback.
 
 NOTE: Simply upgrading `qsort` with a Block type is an ABI break that would cause old, already-compiled libraries and programs mixed with new programs to combust in painful, hard-to-detect ways. To solve this problem one would need to rely on existing C extensions like Assembly Labels, or work towards Transparent Aliases ([[transparent-aliases]]).
 
@@ -632,7 +769,58 @@ int main(int argc, char* argv[]) {
 
 This code will sort the list incorrectly even if `in_reverse` is set to `1`. That's because Blocks will capture the variables that get used at the point-of-creation. The value at the point-of-creation is `0`, therefore, `in_reverse` is `0` when the function is called later. Even though the `in_reverse` variable is **copied** into the block, the block is now sensitive to where it is being created without any indication that it behaves that way. This is safe, but the behavior would throw someone who uses Nested Functions religiously off completely.
 
-The second way it can capture variables is by using `__block`, which works like so:
+This is, of course, easily fixable by just... moving it down, so it's hardly a problem:
+
+```cpp
+#define __STDC_WANT_LIB_EXT1__ 1
+
+#include <stdlib.h>
+#include <string.h>
+#include <stddef.h>
+
+typedef int (compare_fn_t)(const void* left, const void* right);
+
+compare_fn_t^ make_compare(int argc, char* argv[]) {
+	/* LOCAL variable.... */
+	int in_reverse = 0;
+	
+	if (argc > 1) {
+		char* r_loc = strchr(argv[1], 'r');
+		if (r_loc != NULL) {
+			ptrdiff_t r_from_start = (r_loc - argv[1]);
+			if (r_from_start == 1 && argv[1][0] == '-' && strlen(r_loc) == 1) {
+				in_reverse = 1;
+			} 
+		}
+	}
+
+	// Compare function, with block copy: copies the right value
+	compare_fn_t^ compare = ^(const void* untyped_left, const void* untyped_right) {
+		const int* left = (const int*)untyped_left;
+		const int* right = (const int*)untyped_right;
+		return (in_reverse) ? *right - *left : *left - *right;
+	};
+
+	return Block_copy(compare);
+}
+
+int compare_trampoline(const void* left, const void* right, void* user) {
+	compare_fn_t^* p_compare = (compare_fn_t^*)user;
+	return (*p_compare)(left, right);
+}
+
+int main(int argc, char* argv[]) {
+	int list[] = { 2, 11, 32, 49, 57, 20, 110, 203 };	
+
+	compare_fn_t^ compare = make_compare(argc, argv);
+	qsort_s(list, (sizeof(list)/sizeof(*list)), sizeof(*list), compare_trampoline, &compare);
+	Block_release(compare);
+	
+	return list[0];
+}
+```
+
+If you don't want to move the creation of the Block for some particular reason, it is not the only way to capture a variable for Blocks! The second way it can capture variables is by using `__block`, which works like so:
 
 ```cpp
 #define __STDC_WANT_LIB_EXT1__ 1
@@ -681,18 +869,20 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-This will now work as expected, even though the creation of the block comes after `in_reverse` is declared. `__block` lifts the variable being declared up into a heap (or heap-like space) that is managed by either a garbage collector or an automatic reference-counted memory implementation. This both reverse the onus of capturing / handling the variable onto the surrounding scope and makes it safe-by-design. This does leave an unfortunate gap in that there's no way to do the dangerous thing or opt into a direct reference without making an explicit declaration of the pointer and then using the pointer by-copy instead in that block, which can leave some memory footprint and program speed on the table without aggressive optimization.
+This will work as expected, even though the creation of the block comes after `in_reverse` is declared and before modification of the variable. `__block` lifts the variable being declared up into a heap (or heap-like space) that is managed by either a garbage collector or an automatic reference-counted memory implementation. This both reverses the onus of capturing / handling the variable onto the surrounding scope and makes it safe-by-design. This does leave an unfortunate gap in that there's no way to do the dangerous thing or opt into a direct reference without making an explicit declaration of the pointer and then using the pointer by-copy instead in that block, which can leave some memory footprint and program speed on the table without aggressive optimization.
 
-NOTE: The address of `in_reverse` might **actually** change, depending on if the Apple intrinsic `Block_copy` is used to copy the block itself before being run. This code does not depend on it, but a hash map that stores the address of variables might experience the address of any `__block`-annotated variables changing between creation and the innovation of `Block_copy`.
+NOTE: The address of `in_reverse` might **actually** change, depending on if the Apple intrinsic `Block_copy` is used to copy the block itself before being run. This code does not depend on it, but a hash map that stores the address of variables might experience the address of any `__block`-annotated variables changing between creation and the innovation of `Block_copy`. This was changed later on to always set the variable in a location so that a steady address exists, but how conforming it is to keep the hold behavior is likely an implementation choice. While there was previously a Blocks runtime for GCC, it's fallen off: it may make a comeback again in order to be more compatible with the C and C++ code on Apple platforms: whether they will choose the same implementation technique is not known as of the writing of this paper.
 
 All in all, however, these two things are safe: either a copy is happening and is stored along with the creation of the block on the heap, or the variable itself is having its lifetime prolonged by a sort of automatic-tracking. The second of these is very against the typical properties of C, but that matters little in the face of the obvious safety it brings to the table. Unfortunately, because all of this happens magically and in a mostly-unspecified manner, it's very detrimental to the proliferation of the C ecosystem and having several loosely-connected implementations working towards the same improved implementations.
 
 
 ### Optimization: Folding Escapes ### {#intro-blocks-escapes}
 
-As a matter of optimization, Blocks do not necessarily have to pollute the heap. And indeed, most immediately invocations of a block or pass-down (rather than pass-up) invocations that are visible will be optimized into a direct call. Unfortunately, this is not something that is encouraged by the general design of Apple Blocks and Objective-C or Objective-C++. Because taking the address or passing the function along leaves it open to how far the handle-to-some-heap Block-typed object might be passed, compilers have to correctly (and pessimistically) generate the full, indirect-function-call representation as a matter of course. `Block_copy` also needs to be used, explicitly, in many cases, making it not much better in regular C code.
+As a matter of optimization, Blocks do not necessarily have to pollute the heap. And indeed, most immediately invocations of a block or pass-down (rather than pass-up) invocations that are visible will be optimized into a direct call. Unfortunately, this is not something that is encouraged by the general design of Apple Blocks and Objective-C or Objective-C++. Because taking the address or passing the function along leaves it open to how far the handle-to-some-heap Block-typed object might be passed, compilers have to correctly (and pessimistically) generate the full, indirect-function-call representation as a matter of course. `Block_copy` also needs to be used, explicitly, in many cases, making it not much better in regular C code that uses `malloc`.
 
-Swift solves this problem while still being compatible with Objective-C and C++ by making it so every "Block" or "Closure" type must be annotated if it "escapes" beyond the compiler's knowledge, otherwise the program just refuses to compile ([[swift-escapes]]). This allows aggressive optimization to be applied by-default, with weaker static analysis-based optimizations or escape analysis optimization only acting as a fallback in the `@escaping`-annotated case. The annotation also makes it so `Block_copy` does not need to be invoked and rather than having to copy it to a heap version of itself, it is simply put in the right format and place, ready to interoperate cleanly with C, C++, Objective-C or Objective-C++.
+As a brief aside in Programming Language design, this sort of optimization problem is mitigated by changing how the defaults are applied and giving the user explicit control. For example, the Swift Programming Language solves this problem while still being compatible with Objective-C and C++ by making it so every "Block" or "Closure" type must be annotated if it "escapes" beyond the compiler's knowledge, otherwise the program just refuses to compile ([[swift-escapes]]). This allows aggressive optimization to be applied by-default, with weaker static analysis-based optimizations or escape analysis optimization only acting as a fallback in the `@escaping`-annotated case. The annotation also makes it so `Block_copy` does not need to be invoked and rather than having to copy it to a heap version of itself, it is simply put in the right format and place, ready to interoperate cleanly with C, C++, Objective-C or Objective-C++.
+
+NOTE: Swift's native function type and ABI is not identical to the Blocks type at all. This is just an example in how designing with no-escape as a default and then taking it off to allow for taking its address or returning it from a function
 
 In the opposite direction, the C-style attribute that can be used to say "the closure never escapes", which enables optimizations for crunching the object down and assuming that it never is invoked outside of the function. This is available through the `NS_NOESCAPE` macro, which expands to `__attribute__((noescape))` and can be used to gain better binary size and reduce indirection for code execution speed where possible.
 
@@ -777,12 +967,12 @@ int main(int argc, char* argv[]) {
 Again, this only works because there are no captures. When captures get involved, the above code will simply stop compiling at all because the conversion to a function pointer stops working. This can be solved in the ways discussed previously, such as:
 
 - a version of `qsort` which takes a `void*` user data parameter, like `qsort_s` does;
-- a version of `qsort` which takes a "wide" function pointer types, similar to how Blocks do with the `apple_qsort` defined above ([[#intro-blocks-expression]]);
+- a version of `qsort` which takes a "wide" function pointer types, similar to how Blocks do with the `qsort_b` defined by Apple/BSDs;
 - or, allowing a separate facility which lifts the complex closure type into a single function pointer through a trampoline or similar ([[#appendix-make.trampoline]]).
 
 This gives Lambdas a heavy weakness similar to all of the other solutions: there must be either a trampoline, a wide function pointer type, a `void*` user data/context pointer, or a something else to accommodate the lack of transformation into a singular function pointer.
 
-NOTE: C++ as a language has a more robust set of core primitives, they don't have to worry about this problem. `std::function<FUNCTION_TYPE>` is a type-erased way to transport a whole function object, as a copy, through API boundaries that is defined entirely in their library mechanisms. For a view into any old function, there is `std::function_view<FUNCTION_TYPE>`, which is like a function pointer but allows pointing into many different kinds of functions that exist in C++. This makes the integration of lambdas into C++ easy; in C, it is much more difficult to have this all participate in the system automatically. There is no `std::function`-alike in C, and there's no `std::function_view`-alike in C either for new function types like GNU Nested Functions, Apple Blocks, or otherwise. This problem has to be solved separately, with a Wide Function Pointer type ([[#intro-solutions-wide.pointer]]) or with explicit user trampoline-making capability such as [[#appendix-make.trampoline]].
+NOTE: C++ as a language has a more robust set of core primitives, they don't have to worry about this problem. `std::function<FUNCTION_TYPE>` is a type-erased way to transport a whole function object, as a copy, through API boundaries that is defined entirely in their library mechanisms. For a view into any old function, there is `std::function_ref<FUNCTION_TYPE>`, which is like a function pointer but allows pointing into many different kinds of functions that exist in C++. This makes the integration of lambdas into C++ easy; in C, it is much more difficult to have this all participate in the system automatically. There is no `std::function`-alike in C, and there's no `std::function_ref`-alike in C either for new function types like GNU Nested Functions, Apple Blocks, or otherwise. This problem has to be solved separately, with a Wide Function Pointer type ([[#intro-solutions-wide.pointer]]) or with explicit user trampoline-making capability such as [[#appendix-make.trampoline]].
 
 
 ### Captures and Data ### {#intro-lambdas-captures}
@@ -881,7 +1071,11 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-Like Apple Blocks a lambda with captures is safe to return with the by-value capture (if one briefly ignores the need for `Block_copy` to reseat the memory of a Block). Additionally, it is better here because there is no usage of the heap in the above code example. The only problem is that this requires a feature that was proposed for C23 but didn't make it (along with Lambdas not making it): deduced return types. There was consensus to have the feature, but the feature was bundled with the set of Lambda proposals, and thus fell through during the final stretch of C23. Therefore, a proposal for inferring the type of a function return should be separated from the previous proposals (such as [[n2923]]) in order to accommodate such behavior in C.
+Like Apple Blocks a lambda with captures is safe to return with the by-value capture (if one briefly ignores the need for `Block_copy` to reseat the memory of a Block). Additionally, it is better here because there is no usage of the heap in the above code example.
+
+ASSERTION: This is PRIMARILY due to C++-style Lambdas just being normal objects. They have a compile-time `sizeof(...)`, a compile-time `alignof(...)`, can have their unique type inspected with `typeof(...)`, and are generally autonomous. There's no erasure happening here as is with Blocks (the `function_type^` type) or Nested Functions (the `function_type*` type); each Lambdas is a unique type, similar to the unique type gained by pairing a function with a hand-made `struct`.
+
+The only problem is that this requires a feature that was proposed for C23 but didn't make it (along with Lambdas not making it): deduced return types. There was consensus to have the feature, but the feature was bundled with the set of Lambda proposals, and thus fell through during the final stretch of C23. Therefore, a proposal for inferring the type of a function return should be separated from the previous proposals (such as [[n2923]]) in order to accommodate such behavior in C.
 
 One of the things that's better about Lambdas over Apple Blocks is that they *also* allow for *by-name* capture, just like Nested Functions do. So, this code -- despite having the lambda defined in `main` and before `in_reverse` is changed -- will work as expected:
 
@@ -924,14 +1118,63 @@ int main(int argc, char* argv[]) {
 
 ADVISEMENT: This will invoke undefined behavior in the case of moving this *by-name* capturing lambda into a function and then returning it. Capturing a name with `&some_identifier` (or using the "default capture" of `&` by itself) always captures by pointer of the variable.
 
-Even if it is more explicit that in the Nested Functions case, the danger is still present and so care must still be exercised. The good news is that a user can actually choose how to handle this, exactly like Blocks do; the doubly-good news is that doing so does not change the way Lambdas work. They are still complete, whole objects.
+Even if it is more explicit that in the Nested Functions case, the danger is still present and so care must still be exercised. That is, the following is undefined behavior because of the explicit by-reference `&` capture:
+
+```cpp
+#define __STDC_WANT_LIB_EXT1__ 1
+
+#include <stdlib.h>
+#include <string.h>
+#include <stddef.h>
+
+// a new kind of return type: "inferred" (`auto`)
+auto make_compare(int argc, char* argv[]) {
+	int in_reverse = 0;
+	
+	// capture just one variable, and capture it "by-name" / "by-reference"
+	auto compare = [&in_reverse](const void* untyped_left, const void* untyped_right) {
+		const int* left = (const int*)untyped_left;
+		const int* right = (const int*)untyped_right;
+		return (in_reverse) ? *right - *left : *left - *right;
+	};
+
+	if (argc > 1) {
+		char* r_loc = strchr(argv[1], 'r');
+		if (r_loc != NULL) {
+			ptrdiff_t r_from_start = (r_loc - argv[1]);
+			if (r_from_start == 1 && argv[1][0] == '-' && strlen(r_loc) == 1) {
+				// lambda will reflect this change
+				in_reverse = 1;
+			} 
+		}
+	}
+
+	// uh oh...
+	return compare;
+}
+
+int main(int argc, char* argv[]) {
+	int list[] = { 2, 11, 32, 49, 57, 20, 110, 203 };	
+
+	auto compare = make_compare(argc, argv);
+	auto compare_trampoline = [](const void* left, const void* right, void* userdata) {
+		typeof(compare)* p_compare = userdata;
+		return (*p_compare)(left, right);
+	};
+	qsort_s(list, (sizeof(list)/sizeof(*list)), sizeof(*list), compare_trampoline, &compare);
+
+	return list[0];
+}
+```
+
+This means that lambdas can be **made** to be unsafe, by capturing things whose lifetime dies even as the lambda itself is passed around or returned. This allows for a sleeker representation and no runtime-heap, but with the OBVIOUS drawback that no automated reference-counted variable also means no implicit lifetime safety like with the `__block` variables. Thankfully, since captures can be done both ways, the user can either choose to capture by reference, choose to capture by value, or -- if needed -- choose to allocate and then capture the new allocated pointer by value themselves. Of course, any explicit allocation will need to be freed, just as it would in a Blocks scenario. This usually implies waiting for a signaling callback from the API that it is done, or elevating the lifetime to a higher level to be deleted at a later time.
 
 
 ### What About Lifetime / Destructors? ### {#intro-lambdas-destructors}
 
 A common criticism of Lambdas and their unique type, whole-object approach is that such an approach with captures requires C++-style destructors to work well. We are completely unsure why this is the case or why this criticism keeps being levied specifically at Lambdas. In the previous section on Apple Blocks ([[#intro-blocks-runtime-stack.based]]), coordinated function calls and documentation are the only way to communicate that a user has `Block_copy`'d an object and therefore requires `Block_release`. Similarly with GNU Nested Functions, returning them up the stack *at all* is pure undefined behavior, that has tangible effects on the program ([[#intro-nested.functions-captures]]): these are problems endemic to C. Using a complex data structure like a binary tree or allocating memory requires that it is documented and communicated to the user: capturing such complex types and having it called over a longer period of time simply means the user has the responsibility to clean up or free the resources.
 
-C APIs will always provide a user with provided functions a way to know when something must be cleaned up. For example, the Lua C API has an allocation function that is specifically called with a "new size" parameter of `0`, it means memory passed in must be freed; that's how it communicates what the current action is. Similarly, ev/libev -- with `ev_set_allocator` -- provides a hook to allow a user to manage the memory of the library, while also providing **several** statuses in callbacks for watchers (`initialized`/`pending`/`running`/`stopped`/etc.). Even for standard C, `thrd_create` passes a `void*` user data to the `func` that gets run on the new thread: a user must allocate and then pass the user data to the thread, and it becomes the thread's responsibility to manage the lifetime of that type in a manner that is threadsafe.
+C APIs will always provide a user with provided functions a way to know when something must be cleaned up. For example, the Lua C API has an allocation function that is specifically called with a "new size" parameter of `0`, it means memory passed in must be freed; that's how it communicates what the current action is. Similarly, ev/libev -- with `ev_set_allocator` -- provides a hook to allow a user to manage the memory of the library, while also providing **several** statuses in callbacks for watchers (`initialized`/`pending`/`running`/`stopped`/etc.). Even for standard C, `thrd_create` passes a `void*` user data to the `func` that gets run on the new thread: a user must allocate and then pass the user data to the thread, and it becomes the thread's responsibility to manage the lifetime of that type in a manner that is thread safe.
 
 Any C API worth its salt, when dealing with convoluted lifetimes, provides to a given callback (through its parameters) a notification that the memory is not usable anymore, OR a separate callback (for more full-fledged APIs) that notifies the API that its finished or done with a specific operation, and therefore safe to close things out. The secondary alternative is, of course, statically sourcing lifetime until the user themselves guarantees all resources can be safely freed using some outside knowledge (e.g., an explicit set of calls after the start of the library to cleanup/close/stop the library). This is not just a point with lambdas: every attempt at solving this problem has to engage with this. Whether it's using `Block_copy` to ensure the lifetime of an Apple Block, or `malloc` to make sure a `struct` type being pointed to by a `void*` is accessible after a dispatch to an asynchronous function call. This is simply not a problem unique to lambdas: lifetime tracking and safety will always be a problem in C because C has no extended concept of lifetime duration beyond Effective Types.
 
@@ -939,26 +1182,105 @@ Any problem with lifetime is going to be present in every single iteration of th
 
 - UB if you return a GNU Nested Function pointer that works with variables in the function scope being exited;
 - UB if you return an Apple Blocks pointer without `Block_copy`;
-- UB if you capture things that go out of scope in general;
+- UB if you capture things that go out of scope in general (safe defaults for Apple Blocks, safe defaults for Lambdas with `[=]` or just `ident` captures);
 - UB if you cast to the wrong `struct` inside of an ISO C function to access a user data `void*` pointer;
 - UB if you *by-name* capture in a lambda and leave the scope;
 
-and so on, and so forth. That's a C-intrinsic problem, and the only thing any design in this space can do is offer better tools or better control to manage or avoid such problems where possible.
+and so on, and so forth. That's a C-intrinsic problem, and the only thing any design in this space can do is offer better tools or better control to manage or avoid such problems where possible. Lifetime management is not solvable in C as it stands, and no amount of features or tinkering or attributes will really change the intrinsic language design flaw that is pointers and references that do not have any compile-time trackable properties asides from what can be inferred with (potentially strenuous) static analysis.
 
 
 
 ## The Solutions ## {#intro.solutions}
 
+Given the following properties from all of the solutions:
+
+<table class="basic"><thead>
+<tr>
+<th>Feature</th>
+<th>GNU Nested Functions</th>
+<th>Apple Blocks</th>
+<th>C++-Style Lambdas</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Capture By-Name</td>
+<td>✅ (default)</td>
+<td>✅ (`__block ident;`)</td>
+<td>✅ (`[&amp;]`)</td>
+</tr>
+<tr>
+<td>Capture By-Value</td>
+<td>❌</td>
+<td>✅ (default)</td>
+<td>✅ (`[=]`)</td>
+</tr>
+<tr>
+<td>Selective Capture</td>
+<td>❌ (use-based, by-name only)</td>
+<td>✅ (for by-name)<br>❌ (for by-value, use-based)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Safe to Return</td>
+<td>❌</td>
+<td>❌ (requires `Block_copy`)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Relocatable to Heap<br>(Lifetime Management)</td>
+<td>❌</td>
+<td>✅ (`Block_copy`/`Block_release`)</td>
+<td>✅ (`malloc`/`memcpy`/`free`)</td>
+</tr>
+<tr>
+<td>Usable Directly as Expression</td>
+<td>❌</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Immediately Invokable</td>
+<td>❌</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Convertible to Function Pointer</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌ (only capture-less)</td>
+</tr>
+<tr>
+<td>Convertible to "Wide" Function Type</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Access to Non-Erased Object/Type</td>
+<td>❌<br>((wide) function pointer only)</td>
+<td>❌<br>(Block type/wide function pointer only)</td>
+<td>✅<br>(unique type/size)</td>
+</tr>
+<tr>
+<td>Recursion Possible</td>
+<td>✅<br>(use the identifier of the nested function)</td>
+<td>❌<br>(`__self_func` required)</td>
+<td>❌<br>(`__self_func` required)</td>
+</tr>
+</tbody></table>
+
 This proposal is going to propose two distinct options for standardization, with the recommendation to do both. It is critical to do both for the maximum amount of external language compatibility (C++ in particular, with [[#design-lambdas]]) and for the approval of the C ecosystem in general (with [[#design-capture.functions]]). The necessary and core goals of this proposal are focused on:
 
 - compile-time knowable size of the function object (can be treated as a regular object);
-- does not require a heap or a special stack;
+- that has a unique type with its own size;
+- does not require a heap or a special stack (unless type-erased or otherwise relocated by (explicit) user action);
 - can be interacted with like a normal function (but not necessarily as a normal function pointer);
 - and, does not compromise the security of all or a portion of the program.
 
 Lambdas already have usage experience with well-known properties that can be directly translated to C and is easy enough to understand, despite the unfortunate syntax. Capture Functions are a simple modification of Nested Functions that produce a sized object (similar to Lambdas) and makes their captures explicit, allowing for a degree of control and additional safety that was not present in the original Nested Functions design.
 
-We are **not** focused on interopability with singular function pointers. We believe that should be left to a separate, explicit mechanism in the language, capable of allowing the user to choose where the memory comes from and setting it up appropriately. This way, a user can make the decision **on their own** if they want to use e.g. executable stack (with the consequences that it brings) or just have a part of (heap) memory they set with e.g. Linux `mprotect(...)` or Win32 `VirtualProtect` to be readable, writable, and executable. Such a trampoline-maker (as briefly talked about in [[#appendix-make.trampoline]]) can also be applied across implementations in a way that the secret sauce powering Nested Functions cannot be: this is much more appealing as an approach.
+We are **not** focused on interoperability with singular function pointers. We believe that should be left to a separate, explicit mechanism in the language, capable of allowing the user to choose where the memory comes from and setting it up appropriately. This way, a user can make the decision **on their own** if they want to use e.g. executable stack (with the consequences that it brings) or just have a part of (heap) memory they set with e.g. Linux `mprotect(...)` or Win32 `VirtualProtect` to be readable, writable, and executable. Such a trampoline-maker (as briefly talked about in [[#appendix-make.trampoline]]) can also be applied across implementations in a way that the secret sauce powering Nested Functions cannot be: this is much more appealing as an approach.
 
 We **DO NOT** take any of the design from Blocks because the Blocks design is, as a whole, unsuitable for C. While its deployment of a blocks "type" to fulfill the necessary notion of a "wide function pointer" type is superior to what Nested Functions have produced, the implementation details it imposes for `__block` variables and the excessive reliance on an (underspecified) runtime/heap are detrimental to a shared & unified approach to C.
 
@@ -1026,7 +1348,8 @@ Upsides:
 - Fixes ABI and allows Clang et. al. to implement.
 - Provides for explicit captures with a keyword.
 - Retains Nested Function look and feel.
-- Name mangling is less unclear (nested functions have a name, can be used to do recursion unlike Lambdas).
+- Name mangling is less unclear (nested functions have a name, `__func__` can use this).
+- Can be used to do recursion unlike Lambdas).
 
 Downsides:
 - Not a real expression.
