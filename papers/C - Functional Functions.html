@@ -1506,7 +1506,7 @@ Possible extra rowspan handling
   <meta content="Bikeshed version c3a8ac783, updated Wed Jul 24 12:20:06 2024 -0700" name="generator">
   <link href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Functional%20Functions.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="6a0eb7c83b3f46a3ed54f14697cb1892077d4a70" name="revision">
+  <meta content="58c92c4fc6f5dae591c654cab620315ae485ee83" name="revision">
   <meta content="dark light" name="color-scheme">
 <style>
 :root {
@@ -4354,6 +4354,19 @@ inside main fn <c- p>|</c-> cap_fn1.x: <c- m>60</c->, cap_fn1.renamed_y: <c- m>1
 <c- b>void</c-> <c- nf>stdc_destroy_trampoline_with</c-><c- p>(</c-><c- n>_Any_func</c-><c- o>*</c-><c- p>,</c-> <c- n>deallocate_function_t</c-><c- o>*</c-> <c- n>dealloc</c-><c- p>);</c->
 </pre>
    <p>Regardless the form that the <code class="highlight"><c- n>make</c-></code>/<code class="highlight"><c- n>destroy</c-></code> functions take, this sort of intrinsic would be capable of lifting not just a typical GNU nested functions but all types of functions to be a single, independent function pointer with some kind of backing storage. Some desire may still exist to make the allocation and deallocation process automatic, but that should be left to compiler vendors to decide for ease-of-use tradeoffs versus e.g. security, like in <a href="#intro-nested.functions-design">§ 3.2.2 Early Design Flaw: Nested Functions turn the stack Executable!</a>.</p>
+   <p>It should be noted that Apple itself already has a version of this with this Objective-C Blocks Implementation (<a data-link-type="biblio" href="#biblio-objective-c-block-trampoline" title="Objective-C Runtime / imp_implementationWithBlock">[objective-c-block-trampoline]</a>). GCC does not expose an intrinsic for this per-se, but does provide <code class="highlight"><c- n>__builtin_call_with_static_chain</c-></code> (<a data-link-type="biblio" href="#biblio-builtin_call_with_static_chain_gcc" title="GCC Online Documentation: Constructing Calls">GCC Documentation: Builtin Call with Static Chain</a>). One can build a trampoline mechanism overtop of that, provided they had the properly-created function plus the right stack frame / "environment" chain pointer to go with the function callable. Since C++ Lambdas -- and the proposed Capture Functions and C-Style Lambdas here -- are by themselves <a href="#design-capture.functions-complete.objects">Complete Objects</a>, one can always create a "thunk" or "trampoline" for them manually, using a wide variety of allowable techniques from heap allocation to pre-stored arrays to <code class="highlight"><c- k>_Thread_local</c-></code>/<code class="highlight"><c- k>static</c-></code> data or otherwise. C++ could implement <code class="highlight"><c- n>stdc_make_trampoline</c-></code> entirely as a library function, but C cannot; so, this is something vendors will have to figure out on their own.</p>
+   <p>The only part that needs to be user-configurable is the source of memory. Of course, if an implementation does not want to honor a user’s request, they can simply return a <code class="highlight"><c- p>(</c-><c- n>Any_func</c-><c- o>*</c-><c- p>)</c-><c- n>nullptr</c-><c- p>;</c-></code> all the time. This would be hostile, of course, so a vendor would have to choose wisely about whether or not they should do this. The paper proposing this functionality would also need to discuss setting <code class="highlight"><c- n>errno</c-></code> to an appropriate indicator after use of the intrinsic, if only to appropriately indicate what went wrong. For example, <code class="highlight"><c- n>errno</c-></code> could be set to:</p>
+   <ul>
+    <li data-md>
+     <p><code class="highlight"><c- n>ENOMEM</c-></code>: the allocation function call failed (that is, <code class="highlight"><c- n>alloc</c-></code> returned <code class="highlight"><c- n>nullptr</c-></code>).</p>
+    <li data-md>
+     <p><code class="highlight"><c- n>EADDRNOAVAIL</c-></code>: the address cannot be used for function calls (e.g., somehow being given invalid memory such as an address in <code class="highlight"><c- p>.</c-><c- n>bss</c-></code>).</p>
+    <li data-md>
+     <p><code class="highlight"><c- n>EINVAL</c-></code>: <code class="highlight"><c- n>func</c-></code> is a null function pointer or a null object.</p>
+    <li data-md>
+     <p><code class="highlight"><c- n>EACCESS</c-></code>: the address could be used for function calls but cannot be given adequate permissions (e.g., it cannot be succesfully <code class="highlight"><c- n>mprotect</c-></code>d or <code class="highlight"><c- n>VirtualProtect</c-></code>d).</p>
+   </ul>
+   <p>to indicate a problem. Albeit, there are always complaints about <code class="highlight"><c- n>errno</c-></code>, so it may also be possible to take an <code class="highlight"><c- b>int</c-><c- o>*</c-> <c- n>p_errcode</c-></code> parameter in the <code class="highlight"><c- n>make_trampoline</c-></code> functions, and use that as a means of solving the problem (or swap the return type and the error code parameter to return the error code and output into an <code class="highlight"><c- n>_Any_func</c-><c- o>*</c-></code>). The API design possibilities are, really, endless.</p>
    <h3 class="heading settled" data-level="6.2" id="appendix-executable.stack.cves"><span class="secno">6.2. </span><span class="content">Executable Stack CVEs</span><a class="self-link" href="#appendix-executable.stack.cves"></a></h3>
    <p><strong class="advisement"> THIS SECTION IS INCOMPLETE.</strong></p>
    <p>The following CVEs are related to executable stack issues.</p>
@@ -4538,6 +4551,8 @@ inside main fn <c- p>|</c-> cap_fn1.x: <c- m>60</c->, cap_fn1.renamed_y: <c- m>1
    <dd>Thiago R. Adams. <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3645.pdf"><cite>n3645: Function Literals</cite></a>. July 11th, 2025. URL: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3645.pdf">https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3645.pdf</a>
    <dt id="biblio-nested-functions">[NESTED-FUNCTIONS]
    <dd>GNU Compiler Collection Contributors. <a href="https://gcc.gnu.org/onlinedocs/gcc/Nested-Functions.html"><cite>Nested Functions (Using the GNU Compiler Collection (GCC))</cite></a>. May 3rd, 2025. URL: <a href="https://gcc.gnu.org/onlinedocs/gcc/Nested-Functions.html">https://gcc.gnu.org/onlinedocs/gcc/Nested-Functions.html</a>
+   <dt id="biblio-objective-c-block-trampoline">[OBJECTIVE-C-BLOCK-TRAMPOLINE]
+   <dd>Objective-C Development Team and Contributors; Apple. <a href="https://developer.apple.com/documentation/objectivec/imp_implementationwithblock(_:)?language=objc"><cite>Objective-C Runtime / imp_implementationWithBlock</cite></a>. July 17th, 2025. URL: <a href="https://developer.apple.com/documentation/objectivec/imp_implementationwithblock(_:)?language=objc">https://developer.apple.com/documentation/objectivec/imp_implementationwithblock(_:)?language=objc</a>
    <dt id="biblio-solar-non-executable-stack-exploits">[SOLAR-NON-EXECUTABLE-STACK-EXPLOITS]
    <dd>solar FALSE COM (Solar Designer). <a href="https://seclists.org/bugtraq/1997/Aug/63"><cite>Getting around non-executable stack (and fix)</cite></a>. August 10th, 1997. URL: <a href="https://seclists.org/bugtraq/1997/Aug/63">https://seclists.org/bugtraq/1997/Aug/63</a>
    <dt id="biblio-swift-escapes">[SWIFT-ESCAPES]

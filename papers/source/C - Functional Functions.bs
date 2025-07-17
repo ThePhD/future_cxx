@@ -2123,6 +2123,16 @@ void stdc_destroy_trampoline_with(_Any_func*, deallocate_function_t* dealloc);
 
 Regardless the form that the `make`/`destroy` functions take, this sort of intrinsic would be capable of lifting not just a typical GNU nested functions but all types of functions to be a single, independent function pointer with some kind of backing storage. Some desire may still exist to make the allocation and deallocation process automatic, but that should be left to compiler vendors to decide for ease-of-use tradeoffs versus e.g. security, like in [[#intro-nested.functions-design]].
 
+It should be noted that Apple itself already has a version of this with this Objective-C Blocks Implementation ([[objective-c-block-trampoline]]). GCC does not expose an intrinsic for this per-se, but does provide `__builtin_call_with_static_chain` ([[builtin_call_with_static_chain_gcc|GCC Documentation: Builtin Call with Static Chain]]). One can build a trampoline mechanism overtop of that, provided they had the properly-created function plus the right stack frame / "environment" chain pointer to go with the function callable. Since C++ Lambdas -- and the proposed Capture Functions and C-Style Lambdas here -- are by themselves [[#design-capture.functions-complete.objects|Complete Objects]], one can always create a "thunk" or "trampoline" for them manually, using a wide variety of allowable techniques from heap allocation to pre-stored arrays to `_Thread_local`/`static` data or otherwise. C++ could implement `stdc_make_trampoline` entirely as a library function, but C cannot; so, this is something vendors will have to figure out on their own.
+
+The only part that needs to be user-configurable is the source of memory. Of course, if an implementation does not want to honor a user's request, they can simply return a `(Any_func*)nullptr;` all the time. This would be hostile, of course, so a vendor would have to choose wisely about whether or not they should do this. The paper proposing this functionality would also need to discuss setting `errno` to an appropriate indicator after use of the intrinsic, if only to appropriately indicate what went wrong. For example, `errno` could be set to:
+
+- `ENOMEM`: the allocation function call failed (that is, `alloc` returned `nullptr`).
+- `EADDRNOAVAIL`: the address cannot be used for function calls (e.g., somehow being given invalid memory such as an address in `.bss`).
+- `EINVAL`: `func` is a null function pointer or a null object.
+- `EACCESS`: the address could be used for function calls but cannot be given adequate permissions (e.g., it cannot be succesfully `mprotect`d or `VirtualProtect`d).
+
+to indicate a problem. Albeit, there are always complaints about `errno`, so it may also be possible to take an `int* p_errcode` parameter in the `make_trampoline` functions, and use that as a means of solving the problem (or swap the return type and the error code parameter to return the error code and output into an `_Any_func*`). The API design possibilities are, really, endless.
 
 
 ## Executable Stack CVEs ## {#appendix-executable.stack.cves}
@@ -2231,6 +2241,15 @@ The following CVEs are related to executable stack issues.
 		"title": "The Swift Programming Language: Closures",
 		"date": "July 6th, 2025",
 		"href": "https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/#Escaping-Closures"
+	},
+	"objective-c-block-trampoline": {
+		"authors": [
+			"Objective-C Development Team and Contributors",
+			"Apple"
+		],
+		"title": "Objective-C Runtime / imp_implementationWithBlock ",
+		"date": "July 17th, 2025",
+		"href": "https://developer.apple.com/documentation/objectivec/imp_implementationwithblock(_:)?language=objc"
 	},
 	"n2862": {
 		"authors": [
