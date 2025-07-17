@@ -89,7 +89,7 @@ There were multiple limiting factors in getting data into the function outside o
 - `static` data was the most popular ISO Standard C way of handling this in `qsort`-style APIs, resulting in a large number of (`inline`) `static` global variables throughout early programs using clever tricks to duplicate variables VIA `fork`-style or loading several translation units with different `static` variables;
 - and, `_Thread_local` in the case of avoiding contention on variables when multithreading was formally introduced circa C11.
 
-Still, despite these limitations, normal, ISO C standard functions by themselves have static lifetimes even if the data does not. This allowed people to instead focus on using `void*` user data pointers as a sort of "whatever the user wants" function argument. This is a widely deployed idiom, and has been part of "reentrant" or "fixed" C interfaces for a very long time. Annex K includes `qsort_s`, which patches this in, and there is also `qsort_r`, from the BSD-series of libraries:
+Still, for all of its benefits and ease-of-use, these techniques are not perfect. Concerns and problems around (potentially false) sharing data only grew in time as each program had to manage larger and larger swaths of 1980's-style global variable soups, something that has famously ended up being used as a sign of negative code quality in legal matters. This particular problem was combatted by "reentrant" functions or "reentrancy" requirements, which is where the family of `qsort_s` and `qsort_r`-style functions (from Annex K implementations or BSD libraries) came from:
 
 ```cpp
 void qsort_s(
@@ -104,6 +104,8 @@ void qsort_r(
 	void* user
 );
 ```
+
+And they are used like so:
 
 ```cpp
 #include <stdlib.h>
@@ -136,49 +138,7 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-allowing for code like this to be written instead:
-
-
-
-```cpp
-#include <stdlib.h>
-#include <string.h>
-#include <stddef.h>
-
-static int in_reverse = 0;
-
-typedef int (compare_fn_t)(const void* left, const void* right);
-
-int compare(const void* untyped_left, const void* untyped_right) {
-	const int* left = (const int*)untyped_left;
-	const int* right = (const int*)untyped_right;
-	return (in_reverse) ? *right - *left : *left - *right;
-}
-
-compare_fn_t* make_compare (int argc, char* argv[]) {
-	if (argc > 1) {
-		char* r_loc = strchr(argv[1], 'r');
-		if (r_loc != NULL) {
-			ptrdiff_t r_from_start = (r_loc - argv[1]);
-			if (r_from_start == 1 && argv[1][0] == '-' && strlen(r_loc) == 1) {
-				in_reverse = 1;
-			} 
-		}
-	}
-	return compare;
-}
-
-int main(int argc, char* argv[]) {
-	
-	int list[] = { 2, 11, 32, 49, 57, 20, 110, 203 };
-	compare_fn_t* compare_fn = make_compare(argc, argv);
-	qsort(list, (sizeof(list)/sizeof(*list)), sizeof(*list), compare_fn);
-	
-	return list[0];
-}
-```
-
-This was, unfortunately, both bug-generating and limiting due to the data sharing issues. Concerns and problems around sharing data only grew in time as each program had to manage larger and larger swaths of 1980's-style global variable soups, something that has famously ended up being used as a sign of negative code quality in legal matters. When global variables became more discouraged towards C95 and C99 to prevent unintended data clobbering or sharing, a new extension was cooked up by GCC to handle this program. Similar to an Ada feature but spun directly for C at the time, it was a feature lovingly dubbed Nested Functions.
+While this example just has a single `int` as the type, other instances of using callbacks in this manner has resulted in Type Confusion bugs, where the `void*` pointer is cast to the wrong type or the wrong callback is used in conjunction with that `void*` callback type. The lack of type safety occasionally bites people, and given that its ferreted through a `void*` it's hard to tackle this problem when dozens of little "helper" functions have to litter source code at file-scope. As global variables became more discouraged towards C95 and C99 to prevent unintended data clobbering or sharing, and as reentrancy started to become more important but had to use type-unsafe solutions which enabled unfortunate type confusion, a new extension was cooked up by GCC to handle this program. Similar to Ada and Algol features but spun directly for C at the time, it was a feature lovingly dubbed Nested Functions.
 
 
 
