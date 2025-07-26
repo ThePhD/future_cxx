@@ -568,7 +568,7 @@ This is a critical failure of Nested Functions: it only ever "captures" function
 NOTE: As a general rule of thumb, if the entity being designed has the ability to be transferred out of its current scope (Blocks, Nested Functions, Lambdas, ...) then it must as a rule allow for determining how it interacts with the scope it is nested in. The answer for function calls in most languages (without a garbage collector or other memory-preserving solution) is "cannot interact with its surrounding scope", which simplifies the problem. But, the whole point of these features IS to interact with the surrounding scope, and so care must be taken to make it work better.
 
 
-### GNU Nested Functions By-Name Captures Cannot Be Worked Around Normally ### {#intro-nested.functions.captures-no-workaround}
+### GNU Nested Functions By-Name Captures Cannot Be Worked Around Normally ### {#intro-nested.functions-captures.no.workaround}
 
 The deeply unfortunate part of GNU Nested Functions is that even if someone realizes the issue with by-name capture of the surrounding scope and tries to escape it, there **is** not successful way to actually provide that escape. Consider, briefly, the `make_compare`-style example from before but with a slight modification to "heapify" the `in_reverse` variable for safety reasons:
 
@@ -1317,7 +1317,7 @@ Any problem with lifetime is going to be present in every single iteration of th
 
 and so on, and so forth. That's a C-intrinsic problem, and the only thing any design in this space can do is offer better tools or better control to manage or avoid such problems where possible. Lifetime management is not solvable in C as it stands, and no amount of features or tinkering or attributes will really change the intrinsic language design flaw that is pointers and references that do not have any compile-time trackable properties asides from what can be inferred with (potentially strenuous) static analysis.
 
-One way to alleviate this -- which would be beyond what is currently within C++ and what has been proposed previously -- is to allow for lambdas (beyond their initialization/creation) to have "accessor" syntax for any of its captures using the `lambda.identifier` syntax. This is explored in the later design for the solutions, within [[#design-capture.functions-data.capture.fields]].
+One way to alleviate this -- which would be beyond what is currently within C++ and what has been proposed previously -- is to allow for lambdas (beyond their initialization/creation) to have "accessor" syntax for any of its captures using the `lambda.identifier` syntax. This is explored in the later design for the solutions, within [[#design-capture.functions-data.captures.fields]].
 
 
 
@@ -1870,7 +1870,7 @@ int main () {
 ```
 
 
-### NEW: Data Captures are Accessible ### {#design-capture.functions-data.capture.fields}
+### NEW: Data Captures are Accessible ### {#design-capture.functions-data.captures.fields}
 
 An important adjustment to make sure this code works better than the way it did for Blocks or Nested Functions is the ability not only to copy ([[#design-capture.functions-complete.objects]]) or otherwise rename objects ([[#design-capture.functions-data.captures.rename]]), but ALSO to get at the internals of a given Capture Function. This is something missing from GNU Nested Functions (which provides no real resolution for it) as well, and something that could matter for Apple Blocks but does not in practice because they can turn any object into a shared one with the `__block` modifier on an object. In particular, this only matters in the case of a closure which is given a (copied) resource that must either be released or freed.
 
@@ -1927,6 +1927,53 @@ inside main fn | cap_fn1.x: 60, cap_fn1.renamed_y: 10.0, cap_fn1.z: z
 How the implementation actually accesses the information is implementation-defined, and the layout of the Capture Function object is not defined the specification, except to say it's implementation-defined ([[#wording]]).
 
 NOTE: This leaves room for an implementation to, for example, use creative ways to retrieve objects and object references. Using a pointer to the current stack frame and then computing a raw offset to get to a specific bit of data, or using entirely registers, are all possible depending on how the captures are implemented. Such improvements and optimizations -- especially in the face of potential asynchronous calls and the need to protect against false sharing -- must be left up to Quality of Implementation.
+
+As an example for releasing resources outside of the function call itself for the purposes of a function call that gets used more than once and isn't passed a "We're Done" signal, we can reuse the example from [[#intro-nested.functions-captures.no.workaround]]:
+
+```cpp
+#include <stdlib.h>
+#include <string.h>
+#include <stddef.h>
+
+typedef int compare_fn_t(const void* left, const void* right);
+
+auto make_compare(int argc, char* argv[]) {
+	/* LOCAL, heap-allocated variable.... */
+	int* in_reverse = malloc(sizeof(int));
+	*in_reverse = 0;
+
+	if (argc > 1) {
+		char* r_loc = strchr(argv[1], 'r');
+		if (r_loc != NULL) {
+			ptrdiff_t r_from_start = (r_loc - argv[1]);
+			if (r_from_start == 1 && argv[1][0] == '-' && strlen(r_loc) == 1) {
+				*in_reverse = 1;
+			} 
+		}
+	}
+	
+	int compare(const void* untyped_left, const void* untyped_right) _Capture(in_reverse) {
+		const int* left = untyped_left;
+		const int* right = untyped_right;
+		return (*in_reverse) ? *right - *left : *left - *right;
+	}
+	return compare;
+}
+
+int main(int argc, char* argv[]) {
+	int list[] = { 2, 11, 32, 49, 57, 20, 110, 203 };	
+
+	auto compare = make_compare(argc, argv);
+	qsort_r(list, (sizeof(list)/sizeof(*list)), sizeof(*list), compare, &compare);
+	// with data field captures, we can now `free` the
+	// field `in_reverse` from the lambda
+	free(compare.in_reverse);
+	
+	return list[0];
+}
+```
+
+Thanks to the capture of `in_reverse` with the by-value `_Capture(in_reverse)` indication, the return of this function is safe. And, since we have access to the unique type that is generated (through the `auto` return type), we can access the pointer `in_reverse` normally and naturally. This isn't possible with normal C++-style lambdas, as they haven't decided to make this available (though our design for Lambdas in C will also include the named captures as accessible fields). It's also not possible in the other solutions which rely on type-erasure as a first-class part of the design (Apple Blocks with the Blocks type, GNU Nested Functions only being accessible through a pointer or convertible to a wide function pointer in [[n2661]] or [[n3564]], Borland's closure annotation or function literals). This is why making it possible to access the unique type first and foremost is of great benefit.
 
 
 ### Capable of Recursion ### {#design-capture.functions-recursion}
@@ -2635,7 +2682,7 @@ This is discussed earlier in the introduction, but GNU Nested Functions have an 
 > - Not having destructors and smart pointers in C requires workarounds not needed in C++.
 > - Not having explicit access to the structure holding the captured values requires unsafe byte copies, causes issues with alignment and makes deep copying impossible.
 
-Everything in C is a byte copy, unless an explicit function is inserted to do something just before that byte copy happens. An example of this comes from Apple Blocks, with a required `Block_release` and `Block_copy` required to make usage of stored blocks safer ([[#intro-blocks-runtime-stack.based]]). To uphold this as a problem is to lambast the entirety of C and its object model as unsafe; which, honestly, is not an unfair assessment. The fix to that is to restore access to the objects captured inside of an object, as shown in [[#design-capture.functions-data.capture.fields]], which makes any capturing entity -- whether it's a `_Closure` like in [[n3654]], Capture Functions as in this paper, or Lambdas -- accessible once more.
+Everything in C is a byte copy, unless an explicit function is inserted to do something just before that byte copy happens. An example of this comes from Apple Blocks, with a required `Block_release` and `Block_copy` required to make usage of stored blocks safer ([[#intro-blocks-runtime-stack.based]]). To uphold this as a problem is to lambast the entirety of C and its object model as unsafe; which, honestly, is not an unfair assessment. The fix to that is to restore access to the objects captured inside of an object, as shown in [[#design-capture.functions-data.captures.fields]], which makes any capturing entity -- whether it's a `_Closure` like in [[n3654]], Capture Functions as in this paper, or Lambdas -- accessible once more.
 
 > - Making the lambda itself have a unique anonymous object type in C means it can only be invoked immediately which seems useful only in macros. In C++ it can be returned from and passed to template functions.
 
@@ -2659,7 +2706,7 @@ Trailing return types enhance what is capable, but are not strictly required ([[
 
 As a sole solution, certainly. But this proposal provides Capture Functions ([[#design-capture.functions]]) as the flagship proposal for C, and maintains 1:1 identical capabilities with the proposed secondary Lambda part ([[#design-lambdas]]). There are also other reasons as to why having lambdas is good (particularly, for macros and for use as an expression). But, the general improvement here is that one can have Capture Functions that are rooted in C history and C syntax and C needs, while maintaining just enough of Lambdas that serve as a compatibility layer.
 
-The fact that this paper is already proposing a depature from C++ for C lambdas and Capture Functions by having accessible data captures already shows we have the power to improve on things in C's favor, if we're willing to hold onto that ([[#design-capture.functions-data.capture.fields]]).
+The fact that this paper is already proposing a depature from C++ for C lambdas and Capture Functions by having accessible data captures already shows we have the power to improve on things in C's favor, if we're willing to hold onto that ([[#design-capture.functions-data.captures.fields]]).
 
 
 ### Insufficient ### {#appendix-nested.functions.context-conclusions}
