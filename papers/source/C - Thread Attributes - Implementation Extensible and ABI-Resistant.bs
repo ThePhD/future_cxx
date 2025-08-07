@@ -1,10 +1,10 @@
 <pre class='metadata'>
 Title: Thread Attributes - Implementation Extensible and ABI-Resistant
-Shortname: 3627
-Revision: 1
+Shortname: X101
+Revision: 2
 !Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3554.htm">n3554 (r0)</a>
 Status: P
-Date: 2025-07-06
+Date: 2025-08-07
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -40,6 +40,11 @@ path: resources/css/bikeshed-wording.html
 
 
 
+## Revision 2 - August 8<sup>th</sup>, 2025 ## {#changelog-r1}
+
+- Some prose fixes for the underlying type and similar things.
+
+
 ## Revision 1 - July 6<sup>th</sup>, 2025 ## {#changelog-r1}
 
 - Wording fixes (thanks, Joseph Myers).
@@ -67,7 +72,7 @@ It is impossible to set the name, stack size, stack address + size, (scheduler) 
 They take many approaches to the problem, trying to offer a varying level of ease of use alongside high type safety. The most mature of the papers -- P2019 -- has reached its eighth revision after first being published on March 2nd, 2020 and has not seen success. In that time:
 
 - Programming Languages and their standard libraries such as Swift, Java, C#, Haskell, C#, Rust, D, Perl, and many other languages either already supported or support using threads with an explicit stack size parameter and names;
-- For C and C++, augmentation/replacement standard libraries like Qt, Boost, POCO, Chromium, Bloomberg Basic Development Environment, Intel TBB, Folly, TensorFlow, KallistaOS (Dreamcast OS), tinycthread, and many replace C++11 and C11 threads with their own abstraction in order to do threading.
+- For C and C++, augmentation/replacement standard libraries like Qt, Boost, POCO, Chromium, Bloomberg Basic Development Environment, Intel TBB, Folly, TensorFlow, KallistaOS (Dreamcast OS), tinycthread, and many replace C++11 and C11 threads with their own abstraction to do threading.
 
 Importantly, in the case of C11 and C++11 threads, many of them need to rewrite the entire set of thread primitives because of (a) poor support for `<threads.h>` until very recently (as of writing: only Apple does not support C11 `<threads.h>`; MSVC runtime, OpenBSD, FreeBSD, NetBSD, glibc, musl-libc, Bionic (Android), and more all support `<threads.h>`); and, (b) many platforms do not support changing stack sizes, names, and more after thread creation. Therefore, an API cannot simply add `set_threadname` or `get_threadname`, or similar stack size parameters, with a thread handle parameter as shown by the POSIX Threads implementations. In fact, many implementations have wildly different getting and setting properties and most -- including Windows Threads -- mostly require you to set that information on thread creation, not after-the-fact. A table -- [[p2019|from P2019]] -- is reproduced here:
 
@@ -223,13 +228,13 @@ The API relies on 2 core language features to work:
 - the pointer to the first member of a structure is identical to the pointer of the structure itself;
 - and, casting from that first member to a pointer based on the value of that first member is well-defined behavior.
 
-In particular, there is a `thrd_attr_kind` enumeration type that is the first member of a structure. It is a tag that tells the implementation what to cast a pointer of that type to, in order to interpret the full structure. It is also the first member of every thread attribute structure, which means it has the same address as the structure itself. This allows an array of `thrd_attr_kind` pointers to be passed to `thrd_create_attrs` that can be used as a standard and well-defined type-punning point and a sort of "tag" to determine which structure to cast to internally. The full enumeration and API looks as such:
+In particular, there is a `thrd_attr_kind` enumeration type that is the first member of a structure. It is a tag that tells the implementation what to cast a pointer of that type to, to interpret the full structure. It is also the first member of every thread attribute structure, which means it has the same address as the structure itself. This allows an array of `thrd_attr_kind` pointers to be passed to `thrd_create_attrs` that can be used as a standard and well-defined type-punning point and a sort of "tag" to determine which structure to cast to internally. The full enumeration and API looks as such:
 
 ```cpp
 #include <threads.h>
 #include <stdint.h>
 
-typedef enum thrd_attr_kind : int_least32_t {
+typedef enum thrd_attr_kind : uint_least32_t {
 	thrd_attr_kind_native_name,
 	thrd_attr_kind_native_name_sized,
 	thrd_attr_kind_mcname,
@@ -338,7 +343,7 @@ int thrd_create_attrs_err(thrd_start_func func, void* arg,
 
 ## Thread Attribute Kind & ABI-Resistance ## {#design-attr_kind}
 
-The thread attribute kind enumeration has 65,536 reserved values [0, 65'535] for the standard, and 4294967295 reserved values [65'636, 4,294,967,295] for implementation-defined attributes. It is important to have a minimum supported number of values in the case that someone hard-codes a value when using the API that is e.g. greater than what a 16-bit `thrd_attr_kind` can handle: this could lead to accidental truncation of the value. Such a truncation could result An implementation can add more attributes to cover more cases and information that the standard could not conceivably provide a unified interface for, such as:
+The thread attribute kind enumeration has 65,536 reserved values [0, 65'535] for the standard, and 4294967295 reserved values [65'636, 4,294,967,295] for implementation-defined attributes. It is important to have a minimum supported number of values in the case that someone hard-codes a value when using the API that is e.g. greater than what a 16-bit `thrd_attr_kind` can handle: this could lead to accidental truncation of the value. Such a truncation could result in the incorrect interpretation of the value. An implementation can add more attributes to cover more cases and information that the standard could not conceivably provide a unified interface for, such as:
 
 - stack address + stack size (POSIX Threads);
 - starting "Suspended" (Win32 Threads);
@@ -381,7 +386,7 @@ Note that the `size_t` passed by `thrd_attr_stack_size` is, more or less, a sugg
 
 ### `thrd_attr_detached` ### {#design-attrs-thrd_attr_detached}
 
-This attribute is necessary because some platforms (e.g., Windows/MSVC) have issues with getting the proper thread control rights *after* creating the thread from a different thread in order to properly detach the thread. With this passed to the creation of the thread, a thread can be detached properly and follow POSIX semantics on creation, whereas otherwise it might not work from sinde the given `thrd_t`, as documented by [[msvc-threads-h|Visual C++ Library Maintainer Charlie Barto|]]:
+This attribute is necessary because some platforms (e.g., Windows/MSVC) have issues with getting the proper thread control rights *after* creating the thread from a different thread to properly detach the thread. With this passed to the creation of the thread, a thread can be detached properly and follow POSIX semantics on creation, whereas otherwise it might not work from sinde the given `thrd_t`, as documented by [[msvc-threads-h|Visual C++ Library Maintainer Charlie Barto|]]:
 
 > A key difference between our implementation and C11 threads implementations based on pthreads is that threads can not detach themselves using `thrd_current()` and `thrd_detach()`. This is because of a fundamental difference in how threads work on Windows vs Unix descendants and we would require a shared datastructure that tracks thread handles to implement the typical behavior.
 
