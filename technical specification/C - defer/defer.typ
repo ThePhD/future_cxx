@@ -106,15 +106,13 @@ In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.
 
 *Description*
 
-Let _D_ be a defer statement#index[defer statement], _S_ be the deferred block of _D_, and _E_ be the enclosing block of _D_.
+Let _D_ be a defer statement#index[defer statement], _S_ be the deferred block of _D_, and _E_ be the enclosing block of _D_. The scope of _D_ is the same as an identifier declared and completed immediately after the end of _S_.
 
 *Constraints*
 
 Jumps by means of ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) or ```c switch```#index("Keywords", "switch", apply-casing: false, display:[```c switch```]) shall not jump into any defer statement#index[defer statement].
 
-Jumps by means of ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) or ```c switch```#index("Keywords", "switch", apply-casing: false, display:[```c switch```]) into _E_ shall not jump over a defer statement#index[defer statement] in _E_.
-
-Jumps by means of ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) in _E_ shall not jump over a defer statement#index[defer statement] in _E_.
+Jumps by means of ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) or ```c switch```#index("Keywords", "switch", apply-casing: false, display:[```c switch```]) shall not jump from outside the scope of a defer statement#index[defer statement] _D_ to inside that scope.
 
 Jumps by means of ```c return```#index("Keywords", "return", apply-casing: false, display:[```c return```]), ```c break```#index("Keywords", "break", apply-casing: false, display:[```c break```]), ```c continue```#index("Keywords", "continue", apply-casing: false, display:[```c continue```]) or ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) shall not exit _S_.
 
@@ -127,14 +125,14 @@ When execution reaches a defer statement#index[defer statement] _D_, its _S_ is 
 
 The execution is done just before leaving the enclosing block _E_. In particular ```c return``` expressions (and conversion to return values)#index("conversions") are calculated before executing _S_.
 
-Multiple defer statement#index[defer statement]s execute in the reverse order they appeared in _E_. Within a single defer statement#index[defer statement] _D_, if _D_ contains one or more defer statement#index[defer statement]s of its own, then these defer statement#index[defer statement]s are also executed in reverse order at the end of _S_, recursively, according to the rules of this clause.
+Multiple defer statements#index[defer statement] execute their *S* in the reverse order they appeared in _E_. Within a single defer statement#index[defer statement] _D_, if _D_ contains one or more defer statements#index[defer statement] of its own, then these defer statements' deferred blocks are also executed in reverse order at the end of _S_, recursively, according to the rules of this subclause.
 
 If a non-local jump #index("non-local jump") is used within _E_ but before the execution of _D_:
 
-- if execution leaves _E_, _S_ will not be executed;
+- if execution leaves _E_, _S_ is not executed;
 - otherwise, if control returns to a point in _E_ and causes _D_ to be reached more than once, the effect is the same as reaching _D_ only once.
 
-#note() The "execution" of a defer statement#index[defer statement] only lets the program know that _S_ will be run on any exit from that scope. There is no observable side effect to repeat from reaching _D_, as the manifestation of any of the effects of _S_ will happen if and only if _E_ is exited or terminated after reaching *D*, as previously specified.
+#note() The "execution" of a defer statement#index[defer statement] only enures that _S_ is run on any exit from that scope. There is no observable side effect to repeat from reaching _D_, as the manifestation of any of the effects of _S_ will happen if and only if _E_ is exited or terminated after reaching _D_, as previously specified.
 
 
 If a non-local jump #index("non-local jump") is executed from _S_ and control leaves _S_, the behavior is undefined#index("undefined behavior").
@@ -151,7 +149,7 @@ If _E_ has any defer statement#index[defer statement]s _D_ that have been reache
 - a function with the `_Noreturn` function specifier, or a function annotated with the `noreturn` or `_Noreturn` attribute, is called#index(initial: "n", display: [`_Noreturn`], apply-casing: false, "_Noreturn")#index(apply-casing: false, display: [`noreturn`], "noreturn");
 - or, any signal `SIGABRT`, `SIGINT`, or `SIGTERM` occurs#index("signal");
 
-then any such _S_ are not run, unless otherwise specified by the implementation. Any other _D_ that have not been reached are not run.
+then any such _S_ are not run, unless otherwise specified by the implementation. Any other _D_ that have not been reached do not have their _S_ run.
 
 #note() The execution of deferred statements upon non-local jumps (i.e., `longjmp` and `setjmp` described in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §7.13)#index("non-local jump") or program termination is a technique sometimes known as "unwinding" or "stack unwinding", and some implementations perform it. See also ISO/IEC 14882#index[ISO/IEC 14882] Programming languages — C++ [except.ctor].
 
@@ -284,6 +282,55 @@ int r () {
 	goto b; // ok
 	fputs(" meow", stdout);
 	return 1; // prints "cat says" repeatedly
+}
+
+int s () {
+	{
+		b:
+		defer { fputs("cat says", stdout); }
+		goto b; // ok
+	}
+	// never reached
+	fputs(" meow", stdout);
+	return 1; // nothing printed
+}
+
+int t () {
+	int count = 0;
+	{
+		b:
+		defer { fputs("cat says", stdout); }
+		if (count < 5) {
+			++count;
+			goto b; // ok
+		}
+	}
+	fputs(" meow", stdout);
+	return 1; // prints "cat says meow"
+}
+
+int u () {
+	int n = 0;
+	{
+		defer { fputs("cat says", stdout); }
+		b:
+		if (count < 5) {
+			++count;
+			goto b; // ok
+		}
+	}
+	fputs(" meow", stdout);
+	return 1; // prints "cat says meow"
+}
+
+int v () {
+	int count = 0;
+	b: if (count >= 5)
+		return 1; // returns 1, nothing printed
+	defer { fputs("cat says meow", stdout); }
+	count++;
+	goto b; // ok
+	return 0;
 }
 ```
 
@@ -471,7 +518,7 @@ int main () {
 }
 ```
 
-#example() defer statement#index[defer statement]s that are not reached are not executed.
+#example() Defer statement#index[defer statement]s that are not reached are not executed.
 
 ```c
 #include <stdlib.h>
@@ -483,7 +530,7 @@ int main () {
 }
 ```
 
-#example() defer statement#index[defer statement]s can contain other compound statements.
+#example() Defer statement#index[defer statement]s can contain other compound statements.
 
 ```c
 typedef struct meow *handle;

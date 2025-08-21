@@ -1193,12 +1193,7 @@ Jumps by means of `goto` or `switch` shall not jump into any defer statement.
 
 <div class="wording-numbered">
 
-Jumps by means of `goto` or `switch` into *E* shall not jump over a defer statement in *E*.
-</div>
-
-<div class="wording-numbered">
-
-Jumps by means of `goto` in *E* shall not jump over a defer statement in *E*.
+Jumps by means of `goto` or `switch` shall not jump from outside the scope of a defer statement *D* to inside the that scope.
 </div>
 
 <div class="wording-numbered">
@@ -1222,21 +1217,21 @@ The execution is done just before leaving the enclosing block *E*. In particular
 
 <div class="wording-numbered">
 
-Multiple defer statements execute in the reverse order they appeared in *E*. Within a single defer statement *D*, if *D* contains one or more defer statements of its own, then these defer statements are also executed in reverse order at the end of *S*, recursively, according to the rules of this clause.
+Multiple defer statements execute their *S* in the reverse order they appeared in *E*. Within a single defer statement *D*, if *D* contains one or more defer statements of its own, then these defer statements' deferred blocks are also executed in reverse order at the end of *S*, recursively, according to the rules of this subclause.
 </div>
 
 <div class="wording-numbered">
 
 If a non-local jump (e.g. `longjmp`) is used within *E* but before the execution of *D*:
 
-- if execution leaves *E*, *S* will not be executed;
+- if execution leaves *E*, *S* is not executed;
 - otherwise, if control returns to a point in *E* and causes *D* to be reached more than once, the effect is the same as reaching *D* only once.
 
 </div>
 
 <div class="wording-numbered">
 
-**NOTE**&emsp; This is because the "execution" of a defer statement only lets the program know that *S* will be run. There is no observable side effect to repeat from reaching *D*, as the manifestation of any of the effects of *S* will happen if and only if *E* is exited or terminated after reaching *D*, as previously specified.
+**NOTE**&emsp; This is because the "execution" of a defer statement only ensures that *S* is run on any exit from that scope. There is no observable side effect to repeat from reaching *D*, as the manifestation of any of the effects of *S* will happen if and only if *E* is exited or terminated after reaching *D*, as previously specified.
 </div>
 
 <div class="wording-numbered">
@@ -1249,7 +1244,7 @@ If a non-local jump (e.g. `longjmp`) is executed from *S* and control leaves *S*
 If a non-local jump (e.g. `longjmp`) is executed outside of any *D* and:
 
 - it jumps into any *S*;
-- or, it jumps over any *D* in its respective *E*;
+- or, it jumps outside any *D*'s scope to inside that *D*'s scope;
 
 the behavior is undefined.
 </div>
@@ -1261,7 +1256,7 @@ If *E* has any defer statements *D* that have been reached and their *S* have no
 - a function with the `_Noreturn` function specifier, or a function annotated with the `noreturn`/`_Noreturn` attribute, is called;
 - or, any signal `SIGABRT`, `SIGINT`, or `SIGTERM` occurs;
 
-then any such *S* are not run, unless otherwise specified by the implementation. Any other *D* that have not been reached are not run.
+then any such *S* are not run, unless otherwise specified by the implementation. Any other *D* that have not been reached do not have their *S* run.
 </div>
 
 <div class="wording-numbered">
@@ -1400,6 +1395,55 @@ int r () {
 	fputs(" meow\n", stdout);
 	return 1; // prints "cat says" repeatedly
 }
+
+int s () {
+	{
+		b:
+		defer { fputs("cat says", stdout); }
+		goto b; // ok
+	}
+	// never reached
+	fputs(" meow", stdout);
+	return 1; // nothing printed
+}
+
+int t () {
+	int count = 0;
+	{
+		b:
+		defer { fputs("cat says", stdout); }
+		if (count < 5) {
+			++count;
+			goto b; // ok
+		}
+	}
+	fputs(" meow", stdout);
+	return 1; // prints "cat says meow"
+}
+
+int u () {
+	int n = 0;
+	{
+		defer { fputs("cat says", stdout); }
+		b:
+		if (count < 5) {
+			++count;
+			goto b; // ok
+		}
+	}
+	fputs(" meow", stdout);
+	return 1; // prints "cat says meow"
+}
+
+int v () {
+	int count = 0;
+	b: if (count >= 5)
+		return 1; // returns 1, nothing printed
+	defer { fputs("cat says meow", stdout); }
+	count++;
+	goto b;
+	return 0;
+}
 ```
 </div>
 
@@ -1521,7 +1565,7 @@ int main () {
 
 <div class="wording-numbered">
 
-**EXAMPLE** &emsp; Defer statements execute in reverse order, and nested defer statements execute in reverse order but at the end of the defer statement they were invoked within. The following program:
+**EXAMPLE** &emsp; Defer statements deferred blocks execute in reverse order, and nested defer statements execute in reverse order but at the end of the defer statement they were invoked within. The following program:
 
 ```cpp
 int main () {
@@ -1606,7 +1650,7 @@ int main () {
 
 <div class="wording-numbered">
 
-**EXAMPLE** &emsp; Defer statements that are not reached are not executed.
+**EXAMPLE** &emsp; Defer statements that are not reached do not have their deferred block executed.
 
 ```cpp
 #include <stdlib.h>
