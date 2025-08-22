@@ -327,9 +327,11 @@ int u () {
 
 int v () {
 	int count = 0;
-	b: if (count > 2)
-		return 1; // prints "cat says meow cat says meow "
-	defer { fputs("cat says meow ", stdout); }
+	b: if (count > 2) {
+		fputs("meow", stdout);
+		return 1; // prints "cat says cat says meow "
+	}
+	defer { fputs("cat says ", stdout); }
 	count++;
 	goto b;
 	return 0; // never reached
