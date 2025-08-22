@@ -302,8 +302,8 @@ int t () {
 	{
 		b:
 		defer { fputs("cat says", stdout); }
+		++count;
 		if (count < 2) {
-			++count;
 			goto b; // ok
 		}
 	}
