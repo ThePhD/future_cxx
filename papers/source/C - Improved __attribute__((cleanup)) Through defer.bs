@@ -1209,10 +1209,10 @@ Semantics
 
 When execution reaches a defer statement *D*, its *S* is not immediately executed during sequential execution of the program. Instead, for the duration of the scope of *D*, *S* is executed upon:
 
-- the termination of the block *E* (such as from reaching its end);
-- or, any exit from *E* through `return`, `goto`, `break`, or `continue`.
+- the termination of the scope of *D* (such as reaching its end);
+- or, any exit from the scope of *D* through `return`, `goto`, `break`, or `continue`.
 
-The execution is done just before leaving the enclosing block *E*. In particular `return` expressions (and conversion to return values) are evaluated before executing *S*.
+The execution is done just before leaving the scope of *D*. In particular `return` expressions (and conversion to return values) are evaluated before executing *S*.
 </div>
 
 <div class="wording-numbered">
@@ -1224,14 +1224,14 @@ Multiple defer statements execute their *S* in the reverse order they appeared i
 
 If a non-local jump (e.g. `longjmp`) is used in *D*'s scope but before the execution of the *S* of *D*:
 
-- if execution leaves *E*, *S* is not executed;
+- if execution leaves *D*'s scope, *S* is not executed;
 - otherwise, if control returns to a point in *E* and causes *D* to be reached more than once, the effect is the same as reaching *D* only once.
 
 </div>
 
 <div class="wording-numbered">
 
-**NOTE**&emsp; This is because the "execution" of a defer statement only ensures that *S* is run on any exit from that scope. There is no observable side effect to repeat from reaching *D*, as the manifestation of any of the effects of *S* happen if and only if *E* is exited or terminated after reaching *D*, as previously specified.
+**NOTE**&emsp; This is because the "execution" of a defer statement only ensures that *S* is run on any exit from its *D*. There is no observable side effect to repeat from reaching *D*, as the manifestation of any of the effects of *S* happen if and only if *D*'s scope is exited or terminated after reaching *D*, as previously specified.
 </div>
 
 <div class="wording-numbered">
@@ -1251,7 +1251,7 @@ the behavior is undefined.
 
 <div class="wording-numbered">
 
-If *E* has any defer statements *D* that have been reached and their *S* have not yet executed, but the program is terminated or leaves *E* through any means not specified previously, including but not limited to:
+If some *E* has any defer statements *D* that have been reached and their *S* have not yet executed, but the program is terminated or leaves the scope of *D* through any means not specified previously, including but not limited to:
 	
 - a function with the `_Noreturn` function specifier, or a function annotated with the `noreturn`/`_Noreturn` attribute, is called;
 - or, any signal `SIGABRT`, `SIGINT`, or `SIGTERM` occurs;
@@ -1392,8 +1392,10 @@ int r () {
 		defer { fputs("cat says", stdout); }
 	}
 	goto b; // ok
+	// prints "cat says" repeatedly
+	// never reached
 	fputs(" meow\n", stdout);
-	return 1; // prints "cat says" repeatedly
+	return 1;
 }
 
 int s () {
@@ -1401,10 +1403,11 @@ int s () {
 		b:
 		defer { fputs("cat says", stdout); }
 		goto b; // ok
+		// prints "cat says" repeatedly
 	}
 	// never reached
 	fputs(" meow", stdout);
-	return 1; // prints "cat says" repeatedly
+	return 1;
 }
 
 int t () {
