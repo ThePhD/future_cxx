@@ -125,8 +125,6 @@ When execution reaches a defer statement#index[defer statement] _D_ and its scop
 
 The execution is done just before leaving the enclosing block _E_. In particular ```c return``` expressions (and conversion to return values)#index("conversions") are calculated before executing _S_.
 
-#note() Any jump from inside _D_'s scope to outside that scope but within _E_, and then exits _E_ using another jump such as  ```c return```#index("Keywords", "return", apply-casing: false, display:[```c return```]), ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]), ```c break```#index("Keywords", "break", apply-casing: false, display:[```c break```]), or ```c continue```#index("Keywords", "continue", apply-casing: false, display:[```c continue```]), does not execute the _S_ of that _D_. 
-
 Multiple defer statements#index[defer statement] execute their *S* in the reverse order they appeared in _E_. Within a single defer statement#index[defer statement] _D_, if _D_ contains one or more defer statements#index[defer statement] _D#sub[sub]_ of its own, then the _S#sub[sub]_ of the _D#sub[sub]_ are also executed in reverse order at the end of _S_, recursively, according to the rules of this subclause.
 
 If a non-local jump #index("non-local jump") is used in _D_'s scope but before the execution of the _S_ of _D_:
