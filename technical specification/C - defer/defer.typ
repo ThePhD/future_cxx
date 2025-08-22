@@ -282,7 +282,7 @@ int r () {
 		defer { fputs("cat says", stdout); }
 	}
 	goto b; // ok
-	fputs(" meow", stdout);
+	fputs(" meow\n", stdout);
 	return 1; // prints "cat says" repeatedly
 }
 
@@ -294,7 +294,7 @@ int s () {
 	}
 	// never reached
 	fputs(" meow", stdout);
-	return 1; // nothing printed
+	return 1; // prints "cat says" repeatedly
 }
 
 int t () {
@@ -302,13 +302,13 @@ int t () {
 	{
 		b:
 		defer { fputs("cat says", stdout); }
-		if (count < 5) {
+		if (count < 2) {
 			++count;
 			goto b; // ok
 		}
 	}
 	fputs(" meow", stdout);
-	return 1; // prints "cat says meow"
+	return 1; // prints "cat says cat says meow"
 }
 
 int u () {
@@ -327,12 +327,12 @@ int u () {
 
 int v () {
 	int count = 0;
-	b: if (count >= 5)
-		return 1; // returns 1, nothing printed
-	defer { fputs("cat says meow", stdout); }
+	b: if (count > 2)
+		return 1; // prints "cat says meow cat says meow "
+	defer { fputs("cat says meow ", stdout); }
 	count++;
-	goto b; // ok
-	return 0;
+	goto b;
+	return 0; // never reached
 }
 ```
 
