@@ -5,7 +5,7 @@
 	title: "Programming Languages — C — defer, a mechanism for general purpose, lexical scope-based undo",
 	authors: ("JeanHeyd Meneide (wg14@soasis.org)"),
 	keywords: ("C", "defer", "ISO/IEC 9899", "Technical Specification", "Safety", "Resource"),
-	id: "N3589",
+	id: "NXY41",
 	ts_id: "25755",
 	stage: "cd",
 	abstract: [The advent of resource leaks in programs created with ISO/IEC 9899#index[ISO/IEC 9899] ⸺ Programming Languages, C has necessitated the need for better ways of tracking and automatically releasing resources in a given scope. This document provides a feature to address this need in a reliable, translation-time, opt-in manner for implementations to furnish to programmers.],
@@ -72,7 +72,7 @@ In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.4.
 
 == Statements
 
-In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.8, implementations shall allow the unlabeled statement grammar production to produce a defer statement#index[defer statement] which contains a deferred block#index[deferred block]. A deferred block is also considered a _block_ just like a primary block or a secondary block.
+In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.8, implementations shall allow the unlabeled statement grammar production to produce a defer statement#index[defer statement] which contains a deferred block#index[deferred block]. A deferred block#index[deferred block] is also considered a _block_ just like a primary block or a secondary block.
 
 *Syntax*
 
@@ -106,7 +106,7 @@ In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.
 
 *Description*
 
-Let _D_ be a defer statement#index[defer statement], _S_ be the deferred block of _D_, and _E_ be the enclosing block of _D_. The scope of _D_ is the same as an identifier declared and completed immediately after the end of _S_.
+Let _D_ be a defer statement#index[defer statement], _S_ be the deferred block#index[deferred block] of _D_, and _E_ be the enclosing block of _D_. The scope of _D_ is the same as an identifier declared and completed immediately after the end of _S_.
 
 *Constraints*
 
@@ -118,21 +118,23 @@ Jumps by means of ```c return```#index("Keywords", "return", apply-casing: false
 
 *Semantics*
 
-When execution reaches a defer statement#index[defer statement] _D_, its _S_ is not immediately executed during sequential execution of the program. Instead, _S_ is executed upon:
+When execution reaches a defer statement#index[defer statement] _D_ and its scope is entered, its _S_ is not immediately executed during sequential execution of the program. Instead, for the duration of the scope of _D_, _S_ is executed upon:
 
 - the termination of the block _E_ (such as from reaching its end);
 - or, any exit from _E_ through ```c return```#index("Keywords", "return", apply-casing: false, display:[```c return```]), ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]), ```c break```#index("Keywords", "break", apply-casing: false, display:[```c break```]), or ```c continue```#index("Keywords", "continue", apply-casing: false, display:[```c continue```]).
 
 The execution is done just before leaving the enclosing block _E_. In particular ```c return``` expressions (and conversion to return values)#index("conversions") are calculated before executing _S_.
 
-Multiple defer statements#index[defer statement] execute their *S* in the reverse order they appeared in _E_. Within a single defer statement#index[defer statement] _D_, if _D_ contains one or more defer statements#index[defer statement] of its own, then these defer statements' deferred blocks are also executed in reverse order at the end of _S_, recursively, according to the rules of this subclause.
+#note() Any jump from inside _D_'s scope to outside that scope but within _E_, and then exits _E_ using another jump such as  ```c return```#index("Keywords", "return", apply-casing: false, display:[```c return```]), ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]), ```c break```#index("Keywords", "break", apply-casing: false, display:[```c break```]), or ```c continue```#index("Keywords", "continue", apply-casing: false, display:[```c continue```]), does not execute the _S_ of that _D_. 
 
-If a non-local jump #index("non-local jump") is used within _E_ but before the execution of _D_:
+Multiple defer statements#index[defer statement] execute their *S* in the reverse order they appeared in _E_. Within a single defer statement#index[defer statement] _D_, if _D_ contains one or more defer statements#index[defer statement] _D#sub[sub]_ of its own, then the _S#sub[sub]_ of the _D#sub[sub]_ are also executed in reverse order at the end of _S_, recursively, according to the rules of this subclause.
+
+If a non-local jump #index("non-local jump") is used in _D_'s scope but before the execution of the _S_ of _D_:
 
 - if execution leaves _E_, _S_ is not executed;
 - otherwise, if control returns to a point in _E_ and causes _D_ to be reached more than once, the effect is the same as reaching _D_ only once.
 
-#note() The "execution" of a defer statement#index[defer statement] only enures that _S_ is run on any exit from that scope. There is no observable side effect to repeat from reaching _D_, as the manifestation of any of the effects of _S_ will happen if and only if _E_ is exited or terminated after reaching _D_, as previously specified.
+#note() The "execution" of a defer statement#index[defer statement] only enures that _S_ is run on any exit from that scope. There is no observable side effect to repeat from reaching _D_, as the manifestation of any of the effects of _S_ happen if and only if _E_ is exited or terminated after reaching _D_, as previously specified.
 
 
 If a non-local jump #index("non-local jump") is executed from _S_ and control leaves _S_, the behavior is undefined#index("undefined behavior").
@@ -382,7 +384,7 @@ bool f () {
 }
 ```
 
-#example() It is not defined if defer statement#index[defer statement]s will execute if the exiting / non-returning functions detailed previously#index("program termination") are called.
+#example() It is not defined if defer statements#index[defer statement] execute their deferred blocks if the exiting / non-returning functions detailed previously#index("program termination") are called.
 
 ```c
 #include <stdlib.h>
@@ -445,7 +447,7 @@ int main () {
 }
 ```
 
-#example() Defer statement#index[Defer statement]s execute in reverse order, and nested defer statement#index[defer statement]s execute in reverse order but at the end of the defer statement#index[defer statement] they were invoked within. The following program:
+#example() Defer statement#index[Defer statement]s execute their deferred blocks#index[deferred block] in reverse order of the appearance of the defer statements, and nested defer statement#index[defer statement]s execute their deferred blocks#index[deferred block] in reverse order but at the end of the deferred block#index[deferred block] they were invoked within. The following program:
 
 ```c
 int main () {
@@ -477,7 +479,7 @@ int main () {
 }
 ```
 
-#example() Defer statement#index[Defer statement]s can be executed within a ```c switch```#index("Keywords", "switch", apply-casing: false, display: [```c switch```]), but a switch cannot be used to jump over a defer statement#index[defer statement].
+#example() Defer statement#index[Defer statement]s can be executed within a ```c switch```#index("Keywords", "switch", apply-casing: false, display: [```c switch```]), but a switch cannot be used to jump into the scope of a defer statement#index[defer statement].
 
 ```c
 #include <stdlib.h>
