@@ -159,9 +159,9 @@ then any such _S_ are not run, unless otherwise specified by the implementation.
 #include <stdio.h>
 
 int f () {
-	goto b; // constraint violation
+	goto target; // constraint violation
 	defer { fputs(" meow", stdout); }
-	b:
+	target:
 	fputs("cat says", stdout);
 	return 1;
 }
@@ -174,12 +174,12 @@ int g () {
 }
 
 int h () {
-	goto b;
+	goto target;
 	{
 		// okay: no constraint violation
 		defer { fputs(" meow", stdout); }
 	}
-	b:
+	target:
 	fputs("cat says", stdout);
 	return 1; // prints "cat says" to standard output
 }
@@ -188,19 +188,19 @@ int i () {
 	{
 		defer { fputs("cat says", stdout); }
 		// okay: no constraint violation
-		goto b;
+		goto target;
 	}
-	b:
+	target:
 	fputs(" meow", stdout);
 	return 1; // prints "cat says meow" to standard output
 }
 
 int j () {
 	defer {
-		goto b; // constraint violation
+		goto target; // constraint violation
 		fputs(" meow", stdout);
 	}
-	b:
+	target:
 	fputs("cat says", stdout);
 	return 1;
 }
@@ -216,18 +216,18 @@ int k () {
 
 int l () {
 	defer {
-		b:
+		target:
 		fputs(" meow", stdout);
 	}
-	goto b; // constraint violation
+	goto target; // constraint violation
 	fputs("cat says", stdout);
 	return 1;
 }
 
 int m () {
-	goto b; // okay: no constraint violation
+	goto target; // okay: no constraint violation
 	{
-		b:
+		target:
 		defer { fputs("cat says", stdout); }
 	}
 	fputs(" meow", stdout);
@@ -235,10 +235,10 @@ int m () {
 }
 
 int n () {
-	goto b; // constraint violation
+	goto target; // constraint violation
 	{
 		defer { fputs(" meow", stdout); }
-		b:
+		target:
 	}
 	fputs("cat says", stdout);
 	return 1;
@@ -247,19 +247,19 @@ int n () {
 int o () {
 	{
 		defer fputs("cat says", stdout);
-		goto b;
+		goto target;
 	}
-	b:;
+	target:;
 	fputs(" meow", stdout);
 	return 1; // prints "cat says meow"
 }
 
 int p () {
 	{
-		goto b;
+		goto target;
 		defer fputs(" meow", stdout);
 	}
-	b:;
+	target:;
 	fputs("cat says", stdout);
 	return 1; // prints "cat says"
 }
@@ -267,28 +267,28 @@ int p () {
 int q () {
 	{
 		defer { fputs(" meow", stdout); }
-		b:
+		target:
 	}
-	goto b; // constraint violation
+	goto target; // constraint violation
 	fputs("cat says", stdout);
 	return 1;
 }
 
 int r () {
 	{
-		b:
+		target:
 		defer { fputs("cat says", stdout); }
 	}
-	goto b; // ok
+	goto target; // ok
 	fputs(" meow\n", stdout);
 	return 1; // prints "cat says" repeatedly
 }
 
 int s () {
 	{
-		b:
+		target:
 		defer { fputs("cat says", stdout); }
-		goto b; // ok
+		goto target; // ok
 	}
 	// never reached
 	fputs(" meow", stdout);
@@ -298,25 +298,25 @@ int s () {
 int t () {
 	int count = 0;
 	{
-		b:
-		defer { fputs("cat says", stdout); }
+		target:
+		defer { fputs("cat says ", stdout); }
 		++count;
 		if (count < 2) {
-			goto b; // ok
+			goto target; // ok
 		}
 	}
-	fputs(" meow", stdout);
-	return 1; // prints "cat says cat says meow"
+	fputs("meow", stdout);
+	return 1; // prints "cat says cat says cat says meow"
 }
 
 int u () {
-	int n = 0;
+	int count = 0;
 	{
 		defer { fputs("cat says", stdout); }
-		b:
+		target:
 		if (count < 5) {
 			++count;
-			goto b; // ok
+			goto target; // ok
 		}
 	}
 	fputs(" meow", stdout);
@@ -325,13 +325,13 @@ int u () {
 
 int v () {
 	int count = 0;
-	b: if (count > 2) {
+	target: if (count > 2) {
 		fputs("meow", stdout);
 		return 1; // prints "cat says cat says meow "
 	}
 	defer { fputs("cat says ", stdout); }
 	count++;
-	goto b;
+	goto target;
 	return 0; // never reached
 }
 ```
