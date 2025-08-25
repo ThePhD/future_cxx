@@ -158,7 +158,7 @@ then any such _S_ are not run, unless otherwise specified by the implementation.
 ```c
 #include <stdio.h>
 
-int f () {
+int f() {
 	goto target; // constraint violation
 	defer { fputs(" meow", stdout); }
 	target:
@@ -166,14 +166,14 @@ int f () {
 	return 1;
 }
 
-int g () {
+int g() {
 	// print "cat says" to standard output
 	return fputs("cat says", stdout);
 	defer { fputs(" meow", stdout); } // okay: no constraint violation,
 	// not executed
 }
 
-int h () {
+int h() {
 	goto target;
 	{
 		// okay: no constraint violation
@@ -184,7 +184,7 @@ int h () {
 	return 1; // prints "cat says" to standard output
 }
 
-int i () {
+int i() {
 	{
 		defer { fputs("cat says", stdout); }
 		// okay: no constraint violation
@@ -195,7 +195,7 @@ int i () {
 	return 1; // prints "cat says meow" to standard output
 }
 
-int j () {
+int j() {
 	defer {
 		goto target; // constraint violation
 		fputs(" meow", stdout);
@@ -205,7 +205,7 @@ int j () {
 	return 1;
 }
 
-int k () {
+int k() {
 	defer {
 		return 5; // constraint violation
 		fputs(" meow", stdout);
@@ -214,7 +214,7 @@ int k () {
 	return 1;
 }
 
-int l () {
+int l() {
 	defer {
 		target:
 		fputs(" meow", stdout);
@@ -224,7 +224,7 @@ int l () {
 	return 1;
 }
 
-int m () {
+int m() {
 	goto target; // okay: no constraint violation
 	{
 		target:
@@ -234,7 +234,7 @@ int m () {
 	return 1; // prints "cat says meow" to standard output
 }
 
-int n () {
+int n() {
 	goto target; // constraint violation
 	{
 		defer { fputs(" meow", stdout); }
@@ -244,7 +244,7 @@ int n () {
 	return 1;
 }
 
-int o () {
+int o() {
 	{
 		defer fputs("cat says", stdout);
 		goto target;
@@ -254,7 +254,7 @@ int o () {
 	return 1; // prints "cat says meow"
 }
 
-int p () {
+int p() {
 	{
 		goto target;
 		defer fputs(" meow", stdout);
@@ -264,7 +264,7 @@ int p () {
 	return 1; // prints "cat says"
 }
 
-int q () {
+int q() {
 	{
 		defer { fputs(" meow", stdout); }
 		target:
@@ -274,7 +274,7 @@ int q () {
 	return 1;
 }
 
-int r () {
+int r() {
 	{
 		target:
 		defer { fputs("cat says", stdout); }
@@ -284,7 +284,7 @@ int r () {
 	return 1; // prints "cat says" repeatedly
 }
 
-int s () {
+int s() {
 	{
 		target:
 		defer { fputs("cat says", stdout); }
@@ -295,7 +295,7 @@ int s () {
 	return 1; // prints "cat says" repeatedly
 }
 
-int t () {
+int t() {
 	int count = 0;
 	{
 		target:
@@ -309,7 +309,7 @@ int t () {
 	return 1; // prints "cat says cat says cat says meow"
 }
 
-int u () {
+int u() {
 	int count = 0;
 	{
 		defer { fputs("cat says", stdout); }
@@ -323,7 +323,7 @@ int u () {
 	return 1; // prints "cat says meow"
 }
 
-int v () {
+int v() {
 	int count = 0;
 	target: if (count > 2) {
 		fputs("meow", stdout);
@@ -339,7 +339,7 @@ int v () {
 #example() All the expressions and statements of an enclosing block are evaluated before executing defer statement#index[defer statement]s, including any conversions#index[conversions]. After all defer statement#index[defer statement]s are executed, the block is then exited.
 
 ```c
-int main () {
+int main() {
 	int r = 4;
 	int* p = &r;
 	defer { *p = 5; }
@@ -358,12 +358,12 @@ int f(size_t n, void* buf) {
 	return 0;
 }
 
-int main () {
+int main() {
 	const int size = 20;
 	void* buf = malloc(size);
 	defer { free(buf); }
-	return use_buffer(size, buf); // buffer is not freed until AFTER
-	// use_buffer returns
+	// buffer is not freed until AFTER use_buffer returns
+	return use_buffer(size, buf);
 }
 ```
 
@@ -373,7 +373,7 @@ Conversions#index("conversions") for the purposes of return are also computed be
 #include <float.h>
 #include <assert.h>
 
-bool f () {
+bool f() {
 	double x = DBL_SNAN;
 	defer {
 		// fetestexcept(FE_INVALID) is nonzero because of the
@@ -389,7 +389,7 @@ bool f () {
 ```c
 #include <stdlib.h>
 
-int f () {
+int f() {
 	void* p = malloc(1);
 	if (p == NULL) {
 		return 0;
@@ -399,7 +399,7 @@ int f () {
 	return 1;
 }
 
-int main () {
+int main() {
 	return f();
 }
 ```
@@ -410,7 +410,7 @@ int main () {
 #include <stdio.h>
 #include <stdlib.h>
 
-int main () {
+int main() {
 	{
 		defer {
 			fputs(" meow", stdout);
@@ -428,16 +428,15 @@ int main () {
 #include <stdio.h>
 #include <stdlib.h>
 
-int main () {
-	{
-		const char* arr[] = {"cat", "kitty", "ferocious little baby"};
-		defer {
-			fputs(" meow", stdout);
-		}
-		for (unsigned i = 0; i < 3; ++i)
-			defer printf("my %s,\n", arr[i]);
-		fputs("says", stdout);
+int main() {
+	const char* arr[] = {"cat", "kitty", "ferocious little baby"};
+	defer {
+		fputs(" meow", stdout);
 	}
+	for (unsigned int i = 0; i < 3; ++i)
+		defer printf("my %s,\n", arr[i]);
+	fputs("says", stdout);
+	
 	// "my cat,
 	// my kitty,
 	// my ferocious little baby,
@@ -450,7 +449,7 @@ int main () {
 #example() Defer statement#index[Defer statement]s execute their deferred blocks#index[deferred block] in reverse order of the appearance of the defer statements, and nested defer statement#index[defer statement]s execute their deferred blocks#index[deferred block] in reverse order but at the end of the deferred block#index[deferred block] they were invoked within. The following program:
 
 ```c
-int main () {
+int main() {
 	int r = 0;
 	{
 		defer {
@@ -469,7 +468,7 @@ int main () {
 is equivalent to:
 
 ```c
-int main () {
+int main() {
 	int r = 0;
 	r += 1;
 	r *= 2;
@@ -484,7 +483,7 @@ int main () {
 ```c
 #include <stdlib.h>
 
-int main () {
+int main() {
 	void* p = malloc(1);
 	switch (1) {
 	defer free(p); // constraint violation
@@ -499,7 +498,7 @@ int main () {
 #example() Defer statement#index[Defer statement]s can not be exited by means of ```c break``` #index("Keywords", "break", apply-casing: false, display: [```c break```]) or ```c continue``` #index("Keywords", "continue", apply-casing: false, display: [```c continue```]).
 
 ```c
-int main () {
+int main() {
 	switch (1) {
 	default:
 		defer {
@@ -525,7 +524,7 @@ int main () {
 ```c
 #include <stdlib.h>
 
-int main () {
+int main() {
 	void* p = malloc(1);
 	return 0;
 	defer free(p); // not executed, p is leaked
@@ -537,10 +536,10 @@ int main () {
 ```c
 typedef struct meow *handle;
 
-extern int purr (handle *h);
+extern int purr(handle *h);
 extern void un_purr(handle h);
 
-int main () {
+int main() {
 	handle h;
 	int err = purr(&h);
 	defer if (!err) un_purr(h);
