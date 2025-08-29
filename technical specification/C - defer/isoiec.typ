@@ -40,6 +40,12 @@ Examples are provided to illustrate possible forms of the constructions describe
 	[NOTE #context note_counter.display() #h(0.5em)]
 }
 
+#let para_counter = counter("para")
+#let para() = {
+	para_counter.step()
+	[#context para_counter.display()]
+}
+
 #let wd_stage = 1
 
 #let isoiec(
@@ -55,6 +61,7 @@ Examples are provided to illustrate possible forms of the constructions describe
 	stage: none,
 	date: none,
 	no_boilerplate: false,
+	iso: false,
 	contents
 ) = {
 if stage == none {
@@ -132,6 +139,7 @@ show heading: it => {
 		}
 		box(width: 1.5cm, number)
 	}
+	para_counter.update(0)
 	it.body
 }
 

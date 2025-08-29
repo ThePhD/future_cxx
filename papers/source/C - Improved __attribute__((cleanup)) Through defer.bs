@@ -1037,6 +1037,7 @@ An implementation of `defer` was done in the [onramp compiler here: https://gith
 
 An implementation of `defer` was done inside of [GCC and a custom compiler by Navi: https://social.vlhl.dev/objects/8dc9e399-5520-4542-967e-0fd87c07683f](https://social.vlhl.dev/objects/8dc9e399-5520-4542-967e-0fd87c07683f).
 
+The continued patch is available [on the GCC Patches mailing list: https://gcc.gnu.org/pipermail/gcc-patches/2025-August/693318.html](https://gcc.gnu.org/pipermail/gcc-patches/2025-August/693318.html).
 
 
 ## eĿlipsis ## {#experience-eĿlipsis}
@@ -1239,7 +1240,7 @@ If a non-local jump (e.g. `longjmp`) is used in *D*'s scope but before the execu
 
 <div class="wording-numbered">
 
-**NOTE**&emsp; This is because the "execution" of a defer statement only ensures that *S* is run on any exit from its *D*. There is no observable side effect to repeat from reaching *D*, as the manifestation of any of the effects of *S* happen if and only if *D*'s scope is exited or terminated after reaching *D*, as previously specified.
+**NOTE**&emsp; This is because the "execution" of a defer statement only ensures that *S* is run on any exit from *D*'s scope. There is no observable side effect to repeat from reaching *D*, as the manifestation of any of the effects of *S* happen if and only if *D*'s scope is exited or terminated after reaching *D*, as previously specified. Therefore, no "tracking" of reached defer statements at execution time is necessary, as if the non-local jump leaves the scope it is not executed (forgotten), or if its reached again it behaves as it would during normal execution.
 </div>
 
 <div class="wording-numbered">
@@ -1399,8 +1400,7 @@ int r() {
 		target:
 		defer { fputs("cat says", stdout); }
 	}
-	goto target; // ok
-	// prints "cat says" repeatedly
+	goto target; // ok: prints "cat says" repeatedly
 	// never reached
 	fputs(" meow\n", stdout);
 	return 1;
@@ -1423,8 +1423,8 @@ int t() {
 	{
 		target:
 		defer { fputs("cat says ", stdout); }
-		if (count < 2) {
-			++count;
+		++count;
+		if (count <= 2) {
 			goto target; // ok
 		}
 	}
@@ -1532,7 +1532,7 @@ int main () {
 
 <div class="wording-numbered">
 
-**EXAMPLE** &emsp; Defer statements, when execution reaches them, are tied to their enclosing block.
+**EXAMPLE** &emsp; Defer statements, when execution reaches them, are tied to the scope of the defer statement within their enclosing block, even if it is a secondary block without braces.
 
 ```cpp
 #include <stdio.h>
@@ -1551,6 +1551,8 @@ int main () {
 	exit(0);
 }
 ```
+
+This applies to any enclosing block, even ```c for``` loops without braces around its body.
 
 ```cpp
 #include <stdio.h>
@@ -1693,11 +1695,42 @@ int main () {
 ```
 </div>
 
+<div class="wording-numbered">
+
+**EXAMPLE** &emsp; Non-local jumps do not execute defer statements, and jumping backwards to reach the same defer statement does not accumulate defer statements.
+
+```cpp
+#include <stdio.h>
+#include <setjmp.h> 
+#include <stdlib.h>
+
+static jmp_buf jbuf;
+
+int f(int count) {
+	defer { fputs("cat says meow", stdout); }
+	if (count == 2) {
+		return 1;
+	}
+	longjmp(jbuf, count + 1);
+	return 0;
+}
+
+int main(void) {
+	volatile int count = 0;
+	if (setjmp(jbuf) == 2) {
+		// prints "cat says meow"
+		return 1;
+	}
+	f(count);
+	return 0;
+}
+```
+</div>
+
 </div>
 </div>
 </ins>
 </blockquote>
-
 
 
 ## Modify §7.29.5.1 The `thrd_create` function's to allow for prevention of compiler rewriting to not invoke `defer`s in a thread function ## {#wording-7.29.5.1}

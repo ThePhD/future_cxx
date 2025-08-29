@@ -54,7 +54,7 @@ The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 5 apply
 
 *Semantics*
 
-If the return type of the ```c main``` function is a type compatible with ```c int```, a return from the initial call to the main function is equivalent to calling the ```c exit``` function with the value returned by the ```c main``` function as its argument after all active defer statement#index[defer statement]s of the function body of main have been executed.
+If the return type of the ```c main``` function is a type compatible with ```c int```, a return from the initial call to the main function is equivalent to calling the ```c exit``` function with the value returned by the ```c main``` function as its argument after all active defer statements#index[defer statement] of the function body of main have been executed.
 #index("program termination")
 
 
@@ -144,7 +144,7 @@ If a non-local jump #index("non-local jump") is executed outside of any _D_ and:
 
 the behavior is undefined#index("undefined behavior").
 
-If _E_ has any defer statement#index[defer statement]s _D_ that have been reached and their _S_ have not yet executed, but the program is terminated or leaves _E_ through any means not specified previously, including but not limited to:
+If _E_ has any defer statements#index[defer statement] _D_ that have been reached and their _S_ have not yet executed, but the program is terminated or leaves _E_ through any means not specified previously, including but not limited to:
 
 - a function with the `_Noreturn` function specifier, or a function annotated with the `noreturn` or `_Noreturn` attribute, is called#index(initial: "n", display: [`_Noreturn`], apply-casing: false, "_Noreturn")#index(apply-casing: false, display: [`noreturn`], "noreturn");
 - or, any signal `SIGABRT`, `SIGINT`, or `SIGTERM` occurs#index("signal");
@@ -153,7 +153,7 @@ then any such _S_ are not run, unless otherwise specified by the implementation.
 
 #note() The execution of deferred statements upon non-local jumps (i.e., `longjmp` and `setjmp` described in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §7.13)#index("non-local jump") or program termination is a technique sometimes known as "unwinding" or "stack unwinding", and some implementations perform it. See also ISO/IEC 14882#index[ISO/IEC 14882] Programming languages — C++ [except.ctor].
 
-#example() Defer statement#index[Defer statement]s cannot be jumped over.#index("Keywords", "goto", apply-casing: false, display:[```c goto```])
+#example() Defer statements#index[Defer statement] cannot be jumped over.#index("Keywords", "goto", apply-casing: false, display:[```c goto```])
 
 ```c
 #include <stdio.h>
@@ -301,7 +301,7 @@ int t() {
 		target:
 		defer { fputs("cat says ", stdout); }
 		++count;
-		if (count < 2) {
+		if (count <= 2) {
 			goto target; // ok
 		}
 	}
@@ -325,7 +325,7 @@ int u() {
 
 int v() {
 	int count = 0;
-	target: if (count > 2) {
+	target: if (count >= 2) {
 		fputs("meow", stdout);
 		return 1; // prints "cat says cat says meow "
 	}
@@ -336,7 +336,7 @@ int v() {
 }
 ```
 
-#example() All the expressions and statements of an enclosing block are evaluated before executing defer statement#index[defer statement]s, including any conversions#index[conversions]. After all defer statement#index[defer statement]s are executed, the block is then exited.
+#example() All the expressions and statements of an enclosing block are evaluated before executing defer statements#index[defer statement], including any conversions#index[conversions]. After all defer statements#index[defer statement] are executed, the block is then exited.
 
 ```c
 int main() {
@@ -404,7 +404,7 @@ int main() {
 }
 ```
 
-#example() Defer statement#index[Defer statement]s, when execution reaches them, are tied to their enclosing block.
+#example() Defer statements#index[Defer statement], when execution reaches them, are tied to the scope of the defer statement within their enclosing block, even if it is a secondary block without braces.
 
 ```c
 #include <stdio.h>
@@ -423,6 +423,8 @@ int main() {
 	exit(0);
 }
 ```
+
+This applies to any enclosing block, even ```c for``` loops without braces around its body.
 
 ```c
 #include <stdio.h>
@@ -446,7 +448,7 @@ int main() {
 }
 ```
 
-#example() Defer statement#index[Defer statement]s execute their deferred blocks#index[deferred block] in reverse order of the appearance of the defer statements, and nested defer statement#index[defer statement]s execute their deferred blocks#index[deferred block] in reverse order but at the end of the deferred block#index[deferred block] they were invoked within. The following program:
+#example() Defer statements#index[Defer statement] execute their deferred blocks#index[deferred block] in reverse order of the appearance of the defer statements, and nested defer statements#index[defer statement] execute their deferred blocks#index[deferred block] in reverse order but at the end of the deferred block#index[deferred block] they were invoked within. The following program:
 
 ```c
 int main() {
@@ -478,7 +480,7 @@ int main() {
 }
 ```
 
-#example() Defer statement#index[Defer statement]s can be executed within a ```c switch```#index("Keywords", "switch", apply-casing: false, display: [```c switch```]), but a switch cannot be used to jump into the scope of a defer statement#index[defer statement].
+#example() Defer statements#index[Defer statement] can be executed within a ```c switch```#index("Keywords", "switch", apply-casing: false, display: [```c switch```]), but a switch cannot be used to jump into the scope of a defer statement#index[defer statement].
 
 ```c
 #include <stdlib.h>
@@ -495,7 +497,7 @@ int main() {
 }
 ```
 
-#example() Defer statement#index[Defer statement]s can not be exited by means of ```c break``` #index("Keywords", "break", apply-casing: false, display: [```c break```]) or ```c continue``` #index("Keywords", "continue", apply-casing: false, display: [```c continue```]).
+#example() Defer statements#index[Defer statement] can not be exited by means of ```c break``` #index("Keywords", "break", apply-casing: false, display: [```c break```]) or ```c continue``` #index("Keywords", "continue", apply-casing: false, display: [```c continue```]).
 
 ```c
 int main() {
@@ -519,7 +521,7 @@ int main() {
 }
 ```
 
-#example() Defer statement#index[defer statement]s that are not reached are not executed.
+#example() Defer statements#index[defer statement] that are not reached are not executed.
 
 ```c
 #include <stdlib.h>
@@ -531,7 +533,7 @@ int main() {
 }
 ```
 
-#example() Defer statement#index[defer statement]s can contain other compound statements.
+#example() Defer statements#index[defer statement] can contain other compound statements.
 
 ```c
 typedef struct meow *handle;
@@ -563,7 +565,7 @@ The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 7 apply
 
 == The `thrd_create` function
 
-In addition to the description and return requirements in the document, when `thrd_start_t func` parameter is invoked and it is returned from, it behaves as if it also runs any defer statements before invoking `thrd_exit` with the returned value.
+In addition to the description and return requirements in the document, when `thrd_start_t func` parameter is returned from, it behaves as if it also runs any defer statements before invoking `thrd_exit` with the returned value.
 
 #heading(
 	numbering: none,
