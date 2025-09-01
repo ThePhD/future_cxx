@@ -1,10 +1,10 @@
 <pre class='metadata'>
 Title: Transparent Aliases
-Shortname: 3487
-Revision: 5
-!Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3329.htm">N3329 (r4)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3200.htm">N3200 (r3)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2970.htm">N2970 (r2)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2901.htm">N2901 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2729.htm">N2729 (r0)</a>
+Shortname: 36XX
+Revision: 6
+!Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3487.htm">N3487 (r5)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3329.htm">N3329 (r4)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3200.htm">N3200 (r3)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2970.htm">N2970 (r2)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2901.htm">N2901 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2729.htm">N2729 (r0)</a>
 Status: P
-Date: 2025-02-20
+Date: 2025-08-29
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -33,7 +33,16 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 5 - September 7<sup>th</sup>, 2024 ## {#changelog-r4}
+## Revision 6 - August 29<sup>th</sup>, 2025 ## {#changelog-r6}
+
+- Added a future direction in [[#future-struct]].
+- Added a section about macros in [[#motivation-macros]].
+- Wording fixes.
+	- Use parenthetical for "(directly or indirectly ...)" to make it clear a transparent alias itself does not have internal linkage.
+	- Change type of `otter` declarations in shadowing Example 7, to highlight matching on the previous declaration.
+
+
+## Revision 5 - February 2<sup>nd</sup>, 2024 ## {#changelog-r5}
 
 - Add a change for ensuring that 6.7.5 function specifiers follows transparent aliases and that they are external definitions as part of the inline functions.
 - Make sure "named constant" in 6.6.1 Constant expressions, General specifically blesses transparent aliases.
@@ -135,6 +144,39 @@ This is, by itself, a completely untenable situation that hampers the growth of 
 > — [Steve Canon, Mathematician & Clang Developer](https://twitter.com/stephentyrone/status/1329796144193556482)
 
 At the surface of this issue and as illustrated by the many failed — and one successful — papers for `intmax_t` is that we need a better way for type definitions to be used for interfaces in the C standard. Underlying it is a wound that has begun to fester in the presence of not having a reason to invent wildly new architectures that necessitate fundamentally recompiling the world. Our inability to present a stable interface for users in a separable and Standards-Compliant way from the binary representation of a function that we cherish so deeply is becoming an increasing liability. If every function (the fundamental unit of doing work) essentially becomes impossible to change in any way, shape, or form, then what we are curating is not a living and extensible programming language but a dying system that is unequivocally doomed to general failure and eventual replacement.
+
+
+
+## Macro Issues ## {#motivation-macros}
+
+Macros have problems with lack of name spacing / scoping, no type checking, and making it difficult to write normal, correct code that does not trample on the user. This is egregious for any library writer providing code for other users, but is doubly egregious for the C standard library itself which reserves and takes over many common, unprefixed names. Consider, for example, this code that defines `free` as a function-like macro for `<stdlib.h>`:
+
+```cpp
+/* stdlib.h */
+// ...
+extern void __free(void* ptr);
+#define free(_PTR) __free(_PTR)
+
+/* regular code.... */
+#include <stdlib.h>
+
+typedef struct foo {
+	typeof(free)* free;
+} foo;
+
+extern void my_free(void* ptr);
+
+int main(void) {
+	foo foo = { .free = my_free };
+	foo.free(NULL);
+	return 0;
+}
+```
+
+This code is wrong, because while `.free` can help set the value for the braced designated initializer, the `foo.free(NULL)` is wrong. After preprocessing, it looks like `foo.__free(NULL)` -- which is an error. This is emblematic of the kinds of problems that exist for using macros, even before `#undef`, conflicting `#define`s, or the identifier gets wrapped un parentheses for macro suppression with `(free)`.
+
+Macros are wholly unsuitable for the problem at hand, and compounded with their scoping issues and the ways in which they can be (sometimes unexpectedly) suppressed, they cannot solve the problems the entire C ecosystem faces.
+
 
 
 
@@ -503,7 +545,7 @@ This is much more palatable, but violates the rule of "don't repeat yourself". R
 
 `_Alias` is the safe choice. Originally, we used the word `using` as there was very little option to create a keyword that more appropriately mirrors "`typedef` but for functions". `funcdef` is already a prominent identifier in C codebases, and reusing `typedef` is not a very good idea for something that does not declare a type.
 
-C++ took the keyword `using`, and so far it seems to have made most C and C++ developers stay away from the keyword altogether. Nevertheless, the wording uses a stand-in `ALIAS-TOKEN`. The suggestions we have for the token are as follows, based on not being findable in publicly available codebase sets (either on [isocpp.org](https://isocpp.org)'s code search of package manager code for Linux Distributions, GitHub's dataset for code, and similar sources):
+C++ took the keyword `using`, and so far it seems to have made most C and C++ developers stay away from the keyword altogether. Nevertheless, the wording uses a stand-in `_Alias`. The suggestions we have for the token are as follows, based on not being findable in publicly available codebase sets (either on [isocpp.org](https://isocpp.org)'s code search of package manager code for Linux Distributions, GitHub's dataset for code, and similar sources):
 
 - `using` (made safer by C++ using it as a keyword) (however, C++ uses this as a type definition and does NOT include this for the ability to reference an existing function)
 - `using_alternate` (long, pretty good name)
@@ -522,7 +564,7 @@ Various names were also thought of and unfortunately discarded because they exis
 - `name_def`/`namedef`
 - `name_alias`/`namealias`
 
-While we use the word `_Alias` right now as a stand-in for some of the prose above and below, we would appreciate feedback on what name to pick. The specification working has `ALIAS-TOKEN` to signify that we have not settled on a specific token (or token sequence) for the name at the moment. This does not preclude a more thorough look at a `typedef`-alike syntax. However, we do note that we do not employ declarator syntax and so a `typedef`-style syntax is not necessarily the best idea.
+While we use the word `_Alias` right now as a stand-in for some of the prose above and below, we would appreciate feedback on what name to pick. The specification working has `_Alias` to signify that we have not settled on a specific token (or token sequence) for the name at the moment. This does not preclude a more thorough look at a `typedef`-alike syntax. However, we do note that we do not employ declarator syntax and so a `typedef`-style syntax is not necessarily the best idea.
 
 We would also like to note that C++ had a proposal to make the `using` syntax work for function declarations and also allow them to be renamed, just like this proposal[[p0945]]. However, the paper was dropped and never picked up and/or pursued in any other form again. It could be seen as taking design space or forcing a design upon C++ if we attempted to take the syntax `using A = ...;`, and therefore while possible we would strongly advise against such a direction.
 
@@ -648,11 +690,74 @@ the tokens put into that macro being stringified and concatenated with an extra 
 # Future Directions # {#future}
 
 
+
 ## Weak Declarations vs. Strong declarations ## {#future-weak}
 
 There were further suggestions to have the ability to make "`_Weak`" aliases: that is, the ability to be able to define a compile-time alias, but be able to redeclare over it and completely erase the old declaration with an entirely incompatible/new declaration, at compile-time, with a new (and potentially incompatible) declaration. This is actually implemented in the current implementation, and it works as expected, but it is not provided in this paper.
 
 However, weak versus strong is still a separate concern. It is part of a conceptually separate feature for linkers.
+
+
+
+## Renaming Struct Members Without Cost ## {#future-struct}
+
+A possible extension for structures is renaming some of the fields without needing to use the (technically undefined behavior) of `union`-overlapping:
+
+```cpp
+int main () {
+	typedef struct  v3 {
+		float m[3];
+		_Alias x = m[0];
+		_Alias y = m[1];
+		_Alias z = m[2];
+		_Alias t = x;
+		_Alias u = y;
+		_Alias v = z;
+	} v3;
+
+	v3 v = {};
+	v.m[0] = 1;
+	v.m[1] = 2;
+	v.m[2] = 3;
+	assert(v.x == v.t == v.m[0] == 1);
+	assert(v.y == v.u == v.m[1] == 2);
+	assert(v.z == v.v == v.m[2] == 3);
+
+	return 0;
+}
+```
+
+Currently, the only way to do this is through extensions utilizing the technical UB in this sort of behavior to chisel out working behavior for current works, like so:
+
+```cpp
+int main () {
+	typedef union v3 {
+		float m[3];
+		struct {
+			float x;
+			float y;
+			float z;
+		};
+		struct {
+			float t;
+			float u;
+			float v;
+		};
+	} v3;
+
+	v3 v = {};
+	v.m[0] = 1;
+	v.m[1] = 2;
+	v.m[2] = 3;
+	assert(v.x == v.t == v.m[0] == 1);
+	assert(v.y == v.u == v.m[1] == 2);
+	assert(v.z == v.v == v.m[2] == 3);
+
+	return 0;
+}
+```
+
+It is undefined behavior to use `v.x` to access what `v.m[0]` is, despite this technically being workable on pretty much every single implementation ever. Even with `[[gnu::packed]]`, it still remains undefined behavior. The first code sample's future direction would enable this to be well-defined behavior, albeit there's a few other questions that might need to be answered before this is allowed.
 
 
 
@@ -732,7 +837,7 @@ The following identifiers have no linkage: an identifier declared to be anything
 *keyword*: one of
 
 :: …
-:: <ins>**ALIAS-TOKEN**</ins>
+:: <ins>**_Alias**</ins>
 
 </div>
 </div>
@@ -819,7 +924,7 @@ A declaration specifies the interpretation and properties of a set of identifier
 
 <div class="wording-numbered wording-numbered-3">
 
-An inline definition of a function with external linkage shall not contain, anywhere in the tokens making up the function definition, a definition of a modifiable object with static or thread storage duration, and shall not contain, anywhere in the tokens making up the function definition, a reference to an identifier<ins> or transparent alias</ins> with internal linkage.
+An inline definition of a function with external linkage shall not contain, anywhere in the tokens making up the function definition, a definition of a modifiable object with static or thread storage duration, and shall not contain, anywhere in the tokens making up the function definition, a reference to an identifier<ins>(directly or indirectly transparent alias)</ins> with internal linkage.
 
 </div>
 </div>
@@ -875,7 +980,7 @@ Syntax
 
 *transparent-alias-declaration:*
 
-:: *attribute-specifier-sequence*<sub>opt</sub> **ALIAS-TOKEN** *identifier* **=** *identifier* **;**
+:: *attribute-specifier-sequence*<sub>opt</sub> **_Alias** *identifier* **=** *identifier* **;**
 
 </div>
 
@@ -894,15 +999,16 @@ Constraints
 
 <div class="wording-numbered">
 
-A transparent alias target shall be an identifier which is an object, a function, or a transparent alias.
+A transparent alias target shall be an identifier which designates an object, a function, or a transparent alias.
 </div>
 
 <div class="wording-numbered">
 
-A transparent alias being redeclared shall refer to the same object or function as in its initial declaration<sup>FN0✨)</sup> and the type of that identifier shall be compatible with all visible declarations of the declared transparent alias.
+A transparent alias being redeclared shall refer to the same object or function as in its initial declaration and the type of that identifier shall be compatible with all visible declarations of the declared transparent alias.
 
 <div class="wording-footnote">
-<sup>FN0✨)</sup> <sub>If the transparent alias target points to another transparent alias, then the alias target is first resolved. The resolution occurs recursively until a function or object is the alias target. Resolution of a transparent alias target happens before the synonym is declared or redeclared, meaning a transparent alias name may refer to itself when it is being redeclared, but not when it is first declared. This resolution is not recomputed every time the transparent aliases is declared.</sub>
+
+**NOTE** &emsp;&emsp; If the transparent alias target points to another transparent alias, then the alias target is first resolved. The resolution occurs recursively until a function or object is the alias target. Resolution of a transparent alias target happens before the synonym is declared or redeclared, meaning a transparent alias name may refer to itself when it is being redeclared, but not when it is first declared. This resolution is not recomputed every time the transparent aliases is used.
 </div>
 
 </div>
@@ -921,7 +1027,7 @@ A transparent alias may be used in any context where the target may be used. A t
 
 <div class="wording-numbered">
 
-The optional attribute specifier sequence before the **ALIAS-TOKEN** appertains to the transparent alias name.
+The optional attribute specifier sequence before the **_Alias** appertains to the transparent alias name.
 </div>
 
 <div class="wording-numbered">
@@ -934,10 +1040,10 @@ The optional attribute specifier sequence before the **ALIAS-TOKEN** appertains 
 void do_work(void);
 void take_nap(void);
 
-ALIAS-TOKEN work_alias = do_work;
-ALIAS-TOKEN nap_alias = take_nap;
-ALIAS-TOKEN alias_of_work_alias = work_alias;
-ALIAS-TOKEN alias_of_nap_alias = nap_alias;
+_Alias work_alias = do_work;
+_Alias nap_alias = take_nap;
+_Alias alias_of_work_alias = work_alias;
+_Alias alias_of_nap_alias = nap_alias;
 
 int main () {
 	assert(&do_work == &work_alias);
@@ -951,7 +1057,7 @@ int main () {
 	assert(&take_nap != &work_alias);
 	assert(&do_work != &alias_of_nap_alias);
 
-	ALIAS-TOKEN local_work_alias = alias_of_work_alias;
+	_Alias local_work_alias = alias_of_work_alias;
 	assert(&local_work_alias == &alias_of_work_alias);
 
 	do_work();
@@ -975,10 +1081,10 @@ int main () {
 ```cpp
 int zzz(int requested_sleep_time);
 
-ALIAS-TOKEN sleep_alias = zzz;
-ALIAS-TOKEN sleep_alias = sleep_alias;
-ALIAS-TOKEN sleep_alias_alias = zzz;
-ALIAS-TOKEN sleep_alias = sleep_alias_alias;
+_Alias sleep_alias = zzz;
+_Alias sleep_alias = sleep_alias;
+_Alias sleep_alias_alias = zzz;
+_Alias sleep_alias = sleep_alias_alias;
 
 void func(void);
 int main () {
@@ -996,32 +1102,28 @@ int main () {
 int zzz(int requested_sleep_time);
 int truncated_zzz(int requested_sleep_time);
 
-ALIAS-TOKEN sleep_alias = sleep_alias; // constraint violation: sleep_alias does
-                                       // not exist until the
-                                       // semicolon is reached
-ALIAS-TOKEN zzz = truncated_zzz; // constraint violation: cannot hide
-                                 // existing declaration
-ALIAS-TOKEN truncated_zzz = truncated_zzz; // constraint violation: cannot change 
-                                           // function declaration
-                                           // to transparent alias
+_Alias sleep_alias = sleep_alias; // constraint violation:
+// sleep_alias does not exist until the semicolon is reached
+_Alias zzz = truncated_zzz; // constraint violation:
+// cannot hide existing declaration
+_Alias truncated_zzz = truncated_zzz; // constraint violation:
+// cannot change function declaration to transparent alias
 
-ALIAS-TOKEN valid_sleep_alias = zzz;
+_Alias valid_sleep_alias = zzz;
 double valid_sleep_alias(double requested_sleep_time); // constraint violation:
-                                                       // redeclaring a
-                                                       // transparent alias with
-                                                       // non-compatible type
+// redeclaring a transparent alias with non-compatible type
 ```
 </div>
 
 <div class="wording-numbered">
 
-**EXAMPLE 4** An alias can be redeclared as either an alias or a function declaration so long as it is compatible:
+**EXAMPLE 4** An alias can be redeclared, but only as an alias which points to the same underlying object or function:
 
 ```cpp
 double purr(void) { return 1.0; }
-ALIAS-TOKEN meow = purr;
+_Alias meow = purr;
 double meow(void); // constraint violation: not a transparent alias
-ALIAS-TOKEN meow = purr; // compatible redeclaration
+_Alias meow = purr; // compatible redeclaration
 
 int main () {
 	double x = meow(); // calls purr
@@ -1036,7 +1138,7 @@ int main () {
 
 ```cpp
 void otter(int (*)[]);
-ALIAS-TOKEN water_noodle = otter;
+_Alias water_noodle = otter;
 void otter(int (*)[2]);
 static_assert(_Generic(typeof(water_noodle),
 	void (int(*)[]): 1,
@@ -1054,7 +1156,7 @@ static_assert(_Generic(typeof(water_noodle),
 void cookie(int (*)[2]);
 
 int main () {
-	ALIAS-TOKEN biscuit = cookie;
+	_Alias biscuit = cookie;
 	{
 		int cookie; // Shadow outer declaration.
 		{
@@ -1078,11 +1180,11 @@ int main () {
 ```cpp
 void otter(int (*)[], int (*)[2]);
 int main () {
-	ALIAS-TOKEN water_sausage = otter;
+	_Alias water_sausage = otter;
 	{
-		void otter(int (*)[2], int (*)[]);
+		void otter(int (*)[2], int (*)[3]);
 		static_assert(_Generic(typeof(water_sausage),
-			void (int (*)[], int (*)[2]): 1,
+			void (int (*)[3], int (*)[2]): 1,
 			default: 0
 		));
 	}
@@ -1100,7 +1202,7 @@ int f (int value) { return value + value; }
 
 int main () {
 	const int x = 1;
-	ALIAS-TOKEN y = x;
+	_Alias y = x;
 	// equivalent to:
 	// return 2;
 	return &y == &x ? f(y) : 0;
@@ -1121,9 +1223,9 @@ int main () {
 const char* v1_name = "treehouse.systems!";
 
 #if defined(V0_DEPRECATED) && (V0_DEPRECATED != 0)
-[[deprecatad("v0_name will be removed in version 2, please upgrade")]]
+[[deprecated("v0_name will be removed in version 2, please upgrade")]]
 #endif
-ALIAS-TOKEN v0_name = v1_name;
+_Alias v0_name = v1_name;
 
 int main () {
 	printf("v1: %s\n", v1_name);
@@ -1148,10 +1250,10 @@ extern __int256 __imaxabs_256ish(__int256 value);
 
 #if VER1
 	typedef __int128 intmax_t;
-	ALIAS-TOKEN imaxabs = __imaxabs_128ish;
+	_Alias imaxabs = __imaxabs_128ish;
 #elif VER2
 	typedef __int256_t intmax_t;
-	ALIAS-TOKEN imaxabs = __imaxabs_256ish;
+	_Alias imaxabs = __imaxabs_256ish;
 #else
 	typedef long long intmax_t;
 	extern long long imaxabs(long long value);

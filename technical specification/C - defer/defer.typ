@@ -120,19 +120,19 @@ Jumps by means of ```c return```#index("Keywords", "return", apply-casing: false
 
 When execution reaches a defer statement#index[defer statement] _D_ and its scope is entered, its _S_ is not immediately executed during sequential execution of the program. Instead, for the duration of the scope of _D_, _S_ is executed upon:
 
-- the termination of the block _E_ (such as from reaching its end);
-- or, any exit from _E_ through ```c return```#index("Keywords", "return", apply-casing: false, display:[```c return```]), ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]), ```c break```#index("Keywords", "break", apply-casing: false, display:[```c break```]), or ```c continue```#index("Keywords", "continue", apply-casing: false, display:[```c continue```]).
+- the termination of the block _E_ and/or the scope of _D_ (such as from reaching its end);
+- or, any exit from _E_ and/or the scope of _D_ through ```c return```#index("Keywords", "return", apply-casing: false, display:[```c return```]), ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]), ```c break```#index("Keywords", "break", apply-casing: false, display:[```c break```]), or ```c continue```#index("Keywords", "continue", apply-casing: false, display:[```c continue```]).
 
-The execution is done just before leaving the enclosing block _E_. In particular ```c return``` expressions (and conversion to return values)#index("conversions") are calculated before executing _S_.
+The execution is done just before leaving the enclosing block _E_ and/or the scope of _D_. In particular ```c return``` expressions (and conversion to return values)#index("conversions") are calculated before executing _S_.
 
-Multiple defer statements#index[defer statement] execute their *S* in the reverse order they appeared in _E_. Within a single defer statement#index[defer statement] _D_, if _D_ contains one or more defer statements#index[defer statement] _D#sub[sub]_ of its own, then the _S#sub[sub]_ of the _D#sub[sub]_ are also executed in reverse order at the end of _S_, recursively, according to the rules of this subclause.
+Multiple defer statements#index[defer statement] execute their _S_ in the reverse order they appeared in _E_. Within a single defer statement#index[defer statement] _D_, if _D_ contains one or more defer statements#index[defer statement] _D#sub[sub]_ of its own, then the _S#sub[sub]_ of the _D#sub[sub]_ aare also executed in reverse order at the termination and/or exit of _S_ and/or _D#sub[sub]_'s scope, recursively, according to the rules of this subclause.
 
 If a non-local jump #index("non-local jump") is used in _D_'s scope but before the execution of the _S_ of _D_:
 
-- if execution leaves _E_, _S_ is not executed;
+- if execution leaves _D_'s scope, _S_ is not executed;
 - otherwise, if control returns to a point in _E_ and causes _D_ to be reached more than once, the effect is the same as reaching _D_ only once.
 
-#note() The "execution" of a defer statement#index[defer statement] only enures that _S_ is run on any exit from that scope. There is no observable side effect to repeat from reaching _D_, as the manifestation of any of the effects of _S_ happen if and only if _E_ is exited or terminated after reaching _D_, as previously specified.
+#note() The "execution" of a defer statement#index[defer statement] only enures that _S_ is run on any exit from that scope. There is no observable side effect to repeat from reaching _D_, as the manifestation of any of the effects of _S_ happen if and only if _E_ is exited or terminated after reaching _D_, as previously specified. "Tracking" of reached defer statements at execution time is not necessary: if the non-local jump leaves the scope it is not executed (forgotten); and, if its reached again it behaves as it would during normal execution.
 
 
 If a non-local jump #index("non-local jump") is executed from _S_ and control leaves _S_, the behavior is undefined#index("undefined behavior").
@@ -140,11 +140,11 @@ If a non-local jump #index("non-local jump") is executed from _S_ and control le
 If a non-local jump #index("non-local jump") is executed outside of any _D_ and:
 
 - it jumps into any _S_;
-- or, it jumps over any _D_ in its respective _E_;
+- or, it jumps outside any _D_'s scope to inside that _D_'s scope;
 
 the behavior is undefined#index("undefined behavior").
 
-If _E_ has any defer statements#index[defer statement] _D_ that have been reached and their _S_ have not yet executed, but the program is terminated or leaves _E_ through any means not specified previously, including but not limited to:
+If _E_ has any defer statements#index[defer statement] _D_ that have been reached and their _S_ have not yet executed, but the program is terminated or leaves the scope of _D_ through any means not specified previously, including but not limited to:
 
 - a function with the `_Noreturn` function specifier, or a function annotated with the `noreturn` or `_Noreturn` attribute, is called#index(initial: "n", display: [`_Noreturn`], apply-casing: false, "_Noreturn")#index(apply-casing: false, display: [`noreturn`], "noreturn");
 - or, any signal `SIGABRT`, `SIGINT`, or `SIGTERM` occurs#index("signal");
