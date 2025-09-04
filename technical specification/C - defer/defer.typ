@@ -1,5 +1,4 @@
 #import "isoiec.typ": *
-#import "@preview/in-dexter:0.7.0": *
 
 #show: doc => isoiec(
 	title: "Programming Languages — C — defer, a mechanism for general purpose, lexical scope-based undo",
@@ -8,11 +7,10 @@
 	id: "NXY41",
 	ts_id: "25755",
 	stage: "cd",
+	iso: if sys.inputs.at("iso", default: "false") == "true" { true } else { false },
 	abstract: [The advent of resource leaks in programs created with ISO/IEC 9899#index[ISO/IEC 9899] ⸺ Programming Languages, C has necessitated the need for better ways of tracking and automatically releasing resources in a given scope. This document provides a feature to address this need in a reliable, translation-time, opt-in manner for implementations to furnish to programmers.],
 	doc
 )
-
-
 
 = Scope
 
@@ -27,6 +25,7 @@ Each clause in this Technical Specification deals with a specific topic. The fir
 The following documents are referred to in the text in such a way that some or all of their content constitutes requirements of this document. For dated references, only the edition cited applies. For undated references, the latest edition of the referenced document (including any amendments) applies.
 
 #list(marker: [],
+	indent: 1.5em,
 	[ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], Programming languages — C]
 )
 
@@ -52,7 +51,7 @@ The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 5 apply
 
 == Program termination
 
-*Semantics*
+=== Semantics
 
 If the return type of the ```c main``` function is a type compatible with ```c int```, a return from the initial call to the main function is equivalent to calling the ```c exit``` function with the value returned by the ```c main``` function as its argument after all active defer statements#index[defer statement] of the function body of main have been executed.
 #index("program termination")
@@ -74,41 +73,46 @@ In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.4.
 
 In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.8, implementations shall allow the unlabeled statement grammar production to produce a defer statement#index[defer statement] which contains a deferred block#index[deferred block]. A deferred block#index[deferred block] is also considered a _block_ just like a primary block or a secondary block.
 
-*Syntax*
+=== Syntax
 
-#h(1em) _unlabeled-statement_: \
-#list(marker: none, indent: 8em,
-	[_expression-statement_],
-	[_attribute-specifier-sequence_#sub[opt] _primary-block_],
-	[_attribute-specifier-sequence_#sub[opt] _jump-statement_],
-	[_defer-statement_]
-)
+#par[
+	#syntax([_unlabeled-statement_:],
+		list(marker: none, indent: 8em,
+			[_expression-statement_],
+			[_attribute-specifier-sequence_#sub[opt] _primary-block_],
+			[_attribute-specifier-sequence_#sub[opt] _jump-statement_],
+			[_defer-statement_]
+		)
+	)
+
+	#syntax([_deferred-block_:],
+		list(marker: none, indent: 8em,
+			[_unlabeled-statement_]
+		)
+	)
+]
 #index("unlabeled statement")
 #index("defer statement")
-
-#h(1em) _deferred-block_: \
-#list(marker: none, indent: 8em,
-	[_unlabeled-statement_]
-)
-#index("unlabeled statement")
-#index("deferred block")
 
 == Defer statements
 
-*Syntax*
+=== Syntax
 
-#h(1em) _defer-statement_: \
-#list(marker: none, indent: 8em,
-	[`defer` _deferred-block_]
-)
+#par[
+	#syntax([_defer-statement_:],
+		list(marker: none, indent: 8em,
+			[`defer` _deferred-block_]
+		)
+	)
+]
 #index("defer statement")
 #index(apply-casing: false, display: [```c defer```], "Keywords", "defer")
 
-*Description*
+=== Description
 
 Let _D_ be a defer statement#index[defer statement], _S_ be the deferred block#index[deferred block] of _D_, and _E_ be the enclosing block of _D_. The scope of _D_ is the same as an identifier declared and completed immediately after the end of _S_.
 
-*Constraints*
+=== Constraints
 
 Jumps by means of ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) or ```c switch```#index("Keywords", "switch", apply-casing: false, display:[```c switch```]) shall not jump into any defer statement#index[defer statement].
 
@@ -116,7 +120,7 @@ Jumps by means of ```c goto```#index("Keywords", "goto", apply-casing: false, di
 
 Jumps by means of ```c return```#index("Keywords", "return", apply-casing: false, display:[```c return```]), ```c break```#index("Keywords", "break", apply-casing: false, display:[```c break```]), ```c continue```#index("Keywords", "continue", apply-casing: false, display:[```c continue```]) or ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) shall not exit _S_.
 
-*Semantics*
+=== Semantics
 
 When execution reaches a defer statement#index[defer statement] _D_ and its scope is entered, its _S_ is not immediately executed during sequential execution of the program. Instead, for the duration of the scope of _D_, _S_ is executed upon:
 
@@ -557,7 +561,7 @@ In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.10
 / `__STDC_DEFER_TS25755__`: The integer literal `1`.
 #index(display: [```c __STDC_DEFER_TS__```], "macros", "__STDC_DEFER_TS__")
 
-
+ 
 
 = Library
 
@@ -566,16 +570,3 @@ The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 7 apply
 == The `thrd_create` function
 
 In addition to the description and return requirements in the document, when `thrd_start_t func` parameter is returned from, it behaves as if it also runs any defer statements before invoking `thrd_exit` with the returned value.
-
-#heading(
-	numbering: none,
-	[Index]
-)
-#columns(2)[
-	#set text(size: 0.85em)
-	#show heading: it => block[
-		#it.body
-		#v(0.25em)
-	]
-	#make-index(title: none)
-]

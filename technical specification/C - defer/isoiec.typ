@@ -1,4 +1,5 @@
 #import "@preview/based:0.1.0": base64
+#import "@preview/in-dexter:0.7.0": *
 
 #let standard_iso9899_introduction_boilerplate = [This document is divided into four major subdivisions:
 
@@ -41,12 +42,23 @@ Examples are provided to illustrate possible forms of the constructions describe
 }
 
 #let para_counter = counter("para")
-#let para() = {
-	para_counter.step()
-	[#context para_counter.display()]
+
+#let syntax(title, ..body) = {
+	if body.at(0, default: none) == none {
+		title
+	}
+	else {
+		grid(rows: (auto, auto),
+			row-gutter: 0.75em,
+			title,
+			..body
+		)
+	}
 }
 
 #let wd_stage = 1
+
+#let special_headings = ("Syntax", "Constraints", "Semantics", "Description", "Returns", "Runtime-constraints", "Environmental limits", "Recommended practice")
 
 #let isoiec(
 	title: none,
@@ -129,18 +141,26 @@ show raw.where(block: true): code => {
 }
 
 set heading(numbering: none)
-show heading: it => {
-	if it.numbering != none and counter(heading).get().at(0) > 0 {
-		let number = if it.numbering != none {
-			numbering(it.numbering, ..counter(heading).at(it.location()))
+show heading: it => if it.body.has("text") and it.body.text.find(regex(special_headings.join("|"))) != none {
+	pad(bottom: 1em, it.body)
+}
+else {
+	grid(
+		columns: (auto, auto),
+		if it.numbering != none and counter(heading).get().at(0) > 0 {
+			let number = if it.numbering != none {
+				numbering(it.numbering, ..counter(heading).at(it.location()))
+			}
+			else {
+				counter(heading).display()
+			}
+			box(width: 1.5cm, number)
+		},
+		{
+			para_counter.update(0)
+			it.body
 		}
-		else {
-			counter(heading).display()
-		}
-		box(width: 1.5cm, number)
-	}
-	para_counter.update(0)
-	it.body
+	)
 }
 
 set list(marker: ("—","—","—"), indent: 2.0em)
@@ -295,8 +315,46 @@ if intro != none [
 // Rest of the document
 set page(numbering: "1")
 set par(justify: true)
-set heading(outlined: true, bookmarked: true, numbering: "1.1.1.1")
-contents
+{
+	// block this out so the heading/parapgrah settings
+	// don't extend beyond the contents
+	set heading(outlined: true, bookmarked: true, numbering: "1.1.1.1")
+	show par: it => {
+		if not iso {
+			move(dx: -1.8em,
+				grid(
+					columns: (1.8em, auto),
+					{
+						para_counter.step()
+						context para_counter.display()
+					},
+					it.body
+				)
+			)
+		}
+		else {
+			grid(
+				it.body
+			)
+		}
+	}
+	contents
+}
+pagebreak()
+
+heading(
+	numbering: none,
+	[Index]
+)
+columns(2)[
+	#set text(size: 0.85em)
+	#show heading: it => block[
+		#it.body
+		#v(0.25em)
+	]
+	#make-index(title: none)
+]
+
 pagebreak()
 
 // Last page
@@ -314,3 +372,4 @@ align(bottom, [© ISO #datetime.today().year() - All rights reserved]),
 align(bottom + right, link("https://www.iso.org")[www.iso.org])
 )
 }
+
