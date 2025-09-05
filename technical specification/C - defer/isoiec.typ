@@ -58,8 +58,6 @@ Examples are provided to illustrate possible forms of the constructions describe
 
 #let wd_stage = 1
 
-#let special_headings = ("Syntax", "Constraints", "Semantics", "Description", "Returns", "Runtime-constraints", "Environmental limits", "Recommended practice")
-
 #let isoiec(
 	title: none,
 	authors: (),
@@ -76,6 +74,8 @@ Examples are provided to illustrate possible forms of the constructions describe
 	iso: false,
 	contents
 ) = {
+let special_headings = ("Syntax", "Constraints", "Semantics", "Description", "Returns", "Runtime-constraints", "Environmental limits", "Recommended practice")
+let special_headings_regex = regex(special_headings.join("|"))
 if stage == none {
 	stage = "wd"
 }
@@ -141,7 +141,14 @@ show raw.where(block: true): code => {
 }
 
 set heading(numbering: none)
-show heading: it => if it.body.has("text") and it.body.text.find(regex(special_headings.join("|"))) != none {
+show heading: it => if it.body.has("text") and type(it.body.text) == str and it.body.text.find(special_headings_regex) != none {
+	let current_heading_depths = counter(heading).get()
+	if type(it.depth) == int {
+		let target = it.depth - 1
+		let old_value = current_heading_depths.at(target)
+		current_heading_depths.at(target) = old_value - 1
+		counter(heading).update(current_heading_depths)
+	}
 	pad(bottom: 1em, it.body)
 }
 else {
@@ -175,19 +182,25 @@ show outline.entry: entry => {
 	}
 	if entry.element.func() == heading {
 		let elem = entry.element
-		let number = if elem.numbering != none {
-			numbering(elem.numbering, ..counter(heading).at(elem.location()))
+		let is_special_heading = elem.body != none and elem.body.has("text") and type(elem.body.text) == str and elem.body.text.find(special_headings_regex) != none
+		if not is_special_heading {
+			let number = if elem.numbering != none {
+				numbering(elem.numbering, ..counter(heading).at(elem.location()))
+			}
+			let fill = box(width: 1fr, entry.fill)
+			let entry_content = entry.indented(number, [#elem.body #fill #entry.page()], gap: 1.5em)
+			link(elem.location(),
+				if entry.level == 1 {
+					strong(entry_content)
+				}
+				else {
+					entry_content
+				}
+			)
 		}
-		let fill = box(width: 1fr, entry.fill)
-		let entry_content = entry.indented(number, [#elem.body #fill #entry.page()], gap: 1.5em)
-		link(elem.location(),
-			if entry.level == 1 {
-				strong(entry_content)
-			}
-			else {
-				entry_content
-			}
-		)
+		else {
+			// nothing should be here
+		}
 	}
 	else {
 		entry
@@ -317,7 +330,7 @@ set page(numbering: "1")
 set par(justify: true)
 {
 	// block this out so the heading/parapgrah settings
-	// don't extend beyond the contents
+	// don't extend beyond the provided content of the template
 	set heading(outlined: true, bookmarked: true, numbering: "1.1.1.1")
 	show par: it => {
 		if not iso {
