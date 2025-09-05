@@ -53,7 +53,7 @@ The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 5 apply
 
 === Semantics
 
-If the return type of the ```c main``` function is a type compatible with ```c int```, a return from the initial call to the main function is equivalent to calling the ```c exit``` function with the value returned by the ```c main``` function as its argument after all active defer statements#index[defer statement] of the function body of main have been executed.
+If the return type of the ```c main``` function is a type compatible with ```c int```, a return from the initial call to the main function is equivalent to calling the ```c exit``` function with the value returned by the ```c main``` function as its argument after all defer statements#index[defer statement] that are in scope for the ```c main``` function have been executed.
 #index("program termination")
 
 
@@ -114,11 +114,11 @@ Let _D_ be a defer statement#index[defer statement], _S_ be the deferred block#i
 
 === Constraints
 
-Jumps by means of ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) or ```c switch```#index("Keywords", "switch", apply-casing: false, display:[```c switch```]) shall not jump into any defer statement#index[defer statement].
+Jumps by means of:
 
-Jumps by means of ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) or ```c switch```#index("Keywords", "switch", apply-casing: false, display:[```c switch```]) shall not jump from outside the scope of a defer statement#index[defer statement] _D_ to inside that scope.
-
-Jumps by means of ```c return```#index("Keywords", "return", apply-casing: false, display:[```c return```]), ```c break```#index("Keywords", "break", apply-casing: false, display:[```c break```]), ```c continue```#index("Keywords", "continue", apply-casing: false, display:[```c continue```]) or ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) shall not exit _S_.
+- ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) or ```c switch```#index("Keywords", "switch", apply-casing: false, display:[```c switch```]) shall not jump into any defer statement#index[defer statement];
+- ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) or ```c switch```#index("Keywords", "switch", apply-casing: false, display:[```c switch```]) shall not jump from outside the scope of a defer statement#index[defer statement] _D_ to inside that scope;
+- and, ```c return```#index("Keywords", "return", apply-casing: false, display:[```c return```]), ```c break```#index("Keywords", "break", apply-casing: false, display:[```c break```]), ```c continue```#index("Keywords", "continue", apply-casing: false, display:[```c continue```]) or ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) shall not exit _S_.
 
 === Semantics
 
@@ -165,7 +165,7 @@ then any such _S_ are not run, unless otherwise specified by the implementation.
 int f() {
 	goto target; // constraint violation
 	defer { fputs(" meow", stdout); }
-	target:
+target:
 	fputs("cat says", stdout);
 	return 1;
 }
@@ -183,7 +183,7 @@ int h() {
 		// okay: no constraint violation
 		defer { fputs(" meow", stdout); }
 	}
-	target:
+target:
 	fputs("cat says", stdout);
 	return 1; // prints "cat says" to standard output
 }
@@ -194,7 +194,7 @@ int i() {
 		// okay: no constraint violation
 		goto target;
 	}
-	target:
+target:
 	fputs(" meow", stdout);
 	return 1; // prints "cat says meow" to standard output
 }
@@ -204,7 +204,7 @@ int j() {
 		goto target; // constraint violation
 		fputs(" meow", stdout);
 	}
-	target:
+target:
 	fputs("cat says", stdout);
 	return 1;
 }
@@ -220,7 +220,7 @@ int k() {
 
 int l() {
 	defer {
-		target:
+target:
 		fputs(" meow", stdout);
 	}
 	goto target; // constraint violation
@@ -231,7 +231,7 @@ int l() {
 int m() {
 	goto target; // okay: no constraint violation
 	{
-		target:
+target:
 		defer { fputs("cat says", stdout); }
 	}
 	fputs(" meow", stdout);
@@ -242,7 +242,7 @@ int n() {
 	goto target; // constraint violation
 	{
 		defer { fputs(" meow", stdout); }
-		target:
+target:
 	}
 	fputs("cat says", stdout);
 	return 1;
@@ -253,7 +253,7 @@ int o() {
 		defer fputs("cat says", stdout);
 		goto target;
 	}
-	target:;
+target:;
 	fputs(" meow", stdout);
 	return 1; // prints "cat says meow"
 }
@@ -263,7 +263,7 @@ int p() {
 		goto target;
 		defer fputs(" meow", stdout);
 	}
-	target:;
+target:;
 	fputs("cat says", stdout);
 	return 1; // prints "cat says"
 }
@@ -271,7 +271,7 @@ int p() {
 int q() {
 	{
 		defer { fputs(" meow", stdout); }
-		target:
+target:
 	}
 	goto target; // constraint violation
 	fputs("cat says", stdout);
@@ -280,7 +280,7 @@ int q() {
 
 int r() {
 	{
-		target:
+target:
 		defer { fputs("cat says", stdout); }
 	}
 	goto target; // ok
@@ -290,7 +290,7 @@ int r() {
 
 int s() {
 	{
-		target:
+target:
 		defer { fputs("cat says", stdout); }
 		goto target; // ok
 	}
@@ -302,7 +302,7 @@ int s() {
 int t() {
 	int count = 0;
 	{
-		target:
+target:
 		defer { fputs("cat says ", stdout); }
 		++count;
 		if (count <= 2) {
@@ -317,7 +317,7 @@ int u() {
 	int count = 0;
 	{
 		defer { fputs("cat says", stdout); }
-		target:
+	target:
 		if (count < 5) {
 			++count;
 			goto target; // ok
@@ -329,7 +329,7 @@ int u() {
 
 int v() {
 	int count = 0;
-	target: if (count >= 2) {
+target: if (count >= 2) {
 		fputs("meow", stdout);
 		return 1; // prints "cat says cat says meow "
 	}
@@ -569,4 +569,4 @@ The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 7 apply
 
 == The `thrd_create` function
 
-In addition to the description and return requirements in the document, when `thrd_start_t func` parameter is returned from, it behaves as if it also runs any defer statements before invoking `thrd_exit` with the returned value.
+In addition to the description and return requirements in the document, when `thrd_start_t func` parameter is returned from, it behaves as if it also runs any defer statements that are in scope for `func` before invoking `thrd_exit` with the returned value.

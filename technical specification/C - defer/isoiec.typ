@@ -74,8 +74,6 @@ Examples are provided to illustrate possible forms of the constructions describe
 	iso: false,
 	contents
 ) = {
-let special_headings = ("Syntax", "Constraints", "Semantics", "Description", "Returns", "Runtime-constraints", "Environmental limits", "Recommended practice")
-let special_headings_regex = regex(special_headings.join("|"))
 if stage == none {
 	stage = "wd"
 }
@@ -86,6 +84,43 @@ let stage_enum = if stage == "wd" or stage == "working draft" { 0 }
 else if stage == "cd" or stage == "committee draft" { 1 }
 else if stage == "dis" or stage == "draft international stage" { 2 }
 else if stage == "publication" { 3 } else { none }
+let special_headings = ("Syntax", "Constraints", "Semantics", "Description", "Returns", "Runtime-constraints", "Environmental limits", "Recommended practice", "Requirements")
+let special_headings_regex = regex(special_headings.join("|"))
+// special numbering function
+let special_headings_numbering(level, context_location, ..nums) = {
+	let heading_nums = nums.pos()
+	let special_heading_elements = {
+		let special_heading_selector = heading.where(body: text(special_headings.at(0)))
+		for s in special_headings.slice(1) {
+			special_heading_selector = special_heading_selector.or(heading.where(body: text(s)))
+		}
+		if level > 1 {
+			let prev_section_header = query(heading.where(level: level - 1).before(context_location)).last()
+			special_heading_selector = special_heading_selector.after(prev_section_header.location()).before(context_location)
+		}
+		query(special_heading_selector)
+	}
+	if special_heading_elements.len() < 1 {
+		return heading_nums
+	}
+	let special_headings_count = ()
+	for e in special_heading_elements {
+		let index = e.level - 1
+		while special_headings_count.len() < e.level {
+			special_headings_count.push(0)
+		}
+		special_headings_count.at(index) += 1
+	}
+	let fixed_nums = ()
+	let index = 0
+	for i in heading_nums {
+		let updated_value = i - special_headings_count.at(index, default: 0)
+		let positive_updated_value = if updated_value < 0 { 0 } else { updated_value }
+		fixed_nums.push(positive_updated_value)
+		index += 1
+	}
+	fixed_nums
+}
 // general page settings, header/footer, initial settings
 // and styling
 set document(title: title, author: authors, keywords: keywords)
@@ -142,21 +177,16 @@ show raw.where(block: true): code => {
 
 set heading(numbering: none)
 show heading: it => if it.body.has("text") and type(it.body.text) == str and it.body.text.find(special_headings_regex) != none {
-	let current_heading_depths = counter(heading).get()
-	if type(it.depth) == int {
-		let target = it.depth - 1
-		let old_value = current_heading_depths.at(target)
-		current_heading_depths.at(target) = old_value - 1
-		counter(heading).update(current_heading_depths)
-	}
 	pad(bottom: 1em, it.body)
 }
 else {
 	grid(
 		columns: (auto, auto),
-		if it.numbering != none and counter(heading).get().at(0) > 0 {
+		if it.numbering != none {
 			let number = if it.numbering != none {
-				numbering(it.numbering, ..counter(heading).at(it.location()))
+				let header_nums = counter(heading).at(it.location())
+				let adjusted_header_nums = special_headings_numbering(it.level, here(), ..header_nums)
+				numbering(it.numbering, ..adjusted_header_nums)
 			}
 			else {
 				counter(heading).display()
@@ -185,7 +215,9 @@ show outline.entry: entry => {
 		let is_special_heading = elem.body != none and elem.body.has("text") and type(elem.body.text) == str and elem.body.text.find(special_headings_regex) != none
 		if not is_special_heading {
 			let number = if elem.numbering != none {
-				numbering(elem.numbering, ..counter(heading).at(elem.location()))
+				let header_nums = counter(heading).at(elem.location())
+				let adjusted_header_nums = special_headings_numbering(elem.level, elem.location(), ..header_nums)
+				numbering(elem.numbering, ..adjusted_header_nums)
 			}
 			let fill = box(width: 1fr, entry.fill)
 			let entry_content = entry.indented(number, [#elem.body #fill #entry.page()], gap: 1.5em)
@@ -331,7 +363,7 @@ set par(justify: true)
 {
 	// block this out so the heading/parapgrah settings
 	// don't extend beyond the provided content of the template
-	set heading(outlined: true, bookmarked: true, numbering: "1.1.1.1")
+	set heading(outlined: true, bookmarked: true, numbering: "1.")
 	show par: it => {
 		if not iso {
 			move(dx: -1.8em,
