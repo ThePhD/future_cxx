@@ -1,10 +1,10 @@
 <pre class='metadata'>
 Title: Transparent Aliases
-Shortname: 36XX
+Shortname: 3689
 Revision: 6
 !Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3487.htm">N3487 (r5)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3329.htm">N3329 (r4)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3200.htm">N3200 (r3)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2970.htm">N2970 (r2)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2901.htm">N2901 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n2729.htm">N2729 (r0)</a>
 Status: P
-Date: 2025-08-29
+Date: 2025-09-22
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -33,10 +33,13 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 6 - August 29<sup>th</sup>, 2025 ## {#changelog-r6}
+## Revision 6 - September 22<sup>th</sup>, 2025 ## {#changelog-r6}
 
 - Added a future direction in [[#future-struct]].
 - Added a section about macros in [[#motivation-macros]].
+- Added a new section on the differences between `typedef`-style syntax and assignment-style syntax ([[#design-syntax-typedef]]), with wording for each version ([[#wording-6.7.new-typedef.simple]], [[#wording-6.7.new-assignment]]).
+- Added important point about existing implementations at the bottom of [[#motivation-typedefs]], specifically:
+	- > Finally, if C was capable of evolution beyond this point, implementations would not **routinely** show up to WG14 meetings and reject simple changes for things like `intmax_t`-based functions by citing "ABI concerns" -- or lodge complaints against changing `printf` due to "behavioral changes" to existing code that isn't recompiled -- if the things implementations could do had been enough. If we are bound by our least-successful, least-powerful conforming implementation, then...
 - Wording fixes.
 	- Use parenthetical for "(directly or indirectly ...)" to make it clear a transparent alias itself does not have internal linkage.
 	- Change type of `otter` declarations in shadowing Example 7, to highlight matching on the previous declaration.
@@ -103,6 +106,8 @@ Library functions in a "very vanilla" implementation of a C Standard Library (e.
 
 Furthermore, macros cannot be used to "smooth" over the "real function call" because §7.1.4 specifically states that a user of the standard library has the right to deploy macro-suppressing techniques (e.g., `(imaxabs)(24)`) to call a library function (unless the call is designated to be a macro). This also includes preventing their existence as a whole with `#undef imaxabs`: every call after that `#undef` directive to `imaxabs(...)` must work and compile according to the Standard. While this guarantees users that they can always get a function pointer or a "real function name" from a given C Standard library function name, it also refuses implementations the ability to provide backwards compatibility shims using the only Standards-applicable tool in C and C++.
 
+Finally, if C was capable of evolution beyond this point, implementations would not **routinely** show up to WG14 meetings and reject simple changes for things like `intmax_t`-based functions by citing "ABI concerns" -- or lodge complaints against changing `printf` due to "behavioral changes" to existing code that isn't recompiled -- if the things implementations could do had been enough. If we are bound by our least-successful, least-powerful conforming implementation, then the only way to escape this problem is to standardize the existing practice in a way that all implementations can take advantage of. Otherwise, we are going to remain stuck indefinitely as implementations wield the ABI-veto correctly, but indefinitely.
+
 
 
 ## Liaison Issue - Stopping C++ Improvements ## {#motivation-liaison}
@@ -149,7 +154,7 @@ At the surface of this issue and as illustrated by the many failed — and one s
 
 ## Macro Issues ## {#motivation-macros}
 
-Macros have problems with lack of name spacing / scoping, no type checking, and making it difficult to write normal, correct code that does not trample on the user. This is egregious for any library writer providing code for other users, but is doubly egregious for the C standard library itself which reserves and takes over many common, unprefixed names. Consider, for example, this code that defines `free` as a function-like macro for `<stdlib.h>`:
+Macros have problems with lack of name spacing / scoping, no type checking, and making it difficult to write normal, correct code that does not trample on the user. This is egregious for any library writer providing code for other users, but is doubly egregious for the C standard library itself which reserves and takes over many common,non-prefixed names. Consider, for example, this code that defines `free` as a function-like macro for `<stdlib.h>`:
 
 ```cpp
 /* stdlib.h */
@@ -316,9 +321,11 @@ extern __int128_t __glibc_imaxabs229(__int128_t);
 /* ... */
 
 #if __GNU_LIBC <= 228
-	_Alias imaxabs = __glibc_imaxabs228;
+	typedef long long intmax_t;          // typedef does type
+	_Alias imaxabs = __glibc_imaxabs228; // _Alias does function
 #else
-	_Alias imaxabs = __glibc_imaxabs229;
+	typedef __int128_t intmax_t;         // typedef does type
+	_Alias imaxabs = __glibc_imaxabs229; // _Alias does function
 #endif
 
 /* ... */
@@ -539,6 +546,14 @@ typeof(b) a = b;
 
 This is much more palatable, but violates the rule of "don't repeat yourself". Repeating ourselves leaves the potential, still, for slight misspellings between what is inside of `typeof` and what is at the other end of the equal (`=`) sign. We would like to replace this potential redunancy with a simple token instead, as this would also allow us to avoid ambiguity or figure out how to work such syntax into the "declarator" grammar construction (which is not impossible, just less palatable). Therefore, we do not pursue this option for the syntax of this feature. The other problem with this is that no function definition/declaration works in this manner, and such types are usually "adjusted" to being function pointers anyways.
 
+
+### `_Alias` as a `typedef`? ### {#design-syntax-typedef}
+
+There is a wording choice below for both `typedef`-style [[#wording-6.7.new-typedef.simple]] and assignment-style [[#wording-6.7.new-assignment]]. However, we want to point out that this syntax construction is not slotted into the current storage specifier / type specifier declarator syntax, nor do we remake the declarator syntax for the `typedef`-style `_Alias` in the wording. It is restricted entirely to having the simple form of `_Alias old_blah new_blah;`.
+
+This is because declarator syntax in C is **exceedingly** complicated and ultimately an enormous hassle to handle visually for human beings. Specifically, `typedef` is what is called a "storage class specifier", and that has a grammar position that is much more flexible than what we would like to allow. Following the `typedef` syntax implies we are carrying these (questionable?) design decisions over to Transparent Aliases insofar as how they can look, and we don't want to do that.
+
+That being said, we still offer the syntax choice, just under a different syntax form. Rather than putting it under the typical declaration syntax, it is a separate entry, similar to `static_assert`.
 
 
 ## The literal word `_Alias` ## {#design-name}
@@ -962,7 +977,10 @@ inline definition) or an object. If an identifier declared with external linkage
 
 
 
-## Add a new sub-clause "§6.7.✨ Transparent alias" somewhere after "6.7.9 Type definitions" ## {#wording-6.7.✨}
+## Add a new sub-clause "§6.7.✨ Transparent alias" somewhere after "6.7.9 Type definitions" ## {#wording-6.7.new}
+
+
+### CHOICE 1: ASSIGNMENT SYNTAX ### {#wording-6.7.new-assignment}
 
 <blockquote>
 <ins>
@@ -991,6 +1009,73 @@ Description
 <div class="wording-numbered">
 
 Let the identifier on the left hand side be the *transparent alias name* and the identifier on the right hand side be the *transparent alias target*.
+</div>
+
+</div>
+
+</ins>
+</blockquote>
+
+
+### CHOICE 2: SIMPLE TYPEDEF SYNTAX ### {#wording-6.7.new-typedef.simple}
+
+<blockquote>
+<ins>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.7.✨</span><span class="wording-clause-title">Transparent aliases</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+
+*transparent-alias-declaration:*
+
+:: *attribute-specifier-sequence*<sub>opt</sub> **_Alias** *identifier* *identifier* **;**
+
+</div>
+
+<div class="wording-clause-section-title">
+Description
+</div>
+
+<div class="wording-numbered">
+
+Let the first identifier the *transparent alias target* and the second identifier be the *transparent alias name*.
+</div>
+
+</div>
+
+</ins>
+</blockquote>
+
+
+### "6.7.✨ Transparent Aliases" wording that does not change between CHOICES ### {#wording-6.7.new-unchanged}
+
+<blockquote>
+<ins>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.7.✨</span><span class="wording-clause-title">Transparent aliases</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-numbered">
+
+...
+</div>
+
+<div class="wording-clause-section-title">
+Description
+</div>
+
+<div class="wording-numbered">
+
+...
 </div>
 
 <div class="wording-clause-section-title">

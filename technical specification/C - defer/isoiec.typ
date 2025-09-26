@@ -71,7 +71,7 @@ Examples are provided to illustrate possible forms of the constructions describe
 	stage: none,
 	date: none,
 	no_boilerplate: false,
-	iso: false,
+	iso: if sys.inputs.at("iso", default: "false") == "true" { true } else { false },
 	contents
 ) = {
 if stage == none {

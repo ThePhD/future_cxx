@@ -4,10 +4,9 @@
 	title: "Programming Languages — C — defer, a mechanism for general purpose, lexical scope-based undo",
 	authors: ("JeanHeyd Meneide (wg14@soasis.org)"),
 	keywords: ("C", "defer", "ISO/IEC 9899", "Technical Specification", "Safety", "Resource"),
-	id: "NXY41",
+	id: "N3688",
 	ts_id: "25755",
 	stage: "cd",
-	iso: if sys.inputs.at("iso", default: "false") == "true" { true } else { false },
 	abstract: [The advent of resource leaks in programs created with ISO/IEC 9899#index[ISO/IEC 9899] ⸺ Programming Languages, C has necessitated the need for better ways of tracking and automatically releasing resources in a given scope. This document provides a feature to address this need in a reliable, translation-time, opt-in manner for implementations to furnish to programmers.],
 	doc
 )
@@ -129,14 +128,14 @@ When execution reaches a defer statement#index[defer statement] _D_ and its scop
 
 The execution is done just before leaving the enclosing block _E_ and/or the scope of _D_. In particular ```c return``` expressions (and conversion to return values)#index("conversions") are calculated before executing _S_.
 
-Multiple defer statements#index[defer statement] execute their _S_ in the reverse order they appeared in _E_. Within a single defer statement#index[defer statement] _D_, if _D_ contains one or more defer statements#index[defer statement] _D#sub[sub]_ of its own, then the _S#sub[sub]_ of the _D#sub[sub]_ aare also executed in reverse order at the termination and/or exit of _S_ and/or _D#sub[sub]_'s scope, recursively, according to the rules of this subclause.
+Multiple defer statements#index[defer statement] execute their _S_ in the reverse order they appeared in _E_. Within a single defer statement#index[defer statement] _D_, if _D_ contains one or more defer statements#index[defer statement] _D#sub[sub]_ of its own, then the _S#sub[sub]_ of the _D#sub[sub]_ areWalso executed in reverse order at the termination and/or exit of _E#sub[sub]_ and/or _D#sub[sub]_'s scope, recursively, according to the rules of this subclause.
 
 If a non-local jump #index("non-local jump") is used in _D_'s scope but before the execution of the _S_ of _D_:
 
 - if execution leaves _D_'s scope, _S_ is not executed;
 - otherwise, if control returns to a point in _E_ and causes _D_ to be reached more than once, the effect is the same as reaching _D_ only once.
 
-#note() The "execution" of a defer statement#index[defer statement] only enures that _S_ is run on any exit from that scope. There is no observable side effect to repeat from reaching _D_, as the manifestation of any of the effects of _S_ happen if and only if _E_ is exited or terminated after reaching _D_, as previously specified. "Tracking" of reached defer statements at execution time is not necessary: if the non-local jump leaves the scope it is not executed (forgotten); and, if its reached again it behaves as it would during normal execution.
+#note() The "execution" of a defer statement#index[defer statement] only enures that _S_ is run on any exit from that scope. There is no observable side effect to repeat from reaching _D_, as the manifestation of any of the effects of _S_ happen if and only if the scope of _D_ is exited or terminated after reaching _D_, as previously specified. "Tracking" of reached defer statements at execution time is not necessary: if the non-local jump leaves the scope it is not executed (forgotten); and, if its reached again it behaves as it would during normal execution.
 
 
 If a non-local jump #index("non-local jump") is executed from _S_ and control leaves _S_, the behavior is undefined#index("undefined behavior").
