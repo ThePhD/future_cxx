@@ -1,10 +1,10 @@
 <pre class='metadata'>
 Title: Thread Attributes - Implementation Extensible and ABI-Resistant
-Shortname: X101
+Shortname: 3690
 Revision: 2
-!Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3554.htm">n3554 (r0)</a>
+!Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3627.htm">n3627 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3554.htm">n3554 (r0)</a>
 Status: P
-Date: 2025-08-07
+Date: 2025-09-26
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -43,6 +43,13 @@ path: resources/css/bikeshed-wording.html
 ## Revision 2 - August 18<sup>th</sup>, 2025 ## {#changelog-r2}
 
 - Some prose fixes for the underlying type and similar things.
+- Gut the API of most of the string stuff to avoid the constant bike-shedding.
+- Change the API at [[ztd.thread]] to conform to the changes requested by WG14.
+- Add a `THRD_NAME_LEN_MAX` macro, representing the maximum number of bytes.
+- Wording fixes and changes.
+	- Move all of the changes related to reserved identifiers to the future directions section.
+	- Remove all of the hardcoded values except for the implementation-defined enumeration constant. That is worth keeping.
+	- All field names are prefixed with `thrd_` to prevent clashes with poorly-named macros.
 
 
 ## Revision 1 - July 6<sup>th</sup>, 2025 ## {#changelog-r1}
@@ -228,6 +235,8 @@ The API relies on 2 core language features to work:
 - the pointer to the first member of a structure is identical to the pointer of the structure itself;
 - and, casting from that first member to a pointer based on the value of that first member is well-defined behavior.
 
+While the example implementation at [[ztd.thread]] allows for specifying the UTF-16 and UTF-32 name -- as well as names with their sizes to prevent additional buffer copying -- WG14 was very against this due to "API bloat". So, it's been cut. It can be added back later or provided by implementations that prioritize zero-padding.
+
 In particular, there is a `thrd_attr_kind` enumeration type that is the first member of a structure. It is a tag that tells the implementation what to cast a pointer of that type to, to interpret the full structure. It is also the first member of every thread attribute structure, which means it has the same address as the structure itself. This allows an array of `thrd_attr_kind` pointers to be passed to `thrd_create_attrs` that can be used as a standard and well-defined type-punning point and a sort of "tag" to determine which structure to cast to internally. The full enumeration and API looks as such:
 
 ```cpp
@@ -235,98 +244,38 @@ In particular, there is a `thrd_attr_kind` enumeration type that is the first me
 #include <stdint.h>
 
 typedef enum thrd_attr_kind : uint_least32_t {
-	thrd_attr_kind_native_name,
-	thrd_attr_kind_native_name_sized,
 	thrd_attr_kind_mcname,
-	thrd_attr_kind_mcname_sized,
 	thrd_attr_kind_mwcname,
-	thrd_attr_kind_mwcname_sized,
 	thrd_attr_kind_c8name,
-	thrd_attr_kind_c8name_sized,
-	thrd_attr_kind_c16name,
-	thrd_attr_kind_c16name_sized,
-	thrd_attr_kind_c32name,
-	thrd_attr_kind_c32name_sized,
 	thrd_attr_kind_stack_size,
 	thrd_attr_kind_detached,
 
 	thrd_attr_kind_implementation_defined = 0xFFFF,
 } thrd_attr_kind;
 
-typedef struct thrd_attr_native_name {
-	thrd_attr_kind kind;
-	const void* name;
-} thrd_attr_native_name;
-
-typedef struct thrd_attr_native_name_sized {
-	thrd_attr_kind kind;
-	size_t size;
-	const void* name;
-} thrd_attr_native_name_sized;
-
 typedef struct thrd_attr_mcname {
-	thrd_attr_kind kind;
-	const char* name;
+	thrd_attr_kind thrd_kind;
+	const char* thrd_name;
 } thrd_attr_mcname;
 
-typedef struct thrd_attr_mcname_sized {
-	thrd_attr_kind kind;
-	size_t size;
-	const char* name;
-} thrd_attr_mcname_sized;
-
 typedef struct thrd_attr_mwcname {
-	thrd_attr_kind kind;
-	const wchar_t* name;
+	thrd_attr_kind thrd_kind;
+	const wchar_t* thrd_name;
 } thrd_attr_mwcname;
 
-typedef struct thrd_attr_mwcname_sized {
-	thrd_attr_kind kind;
-	size_t size;
-	const wchar_t* name;
-} thrd_attr_mwcname_sized;
-
 typedef struct thrd_attr_c8name {
-	thrd_attr_kind kind;
-	const char8_t* name;
+	thrd_attr_kind thrd_kind;
+	const char8_t* thrd_name;
 } thrd_attr_c8name;
 
-typedef struct thrd_attr_c8name_sized {
-	thrd_attr_kind kind;
-	size_t size;
-	const char8_t* name;
-} thrd_attr_c8name_sized;
-
-typedef struct thrd_attr_c16name {
-	thrd_attr_kind kind;
-	const char16_t* name;
-} thrd_attr_c16name;
-
-typedef struct thrd_attr_c16name_sized {
-	thrd_attr_kind kind;
-	size_t size;
-	const char16_t* name;
-} thrd_attr_c16name_sized;
-
-typedef struct thrd_attr_c32name {
-	thrd_attr_kind kind;
-	const char32_t* name;
-} thrd_attr_c32name;
-
-typedef struct thrd_attr_c32name_sized {
-	thrd_attr_kind kind;
-	size_t size;
-	const char32_t* name;
-} thrd_attr_c32name_sized;
-
 typedef struct thrd_attr_stack_size {
-	thrd_attr_kind kind;
-	size_t size;
+	thrd_attr_kind thrd_kind;
+	size_t thrd_size;
 } thrd_attr_stack_size;
 
 typedef struct thrd_attr_detached {
-	thrd_attr_kind kind;
-	bool detached;
+	thrd_attr_kind thrd_kind;
+	bool thrd_detached;
 } thrd_attr_detached;
 
 typedef int(thrd_attr_err_func_t)(const thrd_attr_kind[static 1], int err, void* err_func_arg);
@@ -343,7 +292,7 @@ int thrd_create_attrs_err(thrd_start_func func, void* arg,
 
 ## Thread Attribute Kind & ABI-Resistance ## {#design-attr_kind}
 
-The thread attribute kind enumeration has 65,536 reserved values [0, 65'535] for the standard, and 4294967295 reserved values [65'636, 4,294,967,295] for implementation-defined attributes. It is important to have a minimum supported number of values in the case that someone hard-codes a value when using the API that is e.g. greater than what a 16-bit `thrd_attr_kind` can handle: this could lead to accidental truncation of the value. Such a truncation could result in the incorrect interpretation of the value. An implementation can add more attributes to cover more cases and information that the standard could not conceivably provide a unified interface for, such as:
+The thread attribute kind enumeration has 65,535 reserved values `[0, 65'535)` for the standard, and 4294967295 reserved values [65'636, 4,294,967,295] for implementation-defined attributes. It is important to have a minimum supported number of values in the case that someone hard-codes a value when using the API that is e.g. greater than what a 16-bit `thrd_attr_kind` can handle: this could lead to accidental truncation of the value. Such a truncation could result in the incorrect interpretation of the value. An implementation can add more attributes to cover more cases and information that the standard could not conceivably provide a unified interface for, such as:
 
 - stack address + stack size (POSIX Threads);
 - starting "Suspended" (Win32 Threads);
@@ -367,12 +316,9 @@ There are 14 different provided structures and 14 different enumeration constant
 
 - `thrd_attr_stack_size`: takes a `size_t` and communicates the size (in bytes) of the stack.
 - `thrd_attr_detached`: takes a `bool` and communicates that the thread should be detached at the very start.
-- `thrd_attr_c8name`, `thrd_attr_c8name_sized`: takes a `const char8_t*` or a `const char8_t*` + `size_t`, respectively. It represents a UTF-8-encoded name. The name is converted to the desired internal encoding of the thread name. Must be terminated by a null `char8_t` value, or not contain a null `char8_t` value within the buffer denoted by the range, respectively. The pointer may be null.
-- `thrd_attr_c16name`, `thrd_attr_c16name_sized`: takes a `const char16_t*` or a `const char16_t*` + `size_t`, respectively. It represents a UTF-16-encoded name. The name is converted to the desired internal encoding of the thread name. Must be terminated by a null `char16_t` value, or not contain a null `char16_t` value within the buffer denoted by the range, respectively. The pointer may be null.
-- `thrd_attr_c32name`, `thrd_attr_c32name_sized`: takes a `const char32_t*` or a `const char32_t*` + `size_t`, respectively. It represents a UTF-32-encoded name. The name is converted to the desired internal encoding of the thread name. Must be terminated by a null `char32_t` value, or not contain a null `char32_t` value within the buffer denoted by the range, respectively. The pointer may be null.
-- `thrd_attr_mcname`, `thrd_attr_mcname_sized`: takes a `const char*` or a `const char*` + `size_t`, respectively. It represents an execution encoding-encoded name. The name is converted to the desired internal encoding of the thread name. Must be terminated by a null `char` value, or not contain a null `char` value within the buffer denoted by the range, respectively. The pointer may be null.
-- `thrd_attr_mwcname`, `thrd_attr_mwcname_sized`: takes a `const wchar_t*` or a `const wchar_t*` + `size_t`, respectively. It represents a wide execution-encoded name. The name is converted to the desired internal encoding of the thread name. Must be terminated by a null `wchar_t` value, or not contain a null `wchar_t` value within the buffer denoted by the range, respectively. The pointer may be null.
-- `thrd_attr_native_name`, `thrd_attr_native_name_sized`: takes a `const void*` or a `const void*` + `size_t`, respectively, and has its value copied directly into the thread. It's performs no transformations or permutations on the name. The pointed-to data must not have a sequence of zero bytes of a length chosen by the implementation (typically 1 on POSIX implementations and 2 on Windows implementations). This is explicitly for sending data directly to the threading API without any conversions.
+- `thrd_attr_c8name`: takes a `const char8_t*`. It represents a UTF-8-encoded name. The name is converted to the desired internal encoding of the thread name. Must be terminated by a null `char8_t` value, or not contain a null `char8_t` value within the buffer denoted by the range, respectively. The pointer may be null.
+- `thrd_attr_mcname`: takes a `const char*`. It represents an execution encoding-encoded name. The name is converted to the desired internal encoding of the thread name. Must be terminated by a null `char` value, or not contain a null `char` value within the buffer denoted by the range, respectively. The pointer may be null.
+- `thrd_attr_mwcname`: takes a `const wchar_t*`. It represents a wide execution-encoded name. The name is converted to the desired internal encoding of the thread name. Must be terminated by a null `wchar_t` value, or not contain a null `wchar_t` value within the buffer denoted by the range, respectively. The pointer may be null.
 
 
 
@@ -394,7 +340,7 @@ Given this behavior, it's better to provide this as an on-creation technique, wh
 
 
 
-### `thrd_attr_{mwc/mc/c(8|16|32|native)name}` ### {#design-attrs-thrd_attr_name}
+### `thrd_attr_{mwc/mc/c8}name` ### {#design-attrs-thrd_attr_name}
 
 The name attributes are necessary because platforms differ **wildly** in how they can set the name. Some can only set the name inside of the thread after it has been started (many POSIX thread implementations); others can create a thread in suspended mode and then set all of the necessary information (Win32 Threads, IBM-styled POSIX threads).
 
@@ -402,9 +348,7 @@ Furthermore, the actual internal storage, encoding, and more of threads varies a
 
 Thusly, to not unduly disadvantage any platform, we provide the 5 typical encodings that can be mapped to the internals of the implementation however they like. For example, POSIX platforms can take UTF-32, UTF-16, and Wide Execution encoded strings and convert them to UTF-8 or Execution encoded byte strings so that the null termination character is only a single byte and the whole name can be serialized properly. Windows can take UTF-32, UTF-8, and Execution encoded strings and convert them into 16-bit UTF-16/Wide Execution strings so that it has a proper 2-byte null terminator.
 
-Finally, for individuals who feel confident that their name will closely match the platform's semantics, there is a plain `thrd_attr_native_name`, which holds a `const void*`. This can just be copied directly into an implementation, and the consequences will be whatever happens.
-
-As a very, very important point: the strings passed in through these functions have no lifetime implications after `thrd_create_with_attrs` returns. They can be rewritten, changed, adjusted, or freed once the `thrd_create_with_attrs` function returns: all implementations tend to copy the names into some form of internal data anyways.
+As a very, very important point: the strings passed in through these functions have no lifetime implications after `thrd_create_with_attrs` returns. They can be rewritten, changed, adjusted, or freed once the `thrd_create_with_attrs` function returns: all implementations tend to copy the names into some form of internal data, so we solidify this practice since it is the most thread-safe way to handle this.
 
 If there is appetite to provide a string just via pointer where the lifetime of that string must be kept alive for the duration of the thread, additional attribute types can be created to offer that to standard users. The goal would, of course, be for implementations that do not have any internal storage to hold onto the smallest possible string VIA pointer alone and simply let the user manage both the data and the lifetime. However, we have encountered no platforms that have requested this hypothetical optimization, so a special `thrd_attr_static_name` structure has not been provided.
 
@@ -441,7 +385,7 @@ inline static int thrd_main(void* arg) {
 
 int handle_attribute_errors(const thrd_attr_kind* attr_kind, int err, void* userdata) {
 	(void)userdata;
-	if (*attr_kind == thrd_attr_kind_c32name) {
+	if (*attr_kind == thrd_attr_kind_c8name) {
 		// we don't care if name is unrecognized: not critical to us
 		printf("We could not set the name of the thread "
 			"with a UTF-32 string (%d)", err);
@@ -458,9 +402,9 @@ int handle_attribute_errors(const thrd_attr_kind* attr_kind, int err, void* user
 int main(void) {
 	thrd_t t0 = {};
 
-	thrd_attr_c32name name_attr = {
-		.kind = thrd_attr_kind_c32name,
-		.name = U"meow?!"
+	thrd_attr_c8name name_attr = {
+		.kind = thrd_attr_kind_c8name,
+		.name = u8"meow?!"
 	};
 	thrd_attr_stack_size stack_size_attr = {
 		.kind = thrd_attr_kind_stack_size,
@@ -543,7 +487,41 @@ The following wording is against the latest draft of the C standard.
 <blockquote>
 <div class="wording-section">
 
+<div class="wording-numbered wording-numbered-3">
+
+The macros are
+
+```c
+ONCE_FLAG_INIT
+```
+
+which expands to a value that can be used to initialize an object of type once_flag; <del>and</del>
+
+```c
+TSS_DTOR_ITERATIONS
+```
+
+which expands to an integer constant expression representing the maximum number of times that
+destructors will be called when a thread terminates;<ins> and,
+
+```c
+THRD_NAME_LEN_MAX
+```
+
+which expands to a integer constant expression suitable for use in conditional expression inclusion preprocessing directives representing the maximum number of bytes that the implementation can retain internally when using thread attributes (7.30.2✨).
+
+</ins>
+</div>
+
 <div class="wording-numbered wording-numbered-4">
+<ins>
+
+NOTE&emsp;&emsp;While `THRD_NAME_LEN_MAX` provides a maximum limit to the number of internal characters, what an implementation does when a provided thread name is longer than `THRD_NAME_LEN_MAX` is implementation-defined. Implementations can potentially produces an error in the `thrd_create_attrs_err` function, or accept the input name but truncate it. `THRD_NAME_LEN_MAX` can be applied against the provided thread name after an internal conversion has been performed, meaning names provided through, for example, `thrd_attr_mwcname` may seem short in the wide execution encoding but could be longer in a potential internal unspecified encoding used for the storage of such name, if honored.
+
+</ins>
+</div>
+
+<div class="wording-numbered wording-numbered-5">
 
 ...
 
@@ -568,85 +546,33 @@ thrd_attr_err_func_t
 which is the function type `int (const thrd_attr_kind*, int, void*)` that is passed to `thrd_create_attrs_err` to handle errors in thread attribute application;
 
 ```c
-typedef struct thrd_attr_native_name {
-	thrd_attr_kind kind;
-	const void* name;
-} thrd_attr_native_name;
-
-typedef struct thrd_attr_native_name_sized {
-	thrd_attr_kind kind;
-	size_t size;
-	const void* name;
-} thrd_attr_native_name_sized;
-
 typedef struct thrd_attr_mcname {
-	thrd_attr_kind kind;
-	const char* name;
+	thrd_attr_kind thrd_kind;
+	const char* thrd_name;
 } thrd_attr_mcname;
 
-typedef struct thrd_attr_mcname_sized {
-	thrd_attr_kind kind;
-	size_t size;
-	const char* name;
-} thrd_attr_mcname_sized;
-
 typedef struct thrd_attr_mwcname {
-	thrd_attr_kind kind;
-	const wchar_t* name;
+	thrd_attr_kind thrd_kind;
+	const wchar_t* thrd_name;
 } thrd_attr_mwcname;
 
-typedef struct thrd_attr_mwcname_sized {
-	thrd_attr_kind kind;
-	size_t size;
-	const wchar_t* name;
-} thrd_attr_mwcname_sized;
-
 typedef struct thrd_attr_c8name {
-	thrd_attr_kind kind;
-	const char8_t* name;
+	thrd_attr_kind thrd_kind;
+	const char8_t* thrd_name;
 } thrd_attr_c8name;
 
-typedef struct thrd_attr_c8name_sized {
-	thrd_attr_kind kind;
-	size_t size;
-	const char8_t* name;
-} thrd_attr_c8name_sized;
-
-typedef struct thrd_attr_c16name {
-	thrd_attr_kind kind;
-	const char16_t* name;
-} thrd_attr_c16name;
-
-typedef struct thrd_attr_c16name_sized {
-	thrd_attr_kind kind;
-	size_t size;
-	const char16_t* name;
-} thrd_attr_c16name_sized;
-
-typedef struct thrd_attr_c32name {
-	thrd_attr_kind kind;
-	const char32_t* name;
-} thrd_attr_c32name;
-
-typedef struct thrd_attr_c32name_sized {
-	thrd_attr_kind kind;
-	size_t size;
-	const char32_t* name;
-} thrd_attr_c32name_sized;
-
 typedef struct thrd_attr_stack_size {
-	thrd_attr_kind kind;
-	size_t size;
+	thrd_attr_kind thrd_kind;
+	size_t thrd_size;
 } thrd_attr_stack_size;
 
 typedef struct thrd_attr_detached {
-	thrd_attr_kind kind;
-	bool detached;
+	thrd_attr_kind thrd_kind;
+	bool thrd_detached;
 } thrd_attr_detached;
 ```
 
 which represent standard thread attribute structures that are described in 7.30.2✨;
-
 </ins>
 
 ...
@@ -654,29 +580,26 @@ which represent standard thread attribute structures that are described in 7.30.
 </div>
 
 <div class="wording-numbered wording-numbered-6">
+
+...
+
+</div>
+
+<div class="wording-numbered wording-numbered-7">
 <ins>
 
 The enumeration constants part of `thrd_attr_kind` are
 
 ```c
-thrd_attr_kind_native_name
-thrd_attr_kind_native_name_sized
 thrd_attr_kind_mcname
-thrd_attr_kind_mcname_sized
 thrd_attr_kind_mwcname
-thrd_attr_kind_mwcname_sized
 thrd_attr_kind_c8name
-thrd_attr_kind_c8name_sized
-thrd_attr_kind_c16name
-thrd_attr_kind_c16name_sized
-thrd_attr_kind_c32name
-thrd_attr_kind_c32name_sized
 thrd_attr_kind_stack_size
 thrd_attr_kind_detached
 thrd_attr_kind_implementation_defined = 0xFFFF
 ```
 
-and are set as the value of the `kind` member field of thread attributes described in 7.30.2✨. They provide a way to uniquely identify each thread attribute, except for the `thrd_attr_kind_implementation_defined` which has no associated structure. `thrd_attr_kind` is capable of holding values $0$ to $2^{32}-1$.
+and are set as the value of the `thrd_kind` member field of thread attributes described in 7.30.2✨. They provide a way to uniquely identify each thread attribute, except for the `thrd_attr_kind_implementation_defined` which has no associated structure. `thrd_attr_kind` is capable of holding values $0$ to $2^{32}-1$.
 </ins>
 </div>
 
@@ -705,28 +628,29 @@ The thread attribute enumeration and structures listed in the preceding subclaus
 
 <div class="wording-numbered">
 
-For `thrd_create_attrs` and `thrd_create_attrs_err` function calls, it is unspecified which `attr` is applied in `attrs` if more than one of any standard thread attribute is used in the `attrs` array. Additionally, it is unspecified which name `attr` in the `attrs` array is applied if more than one of `thrd_attr_native_name`, `thrd_attr_mcname`, `thrd_attr_mwcname`, `thrd_attr_c8name`, `thrd_attr_c16name`, `thrd_attr_c32name`, or any of their `_sized` counterparts, is provided.
+For `thrd_create_attrs` and `thrd_create_attrs_err` function calls, it is unspecified which `attr` is applied in `attrs` if more than one of any standard thread attribute is used in the `attrs` array. Additionally, it is unspecified which name `attr` in the `attrs` array is applied if more than one of `thrd_attr_mcname`, `thrd_attr_mwcname`, or `thrd_attr_c8name`, is provided.
 </div>
 
 <div class="wording-numbered">
 
-With the exception of `thrd_attr_kind_implementation_defined`, for every `thrd_attr_kind` enumeration constant defined in this document of the form `thrd_attr_kind_X`, where `X` is the rest of the identifier, there is a corresponding `thrd_attr_X` complete structure type. The `kind` member must be set to the corresponding `thrd_attr_kind_X` enumeration constant's value for every `thrd_attr_X` structure before use with the `thrd_create_attrs` and `thrd_create_attrs_with` functions, otherwise the behavior is undefined.
+With the exception of `thrd_attr_kind_implementation_defined`, for every `thrd_attr_kind` enumeration constant defined in this document of the form `thrd_attr_kind_X`, where `X` is the rest of the identifier, there is a corresponding `thrd_attr_X` complete structure type. The value of `thrd_attr_kind` enumeration constants corresponding to the standard thread attributes shall be less than `thrd_attr_kind_implementation_defined`. The `thrd_kind` member must be set to the corresponding `thrd_attr_kind_X` enumeration constant's value for every `thrd_attr_X` structure before use with the `thrd_create_attrs` and `thrd_create_attrs_with` functions, otherwise the behavior is undefined.
 </div>
 
 <div class="wording-numbered">
 
-An implementation may define subsequent `thrd_attr_kind_Y` enumeration constants as part of the `thrd_attr_kind` enumerated type, where `Y` is the rest of the identifier, for use as implementation-defined thread attributes. The value of such an implementation-defined enumeration constant shall be greater than `thrd_attr_kind_implementation_defined`.
+An implementation may define subsequent `thrd_attr_kind_Y` enumeration constants as part of the `thrd_attr_kind` enumerated type, where `Y` is the rest of the identifier, for use as implementation thread attributes. The value of such an implementation-defined enumeration constant shall be greater than `thrd_attr_kind_implementation_defined`.
 </div>
 
 
 <div class="wording-numbered">
 
-The thread attributes `thrd_attr_mcname`, `thrd_attr_mwcname`, `thrd_attr_c8name`, `thrd_attr_c16name`, and `thrd_attr_c32name` provide a thread with a name encoded in the execution, wide execution, UTF-8, UTF-16, and UTF-32 encodings (6.2.9), respectively, as a null terminated string. If the value of the `name` field is a null pointer, then no change occurs. Otherwise, the value pointed to by the `name` field must be valid for the duration of the function call. The thread attributes of the same name but suffixed with `_sized` provide a thread with the same information, except that the `name` field can be a non-null terminated pointer and whose size is denoted by the field `size`. For these `_sized` thread attributes, the `name` field may not contain an appropriately typed null terminator in the range denoted by the `name` and `size` fields. The range denoted by `name`, or by `name` and `size` for the `_sized`-suffixed thread attributes, are not accessed by the implementation after the `thrd_create_attrs` or `thrd_create_attrs_err` function calls return.
+The thread attributes `thrd_attr_mcname`, `thrd_attr_mwcname`, and `thrd_attr_c8name`, provide a thread with a name encoded in the execution, wide execution, and UTF-8 encodings (6.2.9), respectively, as a null terminated string. If the value of the `thrd_name` field is a null pointer, then no change is made to the thread and the attribute has no effect. Otherwise, the value pointed to by the `thrd_name` field must be valid for the duration of the function call. The range denoted by the null-terminated string `thrd_name` is not accessed by the implementation after the `thrd_create_attrs` or `thrd_create_attrs_err` function calls return.
 </div>
+
 
 <div class="wording-numbered">
 
-The thread attribute `thrd_attr_native_name` provides an pointer to `const void` whose value is meant to be used directly by the implementation to set the name of the thread. It has an implementation-defined encoding. If the `name` field is a null pointer, there is no effect. Otherwise, the pointer shall be null terminated by a sequence of 0 bytes. The number of 0-valued bytes that make up the sequence of that null terminator is implementation-defined. The thread attribute `thrd_attr_native_name_sized` is the same, except that the number of bytes in the `name` field is equal to the value of the `size` field. The `name` field must not contain the implementation-defined null termination byte sequence in the range denoted by the `name` and `size` fields. The range denoted by `name`, or by `name` and `size` for `thrd_attr_native_name_sized`, are not accessed by the implementation after the `thrd_create_attrs` or `thrd_create_attrs_err` function calls return.
+NOTE&emsp;&emsp; If the `thrd_name` field of any of `thrd_attr_mcname`, `thrd_attr_mwcname`, and `thrd_attr_c8name` contains a null pointer, it is not considered an error for the purposes of the `thrd_create_attrs_err` function.
 </div>
 
 <div class="wording-clause-section-title">
@@ -735,7 +659,7 @@ Recommended Practice
 
 <div class="wording-numbered">
 
-The thread attributes `thrd_attr_mcname`, `thrd_attr_mwcname`, `thrd_attr_c8name`, `thrd_attr_c16name`, `thrd_attr_c32name`, and their `_sized`-suffixed analogues, should have their names converted to any unspecified yet appropriate encoding, if necessary, and set as the name of the thread. The thread attributes `thrd_attr_native_name` and `thrd_attr_native_name_sized` should have their name set without any conversion, if possible, as the name of the thread. An implementation should make the name available when thread information, possibly obtained by implementation-defined means, is inspected.
+The thread attributes `thrd_attr_mcname`, `thrd_attr_mwcname`, and `thrd_attr_c8name` should have their names converted to any unspecified yet appropriate encoding, if necessary, and set as the name of the thread. An implementation should make the name available when thread information, possibly obtained by implementation-defined means, is inspected.
 </div>
 
 <div class="wording-numbered">
@@ -944,9 +868,9 @@ Function names, type names, and enumeration constants that begin with either `cn
 in the `<threads.h>` header. <ins>Identifiers of the form `thrd_attr_X` and `thrd_attr_kind_X`, where `X` is the rest of the identifier, are either:
 
 - reserved by this document, if `X` does not begin with `_` (U+005F LOW LINE); or
-- potentially reserved by the implementation, if `X` does begin with `_` (U+005F LOW LINE).
+- potentially reserved by the implementation, if `X` begins with `_` (U+005F LOW LINE).
 
-</ins>
+The enumeration constants reserved by this document that begin with `thrd_attr_kind_` shall have a value less than 65,535.</ins>
 </div>
 
 </div>
