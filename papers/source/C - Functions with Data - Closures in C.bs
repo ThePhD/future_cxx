@@ -34,6 +34,7 @@ path: resources/css/bikeshed-wording.html
 
 ## Revision 1 - October 6<sup>th</sup>, 2025 ## {#changelog-r1}
 
+- Integrate `__self_func` ([[__self_func]]) into this paper. Hopefully the reasoning for this is self-evident and nobody asks me justify the obvious.
 - Initial wording. ✨
 	- Taking wording from `__self_func` and put it in here, since foresight is not a thing anyone's interested in doing right now.
 
@@ -1527,7 +1528,7 @@ This proposal is going to propose two distinct options for standardization, with
 - can be interacted with like a normal function (but not necessarily as a normal function pointer);
 - and, does not compromise the security of all or a portion of the program.
 
-Lambdas already have usage experience with well-known properties that can be directly translated to C and is easy enough to understand, despite the unfortunate syntax. Capture closures are a simple modification of Nested Functions that produce a sized object (similar to Lambdas) and makes their captures explicit, allowing for a degree of control and additional safety that was not present in the original Nested Functions design.
+Lambdas already have usage experience with well-known properties that can be directly translated to C and is easy enough to understand, despite the unfortunate syntax. Capture Functions are a simple modification of Nested Functions that produce a sized object (similar to Lambdas) and makes their captures explicit, allowing for a degree of control and additional safety that was not present in the original Nested Functions design.
 
 We are **not** focused on interoperability with singular function pointers. We believe that should be left to a separate, explicit mechanism in the language, capable of allowing the user to choose where the memory comes from and setting it up appropriately. This way, a user can make the decision **on their own** if they want to use e.g. executable stack (with the consequences that it brings) or just have a part of (heap) memory they set with e.g. Linux `mprotect(...)` or Win32 `VirtualProtect` to be readable, writable, and executable. Such a trampoline-maker (as briefly talked about in [[#appendix-make.trampoline]]) can also be applied across implementations in a way that the secret sauce powering Nested Functions cannot be: this is much more appealing as an approach.
 
@@ -1543,7 +1544,7 @@ The feature table for these two looks like this:
 <tr>
 <th>Feature</th>
 <th>C Lambdas</th>
-<th>Capture closures</th>
+<th>Capture Functions</th>
 </tr></thead>
 <tbody>
 <tr>
@@ -1628,9 +1629,9 @@ We do hope that another paper creates a new "Wide Function Pointer" type of some
 
 
 
-## Capture closures: Rehydrated Nested Function ## {#design-capture.functions}
+## Capture Functions: Rehydrated Nested Function ## {#design-capture.functions}
 
-Capture closures are a slight modification of the design of Nested Functions. We start from the base of Nested Functions with three goals in mind.
+Capture Functions are a slight modification of the design of Nested Functions. We start from the base of Nested Functions with three goals in mind.
 
 - Implementers are not comfortable with the implementation baggage associated with Nested Functions or maintaining potential ABI compatibility with those choices (heap/stack trampolines versus separate-page allocations).
 - We want to allow a way to access captured values explicitly, and control how those captures work.
@@ -1714,12 +1715,12 @@ int main () {
 We go over the purpose of the design of this and the reasons for that design here.
 
 
-### Capture closures are Complete Objects ### {#design-capture.functions-complete.objects}
+### Capture Functions are Complete Objects ### {#design-capture.functions-complete.objects}
 
 The most important change from typical GNU Nested Functions and mirroring behavior from C++ Lambdas is that nested functions -- the identifier itself introduced by the definition of the function -- is a regular, normal, complete C object. This enables it to be:
 
 - returned, if the type is knowable at the time of function definition (or `auto` return types are incorporated into the language);
-- passed to a function, if the function is defined after the creation of the capture closure;
+- passed to a function, if the function is defined after the creation of the capture functions;
 - and, stored elsewhere through static/`_Thread_local` data with assignment or `memcpy`, or even on the heap.
 
 These are important qualities to allow these functions with data to be used with asynchronous code, as (stored) callbacks, and in other scenarios. The size and alignment of the object is implementation-defined, and its layout is also entirely implementation-defined, much like the properties of a regular `struct` or `union` type. This allows implementations to not have to figure out how to squash everything into a single erased type, and instead enforce the Single Responsibility Principle; they already know how to create unique types, they already know how to create and fill structure types, and now separately a wide function pointer type or a "make trampoline" compiler feature ([[#appendix-make.trampoline]]) can be developed.
@@ -1771,7 +1772,7 @@ int main (int argc, char* argv[]) {
 
 ### Deduced Return Types, Unique Types ### {#design-capture.functions-unique.types}
 
-Reusing an example from the above code, the `make_seven` function needs to have a special, inferred/deduced return type. This is because the type of a Capture closure is not known until it is defined:
+Reusing an example from the above code, the `make_seven` function needs to have a special, inferred/deduced return type. This is because the type of a capture function is not known until it is defined:
 
 ```cpp
 auto make_seven (int x) {
@@ -1791,11 +1792,11 @@ If no `return` appears in such a function, or all the `return`s do not contain a
 
 ### Data Captures are Explicit ### {#design-capture.functions-data.captures}
 
-Data captures, the way in which local data is accessible inside of the function, are explicit. The only reason captures are explicit is because it is impossible to tell if something should be captured by value (and copied into whatever implementation-defined holding space is used for the Capture closure's complete object), or if something should be captured by name/reference (and only have its pointer/address copied into whatever implementation-defined holding space is used for the Capture closure's complete object). This detail matters both for safety reasons when assigning, copying, storing, and otherwise relocating a capture closure from its original scope.
+Data captures, the way in which local data is accessible inside of the function, are explicit. The only reason captures are explicit is because it is impossible to tell if something should be captured by value (and copied into whatever implementation-defined holding space is used for the Capture Functions's complete object), or if something should be captured by name/reference (and only have its pointer/address copied into whatever implementation-defined holding space is used for the Capture Functions's complete object). This detail matters both for safety reasons when assigning, copying, storing, and otherwise relocating a capture function from its original scope.
 
-NOTE: `static` and `_Thread_local` objects, as well as typical file-scope declarations, are accessible within a capture closure in the normal way. `constexpr` objects, without a `static` specifier, at local scope are also accessible.
+NOTE: `static` and `_Thread_local` objects, as well as typical file-scope declarations, are accessible within a capture function in the normal way. `constexpr` objects, without a `static` specifier, at local scope are also accessible.
 
-Allowing for explicit captures also allows for better type checking (used objects must be explicit acknowledged by the programmer that they should be used), and allows for covering both the use cases of Apple Blocks (default by-value capture) and GNU Nested Functions (default by-name capture) without breaking anything. The lack of a capture also covers all of the use cases that Literal Functions would have covered, which means that Capture closures can sufficiently cover all of the existing use cases currently in production in C ecosystems. To match the default behaviors:
+Allowing for explicit captures also allows for better type checking (used objects must be explicit acknowledged by the programmer that they should be used), and allows for covering both the use cases of Apple Blocks (default by-value capture) and GNU Nested Functions (default by-name capture) without breaking anything. The lack of a capture also covers all of the use cases that Literal Functions would have covered, which means that Capture Functions can sufficiently cover all of the existing use cases currently in production in C ecosystems. To match the default behaviors:
 
 - Apple Blocks: `_Capture(=)` (capture all by-value).
 - GNU Nested Functions: `_Capture(&)` (capture all by-name/reference).
@@ -1821,7 +1822,7 @@ This program returns `70` (`x` is captured by-value as `30`, `y` is captured by-
 
 ### Data Captures can be Renamed ### {#design-capture.functions-data.captures.rename}
 
-Data captures can be renamed (or computed, with an expression that does not include a `,` unless it is parenthesized). This is important for e.g. incrementing reference counters for copying large, important data structures into callbacks that may either be invoked multiple times or have their own long-lived lifetime. The syntax for this occurs within the `_Capture` clause of a Capture closure:
+Data captures can be renamed (or computed, with an expression that does not include a `,` unless it is parenthesized). This is important for e.g. incrementing reference counters for copying large, important data structures into callbacks that may either be invoked multiple times or have their own long-lived lifetime. The syntax for this occurs within the `_Capture` clause of a capture function:
 
 ```cpp
 #include <tree.h>
@@ -1881,7 +1882,7 @@ int main () {
 
 ### NEW: Data Captures are Accessible ### {#design-capture.functions-data.captures.fields}
 
-An important adjustment to make sure this code works better than the way it did for Blocks or Nested Functions is the ability not only to copy ([[#design-capture.functions-complete.objects]]) or otherwise rename objects ([[#design-capture.functions-data.captures.rename]]), but ALSO to get at the internals of a given Capture closure. This is something missing from GNU Nested Functions (which provides no real resolution for it) as well, and something that could matter for Apple Blocks but does not in practice because they can turn any object into a shared one with the `__block` modifier on an object. In particular, this only matters in the case of a closure which is given a (copied) resource that must either be released or freed.
+An important adjustment to make sure this code works better than the way it did for Blocks or Nested Functions is the ability not only to copy ([[#design-capture.functions-complete.objects]]) or otherwise rename objects ([[#design-capture.functions-data.captures.rename]]), but ALSO to get at the internals of a given Capture Functions. This is something missing from GNU Nested Functions (which provides no real resolution for it) as well, and something that could matter for Apple Blocks but does not in practice because they can turn any object into a shared one with the `__block` modifier on an object. In particular, this only matters in the case of a closure which is given a (copied) resource that must either be released or freed.
 
 NOTE: Thanks to Alex Celeste, for being the first person to bring this to my attention!
 
@@ -1933,7 +1934,7 @@ inside main fn | cap_fn0.renamed_x: 60, cap_fn0.y: 5.0, cap_fn0.z: a
 inside main fn | cap_fn1.x: 60, cap_fn1.renamed_y: 10.0, cap_fn1.z: z
 ```
 
-How the implementation actually accesses the information is implementation-defined, and the layout of the Capture closure object is not defined the specification, except to say it's implementation-defined ([[#wording]]).
+How the implementation actually accesses the information is implementation-defined, and the layout of the Capture Functions object is not defined the specification, except to say it's implementation-defined ([[#wording]]).
 
 NOTE: This leaves room for an implementation to, for example, use creative ways to retrieve objects and object references. Using a pointer to the current stack frame and then computing a raw offset to get to a specific bit of data, or using entirely registers, are all possible depending on how the captures are implemented. Such improvements and optimizations -- especially in the face of potential asynchronous calls and the need to protect against false sharing -- must be left up to Quality of Implementation.
 
@@ -1987,7 +1988,7 @@ Thanks to the capture of `in_reverse` with the by-value `_Capture(in_reverse)` i
 
 ### Capable of Recursion ### {#design-capture.functions-recursion}
 
-Capture closures are able to refer to themselves for the purpose of recursion. This means that `__self_func` ([[__self_func]]), unlike for expression-based/unnamed Literal Functions/Lambdas/Block literals, is not required:
+Capture Functions are able to refer to themselves for the purpose of recursion. This means that `__self_func` ([[__self_func]]), unlike for expression-based/unnamed Literal Functions/Lambdas/Block literals, is not required:
 
 ```cpp
 int main () {
@@ -2004,9 +2005,9 @@ int main () {
 
 ### Not An Expression ### {#design-capture.functions-expression}
 
-The one true technical downside is that Capture closures are declarations / definitions. They cannot be used (without the Statement Expression extension) in a function call's argument list, which means that (short) closures and anonymous functions still need the full function definition. This is annoying and, honestly, one of the reasons [[#design-lambdas]] are preferred as a shorthand syntax.
+The one true technical downside is that Capture Functions are declarations / definitions. They cannot be used (without the Statement Expression extension) in a function call's argument list, which means that (short) closures and anonymous functions still need the full function definition. This is annoying and, honestly, one of the reasons [[#design-lambdas]] are preferred as a shorthand syntax.
 
-It also means that, without Statement Expressions, Capture closures cannot be used for the implementation of many macros which are typically expected to be usable as normal expressions.
+It also means that, without Statement Expressions, Capture Functions cannot be used for the implementation of many macros which are typically expected to be usable as normal expressions.
 
 
 ### Footgun: By-Name Capture Exceeds Captures's Lifetime ### {#design-capture.functions-footgun.reference}
@@ -2078,13 +2079,13 @@ Thusly, in a future with a wide function pointer type, such a problem might be a
 
 ## Lambdas ## {#design-lambdas}
 
-Lambdas are simply a reskinned version of Capture closures. They have all the same functionality, but with the benefits that they are:
+Lambdas are simply a reskinned version of Capture Functions. They have all the same functionality, but with the benefits that they are:
 
 - expressions, and therefore can be used in-line in a function call as an argument or as part of an argument;
 - expressions, and therefore can be immediately invoked;
 - and, C++-compatible in their design.
 
-We are deliberately leaving these as the only three benefits of lambdas over Capture closures for the sole reason that, after Capture closures, Lambdas will be VERY minimal effort to support. The reason for that is that they are, semantically, just a "Syntactic Reskin" of Capture closures, save for their presence as an expression.
+We are deliberately leaving these as the only three benefits of lambdas over Capture Functions for the sole reason that, after Capture Functions, Lambdas will be VERY minimal effort to support. The reason for that is that they are, semantically, just a "Syntactic Reskin" of Capture Functions, save for their presence as an expression.
 
 ```cpp
 auto make_seven (int x) {
@@ -2126,7 +2127,7 @@ int main () {
 }
 ```
 
-Given this, there is nothing else to write for this section: all of the benefits of Capture closures ([[#design-capture.functions]]) applies to these types in full, and just copying all of that text from one to another to say exactly the same thing is not important. We will instead just talk about the differences exclusively in comparison to Capture closures in the next few sections.
+Given this, there is nothing else to write for this section: all of the benefits of Capture Functions ([[#design-capture.functions]]) applies to these types in full, and just copying all of that text from one to another to say exactly the same thing is not important. We will instead just talk about the differences exclusively in comparison to Capture Functions in the next few sections.
 
 
 ### Lambdas are Expressions ### {#design-lambdas-expressions}
@@ -2162,9 +2163,9 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-This also makes it **suitable for use in macros**, which is not something a regular Capture closures can accomplish.
+This also makes it **suitable for use in macros**, which is not something a regular Capture Functions can accomplish.
 
-NOTE: This can be alleviated by using Statement Expressions, which would allow Capture closures to work within typical macros contexts.
+NOTE: This can be alleviated by using Statement Expressions, which would allow Capture Functions to work within typical macros contexts.
 
 
 ### Recursion Is Impossible ### {#design-lambdas-recursion}
@@ -2250,15 +2251,15 @@ int main () {
 }
 ```
 
-This fixes other problems in the C language as well, such as not being able to specify functions with proper variable-length array returns without using ugly syntax. The `auto` part only applies for regular function definitions, and could also be applied to Capture closures for ease-of-use (but is not required for it to function appropriately). One could also just have `auto` but no `->` to have regular functions achieve the lambda behavior, where all `return` expressions must evaluate to the exact same type. Not having a `return` or having a `return;` both imply the return type is `void`, and thus any other kind of `return <expr>;` in that function would be illegal.
+This fixes other problems in the C language as well, such as not being able to specify functions with proper variable-length array returns without using ugly syntax. The `auto` part only applies for regular function definitions, and could also be applied to Capture Functions for ease-of-use (but is not required for it to function appropriately). One could also just have `auto` but no `->` to have regular functions achieve the lambda behavior, where all `return` expressions must evaluate to the exact same type. Not having a `return` or having a `return;` both imply the return type is `void`, and thus any other kind of `return <expr>;` in that function would be illegal.
 
-That is the full set of notable technical differences between Lambdas and Capture closures.
+That is the full set of notable technical differences between Lambdas and Capture Functions.
 
 
 
 ## Solution ## {#design.solution}
 
-This proposal is going to work to standardize both Capture closures as a C extension-familiar way of working with data that is based on existing practice. It is also going to standardize lambdas for the technical differences between it and Capture closures, in particular its ability to be used for macros (small but important) and its ability to be C++-compatible (unifying more header and in-line code).
+This proposal is going to work to standardize both Capture Functions as a C extension-familiar way of working with data that is based on existing practice. It is also going to standardize lambdas for the technical differences between it and Capture Functions, in particular its ability to be used for macros (small but important) and its ability to be C++-compatible (unifying more header and in-line code).
 
 A different proposal is going to work on the "Make Trampoline" aspect, to allow interoperation with old code. Another different proposal is going to work on providing a "wide function pointer" type. As used in the examples here, we hope to see `%` as a pointer-like modifier for a "wide function pointer" type, and if not that perhaps a `_Closure(function-type)` spelling to make it directly accessible by most.
 
@@ -2269,7 +2270,7 @@ A different proposal is going to work on the "Make Trampoline" aspect, to allow 
 
 ADVISEMENT: THIS SECTION IS NOT GOING TO BE OFFICIAL UNTIL THE DESIGN SHAKEDOWN IS COMPLETE.
 
-NOTE: THIS PROPOSAL WILL ONLY INCLUDE LANGUAGE WORDING. LIBRARY WORDING WILL BE DONE AFTER THE LANGUAGE IS HANDLED.
+NOTE: THIS PROPOSAL WILL ONLY INCLUDE LANGUAGE (CLAUSE 6) WORDING. LIBRARY WORDING WILL BE DONE AFTER THE LANGUAGE IS HANDLED, LIKELY IN A SEPARATE PROPOSAL.
 
 
 ## `__self_func` Changes ## {#wording-__self_func}
@@ -2308,12 +2309,12 @@ NOTE: THIS PROPOSAL WILL ONLY INCLUDE LANGUAGE WORDING. LIBRARY WORDING WILL BE 
 > :: <ins>`__self_func`</ins>
 
 
-### Add a new section §6.5.3.✨ "`__self_func` ### {#wording-__self_func-6.5.3.✨}
+### Add a new section §6.5.2.✨ "`__self_func` after §6.5.2.1 "Generic selection" ### {#wording-__self_func-6.5.2.✨}
 
 <blockquote>
 <ins>
 <div class="wording-clause-header">
-<span class="wording-clause-number">6.5.3.✨</span> <span class="wording-clause-title">`__self_func`</span>
+<span class="wording-clause-number">6.5.2.✨</span> <span class="wording-clause-title">`__self_func`</span>
 </div>
 
 <div class="wording-section">
@@ -2323,7 +2324,7 @@ Constraints
 </div>
 
 <div class="wording-numbered">
-`__self_func` shall only appear in the compound statement of a function body.
+`__self_func` shall only appear in the body of an invocable, and refers to the innermost invocable body core it is inside.
 </div>
 
 <div class="wording-clause-section-title">
@@ -2332,7 +2333,11 @@ Semantics
 
 <div class="wording-numbered">
 
-`__self_func` is a function designator (6.3.3.1) designating and having the type of the function it is used in.
+`__self_func` is either:
+
+- the function designator (6.3.3.1) designating and having the type of the function it is used in;
+- or, an lvalue of the closure it is contained within.
+
 </div>
 </ins>
 </blockquote>
@@ -2374,12 +2379,19 @@ For each different entity that an identifier designates, the identifier is *visi
 
 <div class="wording-numbered">
 
-A label name is the only kind of identifier that has <del>*function scope*</del><ins>*invocable scope*</ins>. It can be used (in a `goto` statement) anywhere in the <del>function</del><ins>body of the invocable (6.2.10)</ins> in which it appears<del>, and</del><ins> excluding the body of any invocables nested, unless otherwise specified. It</ins> is declared implicitly by its syntactic appearance (followed by a `:` and a statement).
+A label name is the only kind of identifier that has <del>*function scope*</del><ins>*invocable scope*</ins>. It can be used (in a `goto` statement) anywhere in the <del>function</del><ins>body of the invocable (6.2.✨)</ins> in which it appears<del>, and</del><ins> excluding the body of any invocables nested, unless otherwise specified. It</ins> is declared implicitly by its syntactic appearance (followed by a `:` and a statement).<ins> Each invocable body has an invocable scope that is separate from the invocable scope of any other invocable body. In particular, a label is visible in exactly one invocable scope (the innermost body in which it appears) and distinct invocable bodies may use the same identifier to designate different labels.</ins>
 </div>
 
 <div>
 ...
 </div>
+
+<ins>
+<div class="wording-newnumbered wording-numbered-9">
+
+NOTE&emsp;&emsp; Properties of the feature to which an identifier refers are not necessarily uniformly available within its whole scope of visibility. Examples are identifiers or functions with an incomplete type that is only completed in a subscope of its visibility, labels that are only valid targets of `goto` statements when the jump does not cross the scope of a VLA, identifiers of objects to which the access is restricted in specific contexts such as signal handlers or closures, or library features such as `setjmp` where the use is restricted to a specific subset of the grammar.
+</div>
+</ins>
 
 </div>
 </blockquote>
@@ -2410,7 +2422,7 @@ Any number of derived types can be constructed from the object and function type
 
 — ...
 - A *function type* describes a function with specified return type. A function type is characterized by its return type and the number and types of its parameters. A function type is said to be derived from its return type, and if its return type is *T*, the function type is sometimes called "function returning *T*". The construction of a function type from a return type is called "function type derivation".
-- <ins>A *closure type* describes a complete structure or union type that is similar to a function with a specified or inferred return type. It is characterized by: its return type; the number, order, and type of its parameters; its lexical position in the program; and, the number, order, and type of its captures (6.9.✨). The function type that has the same return type and list of parameter types as the closure type is the *closure's function type*. A closure type is said to be derived from its function type's return type and, if present, any of its captures. If its return type is *T*, the closure type is sometimes called "closure returning *T*" or "closure with captures returning *T*" (referring to closures with any number of captures, including zero captures).</ins>
+- <ins>A *closure type* describes a complete structure or union type that is similar to a function with a specified or inferred return type (6.9.✨). It is characterized by: its return type; the number, order, and type of its parameters; its lexical position in the program; and, the number, order, and type of its captures. The function type that has the same return type and list of parameter types as the closure type is the *closure's function type*. A closure type is said to be derived from its function type's return type and, if present, any of its captures. If its return type is *T*, the closure type is sometimes called "closure returning *T*" or "closure with captures returning *T*" (referring to closures with any number of captures, including zero captures).</ins>
 - ...
 
 These methods of constructing derived types can be applied recursively.
@@ -2428,7 +2440,7 @@ A complete type shall have a size that is less than or equal to `SIZE_MAX`. A ty
 <ins>
 <div class="wording-newnumbered">
 
-An *invocable type* is either a closure type, a function type, or a pointer to function type.
+An *invocable type* is either a closure type, a function type, or a pointer to function type (6.2.✨).
 </div>
 
 <div class="wording-newnumbered">
@@ -2446,11 +2458,11 @@ A *closure literal type* is a closure type characterized by having no captures. 
 </blockquote>
 
 
-### Add a new section §6.2.10 "Invocable" ### {#wording-core-6.2.10}
+### Add a new section §6.2.✨ "Invocable", likely §6.2.10 ### {#wording-core-6.2.new}
 
 <blockquote class="quote-ins">
 <div class="wording-clause-header">
-<span class="wording-clause-number">6.2.10</span> <span class="wording-clause-title">Invocable</span>
+<span class="wording-clause-number">6.2.✨</span> <span class="wording-clause-title">Invocable</span>
 </div>
 
 <div class="wording-section">
@@ -2462,12 +2474,12 @@ An *invocable* is something with zero or more parameters, and possibly zero or m
 
 <div class="wording-numbered">
 
-The associated series of statements and/or expressions is called the *invocable body* or *body of the invocable*. The body of an invocable has its own scope, and that scope includes any arguments and captures it may have from being invoked. The scope in which an invocable is declared or defined is called the invocable's *surrounding scope*, which is typically the block scope of another invocable or file scope.
+The associated series of statements and/or expressions is called the *invocable body* or *body of the invocable*. The body of an invocable has its own scope, and that scope includes any arguments and captures it may have from being invoked. Just the associate series of statements and/or expressions without the arguments and captures is called the *invocable body core*. The scope in which an invocable is declared or defined is called the invocable's *surrounding scope*, which is typically either the block scope of another invocable or file scope.
 </div>
 
 <div class="wording-numbered">
 
-An invocable can have a sequence of arguments passed to it that comply with the constraints and requirements of the invocable's list of parameters. If the parameter list consists of a single parameter of type void, the parameter declarator shall not include an identifier. An invocable's parameters have automatic storage duration. The identifier of the parameter, if any, is an lvalue. The layout of the storage for parameters is unspecified. The type of each parameter is adjusted as described in 6.7.7.4.
+An invocable can have a sequence of arguments passed to it that comply with the constraints and requirements of the invocable's list of parameters. If the parameter list consists of a single parameter of type `void`, the parameter declarator shall not include an identifier. An invocable's parameters have automatic storage duration. The identifier of the parameter, if any, is an lvalue. Variable length array types of unspecified size shall not be used as part of a parameter declaration in a functin definition. The layout of the storage for parameters is unspecified. The type of each parameter is adjusted as described in 6.7.7.4.
 </div>
 
 <div class="wording-numbered">
@@ -2536,7 +2548,7 @@ In order,
 2. Outside the EXAMPLE and NOTE text, replace every instance of "function type" with "invocable type".
 3. Outside the EXAMPLE and NOTE text, replace every instance of "a function" with "an invocable".
 4. Outside the EXAMPLE and NOTE text, replace every instance of "function" with "invocable", EXCEPT:
-	- "... ellipses in a variadic function declarator (6.7.7.4) ..." becomes "... ellipsis notation in a variadic invocable (6.2.10) ..."
+	- "... ellipses in a variadic function declarator (6.7.7.4) ..." becomes "... ellipsis notation in a variadic invocable (6.2.✨) ..."
 
 
 ### Modify §6.5.5 "Cast operators" ### {#wording-core-6.5.5}
@@ -2610,7 +2622,7 @@ A *statement* specifies an action to be performed. Except as indicated, statemen
 </blockquote>
 
 
-### Add a new section §6.9.✨ "Closures", somewhere after §6.9.2 "Function definitions" ### {#wording-core-6.9.new}
+### Add a new section §6.9.✨ "Closures", somewhere after §6.9.2 "Function definitions", likely §6.9.3 ### {#wording-core-6.9.new}
 
 <blockquote class="quote-ins">
 <div class="wording-clause-header">
@@ -2621,6 +2633,10 @@ A *statement* specifies an action to be performed. Except as indicated, statemen
 </div>
 
 <div class="wording-section">
+
+<div class="wording-clause-section-title">
+Description
+</div>
 
 <div class="wording-numbered">
 
@@ -2778,7 +2794,7 @@ One of the following shall hold:
 - the left operand has an atomic, qualified, or unqualified version of a structure or union type compatible with the type of the right operand;
 - the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) both operands are pointers to qualified or unqualified versions of compatible types, and the type pointed to by the left operand has all the qualifiers of the type pointed to by the right operand;
 - the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) one operand is a pointer to an object type, and the other is a pointer to a qualified or unqualified version of `void`, and the type pointed to by the left operand has all the qualifiers of the type pointed to by the right operand;
-- <ins>the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) one operand is a pointer to a function type, and the other is a closure literal type whose function type is compatible with the left's function type;</ins>
+- <ins>the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) one operand is a pointer to a function type, and the other is a closure literal type whose function type is compatible with the left's pointed to function type;</ins>
 - the left operand has an atomic, qualified, or unqualified version of the `nullptr_t` type and the right operand is a null pointer constant or its type is `nullptr_t`;
 - the left operand is an atomic, qualified, or unqualified pointer, and the right operand is a null pointer constant or its type is `nullptr_t`; or
 - the left operand has type atomic, qualified, or unqualified `bool`, and the right operand is a pointer or its type is `nullptr_t`.
@@ -2810,7 +2826,7 @@ One of the following shall hold:
 > :: <ins>*lambda-expression*</ins>
 
 
-### Add a new section §6.5.3.✨ "Lambda expressions" after §6.5.3.4 "Structure and union members" ### {#wording-lambda-6.5.3.new}
+### Add a new section §6.5.3.✨ "Lambda expressions" somewhere after §6.5.3.4 "Structure and union members", likely §6.5.3.5 ### {#wording-lambda-6.5.3.new}
 
 <blockquote class="quote-ins">
 <div class="wording-clause-header">
@@ -2864,7 +2880,7 @@ Constraints
 
 <div class="wording-numbered">
 
-Within the body of a lambda expression, identifiers shall be used according to the usual scoping rules. Capture and parameters can be accessed by their name in the body, but no other identifiers from the surrounding scope shall be accessed except within a capture initialization expression.
+Within the body of a lambda expression, identifiers shall be used according to the usual scoping rules. Captures and parameters can be accessed by their name in the body, but no other identifiers from the surrounding scope shall be accessed except within a capture initialization expression.
 </div>
 
 <div class="wording-numbered">
@@ -2892,7 +2908,7 @@ The optional attribute specifier sequence in a lambda expression appertains to t
 
 <div class="wording-numbered">
 
-Similar to a function definition, a lambda expression forms a single block that comprises all of its parts. Each capture and parameter has a scope of visibility that starts immediately after its definition is completed and extends to the end of the lambda body. Captures and parameters are visible throughout the body of a function unless they are redeclared in an inner block within that lambda body.
+Similar to a function definition, a lambda expression forms a single block that comprises all of its parts. Each capture and parameter has a scope of visibility that starts immediately after its definition is completed and extends to the end of the lambda body. Captures and parameters are visible throughout the body of a labmda unless they are redeclared in an inner block within that lambda's body.
 </div>
 
 <div class="wording-numbered">
@@ -2902,7 +2918,7 @@ Value captures have the same storage duration as the lambda. Value captures are 
 
 <div class="wording-numbered">
 
-Each capture's value can be accessed with the member access operators `.` on a lambda object, or `->` on a pointer to a lambda object.
+Each capture's value can be accessed with the member access operators `.` on a lambda object, or `->` on a pointer to a lambda object. The layout of the storage for the captures is implementation-defined.
 </div>
 
 </div>
@@ -2910,31 +2926,14 @@ Each capture's value can be accessed with the member access operators `.` on a l
 </blockquote>
 
 
-## Capture Closues Changes ## {#wording-capture.closures}
+## Capture Closues Changes ## {#wording-capture.functions}
 
 
-TODO: Move the entire grammar/section of "function definition" to 6.7.7.5 after Function declarators and integrate it into there
-TODO: Modify the grammar of function definition so it comes as part of the declaration/declarator settings, add constraint that it shows up at file scope or in the body of an invocable.
-TODO: Add the function capture clause grammar to that same place, then work from there.
+### Add *capture-function-declarator* to the *direct-declarator* grammars of §6.7.7.1 "General" of "Declarators" ### {#wording-capture.functions-6.7.1}
 
-### Add *capture-closure* to the *declaration* grammar of §6.7.1 ### {#wording-capture.closures-6.7.1}
-
-> **Syntax**
->
-> <sup>1</sup>
-> *declaration*:
-> :: *declaration-specifiers* *init-declarator-list*<sub>opt</sub> `;`
-> :: *attribute-specifier-sequence* *declaration-specifiers* *init-declarator-list* `;`
-> :: *static_assert-declaration*
-> :: *attribute-declaration*
-> :: <ins>*capture-closure*</ins>
-
-
-### Add a new section §6.9.✨ "Capture Closures" after §6.9.3 "Function definitions" ### {#wording-capture.closures-6.9.new}
-
-<blockquote class="quote-ins">
+<blockquote>
 <div class="wording-clause-header">
-<span class="wording-clause-number">6.9.✨</span> <span class="wording-clause-title">Capture closures</span>
+<span class="wording-clause-number">6.7.7.1</span> <span class="wording-clause-title">General</span>
 </div>
 
 <div class="wording-section">
@@ -2945,8 +2944,82 @@ Syntax
 
 <div class="wording-numbered">
 
-*closure-declarations*:
-:: *attribute-specifier-sequence*<sub>opt</sub> *declaration-specifiers* *declarator* *function-capture-clause*<sub>opt</sub> *function-body*
+*declarator*:
+:: *pointer*<sub>opt</sub> *direct-declarator*
+
+...
+
+*direct-declarator*:
+:: *identifier* *attribute-specifier-sequence*<sub>opt</sub>
+:: `(` *declarator* `)`
+:: *array-declarator* *attribute-specifier-sequence*<sub>opt</sub>
+:: *function-declarator* *attribute-specifier-sequence*<sub>opt</sub>
+:: <ins>*capture-function-declarator*</ins>
+
+...
+
+</div>
+
+<div>
+...
+</div>
+
+</div>
+</blockquote>
+
+
+### Modify §6.7.7.4 "Function declarators" to prevent parameters of closure type from being defined in a parameter list ### {#wording-capture.functions-6.7.7.4}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.7.7.4</span> <span class="wording-clause-title">Function declarators</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+A function declarator shall not specify a return type that is a function type or an array type.
+</div>
+
+<ins>
+<div class="wording-newnumbered">
+
+A parameter declaration will not be a capture function declarator.
+</div>
+</ins>
+
+<div>
+...
+</div>
+
+</div>
+</blockquote>
+
+
+
+
+### Add a new section §6.7.7✨ "Capture Functions" somewhere after §6.7.7.4 "Function declarators", likely becoming §6.7.7.5 ### {#wording-capture.functions-6.9.new}
+
+<blockquote class="quote-ins">
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.7.7.✨</span> <span class="wording-clause-title">Capture functions</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+
+*capture-function-declarator*:
+:: *direct-declarator* `(` *parameter-type-list*<sub>opt</sub> `)` *function-capture-clause*<sub>opt</sub> *attribute-specifier-sequence*<sub>opt</sub> *function-body*
 
 *function-capture-clause*:
 :: `_Capture` `(` *capture-list*<sub>opt</sub> `)`
@@ -2959,7 +3032,7 @@ Description
 
 <div class="wording-numbered">
 
-A capture closure declares and defines a closure. It is introduced similarly to a function definition but is characterized by the function capture clause, and has a surrounding scope of either:
+A capture function declares and defines a closure. It is introduced similarly to a function definition but is characterized by the function capture clause, and has a surrounding scope of either:
 
 - the block scope at the lexical position within an invocable;
 - or, file scope.
@@ -2968,7 +3041,7 @@ A capture closure declares and defines a closure. It is introduced similarly to 
 
 <div class="wording-numbered">
 
-A capture closure without any captures in the function capture clause has closure literal type. Otherwise, a capture closure with one or more captures is a closure and its type is a closure type.
+A capture function without any captures in the function capture clause has closure literal type. Otherwise, a capture function with one or more captures is a closure and its type is a closure type.
 </div>
 
 
@@ -2978,12 +3051,32 @@ Constraints
 
 <div class="wording-numbered">
 
-Within the body of a capture closure, identifiers shall be used according to the usual scoping rules. Capture and parameters can be accessed by their name in the body, but no other identifiers from the surrounding scope shall be accessed except within a capture initialization expression.
+At file scope, a function declarator with a function body and no function capture clause shall be considered a function definition (6.9.2). If a function declarator with a function body has a function capture clause, it shall contain no captures and be considered a function definition. At block scope, a function declarator with a function body and no function capture clause shall be considered a capture function declarator.
 </div>
 
 <div class="wording-numbered">
 
-If a capture closure or pointer to capture closure is the first operand of the `.` operator or `->` operator, respectively, the second operand shall only specify a capture name from that capture closure's function capture clause as the identifier to designate a member.
+The identifier declared in a capture function declarator (which is the name of the capture function) shall have closure type, as specified by the declarator portion of the capture function declarator.
+</div>
+
+<div class="wording-numbered">
+
+The return type shall be `void` or a complete object type other than array type.
+</div>
+
+<div class="wording-numbered">
+
+The storage-class specifier, if any, in the declaration specifiers shall not be `typedef`.
+</div>
+
+<div class="wording-numbered">
+
+Within the body of a capture function, identifiers shall be used according to the usual scoping rules. Captures and parameters can be accessed by their name in the body, but no other identifiers for automatic storage duration objects or variably-modified types may from the surrounding scope shall be accessed except within a capture initialization expression.
+</div>
+
+<div class="wording-numbered">
+
+If a capture function or pointer to capture functions is the first operand of the `.` operator or `->` operator, respectively, the second operand shall only specify a capture name from its function capture clause as the identifier to designate a member.
 </div>
 
 <div class="wording-clause-section-title">
@@ -2992,22 +3085,52 @@ Semantics
 
 <div class="wording-numbered">
 
-The optional attribute specifier sequence in a lambda expression appertains to the resulting lambda type and to its function type. If the parameter clause is omitted, and parameter clause of the form `()` is assumed.
+If, in the declaration "`T` `D1`", `D1` has the form
+
+:: `D` *function-capture-clause*<sub>opt</sub> `(` *parameter-type-list*<sub>opt</sub> `)` *attribute-specifier-sequence*<sub>opt</sub>
+
+and the type specified for the identifier *ident* in the declaration "`T` `D`" is "*derived-declarator-type-list* `T`", then the type specified for *ident* is "*derived-declarator-type-list* closure returning the unqualified, non-atomic version of `T`". The optional attribute specifier sequence appertains to the closure's function type.
 </div>
 
 <div class="wording-numbered">
 
-Similar to a function definition, a lambda expression forms a single block that comprises all of its parts. Each capture and parameter has a scope of visibility that starts immediately after its definition is completed and extends to the end of the lambda body. Captures and parameters are visible throughout the body of a function unless they are redeclared in an inner block within that lambda body.
+If a capture function is declared and defined outside of file scope without a function capture clause, it is equivalent to having a function capture clause of `_Capture()`.
 </div>
 
 <div class="wording-numbered">
 
-Value captures have the same storage duration as the lambda. Value captures are initialized and formed during the evaluation of the lambda, and are tied to that specific lambda expression's closure. Each invocation to the formed lambda creates a new instance of each parameter, similar to a function call. The layout of the storage for parameters is unspecified.
+The second optional attribute specifier sequence after the parameter type list appertains to the closure object.
 </div>
 
 <div class="wording-numbered">
 
-Each capture's value can be accessed with the member access operators `.` on a lambda object, or `->` on a pointer to a lambda object.
+EXAMPLE&emsp;&emsp; In following capture function declaration:
+
+```cpp
+int main () {
+	[[unsequenced]] int f () _Capture() [[deprecated]] {
+		return 2;
+	}
+	return f();
+}
+```
+
+`[[unsequenced]]` describes the properties of the invocable body through its its function type, while `[[deprecated]]` applies to the closure object `f` and a diagnostic is encouraged at the invocation of `f` in `return f()`.
+</div>
+
+<div class="wording-numbered">
+
+Similar to a function definition, a capture function forms a single block that comprises all of its parts. Each capture and parameter has a scope of visibility that starts immediately after its definition is completed and extends to the end of the capture function's body. Captures and parameters are visible throughout the body of a capture function unless they are redeclared in an inner block within that capture function's body.
+</div>
+
+<div class="wording-numbered">
+
+Value captures have the same storage duration as the capture function. Value captures are initialized and formed during the evaluation of the capture function, and are tied to that specific capture function's closure. Each invocation of the capture function creates a new instance of each parameter, similar to a function call. The layout of the storage for parameters is implementation-defined.
+</div>
+
+<div class="wording-numbered">
+
+Each capture's value can be accessed with the member access operators `.` on a capture function object, or `->` on a pointer to a capture function object. The layout of the storage for the captures is implementation-defined.
 </div>
 
 </div>
@@ -3069,7 +3192,7 @@ void example4()
 	int bar(int x) { // GNU Extension, Nested Functions
 		return x + d; 
 	}
-	int bar_fixed(int x) _Capture(&) { // (Proposed) ISO C, Capture closure
+	int bar_fixed(int x) _Capture(&) { // (Proposed) ISO C, Capture Functions
 		return x + d;
 	}
 	cb_t bar_fn_ptr = stdc_make_trampoline(bar); // Extension, but works
@@ -3436,7 +3559,7 @@ This is discussed earlier in the introduction, but GNU Nested Functions have an 
 > - Not having destructors and smart pointers in C requires workarounds not needed in C++.
 > - Not having explicit access to the structure holding the captured values requires unsafe byte copies, causes issues with alignment and makes deep copying impossible.
 
-Everything in C is a byte copy, unless an explicit function is inserted to do something just before that byte copy happens. An example of this comes from Apple Blocks, with a required `Block_release` and `Block_copy` required to make usage of stored blocks safer ([[#intro-blocks-runtime-stack.based]]). To uphold this as a problem is to lambast the entirety of C and its object model as unsafe; which, honestly, is not an unfair assessment. The fix to that is to restore access to the objects captured inside of an object, as shown in [[#design-capture.functions-data.captures.fields]], which makes any capturing entity -- whether it's a `_Closure` like in [[n3654]], Capture closures as in this paper, or Lambdas -- accessible once more.
+Everything in C is a byte copy, unless an explicit function is inserted to do something just before that byte copy happens. An example of this comes from Apple Blocks, with a required `Block_release` and `Block_copy` required to make usage of stored blocks safer ([[#intro-blocks-runtime-stack.based]]). To uphold this as a problem is to lambast the entirety of C and its object model as unsafe; which, honestly, is not an unfair assessment. The fix to that is to restore access to the objects captured inside of an object, as shown in [[#design-capture.functions-data.captures.fields]], which makes any capturing entity -- whether it's a `_Closure` like in [[n3654]], Capture Functions as in this paper, or Lambdas -- accessible once more.
 
 > - Making the lambda itself have a unique anonymous object type in C means it can only be invoked immediately which seems useful only in macros. In C++ it can be returned from and passed to template functions.
 
@@ -3458,9 +3581,9 @@ Trailing return types enhance what is capable, but are not strictly required ([[
 
 > - Adopting lambdas from C++ would limit out design freedom relative to C++. We can not easily change specific aspects when it might be better for C, because it would then be a divergence from C++ that should be avoided and will be opposed by implementers.
 
-As a sole solution, certainly. But this proposal provides Capture closures ([[#design-capture.functions]]) as the flagship proposal for C, and maintains 1:1 identical capabilities with the proposed secondary Lambda part ([[#design-lambdas]]). There are also other reasons as to why having lambdas is good (particularly, for macros and for use as an expression). But, the general improvement here is that one can have Capture closures that are rooted in C history and C syntax and C needs, while maintaining just enough of Lambdas that serve as a compatibility layer.
+As a sole solution, certainly. But this proposal provides Capture Functions ([[#design-capture.functions]]) as the flagship proposal for C, and maintains 1:1 identical capabilities with the proposed secondary Lambda part ([[#design-lambdas]]). There are also other reasons as to why having lambdas is good (particularly, for macros and for use as an expression). But, the general improvement here is that one can have Capture Functions that are rooted in C history and C syntax and C needs, while maintaining just enough of Lambdas that serve as a compatibility layer.
 
-The fact that this paper is already proposing a depature from C++ for C lambdas and Capture closures by having accessible data captures already shows we have the power to improve on things in C's favor, if we're willing to hold onto that ([[#design-capture.functions-data.captures.fields]]).
+The fact that this paper is already proposing a depature from C++ for C lambdas and Capture Functions by having accessible data captures already shows we have the power to improve on things in C's favor, if we're willing to hold onto that ([[#design-capture.functions-data.captures.fields]]).
 
 
 ### Insufficient ### {#appendix-nested.functions.context-conclusions}
@@ -3552,7 +3675,7 @@ void stdc_destroy_trampoline_with(_Any_func*, deallocate_function_t* dealloc);
 
 Regardless the form that the `make`/`destroy` functions take, this sort of intrinsic would be capable of lifting not just a typical GNU nested functions but all types of functions to be a single, independent function pointer with some kind of backing storage. Some desire may still exist to make the allocation and deallocation process automatic, but that should be left to compiler vendors to decide for ease-of-use tradeoffs versus e.g. security, like in [[#intro-nested.functions-design]].
 
-It should be noted that Apple itself already has a version of this with this Objective-C Blocks Implementation ([[objective-c-block-trampoline]]), albeit with limitations discussed in [[#intro-blocks-trampoline]]. GCC does not expose an intrinsic for this per-se, but does provide `__builtin_call_with_static_chain` ([[builtin_call_with_static_chain_gcc|GCC Documentation: Builtin Call with Static Chain]]). One can build a trampoline mechanism overtop of that, provided they had the properly-created function plus the right stack frame / "environment" chain pointer to go with the function callable. Since C++ Lambdas -- and the proposed Capture closures and C-Style Lambdas here -- are by themselves [[#design-capture.functions-complete.objects|Complete Objects]], one can always create a "thunk" or "trampoline" for them manually, using a wide variety of allowable techniques from heap allocation to pre-stored arrays to `_Thread_local`/`static` data or otherwise. C++ could implement `stdc_make_trampoline` entirely as a library function, but C cannot; so, this is something vendors will have to figure out on their own.
+It should be noted that Apple itself already has a version of this with this Objective-C Blocks Implementation ([[objective-c-block-trampoline]]), albeit with limitations discussed in [[#intro-blocks-trampoline]]. GCC does not expose an intrinsic for this per-se, but does provide `__builtin_call_with_static_chain` ([[builtin_call_with_static_chain_gcc|GCC Documentation: Builtin Call with Static Chain]]). One can build a trampoline mechanism overtop of that, provided they had the properly-created function plus the right stack frame / "environment" chain pointer to go with the function callable. Since C++ Lambdas -- and the proposed Capture Functions and C-Style Lambdas here -- are by themselves [[#design-capture.functions-complete.objects|Complete Objects]], one can always create a "thunk" or "trampoline" for them manually, using a wide variety of allowable techniques from heap allocation to pre-stored arrays to `_Thread_local`/`static` data or otherwise. C++ could implement `stdc_make_trampoline` entirely as a library function, but C cannot; so, this is something vendors will have to figure out on their own.
 
 The only part that needs to be user-configurable is the source of memory. Of course, if an implementation does not want to honor a user's request, they can simply return a `(Any_func*)nullptr;` all the time. This would be hostile, of course, so a vendor would have to choose wisely about whether or not they should do this. The paper proposing this functionality would also need to discuss setting `errno` to an appropriate indicator after use of the intrinsic, if only to appropriately indicate what went wrong. For example, `errno` could be set to:
 
