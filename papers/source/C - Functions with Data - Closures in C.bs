@@ -34,9 +34,8 @@ path: resources/css/bikeshed-wording.html
 
 ## Revision 1 - October 6<sup>th</sup>, 2025 ## {#changelog-r1}
 
-- Integrate `__self_func` ([[__self_func]]) into this paper. Hopefully the reasoning for this is self-evident and nobody asks me justify the obvious.
+- Integrate `__self_func` ([[__self_func]]) into this paper. Hopefully the reasoning for this is self-evident and nobody asks me justify the obvious in this version of the proposal.
 - Initial wording. ✨
-	- Taking wording from `__self_func` and put it in here, since foresight is not a thing anyone's interested in doing right now.
 
 
 
@@ -196,7 +195,7 @@ The point of the above code is to show that it's legal to return a function poin
 
 ## Preamble ## {#intro-preamble}
 
-Before we talk about GNU Nested Functions, Apple Blocks, C++ Lambdas, Literal Functions, or anything else, there's a few examples similar to the `qsort` one that will be used above. The purpose of these examples will be to talk about:
+Before we talk about GNU Nested Functions, Apple Blocks, C++ Lambdas, Function Literals, or anything else, there's a few examples similar to the `qsort` one that will be used above. The purpose of these examples will be to talk about:
 
 - whether or not there's a way to use these things in expressions by themselves;
 - whether or not there's a way to manage the lifetime of an object in a dynamic or safe fashion;
@@ -212,7 +211,7 @@ To aid in this evaluation, in the final section of this introduction, we will be
 <th>GNU Nested Functions</th>
 <th>Apple Blocks</th>
 <th>C++-Style Lambdas in C</th>
-<th>Literal Functions</th>
+<th>Function Literals</th>
 </tr></thead>
 <tbody>
 <tr>
@@ -465,6 +464,8 @@ We have already discussed the first and most popular attempt which leaves the st
 #### Attempt 2 #### {#intro-nested.functions-alternative.implementations-attempt.two}
 
 An Ada-style Function Descriptors implementation was attempted. The problem with this change for GCC is that it uses a bit (the lowest bit, which traditionally is always 0) in the function pointer itself to mark the function pointer as one that is relying on the Function Descriptor technology. Setting the lowest bit on the function pointer means that it is unsafe to call directly, and therefore every function call must first be masked with `func_ptr & ~0b1ull` before being called. This is a runtime cost and a general-purpose pessimization that applies to ALL function pointers, making the Function Descriptor approach unsuitable for solving the ABI problem both internally with existing GCC code and to the satisfaction of other developers.
+
+NOTE: This is also inadvisable for specific ABIs such as ARMv7, where the lowest bit in function pointers is used to determine instruction switching capabilities.
 
 #### Attempt 3 #### {#intro-nested.functions-alternative.implementations-attempt.three}
 
@@ -1331,11 +1332,11 @@ One way to alleviate this -- which would be beyond what is currently within C++ 
 
 
 
-## Literal Functions ## {#intro-function.literals}
+## Function Literals and Local Functions ## {#intro-function.literals}
 
-There is not much to say about Literal Functions ([[n3645]]) as they deliberately do not engage with the problem of trying to capture and use data. The syntax is based on Compound Literals, wherein the `(type-name){ ... }` syntax is repurposed. Currently, `type-name` being a function type is just a constraint violation in C, so it is safe to repurpose this syntax.
+There is not much to say about Function Literals ([[n3679]]) and Local Functions ([[n3678]]) as they deliberately do not engage with the problem of trying to capture and use data. The syntax for Function Literals is based on Compound Literals, wherein the `( abstract-declarator ){ ... }` syntax is repurposed. Currently, `abstract-declarator` being a function type is just a constraint violation in C, so it is safe to repurpose this syntax. The syntax for Local Functions is identical to GCC's Nested Functions, and thus, all the criticisms and flaws of Nested Functions apply ([[#intro-nested.functions]]).
 
-By not engaging with the closure/capture issue, Literal Functions seek to just be a prettier form of ISO C regular functions. This provides the benefits of not needing to have a wide function pointer type immediately (albeit one is still needed for the general ecosystem), and it allows code to be read in a much more friendly format by localizing the function pointer and, potentially, any user data structures that go with a `void*`. As a compound literal, it also immediately works since it can be created/used as an expression, meaning it can be passed to function arguments:
+By not engaging with the closure/capture issue, Function Literals seek to just be a prettier form of ISO C regular functions. This provides the benefits of not needing to have a wide function pointer type immediately (albeit one is still needed for the general ecosystem), and it allows code to be read in a much more friendly format by localizing the function pointer and, potentially, any user data structures that go with a `void*`. As a compound literal, it also immediately works since it can be created/used as an expression, meaning it can be passed to function arguments:
 
 ```cpp
 #include <stdlib.h>
@@ -1796,11 +1797,11 @@ Data captures, the way in which local data is accessible inside of the function,
 
 NOTE: `static` and `_Thread_local` objects, as well as typical file-scope declarations, are accessible within a capture function in the normal way. `constexpr` objects, without a `static` specifier, at local scope are also accessible.
 
-Allowing for explicit captures also allows for better type checking (used objects must be explicit acknowledged by the programmer that they should be used), and allows for covering both the use cases of Apple Blocks (default by-value capture) and GNU Nested Functions (default by-name capture) without breaking anything. The lack of a capture also covers all of the use cases that Literal Functions would have covered, which means that Capture Functions can sufficiently cover all of the existing use cases currently in production in C ecosystems. To match the default behaviors:
+Allowing for explicit captures also allows for better type checking (used objects must be explicit acknowledged by the programmer that they should be used), and allows for covering both the use cases of Apple Blocks (default by-value capture) and GNU Nested Functions (default by-name capture) without breaking anything. The lack of a capture also covers all of the use cases that Function Literals would have covered, which means that Capture Functions can sufficiently cover all of the existing use cases currently in production in C ecosystems. To match the default behaviors:
 
 - Apple Blocks: `_Capture(=)` (capture all by-value).
 - GNU Nested Functions: `_Capture(&)` (capture all by-name/reference).
-- Literal Functions: `_Capture()` (capture nothing).
+- Function Literals: `_Capture()` (capture nothing).
 
 Only one "capture all" is allowed. That is, `_Capture(=, &)` (and vice-versa) is illegal. The rest of the *specific* captures for accessible identifiers can be specified in any order. Note that *specific* captures for a given object override the default implicit "capture all" behavior. For example:
 
@@ -1988,7 +1989,7 @@ Thanks to the capture of `in_reverse` with the by-value `_Capture(in_reverse)` i
 
 ### Capable of Recursion ### {#design-capture.functions-recursion}
 
-Capture Functions are able to refer to themselves for the purpose of recursion. This means that `__self_func` ([[__self_func]]), unlike for expression-based/unnamed Literal Functions/Lambdas/Block literals, is not required:
+Capture Functions are able to refer to themselves for the purpose of recursion. This means that `__self_func` ([[__self_func]]), unlike for expression-based/unnamed Function Literals/Lambdas/Block literals, is not required:
 
 ```cpp
 int main () {
@@ -2165,7 +2166,7 @@ int main(int argc, char* argv[]) {
 
 This also makes it **suitable for use in macros**, which is not something a regular Capture Functions can accomplish.
 
-NOTE: This can be alleviated by using Statement Expressions, which would allow Capture Functions to work within typical macros contexts.
+NOTE: This can be alleviated by using Statement Expressions, which would allow Capture Functions to work within typical macro contexts.
 
 
 ### Recursion Is Impossible ### {#design-lambdas-recursion}
@@ -2324,6 +2325,7 @@ Constraints
 </div>
 
 <div class="wording-numbered">
+
 `__self_func` shall only appear in the body of an invocable, and refers to the innermost invocable body core it is inside.
 </div>
 
@@ -2335,8 +2337,8 @@ Semantics
 
 `__self_func` is either:
 
-- the function designator (6.3.3.1) designating and having the type of the function it is used in;
-- or, an lvalue of the closure it is contained within.
+- the lvalue of the closure (6.9.✨) that it is contained within;
+- or, the function designator (6.3.3.1) designating and having the type of the function it is used in.
 
 </div>
 </ins>
@@ -2379,7 +2381,7 @@ For each different entity that an identifier designates, the identifier is *visi
 
 <div class="wording-numbered">
 
-A label name is the only kind of identifier that has <del>*function scope*</del><ins>*invocable scope*</ins>. It can be used (in a `goto` statement) anywhere in the <del>function</del><ins>body of the invocable (6.2.✨)</ins> in which it appears<del>, and</del><ins> excluding the body of any invocables nested, unless otherwise specified. It</ins> is declared implicitly by its syntactic appearance (followed by a `:` and a statement).<ins> Each invocable body has an invocable scope that is separate from the invocable scope of any other invocable body. In particular, a label is visible in exactly one invocable scope (the innermost body in which it appears) and distinct invocable bodies may use the same identifier to designate different labels.</ins>
+A label name is the only kind of identifier that has <del>*function scope*</del><ins>*invocable scope*</ins>. It can be used (in a `goto` statement) anywhere in the <del>function</del><ins>body of the invocable (6.2.✨)</ins> in which it appears<del>, and</del><ins> excluding the body of any nested invocables, unless otherwise specified. It</ins> is declared implicitly by its syntactic appearance (followed by a `:` and a statement).<ins> Each invocable body has an invocable scope that is separate from the invocable scope of any other invocable body. In particular, a label is visible in exactly one invocable scope (the innermost body in which it appears) and distinct invocable bodies may use the same identifier to designate different labels.</ins>
 </div>
 
 <div>
@@ -2474,12 +2476,12 @@ An *invocable* is something with zero or more parameters, and possibly zero or m
 
 <div class="wording-numbered">
 
-The associated series of statements and/or expressions is called the *invocable body* or *body of the invocable*. The body of an invocable has its own scope, and that scope includes any arguments and captures it may have from being invoked. Just the associate series of statements and/or expressions without the arguments and captures is called the *invocable body core*. The scope in which an invocable is declared or defined is called the invocable's *surrounding scope*, which is typically either the block scope of another invocable or file scope.
+The associated series of statements and/or expressions is called the *invocable body* or *body of the invocable*. The body of an invocable has its own scope, and that scope includes any arguments and captures it may when invoked. The scope that includes just the associated series of statements and/or expressions without the arguments and captures is called the *invocable body core*. The scope in which an invocable is declared or defined is called the invocable's *surrounding scope*, which is typically either the block scope of another invocable or file scope.
 </div>
 
 <div class="wording-numbered">
 
-An invocable can have a sequence of arguments passed to it that comply with the constraints and requirements of the invocable's list of parameters. If the parameter list consists of a single parameter of type `void`, the parameter declarator shall not include an identifier. An invocable's parameters have automatic storage duration. The identifier of the parameter, if any, is an lvalue. Variable length array types of unspecified size shall not be used as part of a parameter declaration in a functin definition. The layout of the storage for parameters is unspecified. The type of each parameter is adjusted as described in 6.7.7.4.
+An invocable can have a sequence of arguments passed to it that comply with the constraints and requirements of the invocable's list of parameters. If the parameter list consists of a single parameter of type `void`, the parameter declarator shall not include an identifier. An invocable's parameters have automatic storage duration. The identifier of the parameter, if any, is an lvalue. Variable length array types of unspecified size shall not be used as part of a parameter declaration in a function definition. The layout of the storage for parameters is unspecified. The type of each parameter is adjusted as described in 6.7.7.4.
 </div>
 
 <div class="wording-numbered">
@@ -2533,7 +2535,7 @@ A *function designator* is an expression that has <del>function</del><ins>invoca
 - "function returning *R*";
 - or, "closure literal returning *R*",
 
-is converted to an expression that has type "pointer to function returning *R*".
+is converted to an expression that has type "pointer to function returning *R*", where "*R*" is the return type.
 </ins>
 </div>
 
@@ -2605,7 +2607,7 @@ Constraints
 
 <div class="wording-newnumbered">
 
-Unless otherwise specified, every jump and label is associated with the innermost invocable body it is contained within. Nested declarations or definitions of invocable bodies shall not refer to jump, iteration, or labeled statements in the invocable's surrounding scope and shall refer to a visible label or statement in the body of the associated invocable's scope.
+Unless otherwise specified, every jump and label is associated with the innermost invocable body it is contained within. Nested declarations or definitions of invocable bodies shall not refer to jump, iteration, or labeled statements in the invocable's surrounding scope and shall only refer to a visible label or statement in the body of the associated invocable's scope.
 </div>
 </ins>
 
@@ -2619,6 +2621,62 @@ A *statement* specifies an action to be performed. Except as indicated, statemen
 </div>
 
 </div>
+</blockquote>
+
+
+### Modify §6.8.3 "Compound Statement" ### {#wording-core-6.8.3}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.8.3</span> <span class="wording-clause-title">Compound Statement</span>
+</div>
+
+<div class="wording-section">
+
+
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered">
+
+A *compound statement* that is a <del>function body</del><ins>invocable body</ins> together with the parameter type list and the optional attribute specifier sequence between them forms the block associated with the function definition<ins>, closure definition, or closure declaration</ins> in which it appears. Otherwise, it is a block that is different from any other block. A label that is not followed by another label or an unlabeled statement shall be translated as if it were followed by a null statement.
+</div>
+
+</div>
+</blockquote>
+
+
+### Modify §6.9.2 "Function definitions" ### {#wording-core-6.9.2}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.9.2</span> <span class="wording-clause-title">Function definition</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+
+*function-definition*:
+:: *attribute-specifier-sequence*<sub>opt</sub> *declaration-specifiers* *declarator* <ins>*empty-function-capture-clause*<sub>opt</sub></ins> *function-body*
+
+<ins>
+
+*empty-function-capture-clause*</ins>:
+:: `_Capture` `(` `)`
+
+</ins>
+
+</div>
+
+</div>
+
 </blockquote>
 
 
@@ -2640,12 +2698,40 @@ Description
 
 <div class="wording-numbered">
 
-A *closure* is a complete structure or union object of invocable type that therefore can be invoked.
+A *closure* is a complete structure or union object of invocable type which has zero or more captures and zero or more parameters.
 </div>
 
 <div class="wording-numbered">
 
-The object type is composed of at least any necessary implicit or explicit captures (6.9.✨.2). Its size, layout, and representation are all implementation-defined unless otherwise specified. Each closure's type is unique to the declaration or expression responsible for defining the closure and that type is not required to be compatible with any other type, unless otherwise specified.
+A closure's object is composed of at least any information necessary to invoke it and for its implicit or explicit captures (6.9.✨.2). Its size, layout, and representation are all implementation-defined unless otherwise specified. Each closure's type is unique to the declaration or expression responsible for defining the closure and that type is not required to be compatible with any other type, unless otherwise specified.
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+Within the invocable body of a closure, identifiers shall be used according to the usual scoping rules. Captures and parameters can be accessed by their name in the invocable body. However, no identifier that is a variably-modified type or an object of variably-modified type shall be used in the invocable body core.
+</div>
+
+<div class="wording-numbered">
+
+An identifier that is an object of automatic storage duration which has a storage-class specifier of `constexpr` may also be used, but its address shall not be taken in the invocable body of the closure.
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered">
+
+Unless otherwise specified for the associated closure, each capture's value can be accessed with the member access operators `.` on a closure, or `->` on a pointer to a closure. The layout of the storage for the captures is implementation-defined.
+</div>
+
+<div class="wording-numbered">
+
+NOTE&emsp;&emsp; While accessing captures uses the member access operators, there is no requirements or constraints on what the actual members, layout, and internal implementation of a closure is.
 </div>
 
 </div>
@@ -2687,7 +2773,7 @@ A *capture list* allows access to objects visible in a certain scope named by th
 
 <div class="wording-numbered">
 
-A capture composed of only `=` is a *default value capture*. A capture composed of only `&` is a *default reference capture*. Either one is called a *default capture*. The identifier in a capture is the *capture name*. The optional capture rename is the *capture initialization expression*. A capture with no capture initialization expression is called a *identifier capture*. A capture with no expression is called an *expression capture*.
+A capture composed of only `=` is a *default value capture*. A capture composed of only `&` is a *default reference capture*. Either one is called a *default capture*. The identifier in a capture is the *capture name*. The optional capture rename is the *capture initialization expression*. A capture with no capture initialization expression is called a *identifier capture*. A capture with a capture initialization expression is called an *expression capture*.
 </div>
 
 <div class="wording-numbered">
@@ -2706,7 +2792,7 @@ Constraints
 
 <div class="wording-numbered">
 
-The capture name shall appear at most once across the capture list and, if present, the parameter names of an associated closure. If present, a default capture shall be the first capture in the capture list and shall appear at most once. If the associated scope of a capture list is file scope, then no captures are permitted in the capture list.
+The capture name shall appear at most once across the capture list and, if present, the parameter names of an associated closure. A default capture, if present, shall be the first capture in the capture list and shall appear at most once. If the associated scope of a capture list is file scope, then no captures are permitted in the capture list.
 </div>
 
 <div class="wording-numbered">
@@ -2716,7 +2802,12 @@ For a capture that is a reference capture and an identifier capture, the identif
 
 <div class="wording-numbered">
 
-For an identifier capture, the capture name shall be the identifier of an object visible from the associated scope.
+For an identifier capture, the capture name shall be a visible identifier of automatic storage duration from the associated scope.
+</div>
+
+<div class="wording-numbered">
+
+If a default value capture is specified, then subsequent captures shall only be reference captures. If a default reference capture is specified, then subsequent captures shall only be value captures.
 </div>
 
 <div class="wording-numbered">
@@ -2735,7 +2826,7 @@ Semantics
 
 <div class="wording-numbered">
 
-Capture lists are evaluated when their associated closure is evaluated. The order of evaluation for captures are sequenced in order of declaration. A capture's identifier is complete after its optional capture initialization expression. An earlier capture may occur within the capture initialization expression of a later capture.
+Capture lists are evaluated when their associated closure is evaluated. The order of evaluation for captures are sequenced in order of declaration. The capture name is complete after its optional capture initialization expression. An earlier capture may occur within the capture initialization expression of a later capture.
 </div>
 
 <div class="wording-numbered">
@@ -2766,6 +2857,15 @@ Let *T* be the type of the capture after lvalue, array-to-pointer, or function d
 <div class="wording-numbered">
 
 NOTE&emsp;&emsp; A capture therefore will not have array type itself, but a member of the captured type can possibly have array type.
+</div>
+
+<div class="wording-clause-section-title">
+Recommended practice
+</div>
+
+<div class="wording-numbered">
+
+If all captures in a capture list are reference captures, implementations are encouraged to take advantage of potential storage optimizations with respect to the lifetime of any associated closure.
 </div>
 
 </div>
@@ -2880,11 +2980,6 @@ Constraints
 
 <div class="wording-numbered">
 
-Within the body of a lambda expression, identifiers shall be used according to the usual scoping rules. Captures and parameters can be accessed by their name in the body, but no other identifiers from the surrounding scope shall be accessed except within a capture initialization expression.
-</div>
-
-<div class="wording-numbered">
-
 If a lambda or pointer to lambda is the first operand of the `.` operator or `->` operator, respectively, the second operand shall only specify a capture name from that lambda's capture clause as the identifier to designate a member.
 </div>
 
@@ -2913,12 +3008,7 @@ Similar to a function definition, a lambda expression forms a single block that 
 
 <div class="wording-numbered">
 
-Value captures have the same storage duration as the lambda. Value captures are initialized and formed during the evaluation of the lambda, and are tied to that specific lambda expression's closure. Each invocation to the formed lambda creates a new instance of each parameter, similar to a function call. The layout of the storage for parameters is unspecified.
-</div>
-
-<div class="wording-numbered">
-
-Each capture's value can be accessed with the member access operators `.` on a lambda object, or `->` on a pointer to a lambda object. The layout of the storage for the captures is implementation-defined.
+Value captures have the same storage duration as the lambda. Value captures are initialized and formed during the evaluation of the lambda expression, and are tied to that specific lambda expression's closure. Each invocation to the formed lambda creates a new instance of each parameter, similar to a function call. The layout of the storage for parameters is unspecified.
 </div>
 
 </div>
@@ -3051,7 +3141,12 @@ Constraints
 
 <div class="wording-numbered">
 
-At file scope, a function declarator with a function body and no function capture clause shall be considered a function definition (6.9.2). If a function declarator with a function body has a function capture clause, it shall contain no captures and be considered a function definition. At block scope, a function declarator with a function body and no function capture clause shall be considered a capture function declarator.
+At file scope:
+
+- a function declarator with a function body and no function capture clause shall be considered a function definition (6.9.2);
+- and, if a function declarator with a function body has a function capture clause, it shall contain no captures and shall be considered a function definition.
+
+At block scope, a function declarator with a function body and no function capture clause shall be considered a capture function declarator.
 </div>
 
 <div class="wording-numbered">
@@ -3067,11 +3162,6 @@ The return type shall be `void` or a complete object type other than array type.
 <div class="wording-numbered">
 
 The storage-class specifier, if any, in the declaration specifiers shall not be `typedef`.
-</div>
-
-<div class="wording-numbered">
-
-Within the body of a capture function, identifiers shall be used according to the usual scoping rules. Captures and parameters can be accessed by their name in the body, but no other identifiers for automatic storage duration objects or variably-modified types may from the surrounding scope shall be accessed except within a capture initialization expression.
 </div>
 
 <div class="wording-numbered">
@@ -3094,7 +3184,7 @@ and the type specified for the identifier *ident* in the declaration "`T` `D`" i
 
 <div class="wording-numbered">
 
-If a capture function is declared and defined outside of file scope without a function capture clause, it is equivalent to having a function capture clause of `_Capture()`.
+If a capture function is declared and defined at block scope without a function capture clause, it is equivalent to having a function capture clause of `_Capture()`.
 </div>
 
 <div class="wording-numbered">
@@ -3131,6 +3221,108 @@ Value captures have the same storage duration as the capture function. Value cap
 <div class="wording-numbered">
 
 Each capture's value can be accessed with the member access operators `.` on a capture function object, or `->` on a pointer to a capture function object. The layout of the storage for the captures is implementation-defined.
+</div>
+
+<div class="wording-numbered">
+
+```cpp
+#include <stdlib.h>
+
+typedef int seven_fn_trampoline_t(void*);
+typedef struct seven_fn_data {
+	seven_fn_trampoline_t* f;
+	void* p;
+} seven_fn_data;
+
+seven_fn_data make_seven (int x) {
+	int y = 7;
+	int seven_fn() _Capture(x, y) {
+		return x * y;
+	}
+	typedef typeof(seven_fn) seven_fn_t;
+	int seven_fn_trampoline(void* p) {
+		seven_fn_t* seven_fn = p;
+		return seven_fn();
+	}
+	seven_fn_data d = {
+		.f = seven_fn_trampoline, // OK: closure literal
+		.p = malloc(sizeof(seven_fn))
+	};
+	// simple assignment of closure into allocated storage
+	*((seven_fn_t*)d.p) = seven_fn;
+	return d; 
+}
+
+typedef int eight_fn_t();
+
+eight_fn_t* make_eight () {
+	int eight_fn () _Capture() {
+		return 8;
+	}
+	return eight_fn; // OK: empty capture means closure literal
+}
+
+typedef int nine_fn_t();
+
+nine_fn_t* make_nine () {
+	int val = 30;
+	int nine_fn () _Capture(val) {
+		return val;
+	}
+	return nine_fn; // constraint violation: cannot convert
+	// closure to function pointer
+}
+
+int main () {
+	int x = 10;
+	int zero () {
+		// OK, no external variables used
+		return 0;
+	}
+	int also_zero () _Capture() {
+		// same as above, just explicit
+		return 0;
+	}
+	int double_it () {
+		return x * 2; // constraint violation
+	}
+	int also_wrong () _Capture() {
+		return x * 2; // constraint violation
+	}
+	int triple_it () _Capture(x) {
+		return x * 3; // OK, x = 3 when called
+	}
+	int quadruple_it () _Capture(&x) {
+		return x * 4; // OK, x = 5 when called
+	}
+	int quintuple_it () _Capture(=) {
+		return x * 5; // OK, x = 3 when called
+	}
+	int sextuple_it () _Capture(&) {
+		return x * 6; // OK, x = 5 when caled
+	}
+	x = 1000;
+	
+	void* trampoline_data = nullptr;
+	auto seven_tuple_it = make_seven(x);
+	
+	eight_fn_t* eight = make_eight();
+	int result = zero()
+		+ triple_it() + quadruple_it()
+		+ quintuple_it() + sextuple_it()
+		+ seven_tuple_it.f(seven_tuple_it.d)
+		+ eight();
+	// same as
+	// int result = 17088;
+	// 0
+	// + (10 * 3) + (1000 * 4)
+	// + (10 * 5) + (1000 * 6)
+	//            + (1000 * 7)
+	// + 8
+	free(seven_tuple_it.d);
+	return result;
+}
+```
 </div>
 
 </div>
@@ -3903,13 +4095,21 @@ The following CVEs are related to executable stack issues.
 		"date": "August 10th, 1997",
 		"href": "https://seclists.org/bugtraq/1997/Aug/63"
 	},
-	"n3645": {
+	"n3678": {
 		"authors": [
 			"Thiago R. Adams"
 		],
-		"title": "n3645: Literal Functions",
-		"date": "July 11th, 2025",
-		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3645.pdf"
+		"title": "Local Functions",
+		"date": "September 30th, 2025",
+		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3678.pdf"
+	},
+	"n3679": {
+		"authors": [
+			"Thiago R. Adams"
+		],
+		"title": "Function Literals",
+		"date": "September 30th, 2025",
+		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3679.pdf"
 	},
 	"n3643": {
 		"authors": [
