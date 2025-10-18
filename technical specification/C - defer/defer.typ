@@ -80,7 +80,7 @@ In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.4.
 
 === Recommended practice
 
-An additional keyword ```c _Defer```#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer") should be provided as an alternative spelling for the ```c defer``` keyword#index(apply-casing: false, display: [```c defer```], "Keywords", "defer"), in conjunction with the recommended practice in @stddefer.hdr. It should have all the significance of the ```c defer``` keyword described in this document. This can aid in portability.
+An additional keyword ```c _Defer```#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer") should be provided as an alternative spelling for the ```c defer``` keyword#index(apply-casing: false, display: [```c defer```], "Keywords", "defer"), in conjunction with the recommended practice in @lib-stddefer.hdr. It should have all the significance of the ```c defer``` keyword described in this document. This can aid in portability.
 
 == Statements <statements> 
 #stable_tag("statements")
@@ -569,8 +569,8 @@ int main() {
 ```
 
 
-== Predefined macro names <macro.predef> 
-#stable_tag("macro.predef")
+== Predefined macro names <predef.macro> 
+#stable_tag("predef.macro")
 
 In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.10.10, an implementation shall define the following macro names:
 
@@ -584,21 +584,29 @@ In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.10
 
 The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 7 apply with additional requirements in this document.
 
-== The `thrd_create` function <thrd.create> 
+== The `thrd_create` function <lib-thrd.create> 
 #stable_tag("thrd.create")
 #index(apply-casing: false, display: [```c thrd_create```], "thrd_create")
 
 In addition to the description and return requirements in in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §7.28.5.1, when the ```c thrd_start_t func``` parameter is returned from, it behaves as if it also runs any defer statements that are in scope for `func` before invoking ```c thrd_exit```#index(apply-casing: false, display: [```c thrd_exit```], "thrd_exit") with the returned value.
 
-== Defer mechanism `<stddefer.h>` <stddefer.hdr> 
-#stable_tag("stddefer.hdr")
+== Defer mechanism `<stddefer.h>` <lib-stddefer.hdr> 
+#stable_tag("lib-stddefer.hdr")
+
+A macro
+
+```c
+__STDC_VERSION_STDDEFER_H__
+```
+
+is an integer constant expression with the value ```c 202602L```.#index(apply-casing: false, display: [```c __STDC_VERSION_STDDEFER_H__```], "macros", "__STDC_VERSION_STDDEFER_H__")
 
 === Recommended practice
 
-Implementations should provide a ```c <stddefer.h>``` header with a macro
+Implementations should provide a macro
 
 ```c
 defer
 ```
 
-#para_continue() which expands to ```c _Defer```#index(apply-casing: false, display: [```c defer```], "macros", "defer") in conjunction with the recommended practice in @keywords. This can aid in portability.
+#para_continue() which expands to ```c _Defer```#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer") in conjunction with the recommended practice in @keywords. This can aid in portability.
