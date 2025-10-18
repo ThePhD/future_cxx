@@ -1,36 +1,6 @@
 #import "@preview/based:0.1.0": base64
 #import "@preview/in-dexter:0.7.0": *
 
-#let standard_iso9899_introduction_boilerplate = [This document is divided into four major subdivisions:
-
-- preliminary elements (Clauses 1-4);
-- the characteristics of environments that translate and execute C programs (Clause 5);
-- the language syntax, constraints, and semantics (Clause 6);
-- the library facilities (Clause 7).
-
-In any given subsequent clause or subclause, there are section delineations in bold to describe the semantics, restrictions, and behaviors of programs for this language and potentially the use of its library clauses in this document:
-
-- *Syntax* \
-	which pertains to the spelling and organization of the language and library;
-- *Constraints* \
-	which detail and enumerate various requirements for the correct interpretation of the language and library, typically during translation;
-- *Semantics* \
-	which explain the behavior of language features and similar constructs;
-- *Description* \
-	which explain the behavior of library usage and similar constructs;
-- *Returns* \
-	which describes the effects of constructs provided back to a user of the library;
-- *Recommended practice* \
-	which provides guidance and important considerations for implementers of this document.
-
-Examples are provided to illustrate possible forms of the constructions described. Footnotes are provided to emphasize consequences of the rules described in that subclause or elsewhere in this document. References are used to refer to other related subclauses. Recommendations are provided to give advice or guidance to implementers.
-
-Additionally, references internal to claues and subclauses in this document are specified by a stable tag that beings with a "\[", proceeds with a list of letters, numbers, hyphens, and periods, and a final, terminating "\]".]
-
-#let iso_iec_logo_base64 = "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"
-
-#let iso_iec_logo = image(base64.decode(iso_iec_logo_base64))
-
 #let example_counter = counter("example")
 #let example() = {
 	example_counter.step()
@@ -60,7 +30,14 @@ Additionally, references internal to claues and subclauses in this document are 
 	}
 }
 
-#let stable_tag(tag) = align(right, text([#para_continue() [#tag]], weight: "bold", size: 0.85em, baseline:-2.0em))
+#let stable_tag_in_outline = state("stable-tag", false)
+#let stable_tag(tag) = context [
+	#let is_in_outline = stable_tag_in_outline.get()
+	#if not is_in_outline [
+		#h(1fr)
+		[#tag]
+	]
+]
 
 #let isoiec(
 	title: none,
@@ -78,6 +55,65 @@ Additionally, references internal to claues and subclauses in this document are 
 	iso: if sys.inputs.at("iso", default: "false") == "true" { true } else { false },
 	contents
 ) = {
+let standard_iso9899_introduction_boilerplate = [This document is divided into four major subdivisions:
+
+- preliminary elements (Clauses 1-4);
+- the characteristics of environments that translate and execute C programs (Clause 5);
+- the language syntax, constraints, and semantics (Clause 6);
+- the library facilities (Clause 7).
+
+In any given subsequent clause or subclause, there are section delineations in bold to describe the semantics, restrictions, and behaviors of programs for this language and potentially the use of its library clauses in this document:
+
+- *Syntax* \
+	which pertains to the spelling and organization of the language and library;
+- *Constraints* \
+	which detail and enumerate various requirements for the correct interpretation of the language and library, typically during translation;
+- *Semantics* \
+	which explain the behavior of language features and similar constructs;
+- *Description* \
+	which explain the behavior of library usage and similar constructs;
+- *Returns* \
+	which describes the effects of constructs provided back to a user of the library;
+- *Recommended practice* \
+	which provides guidance and important considerations for implementers of this document.
+
+Examples are provided to illustrate possible forms of the constructions described. Footnotes are provided to emphasize consequences of the rules described in that subclause or elsewhere in this document. References are used to refer to other related subclauses. Recommendations are provided to give advice or guidance to implementers.
+
+References internal to claues and subclauses in this document are specified by a stable tag that beings with a "\[", followed by a list of letters, numbers, hyphens, and periods, and is terminated with a final "\]". There is no structure or hierarchy to the name between the left and right square brackets of the stable tags. Clauses and subclauses in other documents uses section numbers or other appropriate reference nomenclature.]
+
+let iso_iec_logo_base64 = "iVBORw0KGgoAAAANSUhEUgAAAF4AAABYCAYAAAB8i0BzAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAABGxSURBVHhe7ZwHkBRlFsefLKCwgAISl5xBcpRwgoIBQVFhEREo5CyEU4JkqAOXJKCSM56ilEdZCpYcggiSC5AoQXKSKILk4C5Brn9vu5fZ2Z6Znt0Jq86/qmunp2enp//f+17+vvtat469KxGEHBnMvxGEGBHiw4QI8WFChPgwIUJ8mBAhPkyIEB8mRIgPEyLEhwl/isg1c+bMUrx4cSlTpowUKFBQ8ubNI/ff/4A8/PDDev3atWty48YNOXv2Vzlz5owcOnRYDh48oO+lV6Q74jNkyCD58uWTwoWLSNmyZaRcuXJSpEhRJd8dly5dklu3bknOnDklY8aM5rv3cPLkSTlw4IDs3btHjh8/LqdOndLPpwekG+IhvGLFSvLss02lWLHiki1bNsmUKZPcuXPHkN6DhhQfktq1axvSnlcuXrwoH3/8sfz881G9HhMTI6+91kkKFiyo37V06Xc6G8qVKy9Zs2aVP/74Q2fF2bNnZdmypbJ69Wq5eze8jx124nPkyKFS3bz5c6pKIPLXX39VUjdt2iw//bRT4uMTpGXLVvLiiy8a7/8sU6ZMVml2BYPUtWtXqVu3nvE/P8nEiRMkISFBya9du5bx3WUNNVXAUFH3y7lz5+SbbxbKtm3b9HU4BiFsxCPhdevWleeee95QJUXkvvvuk927d8u33y5Wci9cuJBESJMmTaRTp3+qqnj33ZEq8XZglrz9di+pUKGCLFz4P5k7d66+z3dnz55dZ0STJk9K/fr19X1IX778e1mwYIGehxJRjzzySJz5OiSABHR4x46vSatWrSQ6OlqJnj37Y/niiy/k9OnT8vvvv5ufFsmdO7eS/sADD8jMmTP0s55w8+ZN2bp1q9SrV09q1Kgh+/btVfUCkP7ffvvNmEWbZMOG9WoXGPDq1WuoCjtx4kSywQ42Qko8pD/++OPSpUtXKV++vPzyyy+qq7/88gs1fnYP3bJlSyVxzZrVhu5eqvraG27duilXr141CK0u+fMXkC1btuiAuILrW7dukT179ugAoOq4B68PHNgvt2/fNj8ZPISMeIxcmzZt5JVX2qqeXbFihbz33hiVNE8Pik7u1q27EjVq1CjHHgkqBOKLFSsm+/fvVxfTHQwgM2D9+nXGwCQYHlQ5w7hXVA8KL8h11gUDIQmg0K9vvvmWGlCkHgIhs1KlSoaUPaTvuQMb0KLFC3pt8eLFqiqcAtJQWxjcl15qafv9gPfR+9gM7AczjgEbOHCQGuVgIujGlek7dOgwdQOvX7+uhOKTu/rd6Fam+OHDR4zjsKGCThuDlUN69+4tWbJkkdGjRxuq6JgS46pqXF/zvQAyE48MEhcXJ6VKldKZhUuK8S1cuLC+V7JkKfWiGBzAdyMQzD7uyWCMGTNGvatgIKjE58qVS7p376E6dPPmzYY+/0hVTqFChdT3ZlrHxBQ0pC4m2UBAKBKOQYWMQ4cOGlIcryrhxo17KiA+PvF1hgxRSQEWRHLwv5CMP08Ey2BAqCsQBNzSU6dOqo3BsJ8795s0atRQZyezEoOO2xloBI14iBgz5j2dyvv27VM30JO6QFrRx0hgiRIl9HWhQoUlKipK/Xp3VeF+7gp3A23NBEg+ceK4HDt2TFMK+/fv03jBE2JjYzV2YDYOGzbU1k6kBUEhHsl6440u8uijj8qPP/6owUx8fLx51TeQ0okTJ6mRHD16lKoIJJj8TMaMUfraDpDOfW7fvqOz4/r1G9K+fXsd0LFjP9Df4hTco3Xr1kYk3cwYrJ9l3LhxXgfKXwTFq+HHNm3aVKWFB2bK+oMnnnhCqlWrpsHNDz/8oN+DP47uxwgitZ4OruOm8vlLly4aA5VJ/fQrV67Kjh3bzTv4Brp+165dKgRVq1bTGbhx40adgYFAwL2amjVryssvv6zGCaN2/vx584ozoF4qVaqsvjeRbFqxZctmJQtvxZuKsgO2Zt68eWpgiTuefPIp80raEVDiybsQkkP2nDmfeo0yPSExOZZR//fMmbRP7cuXL2s0y4ASBfsL1N2kSZN01jVu3DgpEZdWhC1X83dHSAKoCFIi3Uk87l90dDZD5URrasG9wIHux7fHe+EIRmiPV0a0jWfjWoDBVnB/cvs4DK4BnL/wSnyDBv9QvZZW8AO/+mq+V2NJxrJevfqa0n3ooYc00OKh0c2ugHQOYgLr8ITvvvvO8Io2mGfeQdBleHiGC1xXihYtollT3FcrsgU8B8QTkGE78JLWr1+vOR9/4ZV4Cg9t2rxinqUeuGYULzZsSE4CXkbJkiWlWbNmUqfOoylITis+/fRTWbx4kXlmjwcffFCqVKmiOR2Scv6CZ1u3bp3ex5/SYth0PNO4Q4cO0r//AJX0QJPuBFWqVJUBAwZqAi81pANUYcOGDWXIkHc0WHOdId4QFuKRdKLCpk2fVRc01MCOMMsGDRqkKYpAANX09NPPGJH2GFWbvhAW4olMn3rqab8DmkChRYsWxsC/bJ4FFiT/evToodlVbwg58aSJKeU5mZJWlhLPxTo491Q48QUGukGDBmq3POV70opEu1VK4uLeUa/ME7zmagiTablIKyCQWicpWIwouRNf0k5Gc/78ebJo0TfqnSxfvkKrVhs3/mB4EzvkyJGjOghMaysD6Q4+Rx7eAmnqzp3fcKTeSLhRHeM7tm/frnmgq1evqMflRGhy5HjQcHcTtAJmB69eTbVq1aVWrVrmWSI49/XDse4QZwHiV6xYbpB1RA1qs2bNzSv2IDzv1u0tR5INkZ5cXnevhvqtExXD7+V/6c/htSsYvD59+qhU+wKp5IEDB9h2tHmV+DNnftE8h+tRr15dQ13kMj9hDxJTs2bNTPofCgkkzZDyhg0baXXfGyhKLF++3DzzjtKly2gOhny7+7Fr186kfBHC8tZb3bxOfwBJ06ZNk1WrVqbI7QPUHUUdqlh58uQx37UHeacLF85rVc0dIdXxEO9kmpI/r1OnjnnmHfPmfSm9e/eyPegYs0APD9GoLyAomzZtNM/sceXKFe2OYHB9wVPNN6TEI0FOGkn5oUhnv379pHnz5joIZcuW1RIh5Ln6/Kgjokm7w1IT2ACntgppdpJzP3furKN6LDbBzmUNOfFMPScgXVCjRk1p1669tnhQ+R82bJh88MFYGTduvAZesbGttSXD1yzKmjU6qbPYF2hydQLyRNgsJ6CU6Y6Qu5P8WDvd6QmWerISV0hQ/vz5tbBBJ9rgwUNk5sxZ0qtXL+0gszP80dFZVd/6ArORqpVTUOlyAlrL3RFy4imneep9TC2IGnFTCf1pJaFs6Apmjy+jCjx1s3nC+fMXzFfekT17thR6PuTEM0XHjx8n1675V4d1AvImVIhQTXQNW+ChPfn6rrhzx7/AjGdxAuq+YSceoEc/+eQTx5k8f8EM6Ny5s/bzpFeEhXiwdu1aQy0M1cgODyTQIJ9PXwxqBu/GiaeSJUtW85UzUKxxAlpN3AOxsBEPWKdE38z7778nS5Z8G/CmITrJCHKsapUvkODyJz3ttHh++fIV89U9hJV4gCexc+dOmT17tvTo0d3w39+UqVOnaH5mz57dOhh0LRC0QJ675HgDHhBJOaJNynW+gAF26nais+m1cQIyAO4IO/HuoJ1izZo12meJKiICHTRooOnDvy+zZs3SnncngBySaAyu3cPbgdKjE6DK7PxzO7gm6iyEnHikCl/b7nAvbAMiU1b30feIK7py5QpVTXPn/tf8hHfwnbiIpAKcoHbtOo7SGqgxloD6QmJT7Cnz7B5CTvzzzz8vH374H9uDYrNTLF26zHzlHfRPAmuhmS/Qs0+nsDf3E9LpDfU1QKhF+vTt4DU7yfogFgfUrFkr6ShdurTPYITqPNJg/Q+hPxEhgRPkVqhgTzAqxE463IEKady4SYpAyR3MFvL5pJl5zSDQYujuU7sC40oaguiY7KZlU/ifxJxPRenTp6/PzCSg2fXzzz+3TW+HvMuA9udWrWLNK8mBSjhy5LAcPXpUe9UvXbqshhF/H+nKnDmTGsvy5Ss4yl5imEeMGJ4k6aQN+vXrrwk3J+De9M4jMAgTZPtTFJ8+fbqsXr3KNhpOV8S7gh+LtLn+aEvqvEmsK1atWiUzZkxP9h3M2BEjRppnwQP9NpMnT/LohaU7r8YC5DLtMY7WwblT0tnXgCYqd2nDw6B1HIMdLJDPnzZtqlfXN90SnxagGsaPH+9xIQE5d4hxmmvxB0j6jBkzfKZD/lLE3759S9sEx44d6zVXziygiN2/fz9d+BCInBFOAbEHq1+cVKb+EsRDJDmfCRPGq49PKsIJML5I/pAhg3UA3NWSExBVf/TRR2rEWQDtFF6NK6udyXOnFSSovv9+mRZ98ZMrV65sXkkOElq5cz9sNowmdgq7979AjpV7QaUcPnxIfXS8oNQQ5wr6KPGWcBkp6HNvV9eZ5+C+169f03YP1lQxw1JzX6/EhwuJriNrYTMZD558nxoMFtlMemr4m1ayPQHSOfgdFrg3xONmOsl2ekO6JP7vgL+kV/NnQECJJzLs27evESxN1V06UgP0LC3PI0e+q2F7IEC0ym9KzeIzQPMS/093g9O0sS8ElHhy3kuWLFHy2rZ9VXsv/QVLXBIS4jXlGgjiablj4QE2wd+ln4Df0LXrvzS3v2jRolSt/rBDwFUNqds5c+ao9Pfo0dNv8jBg27fvUI/Gk/fjD+j15Lu2b3e+qttCVFRGefXVdrr3Ah7M2rVrzCtpR1CMK95Ap06d5LHHGhru1k+Gfz3Br9XdSClTG+maMmWK9sVYXgZpA8vVdEVCAovSbmpeyHI32XiiXbt22smFf0/Q5BS4tO3bd1CVSXGezgiynIFC0LwaXMK4uKGqH/GxBw/+d4rym5X0IuPHRj30TCZuIFEoBbFpBVUo+maIaNlAAjKt/h47l5RNjV544UXN+VAJS42a8oagupPo+p49e2oad+fOHaqCCJCKFCks7CtJQSFfvryGdN3r8kLVQBISSwoYCWZ1HdLLNimcewrxM2e+35gRGYyZkUWyZEmsCeTJc2+fHPdtU0iUEb2eOHHMOE7qQd2ANnJav9kPgcjWteU8UAi6H09Jjz5HJB8Dh6pwzTISjBDusycNUshiAN7DmPF/TPlRo97VdmtLMj0FTdZ38peD9Ui0hA8fPlQ3IWKAmVFsJMoMI0VsVZr4Tgb17t0/dABpSqXOa20mF2iEJICiMPz6669L/foN9BzdTXs1RJNB5IHdASEdO3bUtVJsFjd//nzzijNQO2WHJ/agHD58mPlucqDOYmIKGTaguN4HW8AAJDZczXbclJoahCSAQnXQHfDZZ59pqI00sxUJA2BHOkDlLFy4UD//zDNNVfKdgs/GxrbSlMKCBV+b76YE9z59+pR2IliVJRYkY4iDSToI2S58PCRZQ9KnRYsWVR+/UaNGqn8ZALtuMgYM7cGSIMpuJMMYEF9ggRkrT9DN+N52NgHPiIRdly5ddAU7fTvsvopwoOqCjZARb4F2h82bN2nyicI3BWsK4hhP6pvu+hvjhz+Px4OeZ7Mgb2A29ez5thpSDCP/7w7WL7F2ikUPxBl79+6VyZMnq7Q7GdhAIOTEAzwWVtJhVJnmGEC20aLnHV8cI4zUMQh8lg3gSNdioAlkPBUa8KL69u2nZLJikP5MgL3AQ2JLQxa/sQKb0J/+dtov2OWVvQlCiZAYV29AH5cokbifAZKNN4LPjEqiRLdt21YlhV4Xdn7Cy5g0aWIKHUxwRaRctWpVjVLZ3AfCWYJTp05tw5sproOMQaU56uuvvzYM7y7tZAgHwk68BQjHq2AvM3a+RmWgh5n6uJisN2LLLKJa9DGeDlvUch0XsW3btuqzg5UrV6qxxF3EdcW+MHgMJs2xTrvKgol0Q7wFpBRyWb5SqlRJtQPMCDuvBuPLYgL8c8sft4BBxSawsTMqDdLR96HS4b6Q7oi3A7OBNELx4iW0lTpXrpzJ0rPYYyJOIlHSExDO4clVTQ/4UxD/V0RIAqgIUiJCfJgQIT5MiBAfJkSIDxMixIcJEeLDhAjxYUKE+LBA5P80VWYFezDaYAAAAABJRU5ErkJggg=="
+
+let iso_iec_logo = image(base64.decode(iso_iec_logo_base64))
+
+let is_text_para_continue_with(it, level) = {
+	return (type(it) == str and it.at(0, default: "") == para_continue_marker, level, it)
+}
+let is_text_para_continue(it) = {
+	return is_text_para_continue_with(it, 0)
+}
+let is_content_para_continue_with(it, level) = {
+	if type(it) != content {
+		return (false, level, it)
+	}
+	if it.has("child") {
+		return is_content_para_continue_with(it.at("child", default: none), level + 1)
+	}
+	else if it.has("children") {
+		for child in it.at("children", default: none) {
+			let findings = is_content_para_continue_with(child, level + 1)
+			if findings.at(0) {
+				return findings
+			}
+		}
+	}
+	else if it.has("text") and type(it.text) == str {
+		return is_text_para_continue_with(it.text, level + 1)
+	}
+	return (false, level, it)
+}
+let is_content_para_continue(it) = {
+	return is_content_para_continue_with(it, 0)
+}
 if stage == none {
 	stage = "wd"
 }
@@ -164,14 +200,7 @@ set page(
 	numbering: "i",
 )
 set raw(tab-size: 5, syntaxes: ("isoc.sublime-syntax"), theme: "isoc.tmTheme")
-show raw.where(block: false): code => {
-	show regex("\b(_Defer)\b"): keyword => text(weight:"bold", keyword)
-	show regex("\b(__STDC_DEFER_TS__)\b"): keyword => text(weight:"bold", keyword)
-	show regex("\b(defer)\b"): keyword => text(weight:"bold", keyword)
-	code
-}
 show raw.where(block: true): code => {
-	show regex("\b(defer)\b"): keyword => text(weight:"bold", keyword)
 	pad(left: 2%, right: 2%,
 		block(
 			fill: rgb("#fcfcfc"),
@@ -219,17 +248,20 @@ show outline.entry: entry => {
 	else {
 		v(1em, weak: true)
 	}
-	if entry.element.func() == heading {
+	if entry.element != none and entry.element.func() == heading {
 		let elem = entry.element
 		let is_special_heading = elem.body != none and elem.body.has("text") and type(elem.body.text) == str and elem.body.text.find(special_headings_regex) != none
 		if not is_special_heading {
+			// this is a regular heading:
+			// make sure to trim any labels / stable-tags from this
+			let body = elem.body
 			let number = if elem.numbering != none {
 				let header_nums = counter(heading).at(elem.location())
 				let adjusted_header_nums = special_headings_numbering(elem.level, elem.location(), ..header_nums)
 				numbering(elem.numbering, ..adjusted_header_nums)
 			}
 			let fill = box(width: 1fr, entry.fill)
-			let entry_content = entry.indented(number, [#elem.body #fill #entry.page()], gap: 1.5em)
+			let entry_content = entry.indented(number, [#body #fill #entry.page()], gap: 1.5em)
 			link(elem.location(),
 				if entry.level == 1 {
 					strong(entry_content)
@@ -240,6 +272,7 @@ show outline.entry: entry => {
 			)
 		}
 		else {
+			// this is a special heading:
 			// nothing should be here
 		}
 	}
@@ -323,7 +356,7 @@ All rights reserved. Unless otherwise specified, no part of this publication may
 ISO copyright office \
 Case postale 56 • CH-1211 Geneva 20 \
 #link("tel:+41227490111")[Tel. + 41 22 749 01 11] \
-#link("tel:+41227490947")[Fax + 41 22 749 09 47] \
+#link("tel:+41227490947")[Fax  + 41 22 749 09 47] \
 E-mail #link("mailto:copyright@iso.org") \
 Web #link("https://www.iso.org")[www.iso.org] \
 
@@ -333,7 +366,9 @@ Published in Switzerland \
 pagebreak()
 
 // table of contents
+stable_tag_in_outline.update(_ => true)
 outline(depth: 3, indent:{2em}, title: "Content")
+stable_tag_in_outline.update(_ => false)
 pagebreak()
 
 // Foreword Boilerplate
@@ -383,27 +418,28 @@ set par(justify: true)
 	// block this out so the heading/parapgrah settings
 	// don't extend beyond the provided content of the template
 	set heading(outlined: true, bookmarked: true, numbering: "1.")
+	show heading: it => {
+		it
+		v(0.25em)
+	}
 	show par: it => context {
 		if not iso {
 			// first, we check if the body is just straight text
-			let tweaked = false
-			let target_body = none
-			if it.body.has("text") and type(it.body.text) == str and it.body.text.at(0, default: "") == para_continue_marker {
-				target_body = it.body.text.trim(para_continue_marker, at: start, repeat: false)
-				tweaked = true
-			}
-			// second, we check if the body is a sequence of things, which then contains text
-			else if it.body.has("children") and it.body.children.len() > 0 {
-				let child = it.body.children.at(0)
-				let child_text = child.at("text", default: none)
-				if type(child_text) == str and child_text.at(0, default: "") == para_continue_marker {
-					target_body = it.body.func()(it.body.children.slice(1))
-					tweaked = true
+			let para_continue_search = is_content_para_continue(it.body)
+			let target_body = if para_continue_search.at(0) {
+				if it.body.has("text") and para_continue_search.at(1) == 1 {
+					(true, it.body.text.trim(para_continue_marker, at: start, repeat: false))
+				}
+				else {
+					(true, it.body.func()(it.body.at("children").slice(1)))
 				}
 			}
-			if tweaked and target_body != none {
+			else {
+				(false, it.body)
+			}
+			if target_body.at(0) {
 				grid(
-					target_body
+					target_body.at(1)
 				)
 			}
 			else {
@@ -414,7 +450,7 @@ set par(justify: true)
 							para_counter.step()
 							para_counter.display()
 						},
-						it.body
+						target_body.at(1)
 					)
 				)
 			}
@@ -431,7 +467,7 @@ pagebreak()
 
 heading(
 	numbering: none,
-	[Index]
+	[Index <index>]
 )
 columns(2)[
 	#set text(size: 0.85em)

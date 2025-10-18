@@ -1,4 +1,4 @@
-#import "isoiec.typ": *
+#import "isoiec.typ": isoiec, syntax, note, example, index, para_continue, stable_tag
 
 #show: doc => isoiec(
 	title: "Programming Languages — C — defer, a mechanism for general purpose, lexical scope-based undo",
@@ -11,8 +11,7 @@
 	doc
 )
 
-= Scope <scope> 
-#stable_tag("scope")
+= Scope #stable_tag("scope") <scope>
 
 This Technical Specification specifies a series of extensions of the programming language C, specified by the international standard ISO/IEC 9899:2024#index[ISO/IEC 9899:2024].
 
@@ -20,8 +19,7 @@ Each clause in this Technical Specification deals with a specific topic. The fir
 
 
 
-= Normative References <normrefs> 
-#stable_tag("normrefs")
+= Normative References #stable_tag("normrefs") <normrefs>
 
 The following documents are referred to in the text in such a way that some or all of their content constitutes requirements of this document. For dated references, only the edition cited applies. For undated references, the latest edition of the referenced document (including any amendments) applies.
 
@@ -32,30 +30,25 @@ The following documents are referred to in the text in such a way that some or a
 
 
 
-= Terms and definitions <defn> 
-#stable_tag("defn")
+= Terms and definitions #stable_tag("defn") <defn>
 
 For the purposes of this document, the terms and definitions of ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] apply.
 
 
 
-= Conformance <conf> 
-#stable_tag("conf")
+= Conformance #stable_tag("conf") <conf>
 
 The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 4 apply without any additional requirements in this document.
 
 
 
-= Environment <env> 
-#stable_tag("env")
+= Environment #stable_tag("env") <env>
 
-== General <env-general> 
-#stable_tag("env-general")
+== General #stable_tag("env-general") <env-general>
 
 The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 5 apply along with the following additional requirements to support the ```c defer```#index(apply-casing: false, display: [```c defer```], "Keywords", "defer") feature.
 
-== Program termination <env-prog.term> 
-#stable_tag("env-prog.term")
+== Program termination #stable_tag("prog.term") <prog.term>
 
 === Semantics
 
@@ -65,25 +58,21 @@ If the return type of the ```c main``` function#index(apply-casing: false, displ
 
 
 
-= Language <lang> 
-#stable_tag("lang")
+= Language #stable_tag("lang") <lang>
 
-== General <lang-general> 
-#stable_tag("lang-general")
+== General #stable_tag("lang-general") <lang-general>
 
 The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 6 apply along with the following additional requirements to support the ```c defer```#index(apply-casing: false, display: [```c `defer```], "Keywords", "defer") feature.
 
-== Keywords <keywords> 
-#stable_tag("keywords")
+== Keywords #stable_tag("keywords") <keywords>
 
 In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.4.2, an implementation shall additionally recognize ```c defer```#index(apply-casing: false, display: [```c defer```], "Keywords", "defer") as a keyword.
 
 === Recommended practice
 
-An additional keyword ```c _Defer```#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer") should be provided as an alternative spelling for the ```c defer``` keyword#index(apply-casing: false, display: [```c defer```], "Keywords", "defer"), in conjunction with the recommended practice in @lib-stddefer.hdr. It should have all the significance of the ```c defer``` keyword described in this document. This can aid in portability.
+An additional -- or, possibly, replacement -- keyword ```c _Defer```#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer") should be provided as an alternative spelling for the ```c defer``` keyword#index(apply-casing: false, display: [```c defer```], "Keywords", "defer"), in conjunction with the recommended practice in @lib-stddefer.hdr. It should have all the significance of the ```c defer``` keyword described in this document. This can aid in portability.
 
-== Statements <statements> 
-#stable_tag("statements")
+== Statements #stable_tag("statements") <statements>
 
 In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.8, implementations shall allow the unlabeled statement grammar production to produce a defer statement#index[defer statement] which contains a deferred block#index[deferred block]. A deferred block#index[deferred block] is also considered a _block_ just like a primary block or a secondary block.
 
@@ -108,8 +97,7 @@ In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.
 #index("unlabeled statement")
 #index("defer statement")
 
-== Defer statements <defer>
-#stable_tag("defer")
+== Defer statements #stable_tag("defer") <defer>
 
 === Syntax
 
@@ -170,7 +158,7 @@ If _E_ has any defer statements#index[defer statement] _D_ that have been reache
 
 then any such _S_ are not run, unless otherwise specified by the implementation. Any other _D_ that have not been reached do not have their _S_ run.
 
-#note() The execution of deferred statements upon non-local jumps (i.e., `longjmp` and `setjmp` described in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §7.13)#index("non-local jump") or program termination is a technique sometimes known as "unwinding" or "stack unwinding", and some implementations perform it. See also ISO/IEC 14882#index[ISO/IEC 14882] Programming languages — C++ [except.ctor].
+#note() The execution of deferred statements upon non-local jumps (i.e., `longjmp` and `setjmp` described in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §7.13)#index("non-local jump") or program termination is a technique sometimes known as "unwinding" or "stack unwinding", and some implementations perform it. See also ISO/IEC 14882#index[ISO/IEC 14882] Programming languages — C++ *[except.ctor]*.
 
 #example() Defer statements#index[Defer statement] cannot be jumped over.#index("Keywords", "goto", apply-casing: false, display:[```c goto```])
 
@@ -568,9 +556,7 @@ int main() {
 }
 ```
 
-
-== Predefined macro names <predef.macro> 
-#stable_tag("predef.macro")
+== Predefined macro names #stable_tag("predef.macro") <predef.macro>
 
 In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.10.10, an implementation shall define the following macro names:
 
@@ -579,19 +565,16 @@ In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.10
 
  
 
-= Library <library> 
-#stable_tag("library")
+= Library #stable_tag("library") <library>
 
 The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 7 apply with additional requirements in this document.
 
-== The `thrd_create` function <lib-thrd.create> 
-#stable_tag("thrd.create")
+== The `thrd_create` function #stable_tag("lib-thrd.create") <lib-thrd.create>
 #index(apply-casing: false, display: [```c thrd_create```], "thrd_create")
 
 In addition to the description and return requirements in in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §7.28.5.1, when the ```c thrd_start_t func``` parameter is returned from, it behaves as if it also runs any defer statements that are in scope for `func` before invoking ```c thrd_exit```#index(apply-casing: false, display: [```c thrd_exit```], "thrd_exit") with the returned value.
 
-== Defer mechanism `<stddefer.h>` <lib-stddefer.hdr> 
-#stable_tag("lib-stddefer.hdr")
+== Defer mechanism `<stddefer.h>` #stable_tag("lib-stddefer.hdr") <lib-stddefer.hdr>
 
 A macro
 
@@ -599,7 +582,7 @@ A macro
 __STDC_VERSION_STDDEFER_H__
 ```
 
-is an integer constant expression with the value ```c 202602L```.#index(apply-casing: false, display: [```c __STDC_VERSION_STDDEFER_H__```], "macros", "__STDC_VERSION_STDDEFER_H__")
+#para_continue() is an integer constant expression with the value ```c 202602L```.#index(apply-casing: false, display: [```c __STDC_VERSION_STDDEFER_H__```], "macros", "__STDC_VERSION_STDDEFER_H__")
 
 === Recommended practice
 
