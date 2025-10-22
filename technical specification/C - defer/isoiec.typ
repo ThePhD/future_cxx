@@ -495,3 +495,7 @@ align(bottom, [© ISO #datetime.today().year() - All rights reserved]),
 align(bottom + right, link("https://www.iso.org")[www.iso.org])
 )
 }
+
+#let isoiec_annex(contents) = {
+	contents
+}

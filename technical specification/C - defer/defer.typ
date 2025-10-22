@@ -1,4 +1,4 @@
-#import "isoiec.typ": isoiec, syntax, note, example, index, para_continue, stable_tag
+#import "isoiec.typ": isoiec, isoiec_annex, syntax, note, example, index, para_continue, stable_tag
 
 #show: doc => isoiec(
 	title: "Programming Languages — C — defer, a mechanism for general purpose, lexical scope-based undo",
@@ -46,14 +46,13 @@ The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 4 apply
 
 == General #stable_tag("env-general") <env-general>
 
-The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 5 apply along with the following additional requirements to support the ```c defer```#index(apply-casing: false, display: [```c defer```], "Keywords", "defer") feature.
+The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 5 apply along with the following additional requirements to support the ```c _Defer```#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer") feature.
 
 == Program termination #stable_tag("prog.term") <prog.term>
 
 === Semantics
 
-If the return type of the ```c main``` function#index(apply-casing: false, display: [```c main``` function], "main") is a type compatible with ```c int```, a ```c return``` from the initial call to the main function is equivalent to calling the ```c exit``` function with the value returned by the ```c main``` function as its argument after all defer statements#index[defer statement] that are in scope for the ```c main``` function have been executed.
-#index("program termination")
+If the return type of the ```c main``` function#index(apply-casing: false, display: [```c main``` function], "main") is a type compatible with ```c int```, a ```c return``` from the initial call to the main function is equivalent to calling the ```c exit``` function with the value returned by the ```c main``` function as its argument after all defer statements#index[defer statement] that are in scope for the ```c main``` function have been executed.#index("program termination")
 
 
 
@@ -62,15 +61,15 @@ If the return type of the ```c main``` function#index(apply-casing: false, displ
 
 == General #stable_tag("lang-general") <lang-general>
 
-The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 6 apply along with the following additional requirements to support the ```c defer```#index(apply-casing: false, display: [```c `defer```], "Keywords", "defer") feature.
+The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 6 apply along with the following additional requirements to support the ```c _Defer```#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer") feature.
 
 == Keywords #stable_tag("keywords") <keywords>
 
-In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.4.2, an implementation shall additionally recognize ```c defer```#index(apply-casing: false, display: [```c defer```], "Keywords", "defer") as a keyword.
+In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.4.2, an implementation shall additionally recognize ```c _Defer```#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer") as a keyword.
 
 === Recommended practice
 
-An additional -- or, possibly, replacement -- keyword ```c _Defer```#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer") should be provided as an alternative spelling for the ```c defer``` keyword#index(apply-casing: false, display: [```c defer```], "Keywords", "defer"), in conjunction with the recommended practice in @lib-stddefer.hdr. It should have all the significance of the ```c defer``` keyword described in this document. This can aid in portability.
+Implementations are encouraged to provide an additional keyword ```c defer```#index(apply-casing: false, display: [```c defer```], "Keywords", "defer") as an alternative spelling for the ```c _Defer``` keyword#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer"). It should have all the significance of the ```c _Defer``` keyword described in this document.
 
 == Statements #stable_tag("statements") <statements>
 
@@ -104,12 +103,12 @@ In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.
 #par[
 	#syntax([_defer-statement_:],
 		list(marker: none, indent: 8em,
-			[`defer` _deferred-block_]
+			[```c _Defer``` _deferred-block_]
 		)
 	)
 ]
 #index("defer statement")
-#index(apply-casing: false, display: [```c defer```], "Keywords", "defer")
+#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer")
 
 === Description
 
@@ -156,7 +155,7 @@ If _E_ has any defer statements#index[defer statement] _D_ that have been reache
 - a function with the `_Noreturn` function specifier, or a function annotated with the `noreturn` or `_Noreturn` attribute, is called;#index(initial: "n", display: [`_Noreturn`], apply-casing: false, "_Noreturn")#index(apply-casing: false, display: [`noreturn`], "noreturn")
 - or, any signal `SIGABRT`, `SIGINT`, or `SIGTERM` occurs;#index("signal")
 
-then any such _S_ are not run, unless otherwise specified by the implementation. Any other _D_ that have not been reached do not have their _S_ run.
+#para_continue() then any such _S_ are not run, unless otherwise specified by the implementation. Any other _D_ that have not been reached do not have their _S_ run.
 
 #note() The execution of deferred statements upon non-local jumps (i.e., `longjmp` and `setjmp` described in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §7.13)#index("non-local jump") or program termination is a technique sometimes known as "unwinding" or "stack unwinding", and some implementations perform it. See also ISO/IEC 14882#index[ISO/IEC 14882] Programming languages — C++ *[except.ctor]*.
 
@@ -167,7 +166,7 @@ then any such _S_ are not run, unless otherwise specified by the implementation.
 
 int f() {
 	goto target; // constraint violation
-	defer { fputs(" meow", stdout); }
+	_Defer { fputs(" meow", stdout); }
 target:
 	fputs("cat says", stdout);
 	return 1;
@@ -176,7 +175,7 @@ target:
 int g() {
 	// print "cat says" to standard output
 	return fputs("cat says", stdout);
-	defer { fputs(" meow", stdout); } // okay: no constraint violation,
+	_Defer { fputs(" meow", stdout); } // okay: no constraint violation,
 	// not executed
 }
 
@@ -184,7 +183,7 @@ int h() {
 	goto target;
 	{
 		// okay: no constraint violation
-		defer { fputs(" meow", stdout); }
+		_Defer { fputs(" meow", stdout); }
 	}
 target:
 	fputs("cat says", stdout);
@@ -193,7 +192,7 @@ target:
 
 int i() {
 	{
-		defer { fputs("cat says", stdout); }
+		_Defer { fputs("cat says", stdout); }
 		// okay: no constraint violation
 		goto target;
 	}
@@ -203,7 +202,7 @@ target:
 }
 
 int j() {
-	defer {
+	_Defer {
 		goto target; // constraint violation
 		fputs(" meow", stdout);
 	}
@@ -213,7 +212,7 @@ target:
 }
 
 int k() {
-	defer {
+	_Defer {
 		return 5; // constraint violation
 		fputs(" meow", stdout);
 	}
@@ -222,7 +221,7 @@ int k() {
 }
 
 int l() {
-	defer {
+	_Defer {
 target:
 		fputs(" meow", stdout);
 	}
@@ -235,7 +234,7 @@ int m() {
 	goto target; // okay: no constraint violation
 	{
 target:
-		defer { fputs("cat says", stdout); }
+		_Defer { fputs("cat says", stdout); }
 	}
 	fputs(" meow", stdout);
 	return 1; // prints "cat says meow" to standard output
@@ -244,7 +243,7 @@ target:
 int n() {
 	goto target; // constraint violation
 	{
-		defer { fputs(" meow", stdout); }
+		_Defer { fputs(" meow", stdout); }
 target:
 	}
 	fputs("cat says", stdout);
@@ -253,7 +252,7 @@ target:
 
 int o() {
 	{
-		defer fputs("cat says", stdout);
+		_Defer fputs("cat says", stdout);
 		goto target;
 	}
 target:;
@@ -264,7 +263,7 @@ target:;
 int p() {
 	{
 		goto target;
-		defer fputs(" meow", stdout);
+		_Defer fputs(" meow", stdout);
 	}
 target:;
 	fputs("cat says", stdout);
@@ -273,7 +272,7 @@ target:;
 
 int q() {
 	{
-		defer { fputs(" meow", stdout); }
+		_Defer { fputs(" meow", stdout); }
 target:
 	}
 	goto target; // constraint violation
@@ -284,7 +283,7 @@ target:
 int r() {
 	{
 target:
-		defer { fputs("cat says", stdout); }
+		_Defer { fputs("cat says", stdout); }
 	}
 	goto target; // ok
 	fputs(" meow\n", stdout);
@@ -294,7 +293,7 @@ target:
 int s() {
 	{
 target:
-		defer { fputs("cat says", stdout); }
+		_Defer { fputs("cat says", stdout); }
 		goto target; // ok
 	}
 	// never reached
@@ -306,7 +305,7 @@ int t() {
 	int count = 0;
 	{
 target:
-		defer { fputs("cat says ", stdout); }
+		_Defer { fputs("cat says ", stdout); }
 		++count;
 		if (count <= 2) {
 			goto target; // ok
@@ -319,7 +318,7 @@ target:
 int u() {
 	int count = 0;
 	{
-		defer { fputs("cat says", stdout); }
+		_Defer { fputs("cat says", stdout); }
 	target:
 		if (count < 5) {
 			++count;
@@ -336,7 +335,7 @@ target: if (count >= 2) {
 		fputs("meow", stdout);
 		return 1; // prints "cat says cat says meow "
 	}
-	defer { fputs("cat says ", stdout); }
+	_Defer { fputs("cat says ", stdout); }
 	count++;
 	goto target;
 	return 0; // never reached
@@ -349,7 +348,7 @@ target: if (count >= 2) {
 int main() {
 	int r = 4;
 	int* p = &r;
-	defer { *p = 5; }
+	_Defer { *p = 5; }
 	return *p; // return 4;
 }
 ```
@@ -368,13 +367,13 @@ int f(size_t n, void* buf) {
 int main() {
 	const int size = 20;
 	void* buf = malloc(size);
-	defer { free(buf); }
+	_Defer { free(buf); }
 	// buffer is not freed until AFTER use_buffer returns
 	return use_buffer(size, buf);
 }
 ```
 
-#para_continue() Conversions#index("conversions") for the purposes of return are also computed before ```c defer```#index(apply-casing: false, display: [```c defer```], "Keywords", "defer") is entered.
+#para_continue() Conversions#index("conversions") for the purposes of return are also computed before ```c _Defer```#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer") is entered.
 
 ```c
 #include <float.h>
@@ -382,7 +381,7 @@ int main() {
 
 bool f() {
 	double x = DBL_SNAN;
-	defer {
+	_Defer {
 		// fetestexcept(FE_INVALID) is nonzero because of the
 		// comparison during the conversion to bool
 		assert(fetestexcept(FE_INVALID) != 0);
@@ -401,7 +400,7 @@ int f() {
 	if (p == NULL) {
 		return 0;
 	}
-	defer free(p);
+	_Defer free(p);
 	exit(1); // "p" may be leaked
 	return 1;
 }
@@ -419,11 +418,11 @@ int main() {
 
 int main() {
 	{
-		defer {
+		_Defer {
 			fputs(" meow", stdout);
 		}
 		if (true)
-			defer fputs("cat", stdout);
+			_Defer fputs("cat", stdout);
 		fputs(" says", stdout);
 	}
 	// "cat says meow" is printed to standard output
@@ -439,11 +438,11 @@ This applies to any enclosing block, even ```c for``` loops without braces aroun
 
 int main() {
 	const char* arr[] = {"cat", "kitty", "ferocious little baby"};
-	defer {
+	_Defer {
 		fputs(" meow", stdout);
 	}
 	for (unsigned int i = 0; i < 3; ++i)
-		defer printf("my %s,\n", arr[i]);
+		_Defer printf("my %s,\n", arr[i]);
 	fputs("says", stdout);
 	
 	// "my cat,
@@ -461,14 +460,14 @@ int main() {
 int main() {
 	int r = 0;
 	{
-		defer {
-			defer r *= 4;
+		_Defer {
+			_Defer r *= 4;
 			r *= 2;
-			defer {
+			_Defer {
 				r += 3;
 			}
 		}
-		defer r += 1;
+		_Defer r += 1;
 	}
 	return r; // return 20;
 }
@@ -495,9 +494,9 @@ int main() {
 int main() {
 	void* p = malloc(1);
 	switch (1) {
-	defer free(p); // constraint violation
+	_Defer free(p); // constraint violation
 	default:
-		defer free(p);
+		_Defer free(p);
 		break;
 	}
 	return 0;
@@ -510,17 +509,17 @@ int main() {
 int main() {
 	switch (1) {
 	default:
-		defer {
+		_Defer {
 			break; // constraint violation
 		}
 	}
 	for (;;) {
-		defer {
+		_Defer {
 			break; // constraint violation
 		}
 	}
 	for (;;) {
-		defer {
+		_Defer {
 			continue; // constraint violation
 		}
 	}
@@ -536,7 +535,7 @@ int main() {
 int main() {
 	void* p = malloc(1);
 	return 0;
-	defer free(p); // not executed, p is leaked
+	_Defer free(p); // not executed, p is leaked
 }
 ```
 
@@ -551,7 +550,7 @@ extern void un_purr(handle h);
 int main() {
 	handle h;
 	int err = purr(&h);
-	defer if (!err) un_purr(h);
+	_Defer if (!err) un_purr(h);
 	return 0;
 }
 ```
@@ -560,7 +559,7 @@ int main() {
 
 In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.10.10, an implementation shall define the following macro names:
 
-/ `__STDC_DEFER_TS25755__`: The integer literal `1`.
+/ `__STDC_DEFER_TS25755__`: The integer literal `2` if the implementation follows the recommended practice and provides a keyword ```c defer```#index(apply-casing: false, display: [```c defer```], "Keywords", "defer") as in @keywords. Otherwise, the integer literal `1`.
 #index(display: [```c __STDC_DEFER_TS__```], "macros", "__STDC_DEFER_TS__")
 
  
@@ -576,7 +575,9 @@ In addition to the description and return requirements in in ISO/IEC 9899:2024#i
 
 == Defer mechanism `<stddefer.h>` #stable_tag("lib-stddefer.hdr") <lib-stddefer.hdr>
 
-A macro
+The header ```c <stddefer.h>``` defines the following macros for use with the defer feature.
+
+The macro
 
 ```c
 __STDC_VERSION_STDDEFER_H__
@@ -584,12 +585,12 @@ __STDC_VERSION_STDDEFER_H__
 
 #para_continue() is an integer constant expression with the value ```c 202602L```.#index(apply-casing: false, display: [```c __STDC_VERSION_STDDEFER_H__```], "macros", "__STDC_VERSION_STDDEFER_H__")
 
-=== Recommended practice
-
-Implementations should provide a macro
+The macro
 
 ```c
 defer
 ```
 
-#para_continue() which expands to ```c _Defer```#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer") in conjunction with the recommended practice in @keywords. This can aid in portability.
+#index(apply-casing: false, display: [```c defer```], "macros", "defer")
+
+#para_continue() which expands to ```c _Defer```.#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer")
