@@ -4,7 +4,7 @@
 	title: "Programming Languages — C — defer, a mechanism for general purpose, lexical scope-based undo",
 	authors: ("JeanHeyd Meneide (wg14@soasis.org)"),
 	keywords: ("C", "defer", "ISO/IEC 9899", "Technical Specification", "Safety", "Resource"),
-	id: "NXYZ0",
+	id: "N3734",
 	ts_id: "25755",
 	stage: "cd",
 	abstract: [The advent of resource leaks in programs created with ISO/IEC 9899#index[ISO/IEC 9899] ⸺ Programming Languages, C has necessitated the need for better ways of tracking and automatically releasing resources in a given scope. This document provides a feature to address this need in a reliable, translation-time, opt-in manner for implementations to furnish to programmers.],
@@ -373,7 +373,7 @@ int main() {
 }
 ```
 
-#para_continue() Conversions#index("conversions") for the purposes of return are also computed before ```c _Defer```#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer") is entered.
+#para_continue() Conversions#index("conversions") for the purposes of return are also computed before any defer statements are entered.
 
 ```c
 #include <float.h>
