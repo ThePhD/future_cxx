@@ -1,10 +1,10 @@
 <pre class='metadata'>
 Title: Functions with Data - Closures in C (A Comprehensive Proposal Overviewing Blocks, Nested Functions, and Lambdas)
-Shortname: 3694
-Revision: 1
-!Previous Revisions: None
+Shortname: 37XA
+Revision: 2
+!Previous Revisions: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3694.htm">n3694 (r1)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3657.htm">n3657</a>
 Status: P
-Date: 2025-10-23
+Date: 2025-12-20
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -29,6 +29,12 @@ path: resources/css/bikeshed-wording.html
 
 
 # Changelog # {#changelog}
+
+
+
+## Revision 2 - December 20<sup>th</sup>, 2025 ## {#changelog-r2}
+
+- Talk more directly about `__builtin_call_with_static_chain`, which is sometimes used to call Go-style functions from C [[#intro-static.chain]].
 
 
 
@@ -505,7 +511,7 @@ NOTE: This is also inadvisable for specific ABIs such as ARMv7, where the lowest
 
 A third attempted implementation of Nested Functions attempts to use a separately-allocated trampoline. It can come from either: a stack that is set up at program load time in coordination with the compiler and whose exclusive purpose is to be a memory region for both trampolines and a slot for a `void*` environment/context; OR, a dynamic allocation that serves as the function pointer plus a `void*` environment/context pointer. These approaches simply do not work in the general case because it is unclear when, if ever, the function pointer will stop being used. However, one part of Nested Functions -- the fact that they refer to everything *by name* / "*capture by reference*" all of the things they use -- means that this can be sufficiently approximated by simply stating that GNU Nested Functions will deallocate such a trampoline (or shrink the stack it was cut from) when the enclosing block that was used for the nested function is gone. (Of course, this means that the function pointer will exhibit the exact same lifetime issues as with the current stack, so it solves some problems but leaves others on the table.)
 
-There is also the slight issue that using a separated trampoline that is on a separate heap or a separate stack *might* need (but is not necessarily required) a secondary level of indirection. The original, executable stack implementation of GNU Nested Functions prevents this because both the code and the variables are in-line: having a separated trampoline may require such a trampoline to first load the right function call with `__builtin_call_with_static_chain` [[builtin_call_with_static_chain_gcc|compiler intrinsic]] within the code of the trampoline to have the code work properly.
+There is also the slight issue that using a separated trampoline that is on a separate heap or a separate stack *might* need (but is not necessarily required) a secondary level of indirection. The original, executable stack implementation of GNU Nested Functions prevents this because both the code and the variables are in-line: having a separated trampoline may require such a trampoline to first load the right function call with `__builtin_call_with_static_chain` [[#intro-static.chain]] within the code of the trampoline to have the code work properly.
 
 NOTE: As of early 2025 in GCC 14, GCC provided a heap-based implementation that got rid of the executable stack. This requires some amount of dynamic allocation in cases where it cannot prove that the function is only passed down, not have its address taken in a meaningful way, or if it is not used immediately (as determined by the optimizer). It can be turned on with `-ftrampoline-impl=heap`.
 
@@ -1459,6 +1465,16 @@ int main() {
 	return 0;
 }
 ```
+
+
+
+## `__builtin_call_with_static_chain` ## {#intro-static.chain}
+
+This is an intrinsic that is available both in GCC and in Clang([[builtin_call_with_static_chain_gcc]]). It is the thinnest possible wrapper around the idea of a function call and an associated environment; effectively, it picks a location to store a "context" pointer and "chains" that with the expression that will be the function call without needing to pass that context pointer as an argument.
+
+This kind of intrinsic is effectively directly relatable to what a Wide Function Pointer's ([[#appendix-wide.function.pointer]]) internals would look like. It is also either directly compatible with or cheaply convertible to the inner workings of the (vast) majority of cheap closure pointers in other languages, such as Go, Lua, C++, and more. This is a nice intrinsic to have but it is extremely low-level; it is also deeply implementation-defined and underspecified/undocumented even in the implementations that have it. It also does not translate universally, though plenty of individuals remake the same conceptual thing in other languages (Lua with its "environment" tables for execution of certain functions, Zig and Odin contexts for function bodies, and more).
+
+Standardizing this directly is likely not worth the hassle of trying to pin down a formal specification of what the "static chain" ultimately is. It is also only a single kind of implementation technique for the closure problem: it is not necessarily required to be implemented in the manner that a static chain call would provide or imply. Nevertheless, this is an intrinsic so deep into implementation internals that it could be done separately; we think it would be more applicable and wortwhile to get the better-defined primitives on top of such an intrinsic (such as a Wide Function Pointer type and manual Trampoline creation).
 
 
 

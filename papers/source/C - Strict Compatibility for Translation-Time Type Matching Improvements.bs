@@ -4,7 +4,7 @@ Shortname: 3695
 Revision: 0
 !Previous Revisions: None
 Status: P
-Date: 2025-11-10
+Date: 2025-11-20
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -16,7 +16,7 @@ Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
 Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
 Markup Shorthands: markdown yes
 Toggle Diffs: no
-Abstract: The rules surrounding generic selection have some holes in them thanks to the existing compatibility rules, leading to reasonable looking code to have unexpectedly poor semantics. This proposal attempts to carefully patch up and improve the situation for generic selection, particularly around variable length arrays and constant sized arrays.
+Abstract: The rules surrounding generic selection have some holes in them thanks to the existing compatibility rules and a recent change from Martin Uecker's N3348, leading to reasonable looking code to have unexpectedly poor semantics or, in the case of Variable Length Arrays (VLAs), undefined behavior. This proposal attempts to carefully patch up and improve the situation for generic selection, particularly around variable length arrays and constant sized arrays.
 </pre>
 
 <pre class="include-raw">
@@ -32,7 +32,7 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 0 - November 10<sup>th</sup>, 2025 ## {#changelog-r0}
+## Revision 0 - November 20<sup>th</sup>, 2025 ## {#changelog-r0}
 
 - Initial release. ✨
 
@@ -80,7 +80,7 @@ int main () {
 
 This program simply does not compile. Every non-default branch of this generic selection is considered a match, because every variable length array is compatible with every other kind of array insofar as the compatibility rules are concerned. This provokes a constraint violation, in that only one branch of a generic selection expression may match the controlling type (or none, in which case there must be a default branch).
 
-[[N3290]] exacerbates this problem by attempting to not only leave the compatibility rules around this matter unresolved, but introduces adding variable length array types as a plausible branch for generic selection by stripping the constraint out:
+[[N3348]] exacerbated this problem by not only leaving the compatibility rules around this matter unresolved, but introducing variable length array types as a plausible branch for generic selection by stripping the constraint out:
 
 ```cpp
 int main () {
@@ -89,14 +89,15 @@ int main () {
 	int result = _Generic(typeof(vla),
 		int[10]: 0,
 		int[11]: 1,
-		int[ n] : 2, // VLA matches?
+		int[20]: 2, // VLA... matches?
+		int[ n]: 3, // VLA matches?? Double-compatibility issue??
 		default: 3
 	);
 	return result;
 }
 ```
 
-Unfortunately, this too results in the same problem: all of these branches are considered compatible with one another under the changes and direction that [[N3290]] presents. Even if one went back to matching on constant sized arrays for the controlling type, this code would still not compile because the VLA branch is considered compatible with all of the **other** type branches in the list: the compiler would reject the code still as no two generic selection branches may contain a compatible type, either:
+Unfortunately, this too results in the same problem: all of these branches are considered compatible with one another under the changes and direction that [[N3348]] added to the C standard around August 2025. Even if one went back to matching on constant sized arrays for the controlling type, this code would still not compile because the VLA branch is considered compatible with all of the **other** type branches in the list: the compiler would reject the code still as no two generic selection branches may contain a compatible type, either:
 
 ```cpp
 int main () {
@@ -105,9 +106,10 @@ int main () {
 	int result = _Generic(typeof(arr),
 		int[10]: 0,
 		int[11]: 1,
-		int[ n] : 2, // compiler error: non-distinct branch from
+		int[20]: 4,
+		int[ n]: 3, // compiler error: non-distinct branch from
 		             // every other generic selection branch
-		default: 3
+		default: 4
 	);
 	return result;
 }
@@ -127,9 +129,9 @@ int main () {
 }
 ```
 
-This program returns 0, which makes no sense. The sizes do not match, but because we defined this in terms of compatibility (and all constant sized and variable length arrays are compatible with one another) we have introduced undefined behavior here. Worse, this gives the impression that the array has the size `m` when it clearly does not. This is easily spotted in these simple toy programs, but is far less usable when applied to larger programs with much more complex control flow and no ahead-of-time knowable constant values.
+This program returns 0, which makes no sense from the perspective of `_Generic`, which is a translation time-capable matching algorithm. The sizes do not match, but because we defined this in terms of compatibility (and all constant sized and variable length arrays are compatible with one another) we have introduced undefined behavior here. Worse, this gives the impression that the array has the size `11` when it clearly does not. This is easily spotted in these simple toy programs, but is far less usable when applied to larger programs with much more complex control flow and no ahead-of-time knowable constant values.
 
-[[N3290]] makes this situation worse by allowing variable length arrays to be put inside of `_Generic` as well, leading to a situation where variable length arrays can easily match array types that are not the same.
+[[N3348]] makes this situation worse by allowing variable length arrays to be put inside of `_Generic` as well, leading to a situation where variable length arrays can easily match array types that are not the same.
 
 ```cpp
 int main () {
@@ -143,78 +145,13 @@ int main () {
 }
 ```
 
-All in all, this user experience can be misleading and sets programmers up for failure from the holes in the type compatibility. [[N3290]] provides multi-dimensional matching but does nothing to actually improve the situation with regards to compatibility, and standardizes adding variable length arrays to more places without consideration for either the original feature motivation (a compile-time selection criteria that carries no run-time cost) or the apparent failure modes.
+All in all, this user experience can be misleading and sets programmers up for failure from the holes in the type compatibility. [[N3348]] provides multi-dimensional matching but does nothing to actually improve the situation with regards to compatibility, and standardizes adding variable length arrays to more places without consideration for either the original feature motivation (a compile-time selection criteria that carries no run-time cost) or the apparent failure modes.
 
 It is costly to C as a whole to add features "just because the syntax should work" when those features come with undefined behavior, AND has questionable behaviors to start with. Critically, these features can be added to C with just a little bit more care that would prevent or outright eliminate the vast majority of these clear code violations. C may be a language where you can do "whatever needs to be done", but there is no reason to greenlight designs which do not improve the situation and expand the domain of possible misleading code.
 
 We should focus on improving type compatibility both in-general, for initialization, and for `_Generic`.
 
-
-
-## Implementation Quirks from Complex Expressions and `_Generic(type-name, ...)` ## {#intro-quirks}
-
-This program produces the same constraint violation on all platforms:
-
-```cpp
-typedef struct meow { const int i; } meow;
-
-static_assert(_Generic((meow){0}.i, const int: 1, int: 0), "what in the world?!");
-```
-
-The following snippet produces different programs in GCC versus Clang:
-
-```cpp
-typedef struct meow { const int i; } meow;
-
-static_assert(_Generic(typeof((meow){0}.i), const int: 1, int: 0), "what in the world?!");
-```
-
-This will trigger a constraint violation (an error) on some platforms, while letting translation (typical compilation) proceed just fine on others. But, it's hard to know that: first we have have to check "am I using the right kind of matching syntax?". Then, we have to check "is it returning the answer I expect for this?".  While there's a "what actually is the type of this?" question for GCC, Clang, and other vendors under the C standard there is an interesting background issue shown by this: type-based matching exposes from implementations. While the code in this case produces a (very loud) compilation error, there is other code with `_Generic` that will simply silently choose the wrong function designator, or produce the wrong result.
-
-This also affects arrays, for which the type-based matching has stronger and better powers than the expression-based matching. For example, this code produces a constraint violation:
-
-```cpp
-int main () {
-	int arr[20] = {};
-	int result = _Generic(arr,
-		int[]: 0,
-		default: 1
-	);
-	return result;
-}
-```
-
-But this code does not:
-
-```cpp
-int main () {
-	int arr[20] = {};
-	int result = _Generic(typeof(arr),
-		int[]: 0,
-		default: 1
-	);
-	return result;
-}
-```
-
-Of course, as [[N3290]] notes, this does not extend to multiple dimensions (which is the core point of [[N3290]] before it tackles the problem of VLAs):
-
-```cpp
-int main () {
-	int multi_arr[20][10] = {};
-	int result = _Generic(typeof(multi_arr),
-		int[][]: 0, // array of incomplete type, immediate error
-		default: 1
-	);
-	return result;
-}
-```
-
-This incongruence -- especially in the face of arrays -- is not a complete design. Aaron Ballman's [[N3260]] being accepted into C2y drastically and materially improved the situation around this area by granting greater control and power, but more tweaks are needed to make the behavior consistent, usable, and fully powerful for both ends of the behavior.
-
-The answer to this question **changing** based on which form of `_Generic` matching is deployed has turned the feature incongruent; the underlying lack of synchronization between implementations is an important issue but not one we are tackling in this paper. The simple contention is that this is something that exposed how much the feature is in need of harmonization, alongside all of the other observed issues.
-
-Therefore, we propose a general overhaul and a new phrase-of-power that we are going to term *translation compatibility*, that would be applied to both type-style generic selection and expression-style generic selection. The specification would aim to both enhance and clarify all of the cases, while enabling variable length array matching and multidimensional array matching without adding new ways to invoke undefined behavior.
+Therefore, we propose a general overhaul and a new phrase-of-power that we are going to term *strict compatibility*, that would be applied to both type-style generic selection and expression-style generic selection. The specification would aim to both enhance and clarify all of the cases, while enabling variable length array matching and multidimensional array matching without adding new ways to invoke undefined behavior.
 
 
 
@@ -382,7 +319,7 @@ Advisement: Because it also has other implications, this proposal is not yet pro
 
 ## `T[]`. `T[*]`, and `T[CONSTANT]` Rules ## {#design-array}
 
-The goal is to utilize the preexisting syntax of `T[]` in conjunction with `T[*]` and `T[CONSTANT]` to allow previously undefined behavior to become well-defined and intuitive. The exact type-based matching [[N3290]] afforded us, briefly, the ability to match on incomplete types. This allowed `T[]` to work, but fell down on its face later due to `T[][]` being an incomplete array to an incomplete array (violating other rules, elsewhere, which put it back into banned status).
+The goal is to utilize the preexisting syntax of `T[]` in conjunction with `T[*]` and `T[CONSTANT]` to allow previously undefined behavior to become well-defined and intuitive. The exact type-based matching [[N3348]] afforded us, briefly, the ability to match on incomplete types. This allowed `T[]` to work, but fell down on its face later due to `T[][]` being an incomplete array to an incomplete array (violating other rules, elsewhere, which put it back into banned status).
 
 The [[#design|general rules above]] allow us to use nested arrays in `_Generic` by treating nested incomplete arrays as just normal incomplete types. This solves the major hurdle when `_Generic(typeof(foo), ...)` is deployed for multidimensional arrays. The only thing to do is to apply a new set of general-purpose array compatibility rules.
 
@@ -391,7 +328,7 @@ The [[#design|general rules above]] allow us to use nested arrays in `_Generic` 
 
 The reasons for having both `T[]` and `T[*]` — and giving one greater priority to match variable length arrays versus the other without getting a constraint violation — are two-fold.
 
-First, it's important to follow the design we were already given previously. Even if we personally do not like `T[*]` in argument lists for functions (because it serves very little purpose and is just a third or fourth way to make an argument that, at the ABI level, is effectively required to be a `T*` object), the design is already there. It is a stand-in for eventual variable length array parameters. That is its association, and that is how it must stay. [[N3290]] blends this difference away by deviating it from its original purpose, making it match on all array types. We believe this is a disservice to the design and makes it confusing: if `[*]` is meant to designate variable length arrays in one context, why does it become a catch-all in another? This is why it is scoped to this one use case for this proposal.
+First, it's important to follow the design we were already given previously. Even if we personally do not like `T[*]` in argument lists for functions (because it serves very little purpose and is just a third or fourth way to make an argument that, at the ABI level, is effectively required to be a `T*` object), the design is already there. It is a stand-in for eventual variable length array parameters. That is its association, and that is how it must stay. [[N3348]] blends this difference away by deviating it from its original purpose, making it match on all array types. We believe this is a disservice to the design and makes it confusing: if `[*]` is meant to designate variable length arrays in one context, why does it become a catch-all in another? This is why it is scoped to this one use case for this proposal.
 
 Secondly, `T[]` is already the universally-understood "any array" indicator. While we lack initialization syntax for "specifically make this a variable length array" (save for an empty initializer with a variable length array compound literal, perhaps), for both arguments and single-level `_Generic` selection for arrays, this works out just fine. Simply granting it special permissions in `_Generic` is sufficient to continue to make it a catch-all, rather than only having it work in one narrow case completely by accident of a few rules coming together from recent changes.
 
@@ -844,12 +781,12 @@ int main () {
 
 <pre class="biblio">
 {
-	"N3290": {
+	"N3348": {
 		"authors": [
 			"Martin Uecker"
 		],
-		"title": "N3290 - Matching of Multi-Dimensional Arrays in Generic Selection Expressions",
-		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3290.pdf",
+		"title": "N3348 - Matching of Multi-Dimensional Arrays in Generic Selection Expressions",
+		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3348.pdf",
 		"date": "June 28th, 2024"
 	},
 	"N3260": {

@@ -1,11 +1,11 @@
 <pre class='metadata'>
 Title: Improved __attribute__((cleanup)) Through defer
 H1: Improved <code>__attribute__((cleanup))</code> Through <code>defer</code>
-Shortname: 3733
-Revision: 4
+Shortname: XY?1
+Revision: 6
 !Previous Revisions: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3687.htm">n3687 (r3)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3590.htm">n3590 (r3)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3488.htm">n3488 (r2)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3442.htm">n3442 (r1)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3199.htm">n3199 (r0)</a>
 Status: P
-Date: 2025-11-02
+Date: 2025-12-03
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -32,6 +32,11 @@ path: resources/css/bikeshed-wording.html
 
 # Changelog # {#changelog}
 
+
+
+## Revision 6 - ????, 202? ## {#changelog-r6}
+
+- Explain why we cannot attach this thing to a declaration. Seriously, it cannot be attached to a declaration. [[#design-declarations]].
 
 
 ## Revision 5 - October 17th, 2025 ## {#changelog-r5}
@@ -250,6 +255,18 @@ for i := 0; i < 100000; i++ {
 This is just an extremely long-winded way of having a scope-based `defer`. It is not all bad for function-based `defer`: advantages include queueing up a piece of work to be done only if certain conditions are met. E.g., one can place a `defer` inside of an `if` statement and then having it run at the end of the function if and only if that `if` was entered. However, the cost of such behaviors means attempting to shoehorn a design from Go which has the backing of a garbage collector and on-demand allocation. The first go snippet above, if it had not deadlocked, required dynamic allocation in an earlier version of Go. It took significant optimization work to get to a place where this would no longer be the case.
 
 We know for a fact that many C compilers are averse to taking control of hidden dynamically-sized (not necessarily heap) allocations. It can often result in issues in the portability of code to smaller platforms. We also know for a fact that memory is neither free nor cheap in the C programming language; Go can pull this off because it has a run-time that can manage its garbage collector and is generally geared towards high-resource environments (even if it uses those resources efficiently). As a language feature, we cannot prioritize a design which may require an unbounded amount of code to be (potentially) stored in heap space so that it can be run as a callback, with potentially-saved data from each iteration of a loop stored in that construct as well.
+
+
+
+## `defer` versus Something On A Declaration ## {#design-declarations}
+
+Many, many people have complained that this is not something contained on a declaration. It cannot be, for a LOT of different reasons. Many of those reasons are explained in an as-a-consequence-of way in other sections, but to put it more pointedly:
+
+- there is no Object Model in C, and the rules for declarations are Loose than the ironclad "this will always run" guarantee that comes with 99% of `defer` use cases;
+- declarations can exist Anywhere -- parameters in a function, inside of complex expressions and type-declaring constructs within those parameters, at file scope, and similar -- and that means if `defer` is attached to declarations, you have to enter in blanket bans for every single one of these use cases;
+- people have literally confused when an `__attribute__((cleanup(...)))` will run because they think it is tied to the initializer's lifetime and not the actual declaration it is on.
+
+The last bulleted point has been a fun discovery, as people try to do things like "close" or "reopen" file descriptors by trying to attach an `__attribute__((cleanup(...)))` to a compound literal-initialized object and hope it runs Sometime Later. But it would actually just run at the end of that scope (in the example provided, it was just a function); this is not helpful.
 
 
 
