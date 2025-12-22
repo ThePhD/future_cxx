@@ -1,0 +1,511 @@
+<pre class='metadata'>
+Title: Expression Evaluation and Access in _Generic
+H1: Expression Evaluation and Access in <code>_Generic</code>
+Shortname: XXZ4
+Revision: 0
+!Previous Revisions: None
+Status: D
+Date: 2025-12-23
+Group: WG14
+!Proposal Category: Change Request, Feature Request  
+!Target: C2y
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Expression%20Evaluation%20and%20Access%20in%20_Generic.html
+!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-%20Expression%20Evaluation%20and%20Access%20in%20_Generic.bs">GitHub</a>
+Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
+Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+Abstract: This proposal offers a solution to the generic expression type errors on usage in generic macros without breaking type-checking and type-safety of the various generic association branches.
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<div class="pagebreak"></div>
+
+
+
+
+# Changelog # {#changelog}
+
+
+
+## Revision 0 - December 16<sup>th</sup>, 2025 ## {#changelog-r0}
+
+- Initial release. ✨
+
+
+
+
+# Introduction and Motivation # {#intro}
+
+`_Generic` selection will produce an error when trying to actually use the input value in a manner that is not plausible with **all** branches. This typically comes up when using macros that allow repeated use of the created generic selection and its expression. For example, this code:
+
+```cpp
+int use_int_ptr(int* pi);
+int use_dbl_ptr(double* pd);
+
+#define USE_THING(THING) _Generic(&(typeof(THING)){ THING }, \
+	int*: use_int_ptr(&v), \
+	double*: use_dbl_ptr(&v): \
+	default: 0 \
+)
+
+int main () {
+	int c = 0;
+	int v = USE_THING(c);
+	return v;
+}
+```
+
+will spit out this error from latest trunk GCC (December 16th, 2025):
+
+```sh
+source>: In function 'main':
+<source>:6:30: error: passing argument 1 of 'use_dbl_ptr' from incompatible pointer type [-Wincompatible-pointer-types]
+	6  |         double*: use_dbl_ptr(&v): \
+	   |                              ^~
+	   |                              |
+	   |                              int *
+<source>:12:17: note: in expansion of macro 'USE_THING'
+	12 |         int v = USE_THING(c);
+	   |                 ^~~~~~~~~
+<source>:2:25: note: expected 'double *' but argument is of type 'int *'
+	2  | int use_dbl_ptr(double* pd);
+	   |                 ~~~~~~~~^~
+<source>:6:33: error: expected ')' before ':' token
+	6  |         double*: use_dbl_ptr(&v): \
+	   |                                 ^
+<source>:12:17: note: in expansion of macro 'USE_THING'
+	12 |         int v = USE_THING(c);
+	   |                 ^~~~~~~~~
+<source>:4:34: note: to match this '('
+	4  | #define USE_THING(THING) _Generic(&(typeof(THING)){ THING }, \
+	   |                                  ^
+<source>:12:17: note: in expansion of macro 'USE_THING'
+	12 |         int v = USE_THING(c);
+	   |                 ^~~~~~~~~
+```
+
+([Godbolt](https://godbolt.org/z/qexeoGha9).)
+
+In the case above, one can just cast a pointer to `void*` and then cast to the proper type `T*` to get rid of the errors, but this does not generalize when performing other operations on the input expressions. Additionally, `THING` can have nested macro problems, provoking multiple token expansions and replacements that can significantly increase compile-times.
+
+A generic solution is putting a secondary `_Generic` that effectively "launders" the input into the correct type after the `_Generic` expression, a technique Martin Uecker calls `contrav` (short for **contrav**ariant transform). This allows the use of two completely disparate types (e.g., an integer versus a structure) without provoking an error:
+
+```cpp
+#include <stdio.h>
+
+#define contrav(T, x) _Generic(typeof(x), T: (x), default: (T){ })
+#define info(x) \
+	_Generic(x, \
+		int: printf("%d", contrav(int, x)), \
+		struct foo: printf("%s", contrav(struct foo, x).name) \
+	)
+
+struct foo { char* name; };
+
+int main() {
+	struct foo f = { "test" };
+	info(3);
+	info(f);
+	// prints:
+	// 3
+	// test
+}
+```
+
+([Godbolt](https://godbolt.org/z/b8c5d38jG).) Unfortunately, this **deepens** the issue of multiple recursive expansions of a macro and still leaves open the potential of having an expression used multiple difference times. It also requires the user understand the technique that `contrav` performs, which most programmers absolutely do not know how to do given that an **extremely** frequent request for `_Generic` is the ability to "ignore untaken branches". Unfortunately, one of the chief benefits of all of a generic selection's branches is that they are type-checked, which is different from the way C++ templates and similar generic constructs behave.
+
+A viable solution for expression-based `_Generic` is to allow the creation of an l-value or an r-value of the right type based on the input of a `_Generic` selection that uses an controlling expression rather than a controlling type. This allows all branches to be type-checked, but checked with a type that is appropriate rather than allowing a single use of a generic macro or similar to completely and utterly destroy any hope at proper compilation.
+
+This paper proposes the use of a sigil `::` to mark that the next sequence of tokens will be an `identifier` and then another `:`, where the `identifier` is the name of the inserted controlling expression as an r-value or an l-value. It also modifies the rules of a controlling expression to match against both the exact type first (to allow for an l-value expression that may be `const` qualified to be selected) and then the type after typical l-value conversion strips the qualifiers and does other removals.
+
+
+
+
+# Design # {#design}
+
+The design is simple. There will be three productions for a *generic-association* grammar term rather than just two, alongside a change for the `default` branch, to allow for an *identifier* of the proper type, like so:
+
+> *generic-association*:
+> :: *type-name* `:` *assignment-expression*
+> :: *declarator* `:` *assignment-expression*
+> :: `default` *identifier*<sub>opt</sub> `:` *assignment-expression*
+
+The use of *declarator* is primarily to allow a non-optional *identifier* to appear in the grammar in the usual expected place, with *type-name* being the same just without the identifier in its grammar. That makes the previously shown code samples look as follows:
+
+```cpp
+int use_int_ptr(int* pi);
+int use_dbl_ptr(double* pd);
+
+#define USE_THING(THING) _Generic(THING, \
+	int pi: use_int_ptr(pi), \
+	double pd: use_dbl_ptr(pd): \
+	default: 0 \
+)
+
+int main () {
+	int c = 0;
+	int v = USE_THING(c);
+	return v;
+}
+```
+
+```cpp
+#define info(x) _Generic(x, \
+	int d: printf("%d\n", d), \
+	struct foo s: printf("%s\n", s.name) \
+)
+
+struct foo { char* name; };
+
+int main() {
+	struct foo f = { "test" };
+	info(3);
+	info(f);
+}
+```
+
+This allows us to have access to the result of the generic selection's controlling expression. Additionally, the scope of the introduced `identifier` is from the expression-introducing colon `:` to the terminating comma `,`. This keeps things finely scoped. If ISO C had statement expressions, we could state that it is as-if there is a statement expression that introduces this variable and surrounds the `assignment-expression` of the generic selection.
+
+
+
+## Existing Practice: Allowing Modification / L-values ## {#design-lvalues}
+
+An important part of upholding existing practice is to allow for modification through an l-value. Using example code from Martin Uecker that shows modification working, the following code are things that plausibly exist in the real world already:
+
+```cpp
+#include <stdio.h>
+
+#define contrav(T, x) _Generic(typeof(x), T: (x), default: (T){ })
+#define bar(x) _Generic(x, \
+	int: contrav(int, x), \
+	struct foo: contrav(struct foo, x).name \
+)
+
+struct foo { char* name; };
+
+int main() {
+	struct foo f = { "test" };
+	bar(3);     // 3
+	bar(f) = "something";   // f.name
+	puts(f.name); // prints "something"
+}
+```
+
+([Godbolt](https://godbolt.org/z/PavjzaEar)). Therefore, it is important that this code, when transferred to the next syntax, also works. The proposed look and semantics would be as so:
+
+```cpp
+#include <stdio.h>
+
+#define bar(x) _Generic(x, \
+	int v: v, \
+	struct foo v: v.name \
+)
+
+struct foo { char* name; };
+
+int main() {
+	struct foo f = { "test" };
+	bar(3);
+	bar(f) = "something";
+	puts(f.name); // prints "something"
+}
+```
+
+Effectively, if the input value into a generic selection statement would be an lvalue, then it remains as such after a generic association branch is chosen. It applies similarly if it is an r-value. Because generic selection is an expression, the use of any created temporary values will always last for the duration of the "full expression", and so this should not cause any lifetime issues at all in the confines of both existing code and newly written code.
+
+
+
+## Evaluation of the Expression ## {#design-evaluation}
+
+Currently, the controlling operand of a generic selection expression is not evaluated if it's an expression. In the case of a generic association that uses the *declarator* form rather than the *type-name* form, the expression is **only evaluated after selection chooses a branch that has the** *declarator* **form**. This will prevent the addition of new generic associations within a list of existing generic associations forcing unexpected evaluations that were not previously considered. It is also only evaluated once, even if the *identifier* provided is used multiple times. Therefore, under the new feature, the following code returns `0` from `main`:
+
+```cpp
+int result = 0;
+
+int change_global (void) {
+	result += 3;
+	return 2;
+}
+
+int main (void) {
+	int one = _Generic(change_global(), // not evaluated
+		int: 1,
+		double: 0xBAD,
+		default: 0xBAD
+	);
+	int two = _Generic(change_global(),  // evaluated
+		int a: (a * a) / 2, // only evaluated once
+		double: 0xBAD,
+		default: 0xBAD
+	);
+	int three = _Generic(change_global(), // not evaluated
+		double: 0xBAD,
+		default: 3
+	);
+	int four = _Generic(change_global(), // not evaluated
+		double d: (int)d + 0xBAD,
+		default: 4
+	);
+	int five = _Generic(change_global(), // evaluated
+		int a [[maybe_unused]]: 5, // evaluated even if `a` is unused
+		double: 0xBAD,
+		default: 0xBAD
+	);
+	if (one != 1) {
+		return 1;
+	}
+	if (two != 2) {
+		return 2;
+	}
+	if (three != 3) {
+		return 3;
+	}
+	if (four != 4) {
+		return 4;
+	}
+	if (five != 5) {
+		return 5;
+	}
+	if (result != 9) {
+		return 9;
+	}
+	return 0;
+}
+```
+
+
+## Direct Type Matching for Expressions ## {#design-matching.expressions}
+
+One of the problems with expressions is that it undergoes "l-value conversion" (qualifiers stripped, arrays converted to pointers, and similar) before the generic branch is matched. The problem was partially fixed by directly matching on an existing type, introduced by Aaron Ballman earlier into C2y. That allows directly matching on types that are e.g. `const`-qualified, without having to make a pointer out of it.
+
+The problem comes back again when we want to have that exact matching but still want to produce a named identifier for whatever expression has gone in The use of *type-name* as the *generic-controlling-operand* means that there **is** no expression to evaluate and therefore nothing to set the expression to. Therefore, with an expression, one would need to morph the input expression to have a different type than what is put in, just to be able to match qualifiers or arrays. This, of course, presents the immediately problem that this is creating a **new** expression of a different type than what is intended, resulting in unneeded temporaries or other issues.
+
+
+
+## Other Potential Syntaxes ## {#design-syntax}
+
+We settled on simply adding the *declarator* branch to the *generic-association* syntax because it is, as we understand it, the least problematic and easiest to handle.
+
+There are other ways to introduce the identifier in the sequence.
+
+One possible choice is to use a real introducer for the identifier, so it doesn't look like a declarator. An example of this is with a `::`, so that the *type-name* is separated from the *identifier*, as in: `type-name :: identifier : ...`. Other than being conflicting with C++-style syntax of `identifier :: identifier ...`, it also seems a bit unnecessary given the solution we've settled on. It might get rid of the disambiguation rule that anything that can be parsed as a *type-name* should be parsed as a *type-name* rather than a *declarator*, where possible. Other than this, there are little benefits, unfortunately.
+
+It could also be something along the lines of `type-name : identifier : ...` for a generic association branch, but a single `:` does not really provide enough information to the parser to know if the following tokens will be the special new syntax versus just the existing syntax where `identifier` is meant to be parsed as an `expression`. One could delay the parsing and decide whether or not its either the new syntax or the old syntax by waiting for the first non-parenthesized `,` from showing up and then deciding how to interpret two top-level colons, but it can be hard to deal with given the use of e.g. `a ? b : c` nakedly as part of an *assignment-expression*. (This can make it such that the compiler might have to consider `a` and identifier and `?` an error before the `b :` portion, for example.)
+
+
+
+
+# Prior Art # {#prior}
+
+Other than the "contravariant transformation" detailed in [[#intro]], there is no direct prior art for this feature in compilers as a language feature.
+
+
+
+
+# Wording # {#wording}
+
+The wording is relative to the latest Working Draft at time of publication, [[n3685]].
+
+
+
+## Intent ## {#wording-intent}
+
+The intent of this wording is to provide:
+
+- an optional identifier to a generic association branch on the left hand side before the `:`;
+- an optional identifier to a `default` generic association branch on the left hand side before the `:`;
+- both strict type matching and post-lvalue-conversion matching for generics that use a controlling operand where possible;
+- the evaluation of the input expression if and only if a generic branch **with an** *identifier* actually matches;
+- and, the ability to potentially modify an l-value if the identifier if the expression produces an l-value.
+
+
+
+## Modify §6.5.2.1 Generic selection ## {#wording-6.5.2.1}
+
+📝 EDITOR'S NOTE: The constraints text of the generic selection section is moved into three paragraphs to break it up. 📝
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.5.2.1</span> <span class="wording-clause-title">Generic selection</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+
+*generic-selection*:
+:: `_Generic` `(` *generic-controlling-operand* `,` *generic-assoc-list* `)`
+
+*generic-controlling-operand*:
+:: *assignment-expression*
+:: *type-name*
+
+*generic-assoc-list*:
+:: *generic-association*
+:: *generic-assoc-list* `,` *generic-association*
+
+*generic-association*:
+:: *type-name* `:` *assignment-expression*
+:: <ins>*declarator* `:` *assignment-expression*</ins>
+:: `default` <ins>*identifier*<sub>opt</sub></ins> `:` *assignment-expression*
+
+</div>
+
+<ins>
+<div class="wording-clause-section-title">
+Description
+</div>
+</ins>
+
+<ins>
+<div class="wording-newnumbered">
+
+The *controlling type* of a generic selection is the type or set of types used to select a branch in the list of generic associations in the generic selection. The *generic association type* is the type indicated by a generic association's type name or declarator, if present.
+</div>
+</ins>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-newnumbered">
+
+A generic selection shall have no more than one `default` generic association. No two generic associations in the same generic selection shall specify compatible types.<del>If the generic controlling operand is an assignment expression, the controlling type of the generic selection expression is the type of the assignment expression as if it had undergone an lvalue conversion,<sup>FN)</sup> array to pointer conversion, or function to pointer conversion. Otherwise, the controlling type of the generic selection expression is the type designated by the type name. The controlling type shall be compatible with at most one of the types named in the generic association list. If a generic selection has no default generic association, its controlling type shall be compatible with exactly one of the types named in its generic association list.</del>
+</div>
+
+<div class="wording-newnumbered">
+
+If the generic controlling operand is an assignment expression, the controlling type of the generic selection expression is <ins>first the type of the expression. If no generic association type has a compatible type with the expression, then the controlling type of the generic selection expression is</ins> as if it had undergone an lvalue conversion,<sup>FN)</sup> array to pointer conversion, or function to pointer conversion.
+</div>
+
+<div class="wording-newnumbered">
+
+If the generic controlling operand is a type name, controlling type of the generic selection expression is the type designated by the type name. The controlling type shall be compatible with at most one of the types named in the generic association list. If a generic selection has no default generic association, its controlling type shall be compatible with exactly one of the types named in its generic association list.
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-newnumbered">
+
+<del>The generic controlling operand, size</del><ins>Size</ins> expressions<del>,</del> and typeof operators contained in the type names of generic associations are not evaluated. If a generic selection has a generic association with a type name that is compatible with the controlling type, then the result expression of the generic selection is the expression in that generic association. Otherwise, the result expression of the generic selection is the expression in the `default` generic association. None of the expressions from any other generic association of the generic selection is evaluated. The generic association whose expression is evaluated is the *selected generic association*.
+</div>
+
+<ins>
+<div class="wording-newnumbered">
+
+The generic controlling operand is evaluated if and only if both the generic controlling operand is an assignment expression and the selected generic association:
+
+- has a declarator with an identifier;
+- or, is a `default` generic association with an identifier.
+
+Otherwise, it is not evaluated.
+</div>
+</ins>
+
+<ins>
+<div class="wording-newnumbered">
+
+The identifier of a `default` generic association has the type of the generic controlling operand's expression and is an lvalue, a function designator, or a void expression if the generic controlling operand is. The identifier of a generic association with a declarator has a type compatible with the generic association's type and is an lvalue, a function designator, or a void expression if the generic controlling operand is.
+</div>
+</ins>
+
+<ins>
+<div class="wording-newnumbered">
+
+NOTE&emsp;&emsp;&emsp;If evaluated, the generic controlling operand's expression is evaluated once and only once, regardless of whether or not the identifier of the declarator or the identifier of a `default` generic association is used.
+</div>
+</ins>
+
+<div class="wording-newnumbered">
+
+The type and value of a generic selection are identical to those of its result expression. It is an lvalue, a function designator, or a void expression if its result expression is, respectively, an lvalue, a function designator, or a void expression.
+</div>
+
+<div>
+
+...
+</div>
+
+<ins>
+<div class="wording-newnumbered wording-numbered-14">
+
+EXAMPLE&emsp;&emsp;&emsp; The following generic selection within a macro appropriately evaluates the incoming expression and uses it to print out information.
+
+```cpp
+#include <stdio.h>
+
+#define info(x) _Generic(x, \
+	int d: printf("[info] %d\n", d), \
+	struct foo s: printf("[info] %s\n", s.name) \
+	default v: printf("[info] %p\n", (void*)&v) \
+)
+
+struct foo { char* name; };
+
+double get_d () {
+	return 0.5;
+}
+
+int main() {
+	struct foo f = { "test" };
+	info(3);
+	info(f);
+	info(get_d());
+}
+```
+</div>
+</ins>
+
+<ins>
+<div class="wording-newnumbered">
+
+EXAMPLE&emsp;&emsp;&emsp; If the incoming operand of a generic selection expression is a modifiable lvalue, then such an expression can be used for modification.
+
+```cpp
+#include <stdio.h>
+
+#define bar(x) _Generic(x, \
+	int v: v, \
+	struct foo v: v.name \
+)
+
+struct foo { char* name; };
+
+int main() {
+	struct foo f = { "test" };
+	bar(3);
+	bar(f) = "something";
+	puts(f.name); // prints "something"
+}
+```
+</div>
+</ins>
+
+</div>
+</blockquote>
+
+<pre class="biblio">
+{
+	"n3685": {
+		"authors": [
+			"JeanHeyd Meneide",
+			"Freek Wiedjik"
+		],
+		"title": "C2y: Working Draft (Post-Brno)",
+		"date": "Monday, December 22nd, 2025",
+		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3685.pdf"
+	}	
+}
+</pre>

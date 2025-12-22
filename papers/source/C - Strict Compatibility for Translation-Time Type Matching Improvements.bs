@@ -4,19 +4,19 @@ Shortname: 3695
 Revision: 0
 !Previous Revisions: None
 Status: P
-Date: 2025-11-20
+Date: 2025-12-17
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
-URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20_Generic%20Realignment%20and%20Improvement.html
-!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-%20_Generic%20Realignment%20and%20Improvement.bs">GitHub</a>
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Strict%20Compatibility%20for%20Translation-Time%20Type%20Matching%20Improvements.html
+!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-%20Strict%20Compatibility%20for%20Translation-Time%20Type%20Matching%20Improvements.bs">GitHub</a>
 Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
 Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
 Markup Shorthands: markdown yes
 Toggle Diffs: no
-Abstract: The rules surrounding generic selection have some holes in them thanks to the existing compatibility rules and a recent change from Martin Uecker's N3348, leading to reasonable looking code to have unexpectedly poor semantics or, in the case of Variable Length Arrays (VLAs), undefined behavior. This proposal attempts to carefully patch up and improve the situation for generic selection, particularly around variable length arrays and constant sized arrays.
+Abstract: 
 </pre>
 
 <pre class="include-raw">
@@ -32,7 +32,7 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 0 - November 20<sup>th</sup>, 2025 ## {#changelog-r0}
+## Revision 0 - December 16<sup>th</sup>, 2025 ## {#changelog-r0}
 
 - Initial release. ✨
 
@@ -42,6 +42,12 @@ path: resources/css/bikeshed-wording.html
 # Introduction and Motivation # {#intro}
 
 There are several strange hiccups and problems with `_Generic` as it concerns constant sized arrays, variable length arrays, `_BitInt`, and other (potentially new) feature sets. Aaron Ballman's [[N3260]] provided a way to do direct type matching, which eliminated some of these concerns when using a type as the controlling indicator for generic selection. But, this was not enough to stop the few situations where implementation quirks were exposed and the inadequacies of type compatibility for a compile-time, zero run-time cost feature that `_Generic` was meant to be.
+
+Additionally, the integration of Martin Uecker's [[N3348]] has let an existing Undefined Behavior leak into `_Generic` by allow Variable-Length Arrays (VLAs) of non-constant size match with arrays of both constant and non-constant sizes (including ones whose size does not match the input, perhaps at multiple dimensions). The problem was acknowledged during the integration of [[N3348]] by WG14, but it was voted in with the promise that a paper would provide a better array matching capability later on.
+
+There was some degree of agreement to pursue a similar-but-differently-specified approach to matching that was contained in [[N3441]]. Unfortunately, a revision of this paper was not ready for WG14 by the previous meeting, and therefore it was skipped over and WG14 simply settled on Martin Uecker's [[N3348]]. At the meeting, it was voiced that if it was possible, another paper doing better matching should be brought forward, and one of us (JeanHeyd) volunteered to produce a paper that was in line with Martin Uecker's design in [[N3348]].
+
+The core approach for multidimensional matching and stricter matching from our [[N3441]] is still possible even after the integration of Martin Uecker's tweaks, repurposing the use of `[*]` and `[]` in multidimensional matching to be more in line with what Martin Uecker designed and what WG14 has accepted in the current Working Draft of the C Standard. This paper sets out performing that behavior and extending the concept even to `_BitInt`, to aid with improved `_Generic` matching.
 
 
 
@@ -78,7 +84,7 @@ int main () {
 }
 ```
 
-This program simply does not compile. Every non-default branch of this generic selection is considered a match, because every variable length array is compatible with every other kind of array insofar as the compatibility rules are concerned. This provokes a constraint violation, in that only one branch of a generic selection expression may match the controlling type (or none, in which case there must be a default branch).
+This program is fine even with the `typeof(vla)` thanks to the latest changes in the C Working Draft ([[N3348]]). The problem is after that, as every non-default branch of this generic selection is considered a match. Every variable length array is compatible with every other kind of array insofar as the compatibility rules are concerned. This provokes a constraint violation after the whole `_Generic`, in that only one branch of a generic selection expression may match the controlling type (or none, in which case there must be a default branch).
 
 [[N3348]] exacerbated this problem by not only leaving the compatibility rules around this matter unresolved, but introducing variable length array types as a plausible branch for generic selection by stripping the constraint out:
 
@@ -87,11 +93,11 @@ int main () {
 	int n = 20;
 	int vla[n] = {};
 	int result = _Generic(typeof(vla),
-		int[10]: 0,
+		int[20]: 0, // VLA... matches?
 		int[11]: 1,
-		int[20]: 2, // VLA... matches?
+		int[10]: 2,
 		int[ n]: 3, // VLA matches?? Double-compatibility issue??
-		default: 3
+		default: 4
 	);
 	return result;
 }
@@ -350,7 +356,7 @@ This has been something that has been requested before, and in particular can ai
 
 Being able to separate at compile-time the difference between a variable length array and a constant sized array is critical for programmers who wish to either provoke errors when handed a source of one type or another, or separate approaches for the sake of code generation.
 
-In general, the core driving reason to wanting to be capable of observing the difference between the two is fairly simple: C implementations, despite great advancements in the last 40 years, cannot fully improve the code generation around variable length arrays for fundamental design reasons. "The size of this type is only known at run-time" hides a lot of useful information from a compiler! While smart compilers can break these sorts of things down given enough optimizer power and inlined code, at its further reaches variable length arrays take operations that can be computed during compilation/translation and effectively delay them to execution. This means that while variable length arrays can save on the overall run-time memory used for a program, it comes at the cost of increased codegen to handle specific cases, especially since such a wide variety of their behavior and allocation is left completely unspecified and up to the implementation. (There is [[vla-alloc|some work going into improving this situation]].)
+In general, the core driving reason to wanting to be capable of observing the difference between the two is fairly simple: C implementations, despite great advancements in the last 40 years, cannot fully improve the code generation around variable length arrays for fundamental design reasons. "The size of this type is only known at run-time" hides a lot of useful information from a compiler! While smart compilers can break these sorts of things down given enough optimizer power and inlined code, at its further reaches variable length arrays take operations that can be computed during compilation/translation and effectively delay them to execution. This means that while variable length arrays can save on the overall run-time memory used for a program, it comes at the cost of increased codegen to handle specific cases, especially since such a wide variety of their behavior and allocation is left completely unspecified and up to the implementation.)
 
 
 ### Array Usage Examples: Constant Sized Input ### {#design-array-examples.constant}
@@ -797,14 +803,14 @@ int main () {
 		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3260.pdf",
 		"date": "May 12th, 2024"
 	},
-	"vla-alloc": {
+	"N3441": {
 		"authors": [
 			"JeanHeyd Meneide",
 			"Shepherd"
 		],
-		"title": "variable length Array (VLA) Allocation Control",
-		"href": "https://thephd.dev/_vendor/future_cxx/papers/C%20-%20variable%20length%20Array%20(VLA)%20Allocation%20Control.html",
-		"date": "January 1st, 2024"
+		"title": "_Generic and VLA realignment and improvement, r1 (updates N3331)",
+		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3441.htm",
+		"date": "January 25th, 2025"
 	}
 }
 </pre>
