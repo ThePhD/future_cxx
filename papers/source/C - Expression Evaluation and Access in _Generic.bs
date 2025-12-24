@@ -122,7 +122,7 @@ int main() {
 
 A viable solution for expression-based `_Generic` is to allow the creation of an l-value or an r-value of the right type based on the input of a `_Generic` selection that uses an controlling expression rather than a controlling type. This allows all branches to be type-checked, but checked with a type that is appropriate rather than allowing a single use of a generic macro or similar to completely and utterly destroy any hope at proper compilation.
 
-This paper proposes the use of a sigil `::` to mark that the next sequence of tokens will be an `identifier` and then another `:`, where the `identifier` is the name of the inserted controlling expression as an r-value or an l-value. It also modifies the rules of a controlling expression to match against both the exact type first (to allow for an l-value expression that may be `const` qualified to be selected) and then the type after typical l-value conversion strips the qualifiers and does other removals.
+This paper proposes adding *declarator* as one of the new productions of *generic-association*, which will add an `identifier` as the name of the inserted controlling expression as an r-value or an l-value. It also modifies the rules of a controlling expression to match against both the exact type first (to allow for an l-value expression that may be `const` qualified to be selected) and then the type after typical l-value conversion strips the qualifiers and does other removals.
 
 
 
@@ -217,7 +217,7 @@ int main() {
 }
 ```
 
-Effectively, if the input value into a generic selection statement would be an lvalue, then it remains as such after a generic association branch is chosen. It applies similarly if it is an r-value. Because generic selection is an expression, the use of any created temporary values will always last for the duration of the "full expression", and so this should not cause any lifetime issues at all in the confines of both existing code and newly written code.
+Effectively, if the input value into a generic selection expression would be an lvalue, then it remains as such after a generic association branch is chosen. It applies similarly if it is an r-value. Because generic selection is an expression, the use of any created temporary values will always last for the duration of the "full expression", and so this should not cause any lifetime issues at all in the confines of both existing code and newly written code.
 
 
 
@@ -288,6 +288,55 @@ The problem comes back again when we want to have that exact matching but still 
 
 
 
+## Identifier Scope and Lifetime ## {#design-lifetime.scope}
+
+The scope of the identifier introduced by this is from the `:` and to the terminating `,`. This is different from every other kind of identifier, so it needs a special carve out in §6.2.1 Scopes. We're calling it *generic association scope*, for now. Just like labels, they're a one-use-case kind of variable. This is just going to be called "generic lifetime" for the time being, because that's the simplest possible way to call it. If we had statement expressions, we could simply say the scope is as-if the identifier was declared at the top of a statement expression that surrounds the *assignment-expression* that comes after the `:` and before the `,`, like so:
+
+```cpp
+int r = 0;
+_Generic(r,
+	int v: v * v + 35 / (v += 2)
+)
+```
+
+becomes...
+
+```cpp
+int r = 0;
+_Generic(r,
+	int: ({
+		int* __lvalue_v = &r;
+		*__lvalue_v * *__lvalue_v + 35 / (*__lvalue_v += 2); 
+		})
+)
+```
+
+Unfortunately, we do not have statement expressions so we have to spend wording specifying something for this. Hopefully, once we get statement expressions, we can do away with the wording and just say it's as-if a statement expression with normal block semantics exists in that space.
+
+The lifetime of the backing storage for the identifier is regular automatic storage duration.
+
+As an example, the identifier `v` can be used for all of the generic association branches because the identifier's scope does not bleed or leak out of the *assignment-expression* portion of that branch:
+
+```cpp
+#include <stdio.h>
+
+#define bar(x) _Generic(x, \
+	int v: v, /* first use */ \
+	struct foo v: v.name /* perfectly fine reuse */ \
+)
+
+struct foo { char* name; };
+
+int main() {
+	struct foo f = { "test" };
+	bar(3);
+	bar(f) = "something";
+	puts(f.name); // prints "something"
+}
+```
+
+
+
 ## Other Potential Syntaxes ## {#design-syntax}
 
 We settled on simply adding the *declarator* branch to the *generic-association* syntax because it is, as we understand it, the least problematic and easiest to handle.
@@ -323,6 +372,56 @@ The intent of this wording is to provide:
 - both strict type matching and post-lvalue-conversion matching for generics that use a controlling operand where possible;
 - the evaluation of the input expression if and only if a generic branch **with an** *identifier* actually matches;
 - and, the ability to potentially modify an l-value if the identifier if the expression produces an l-value.
+
+
+
+## Modify "§6.2.1 Scopes of identifiers" ## {#wording-6.2.1}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.2.1</span> <span class="wording-clause-title">Scopes of identifiers</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-numbered">
+An identifier can denote:
+
+- a standard attribute, an attribute prefix, or an attribute name;
+- an object;
+- a function;
+- a tag or a member of a structure, union, or enumeration;
+- a typedef name;
+- <ins>a generic association name;</ins>
+- a label name;
+- a macro name;
+- or a macro parameter.
+
+The same identifier can denote different entities at different points in the program. A member of an enumeration is called an enumeration constant. Macro names and macro parameters are not considered further here, because prior to the semantic phase of program translation any occurrences of macro names in the source file are replaced by the preprocessing token sequences that constitute their macro definitions.
+</div>
+
+<div class="wording-numbered">
+
+For each different entity that an identifier designates, the identifier is visible (i.e. can be used) only
+within a region of program text called its scope. Different entities designated by the same identifier
+either have different scopes or are in different name spaces. There are <del>four</del><ins>five</ins> kinds of scopes: function,
+file, block,<ins> generic association,</ins> and function prototype. (A function prototype is a declaration of a function.)
+</div>
+
+<ins>
+<div class="wording-newnumbered">
+
+A generic association name is the only kind of identifier that has *generic association scope*. This scope begins at the `:` after the declarator or `default` identifier and ends at the terminating `,` or `)` of that generic selection's generic association (6.5.2.1).
+</div>
+</ins>
+
+<div class="wording-numbered">
+
+...
+</div>
+
+</div>
+</blockquote>
 
 
 
@@ -370,7 +469,7 @@ Description
 <ins>
 <div class="wording-newnumbered">
 
-The *controlling type* of a generic selection is the type or set of types used to select a branch in the list of generic associations in the generic selection. The *generic association type* is the type indicated by a generic association's type name or declarator, if present.
+The *controlling type* of a generic selection is the type or set of types used to select a branch in the list of generic associations in the generic selection. The *generic association type* is the type indicated by a generic association's type name or declarator, if present. The *generic association name* is either the identifier in the declarator or the identifier after `default`, if present.
 </div>
 </ins>
 
@@ -385,12 +484,7 @@ A generic selection shall have no more than one `default` generic association. N
 
 <div class="wording-newnumbered">
 
-If the generic controlling operand is an assignment expression, the controlling type of the generic selection expression is <ins>first the type of the expression. If no generic association type has a compatible type with the expression, then the controlling type of the generic selection expression is</ins> as if it had undergone an lvalue conversion,<sup>FN)</sup> array to pointer conversion, or function to pointer conversion.
-</div>
-
-<div class="wording-newnumbered">
-
-If the generic controlling operand is a type name, controlling type of the generic selection expression is the type designated by the type name. The controlling type shall be compatible with at most one of the types named in the generic association list. If a generic selection has no default generic association, its controlling type shall be compatible with exactly one of the types named in its generic association list.
+The controlling type shall be compatible with at most one of the types named in the generic association list. If a generic selection has no default generic association, its controlling type shall be compatible with exactly one of the types named in its generic association list.
 </div>
 
 <div class="wording-clause-section-title">
@@ -399,7 +493,22 @@ Semantics
 
 <div class="wording-newnumbered">
 
-<del>The generic controlling operand, size</del><ins>Size</ins> expressions<del>,</del> and typeof operators contained in the type names of generic associations are not evaluated. If a generic selection has a generic association with a type name that is compatible with the controlling type, then the result expression of the generic selection is the expression in that generic association. Otherwise, the result expression of the generic selection is the expression in the `default` generic association. None of the expressions from any other generic association of the generic selection is evaluated. The generic association whose expression is evaluated is the *selected generic association*.
+If the generic controlling operand is an assignment expression, the controlling type of the generic selection expression is <ins>first the type of the expression. If no generic association type has a compatible type with this first type, then the controlling type of the generic selection expression is</ins> as if it had undergone an lvalue conversion,<sup>FN)</sup> array to pointer conversion, or function to pointer conversion.
+</div>
+
+<div class="wording-newnumbered">
+
+Otherwise, if the generic controlling operand is a type name, the controlling type of the generic selection expression is the type designated by the type name.
+</div>
+
+<div class="wording-newnumbered">
+
+<del>The generic controlling operand, size</del><ins>Size</ins> expressions<del>,</del> and typeof operators contained in the type names of generic associations are not evaluated.
+</div>
+
+<div class="wording-newnumbered">
+
+If a generic selection has a generic association with a type name that is compatible with the controlling type, then the result expression of the generic selection is the expression in that generic association. Otherwise, the result expression of the generic selection is the expression in the `default` generic association. None of the expressions from any other generic association of the generic selection is evaluated. The generic association whose expression is evaluated is the *selected generic association*.
 </div>
 
 <ins>
@@ -417,14 +526,14 @@ Otherwise, it is not evaluated.
 <ins>
 <div class="wording-newnumbered">
 
-The identifier of a `default` generic association has the type of the generic controlling operand's expression and is an lvalue, a function designator, or a void expression if the generic controlling operand is. The identifier of a generic association with a declarator has a type compatible with the generic association's type and is an lvalue, a function designator, or a void expression if the generic controlling operand is.
+The identifier of a `default` generic association has the type of the generic controlling operand's expression and is an lvalue, a function designator, or a void expression if the generic controlling operand is. The identifier of a generic association with a declarator has a type compatible with the generic association type and is an lvalue, a function designator, or a void expression if the generic controlling operand is.
 </div>
 </ins>
 
 <ins>
 <div class="wording-newnumbered">
 
-NOTE&emsp;&emsp;&emsp;If evaluated, the generic controlling operand's expression is evaluated once and only once, regardless of whether or not the identifier of the declarator or the identifier of a `default` generic association is used.
+NOTE&emsp;&emsp;&emsp;If evaluated, the generic controlling operand's expression is evaluated once and only once, regardless of the number of times the generic association name is used or if its even used at all.
 </div>
 </ins>
 
@@ -439,7 +548,7 @@ The type and value of a generic selection are identical to those of its result e
 </div>
 
 <ins>
-<div class="wording-newnumbered wording-numbered-14">
+<div class="wording-newnumbered wording-numbered-15">
 
 EXAMPLE&emsp;&emsp;&emsp; The following generic selection within a macro appropriately evaluates the incoming expression and uses it to print out information.
 
@@ -454,7 +563,7 @@ EXAMPLE&emsp;&emsp;&emsp; The following generic selection within a macro appropr
 
 struct foo { char* name; };
 
-double get_d () {
+double get_d (void) {
 	return 0.5;
 }
 
@@ -469,7 +578,7 @@ int main() {
 </ins>
 
 <ins>
-<div class="wording-newnumbered">
+<div class="wording-newnumbered wording-numbered-16">
 
 EXAMPLE&emsp;&emsp;&emsp; If the incoming operand of a generic selection expression is a modifiable lvalue, then such an expression can be used for modification.
 
@@ -488,6 +597,30 @@ int main() {
 	bar(3);
 	bar(f) = "something";
 	puts(f.name); // prints "something"
+}
+```
+</div>
+</ins>
+
+<ins>
+<div class="wording-newnumbered wording-numbered-17">
+
+EXAMPLE&emsp;&emsp;&emsp; The generic controlling operand has the type of the expression itself when the branch is selected, which may be not exactly the generic association type, even if that branch matches.
+
+```cpp
+#include <stdio.h>
+
+#define is_it_const(x) _Generic(x, \
+	int v: puts("the integer expression is not const"), \
+	const int: puts("the integer expression is const") \
+)
+
+int main() {
+	const int var = 0;
+	_Generic(var,
+		int v: is_it_const(v)
+	);
+	// prints "the integer expression is const"
 }
 ```
 </div>
