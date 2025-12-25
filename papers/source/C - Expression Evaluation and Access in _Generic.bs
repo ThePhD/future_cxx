@@ -50,7 +50,7 @@ int use_dbl_ptr(double* pd);
 
 #define USE_THING(THING) _Generic(&(typeof(THING)){ THING }, \
 	int*: use_int_ptr(&v), \
-	double*: use_dbl_ptr(&v): \
+	double*: use_dbl_ptr(&v), \
 	default: 0 \
 )
 
@@ -66,7 +66,7 @@ will spit out this error from latest trunk GCC (December 16th, 2025):
 ```sh
 source>: In function 'main':
 <source>:6:30: error: passing argument 1 of 'use_dbl_ptr' from incompatible pointer type [-Wincompatible-pointer-types]
-	6  |         double*: use_dbl_ptr(&v): \
+	6  |         double*: use_dbl_ptr(&v), \
 	   |                              ^~
 	   |                              |
 	   |                              int *
@@ -120,9 +120,19 @@ int main() {
 
 ([Godbolt](https://godbolt.org/z/b8c5d38jG).) Unfortunately, this **deepens** the issue of multiple recursive expansions of a macro and still leaves open the potential of having an expression used multiple difference times. It also requires the user understand the technique that `contrav` performs, which most programmers absolutely do not know how to do given that an **extremely** frequent request for `_Generic` is the ability to "ignore untaken branches". Unfortunately, one of the chief benefits of all of a generic selection's branches is that they are type-checked, which is different from the way C++ templates and similar generic constructs behave.
 
+
+
+## A Bigger Problem Than Hoped ## {#intro-problem}
+
+This is not the first time this problem has been brought up. In fact, it's come up hundreds of times as people attempted to use `_Generic` to code relatively simply things. One such person, Simon Tatham, wrote a [[workarounds-generic-c11|long article circa 2023]], which covers in full the issues. It even proposes solutions, but only after going through a full archaeological dig on the proposals, previous existing practice, and problems of that WG14 encountered when C11's Generic Selection was first being standardized. They rediscovered why it was the way it was in certain cases, but still felt that certain parts of it were effectively defects or WG14 not thinking clearly in the full design.
+
+
+
+## A More Thorough Solution ## {#intro-solution}
+
 A viable solution for expression-based `_Generic` is to allow the creation of an l-value or an r-value of the right type based on the input of a `_Generic` selection that uses an controlling expression rather than a controlling type. This allows all branches to be type-checked, but checked with a type that is appropriate rather than allowing a single use of a generic macro or similar to completely and utterly destroy any hope at proper compilation.
 
-This paper proposes adding *declarator* as one of the new productions of *generic-association*, which will add an `identifier` as the name of the inserted controlling expression as an r-value or an l-value. It also modifies the rules of a controlling expression to match against both the exact type first (to allow for an l-value expression that may be `const` qualified to be selected) and then the type after typical l-value conversion strips the qualifiers and does other removals.
+This paper proposes adding *declaration-name* as one of the new productions of *generic-association*, which will add an `identifier` as the name of the inserted controlling expression as an r-value or an l-value. It also modifies the rules of a controlling expression to match against both the exact type first (to allow for an l-value expression that may be `const` qualified to be selected) and then the type after typical l-value conversion strips the qualifiers and does other removals.
 
 
 
@@ -133,10 +143,13 @@ The design is simple. There will be three productions for a *generic-association
 
 > *generic-association*:
 > :: *type-name* `:` *assignment-expression*
-> :: *declarator* `:` *assignment-expression*
+> :: *declaration-name* `:` *assignment-expression*
 > :: `default` *identifier*<sub>opt</sub> `:` *assignment-expression*
+>
+> *declaration-name*:
+> :: *declaration-specifiers* *declarator*
 
-The use of *declarator* is primarily to allow a non-optional *identifier* to appear in the grammar in the usual expected place, with *type-name* being the same just without the identifier in its grammar. That makes the previously shown code samples look as follows:
+The use of *declaration-name* is primarily to allow a non-optional *identifier* to appear in the grammar in the usual expected place, with *type-name* being the same just without the identifier in its grammar. That makes the previously shown code samples look as follows:
 
 ```cpp
 int use_int_ptr(int* pi);
@@ -171,6 +184,8 @@ int main() {
 ```
 
 This allows us to have access to the result of the generic selection's controlling expression. Additionally, the scope of the introduced `identifier` is from the expression-introducing colon `:` to the terminating comma `,`. This keeps things finely scoped. If ISO C had statement expressions, we could state that it is as-if there is a statement expression that introduces this variable and surrounds the `assignment-expression` of the generic selection.
+
+Additionally, right now storage-class specifiers on parameter declarations are ignored. Rather than ignoring them, we plan to make it a constraint violation for `_Generic` to have e.g. `static int x:` or `auto double v:` or similar. If `auto` as a type specifier enters into C2y, then we expect to add `auto` as being a constraint violation here, too.
 
 
 
@@ -223,7 +238,7 @@ Effectively, if the input value into a generic selection expression would be an 
 
 ## Evaluation of the Expression ## {#design-evaluation}
 
-Currently, the controlling operand of a generic selection expression is not evaluated if it's an expression. In the case of a generic association that uses the *declarator* form rather than the *type-name* form, the expression is **only evaluated after selection chooses a branch that has the** *declarator* **form**. This will prevent the addition of new generic associations within a list of existing generic associations forcing unexpected evaluations that were not previously considered. It is also only evaluated once, even if the *identifier* provided is used multiple times. Therefore, under the new feature, the following code returns `0` from `main`:
+Currently, the controlling operand of a generic selection expression is not evaluated if it's an expression. In the case of a generic association that uses the *declaration-name* form rather than the *type-name* form, the expression is **only evaluated after selection chooses a branch that has the** *declaration-name* **form**. This will prevent the addition of new generic associations within a list of existing generic associations forcing unexpected evaluations that were not previously considered. It is also only evaluated once, even if the *identifier* provided is used multiple times. Therefore, under the new feature, the following code returns `0` from `main`:
 
 ```cpp
 int result = 0;
@@ -339,11 +354,11 @@ int main() {
 
 ## Other Potential Syntaxes ## {#design-syntax}
 
-We settled on simply adding the *declarator* branch to the *generic-association* syntax because it is, as we understand it, the least problematic and easiest to handle.
+We settled on simply adding the *declaration-name* branch to the *generic-association* syntax because it is, as we understand it, the least problematic and easiest to handle.
 
 There are other ways to introduce the identifier in the sequence.
 
-One possible choice is to use a real introducer for the identifier, so it doesn't look like a declarator. An example of this is with a `::`, so that the *type-name* is separated from the *identifier*, as in: `type-name :: identifier : ...`. Other than being conflicting with C++-style syntax of `identifier :: identifier ...`, it also seems a bit unnecessary given the solution we've settled on. It might get rid of the disambiguation rule that anything that can be parsed as a *type-name* should be parsed as a *type-name* rather than a *declarator*, where possible. Other than this, there are little benefits, unfortunately.
+One possible choice is to use a real introducer for the identifier, so it doesn't look like a *declaration-name*. An example of this is with a `::`, so that the *type-name* is separated from the *identifier*, as in: `type-name :: identifier : ...`. Other than being conflicting with C++-style syntax of `identifier :: identifier ...`, it also seems a bit unnecessary given the solution we've settled on. It might get rid of the disambiguation rule that anything that can be parsed as a *type-name* should be parsed as a *type-name* rather than a *declaration-name*, where possible. Other than this, there are little benefits, unfortunately.
 
 It could also be something along the lines of `type-name : identifier : ...` for a generic association branch, but a single `:` does not really provide enough information to the parser to know if the following tokens will be the special new syntax versus just the existing syntax where `identifier` is meant to be parsed as an `expression`. One could delay the parsing and decide whether or not its either the new syntax or the old syntax by waiting for the first non-parenthesized `,` from showing up and then deciding how to interpret two top-level colons, but it can be hard to deal with given the use of e.g. `a ? b : c` nakedly as part of an *assignment-expression*. (This can make it such that the compiler might have to consider `a` and identifier and `?` an error before the `b :` portion, for example.)
 
@@ -411,7 +426,7 @@ file, block,<ins> generic association,</ins> and function prototype. (A function
 <ins>
 <div class="wording-newnumbered">
 
-A generic association name is the only kind of identifier that has *generic association scope*. This scope begins at the `:` after the declarator or `default` identifier and ends at the terminating `,` or `)` of that generic selection's generic association (6.5.2.1).
+A generic association name is the only kind of identifier that has *generic association scope*. This scope begins at the `:` after the declaration name or `default` identifier and ends at the terminating `,` or `)` of that generic selection's generic association (6.5.2.1).
 </div>
 </ins>
 
@@ -455,8 +470,15 @@ Syntax
 
 *generic-association*:
 :: *type-name* `:` *assignment-expression*
-:: <ins>*declarator* `:` *assignment-expression*</ins>
+:: <ins>*declaration-name* `:` *assignment-expression*</ins>
 :: `default` <ins>*identifier*<sub>opt</sub></ins> `:` *assignment-expression*
+
+<ins>
+
+*declaration-name*:
+:: *declaration-specifiers* *declarator*
+
+</ins>
 
 </div>
 
@@ -469,7 +491,7 @@ Description
 <ins>
 <div class="wording-newnumbered">
 
-The *controlling type* of a generic selection is the type or set of types used to select a branch in the list of generic associations in the generic selection. The *generic association type* is the type indicated by a generic association's type name or declarator, if present. The *generic association name* is either the identifier in the declarator or the identifier after `default`, if present.
+The *controlling type* of a generic selection is the type or set of types used to select a branch in the list of generic associations in the generic selection. The *generic association type* is the type indicated by a generic association's type name or declaration name, if present. The *generic association name* is either the identifier in the declaration name or the identifier after `default`, if present.
 </div>
 </ins>
 
@@ -486,6 +508,20 @@ A generic selection shall have no more than one `default` generic association. N
 
 The controlling type shall be compatible with at most one of the types named in the generic association list. If a generic selection has no default generic association, its controlling type shall be compatible with exactly one of the types named in its generic association list.
 </div>
+
+<ins>
+<div class="wording-newnumbered">
+
+If an identifier can be treated either as a typedef name or as a generic association name, it shall be taken as a typedef name.
+</div>
+</ins>
+
+<ins>
+<div class="wording-newnumbered">
+
+There shall be no storage-class specifiers on a declaration name, if present. 
+</div>
+</ins>
 
 <div class="wording-clause-section-title">
 Semantics
@@ -508,25 +544,24 @@ Otherwise, if the generic controlling operand is a type name, the controlling ty
 
 <div class="wording-newnumbered">
 
-If a generic selection has a generic association with a type name that is compatible with the controlling type, then the result expression of the generic selection is the expression in that generic association. Otherwise, the result expression of the generic selection is the expression in the `default` generic association. None of the expressions from any other generic association of the generic selection is evaluated. The generic association whose expression is evaluated is the *selected generic association*.
+If a generic selection has a generic association with a type name that is compatible with the controlling type, then the result expression of the generic selection is the expression in that generic association. Otherwise, the result expression of the generic selection is the expression in the `default` generic association. None of the expressions from any other generic association of the generic selection is evaluated. <ins>The generic association whose expression is evaluated is the *selected generic association*.</ins>
 </div>
 
 <ins>
 <div class="wording-newnumbered">
 
-The generic controlling operand is evaluated if and only if both the generic controlling operand is an assignment expression and the selected generic association:
-
-- has a declarator with an identifier;
-- or, is a `default` generic association with an identifier.
-
-Otherwise, it is not evaluated.
+The generic controlling operand is evaluated if and only if both the generic controlling operand is an assignment expression and the selected generic association has a generic association name. Otherwise, it is not evaluated.
 </div>
 </ins>
 
 <ins>
 <div class="wording-newnumbered">
 
-The identifier of a `default` generic association has the type of the generic controlling operand's expression and is an lvalue, a function designator, or a void expression if the generic controlling operand is. The identifier of a generic association with a declarator has a type compatible with the generic association type and is an lvalue, a function designator, or a void expression if the generic controlling operand is.
+If present, the generic association name has the value of the generic controlling operand's expression and is an lvalue, a function designator, or a void expression if the generic controlling operand is. It's type is either:
+
+- the generic controlling operand type if it is part of a `default` generic association;
+- otherwise, the composite type of the generic association type and the generic controlling operand's type.
+
 </div>
 </ins>
 
@@ -542,13 +577,82 @@ NOTE&emsp;&emsp;&emsp;If evaluated, the generic controlling operand's expression
 The type and value of a generic selection are identical to those of its result expression. It is an lvalue, a function designator, or a void expression if its result expression is, respectively, an lvalue, a function designator, or a void expression.
 </div>
 
-<div>
 
-...
+<div class="wording-numbered">
+
+EXAMPLE&emsp;&emsp;&emsp; A cbrt type-generic macro can be implemented as follows:
+
+```cpp
+#define cbrt(X) _Generic((X), \
+	long double: cbrtl, \
+	default: cbrt, \
+	float: cbrtf \
+	)(X)
+```
+</div>
+
+<del>
+<div class="wording-numbered">
+
+EXAMPLE&emsp;&emsp;&emsp; The following two generic selection expressions select different associations because the assignment expression operand undergoes lvalue conversion while the type name operand is unchanged:
+
+```cpp
+int func(const int i) {
+	return _Generic(i,
+		int : 0, // int is selected
+		const int : 1,
+		default : 2) +
+	_Generic(typeof(i),
+		int : 0,
+		const int : 1, // const int is selected
+		default : 2);
+}
+```
+
+Thus, this function returns `1`.
+</div>
+</del>
+
+<ins>
+<div class="wording-numbered wording-numbered-16">
+
+EXAMPLE&emsp;&emsp;&emsp; The following two generic selection expressions select the same associations:
+
+```cpp
+int func(const int i) {
+	return _Generic(i,
+		int : 0,
+		const int : 1, // const int is selected
+		default : 2)
+	+
+	_Generic(typeof(i),
+		int : 3,
+		const int : 4, // const int is selected
+		default : 5);
+}
+```
+
+Thus, this function returns `5`.
+</div>
+</ins>
+
+<div class="wording-numbered wording-numbered">
+
+EXAMPLE&emsp;&emsp;&emsp; The following generic selection expressions are valid and all evaluate to 1.
+
+```cpp
+void foo(int n, int m) {
+	_Generic(int[3][2], int[3][*]: 1, int[2][*]: 0);
+	_Generic(int[3][2], int[*][2]: 1, int[*][3]: 0);
+	_Generic(int[3][n], int[3][*]: 1, int[2][*]: 0);
+	_Generic(int[n][m], int[*][*]: 1, char[*][*]: 0);
+	_Generic(int(*)[2], int(*)[*]: 1);
+}
+```
 </div>
 
 <ins>
-<div class="wording-newnumbered wording-numbered-15">
+<div class="wording-newnumbered">
 
 EXAMPLE&emsp;&emsp;&emsp; The following generic selection within a macro appropriately evaluates the incoming expression and uses it to print out information.
 
@@ -578,7 +682,7 @@ int main() {
 </ins>
 
 <ins>
-<div class="wording-newnumbered wording-numbered-16">
+<div class="wording-newnumbered">
 
 EXAMPLE&emsp;&emsp;&emsp; If the incoming operand of a generic selection expression is a modifiable lvalue, then such an expression can be used for modification.
 
@@ -603,7 +707,7 @@ int main() {
 </ins>
 
 <ins>
-<div class="wording-newnumbered wording-numbered-17">
+<div class="wording-newnumbered">
 
 EXAMPLE&emsp;&emsp;&emsp; The generic controlling operand has the type of the expression itself when the branch is selected, which may be not exactly the generic association type, even if that branch matches.
 
@@ -639,6 +743,14 @@ int main() {
 		"title": "C2y: Working Draft (Post-Brno)",
 		"date": "Monday, December 22nd, 2025",
 		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3685.pdf"
-	}	
+	},
+	"workarounds-generic-c11": {
+		"authors": [
+			"Simon Tatham"
+		],
+		"title": "Workarounds for C11 _Generic",
+		"date": "Saturday, July 29th, 2023",
+		"href": "https://www.chiark.greenend.org.uk/~sgtatham/quasiblog/c11-generic/"
+	}
 }
 </pre>

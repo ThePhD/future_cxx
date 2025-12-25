@@ -1503,10 +1503,10 @@ Possible extra rowspan handling
       text-align: center;
     }
   </style>
-  <meta content="Bikeshed version c3a8ac783, updated Wed Jul 24 12:20:06 2024 -0700" name="generator">
+  <meta content="Bikeshed version ac5ea272d, updated Fri Dec 6 15:45:15 2024 -0800" name="generator">
   <link href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Expression%20Evaluation%20and%20Access%20in%20_Generic.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="c2226b35a4358a7194ee9980aa0f6adf55e3306f" name="revision">
+  <meta content="3fd597e255faa4b50f92a03718ce500c82012c71" name="revision">
   <meta content="dark light" name="color-scheme">
 <style>
 :root {
@@ -2489,7 +2489,12 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
      <ol class="toc">
       <li><a href="#changelog-r0"><span class="secno">1.1</span> <span class="content">Revision 0 - December 16<sup>th</sup>, 2025</span></a>
      </ol>
-    <li><a href="#intro"><span class="secno">2</span> <span class="content">Introduction and Motivation</span></a>
+    <li>
+     <a href="#intro"><span class="secno">2</span> <span class="content">Introduction and Motivation</span></a>
+     <ol class="toc">
+      <li><a href="#intro-problem"><span class="secno">2.1</span> <span class="content">A Bigger Problem Than Hoped</span></a>
+      <li><a href="#intro-solution"><span class="secno">2.2</span> <span class="content">A More Thorough Solution</span></a>
+     </ol>
     <li>
      <a href="#design"><span class="secno">3</span> <span class="content">Design</span></a>
      <ol class="toc">
@@ -2529,7 +2534,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 
 <c- cp>#define USE_THING(THING) _Generic(&amp;(typeof(THING)){ THING }, \</c->
 <c- cp>  int*: use_int_ptr(&amp;v), \</c->
-<c- cp>  double*: use_dbl_ptr(&amp;v): \</c->
+<c- cp>  double*: use_dbl_ptr(&amp;v), \</c->
 <c- cp>  default: 0 \</c->
 <c- cp>)</c->
 
@@ -2542,7 +2547,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    <p>will spit out this error from latest trunk GCC (December 16th, 2025):</p>
 <pre class="language-sh highlight">source>: In <c- k>function</c-> <c- t>'main'</c->:
 &lt;source>:6:30: error: passing argument <c- m>1</c-> of <c- t>'use_dbl_ptr'</c-> from incompatible pointer type <c- o>[</c->-Wincompatible-pointer-types<c- o>]</c->
-  <c- m>6</c->  <c- p>|</c->         double*: use_dbl_ptr<c- o>(</c-><c- p>&amp;</c->v<c- o>)</c->: <c- se>\</c->
+  <c- m>6</c->  <c- p>|</c->         double*: use_dbl_ptr<c- o>(</c-><c- p>&amp;</c->v<c- o>)</c->, <c- se>\</c->
      <c- p>|</c->                              ^~
      <c- p>|</c->                              <c- p>|</c->
      <c- p>|</c->                              int *
@@ -2589,8 +2594,11 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 <c- p>}</c->
 </pre>
    <p>(<a href="https://godbolt.org/z/b8c5d38jG">Godbolt</a>.) Unfortunately, this <strong>deepens</strong> the issue of multiple recursive expansions of a macro and still leaves open the potential of having an expression used multiple difference times. It also requires the user understand the technique that <code class="highlight"><c- n>contrav</c-></code> performs, which most programmers absolutely do not know how to do given that an <strong>extremely</strong> frequent request for <code class="highlight"><c- k>_Generic</c-></code> is the ability to "ignore untaken branches". Unfortunately, one of the chief benefits of all of a generic selection’s branches is that they are type-checked, which is different from the way C++ templates and similar generic constructs behave.</p>
+   <h3 class="heading settled" data-level="2.1" id="intro-problem"><span class="secno">2.1. </span><span class="content">A Bigger Problem Than Hoped</span><a class="self-link" href="#intro-problem"></a></h3>
+   <p>This is not the first time this problem has been brought up. In fact, it’s come up hundreds of times as people attempted to use <code class="highlight"><c- k>_Generic</c-></code> to code relatively simply things. One such person, Simon Tatham, wrote a <a data-link-type="biblio" href="#biblio-workarounds-generic-c11" title="Workarounds for C11 _Generic">long article circa 2023</a>, which covers in full the issues. It even proposes solutions, but only after going through a full archaeological dig on the proposals, previous existing practice, and problems of that WG14 encountered when C11’s Generic Selection was first being standardized. They rediscovered why it was the way it was in certain cases, but still felt that certain parts of it were effectively defects or WG14 not thinking clearly in the full design.</p>
+   <h3 class="heading settled" data-level="2.2" id="intro-solution"><span class="secno">2.2. </span><span class="content">A More Thorough Solution</span><a class="self-link" href="#intro-solution"></a></h3>
    <p>A viable solution for expression-based <code class="highlight"><c- k>_Generic</c-></code> is to allow the creation of an l-value or an r-value of the right type based on the input of a <code class="highlight"><c- k>_Generic</c-></code> selection that uses an controlling expression rather than a controlling type. This allows all branches to be type-checked, but checked with a type that is appropriate rather than allowing a single use of a generic macro or similar to completely and utterly destroy any hope at proper compilation.</p>
-   <p>This paper proposes adding <em>declarator</em> as one of the new productions of <em>generic-association</em>, which will add an <code class="highlight"><c- n>identifier</c-></code> as the name of the inserted controlling expression as an r-value or an l-value. It also modifies the rules of a controlling expression to match against both the exact type first (to allow for an l-value expression that may be <code class="highlight"><c- k>const</c-></code> qualified to be selected) and then the type after typical l-value conversion strips the qualifiers and does other removals.</p>
+   <p>This paper proposes adding <em>declaration-name</em> as one of the new productions of <em>generic-association</em>, which will add an <code class="highlight"><c- n>identifier</c-></code> as the name of the inserted controlling expression as an r-value or an l-value. It also modifies the rules of a controlling expression to match against both the exact type first (to allow for an l-value expression that may be <code class="highlight"><c- k>const</c-></code> qualified to be selected) and then the type after typical l-value conversion strips the qualifiers and does other removals.</p>
    <h2 class="heading settled" data-level="3" id="design"><span class="secno">3. </span><span class="content">Design</span><a class="self-link" href="#design"></a></h2>
    <p>The design is simple. There will be three productions for a <em>generic-association</em> grammar term rather than just two, alongside a change for the <code class="highlight"><c- k>default</c-></code> branch, to allow for an <em>identifier</em> of the proper type, like so:</p>
    <blockquote>
@@ -2599,12 +2607,17 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
      <dd data-md>
       <p><em>type-name</em> <code class="highlight"><c- o>:</c-></code> <em>assignment-expression</em></p>
      <dd data-md>
-      <p><em>declarator</em> <code class="highlight"><c- o>:</c-></code> <em>assignment-expression</em></p>
+      <p><em>declaration-name</em> <code class="highlight"><c- o>:</c-></code> <em>assignment-expression</em></p>
      <dd data-md>
       <p><code class="highlight"><c- k>default</c-></code> <em>identifier</em><sub>opt</sub> <code class="highlight"><c- o>:</c-></code> <em>assignment-expression</em></p>
     </dl>
+    <p><em>declaration-name</em>:</p>
+    <dl>
+     <dd data-md>
+      <p><em>declaration-specifiers</em> <em>declarator</em></p>
+    </dl>
    </blockquote>
-   <p>The use of <em>declarator</em> is primarily to allow a non-optional <em>identifier</em> to appear in the grammar in the usual expected place, with <em>type-name</em> being the same just without the identifier in its grammar. That makes the previously shown code samples look as follows:</p>
+   <p>The use of <em>declaration-name</em> is primarily to allow a non-optional <em>identifier</em> to appear in the grammar in the usual expected place, with <em>type-name</em> being the same just without the identifier in its grammar. That makes the previously shown code samples look as follows:</p>
 <pre class="language-cpp highlight"><c- b>int</c-> <c- nf>use_int_ptr</c-><c- p>(</c-><c- b>int</c-><c- o>*</c-> <c- n>pi</c-><c- p>);</c->
 <c- b>int</c-> <c- nf>use_dbl_ptr</c-><c- p>(</c-><c- b>double</c-><c- o>*</c-> <c- n>pd</c-><c- p>);</c->
 
@@ -2634,6 +2647,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 <c- p>}</c->
 </pre>
    <p>This allows us to have access to the result of the generic selection’s controlling expression. Additionally, the scope of the introduced <code class="highlight"><c- n>identifier</c-></code> is from the expression-introducing colon <code class="highlight"><c- o>:</c-></code> to the terminating comma <code class="highlight"><c- p>,</c-></code>. This keeps things finely scoped. If ISO C had statement expressions, we could state that it is as-if there is a statement expression that introduces this variable and surrounds the <code class="highlight"><c- n>assignment</c-><c- o>-</c-><c- n>expression</c-></code> of the generic selection.</p>
+   <p>Additionally, right now storage-class specifiers on parameter declarations are ignored. Rather than ignoring them, we plan to make it a constraint violation for <code class="highlight"><c- k>_Generic</c-></code> to have e.g. <code class="highlight"><c- k>static</c-> <c- b>int</c-> <c- n>x</c-><c- o>:</c-></code> or <code class="highlight"><c- k>auto</c-> <c- b>double</c-> <c- n>v</c-><c- o>:</c-></code> or similar. If <code class="highlight"><c- k>auto</c-></code> as a type specifier enters into C2y, then we expect to add <code class="highlight"><c- k>auto</c-></code> as being a constraint violation here, too.</p>
    <h3 class="heading settled" data-level="3.1" id="design-lvalues"><span class="secno">3.1. </span><span class="content">Existing Practice: Allowing Modification / L-values</span><a class="self-link" href="#design-lvalues"></a></h3>
    <p>An important part of upholding existing practice is to allow for modification through an l-value. Using example code from Martin Uecker that shows modification working, the following code are things that plausibly exist in the real world already:</p>
 <pre class="language-cpp highlight"><c- cp>#include</c-> &lt;stdio.h>
@@ -2672,7 +2686,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 </pre>
    <p>Effectively, if the input value into a generic selection expression would be an lvalue, then it remains as such after a generic association branch is chosen. It applies similarly if it is an r-value. Because generic selection is an expression, the use of any created temporary values will always last for the duration of the "full expression", and so this should not cause any lifetime issues at all in the confines of both existing code and newly written code.</p>
    <h3 class="heading settled" data-level="3.2" id="design-evaluation"><span class="secno">3.2. </span><span class="content">Evaluation of the Expression</span><a class="self-link" href="#design-evaluation"></a></h3>
-   <p>Currently, the controlling operand of a generic selection expression is not evaluated if it’s an expression. In the case of a generic association that uses the <em>declarator</em> form rather than the <em>type-name</em> form, the expression is <strong>only evaluated after selection chooses a branch that has the</strong> <em>declarator</em> <strong>form</strong>. This will prevent the addition of new generic associations within a list of existing generic associations forcing unexpected evaluations that were not previously considered. It is also only evaluated once, even if the <em>identifier</em> provided is used multiple times. Therefore, under the new feature, the following code returns <code class="highlight"><c- mi>0</c-></code> from <code class="highlight"><c- n>main</c-></code>:</p>
+   <p>Currently, the controlling operand of a generic selection expression is not evaluated if it’s an expression. In the case of a generic association that uses the <em>declaration-name</em> form rather than the <em>type-name</em> form, the expression is <strong>only evaluated after selection chooses a branch that has the</strong> <em>declaration-name</em> <strong>form</strong>. This will prevent the addition of new generic associations within a list of existing generic associations forcing unexpected evaluations that were not previously considered. It is also only evaluated once, even if the <em>identifier</em> provided is used multiple times. Therefore, under the new feature, the following code returns <code class="highlight"><c- mi>0</c-></code> from <code class="highlight"><c- n>main</c-></code>:</p>
 <pre class="language-cpp highlight"><c- b>int</c-> <c- n>result</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c->
 
 <c- b>int</c-> <c- nf>change_global</c-> <c- p>(</c-><c- b>void</c-><c- p>)</c-> <c- p>{</c->
@@ -2764,9 +2778,9 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 <c- p>}</c->
 </pre>
    <h3 class="heading settled" data-level="3.5" id="design-syntax"><span class="secno">3.5. </span><span class="content">Other Potential Syntaxes</span><a class="self-link" href="#design-syntax"></a></h3>
-   <p>We settled on simply adding the <em>declarator</em> branch to the <em>generic-association</em> syntax because it is, as we understand it, the least problematic and easiest to handle.</p>
+   <p>We settled on simply adding the <em>declaration-name</em> branch to the <em>generic-association</em> syntax because it is, as we understand it, the least problematic and easiest to handle.</p>
    <p>There are other ways to introduce the identifier in the sequence.</p>
-   <p>One possible choice is to use a real introducer for the identifier, so it doesn’t look like a declarator. An example of this is with a <code class="highlight"><c- o>::</c-></code>, so that the <em>type-name</em> is separated from the <em>identifier</em>, as in: <code class="highlight"><c- n>type</c-><c- o>-</c-><c- n>name</c-> <c- o>::</c-> <c- n>identifier</c-> <c- o>:</c-> <c- p>...</c-></code>. Other than being conflicting with C++-style syntax of <code class="highlight"><c- n>identifier</c-> <c- o>::</c-> <c- n>identifier</c-> <c- p>...</c-></code>, it also seems a bit unnecessary given the solution we’ve settled on. It might get rid of the disambiguation rule that anything that can be parsed as a <em>type-name</em> should be parsed as a <em>type-name</em> rather than a <em>declarator</em>, where possible. Other than this, there are little benefits, unfortunately.</p>
+   <p>One possible choice is to use a real introducer for the identifier, so it doesn’t look like a <em>declaration-name</em>. An example of this is with a <code class="highlight"><c- o>::</c-></code>, so that the <em>type-name</em> is separated from the <em>identifier</em>, as in: <code class="highlight"><c- n>type</c-><c- o>-</c-><c- n>name</c-> <c- o>::</c-> <c- n>identifier</c-> <c- o>:</c-> <c- p>...</c-></code>. Other than being conflicting with C++-style syntax of <code class="highlight"><c- n>identifier</c-> <c- o>::</c-> <c- n>identifier</c-> <c- p>...</c-></code>, it also seems a bit unnecessary given the solution we’ve settled on. It might get rid of the disambiguation rule that anything that can be parsed as a <em>type-name</em> should be parsed as a <em>type-name</em> rather than a <em>declaration-name</em>, where possible. Other than this, there are little benefits, unfortunately.</p>
    <p>It could also be something along the lines of <code class="highlight"><c- n>type</c-><c- o>-</c-><c- n>name</c-> <c- o>:</c-> <c- n>identifier</c-> <c- o>:</c-> <c- p>...</c-></code> for a generic association branch, but a single <code class="highlight"><c- o>:</c-></code> does not really provide enough information to the parser to know if the following tokens will be the special new syntax versus just the existing syntax where <code class="highlight"><c- n>identifier</c-></code> is meant to be parsed as an <code class="highlight"><c- n>expression</c-></code>. One could delay the parsing and decide whether or not its either the new syntax or the old syntax by waiting for the first non-parenthesized <code class="highlight"><c- p>,</c-></code> from showing up and then deciding how to interpret two top-level colons, but it can be hard to deal with given the use of e.g. <code class="highlight"><c- n>a</c-> <c- o>?</c-> <c- n>b</c-> <c- o>:</c-> <c- n>c</c-></code> nakedly as part of an <em>assignment-expression</em>. (This can make it such that the compiler might have to consider <code class="highlight"><c- n>a</c-></code> and identifier and <code class="highlight"><c- o>?</c-></code> an error before the <code class="highlight"><c- nl>b</c-> <c- p>:</c-></code> portion, for example.)</p>
    <h2 class="heading settled" data-level="4" id="prior"><span class="secno">4. </span><span class="content">Prior Art</span><a class="self-link" href="#prior"></a></h2>
    <p>Other than the "contravariant transformation" detailed in <a href="#intro">§ 2 Introduction and Motivation</a>, there is no direct prior art for this feature in compilers as a language feature.</p>
@@ -2829,7 +2843,7 @@ file, block,
      </div>
      <ins>
       <div class="wording-newnumbered">
-       <p>A generic association name is the only kind of identifier that has <em>generic association scope</em>. This scope begins at the <code class="highlight"><c- o>:</c-></code> after the declarator or <code class="highlight"><c- k>default</c-></code> identifier and ends at the terminating <code class="highlight"><c- p>,</c-></code> or <code class="highlight"><c- p>)</c-></code> of that generic selection’s generic association (6.5.2.1).</p>
+       <p>A generic association name is the only kind of identifier that has <em>generic association scope</em>. This scope begins at the <code class="highlight"><c- o>:</c-></code> after the declaration name or <code class="highlight"><c- k>default</c-></code> identifier and ends at the terminating <code class="highlight"><c- p>,</c-></code> or <code class="highlight"><c- p>)</c-></code> of that generic selection’s generic association (6.5.2.1).</p>
       </div>
      </ins>
      <div class="wording-numbered">
@@ -2868,7 +2882,7 @@ file, block,
        <dd data-md>
         <p><em>type-name</em> <code class="highlight"><c- o>:</c-></code> <em>assignment-expression</em></p>
        <dd data-md>
-        <ins><em>declarator</em> <code class="highlight"><c- o>:</c-></code> <em>assignment-expression</em></ins>
+        <ins><em>declaration-name</em> <code class="highlight"><c- o>:</c-></code> <em>assignment-expression</em></ins>
        <dd data-md>
         <p>
          <code class="highlight"><c- k>default</c-></code> 
@@ -2876,13 +2890,20 @@ file, block,
           <code class="highlight"><c- o>:</c-></code> <em>assignment-expression</em>
         </p>
       </dl>
+      <ins>
+       <p><em>declaration-name</em>:</p>
+       <dl>
+        <dd data-md>
+         <p><em>declaration-specifiers</em> <em>declarator</em></p>
+       </dl>
+      </ins>
      </div>
      <ins>
       <div class="wording-clause-section-title"> Description </div>
      </ins>
      <ins>
       <div class="wording-newnumbered">
-       <p>The <em>controlling type</em> of a generic selection is the type or set of types used to select a branch in the list of generic associations in the generic selection. The <em>generic association type</em> is the type indicated by a generic association’s type name or declarator, if present. The <em>generic association name</em> is either the identifier in the declarator or the identifier after <code class="highlight"><c- k>default</c-></code>, if present.</p>
+       <p>The <em>controlling type</em> of a generic selection is the type or set of types used to select a branch in the list of generic associations in the generic selection. The <em>generic association type</em> is the type indicated by a generic association’s type name or declaration name, if present. The <em>generic association name</em> is either the identifier in the declaration name or the identifier after <code class="highlight"><c- k>default</c-></code>, if present.</p>
       </div>
      </ins>
      <div class="wording-clause-section-title"> Constraints </div>
@@ -2895,6 +2916,16 @@ file, block,
      <div class="wording-newnumbered">
       <p>The controlling type shall be compatible with at most one of the types named in the generic association list. If a generic selection has no default generic association, its controlling type shall be compatible with exactly one of the types named in its generic association list.</p>
      </div>
+     <ins>
+      <div class="wording-newnumbered">
+       <p>If an identifier can be treated either as a typedef name or as a generic association name, it shall be taken as a typedef name.</p>
+      </div>
+     </ins>
+     <ins>
+      <div class="wording-newnumbered">
+       <p>There shall be no storage-class specifiers on a declaration name, if present.</p>
+      </div>
+     </ins>
      <div class="wording-clause-section-title"> Semantics </div>
      <div class="wording-newnumbered">
       <p>
@@ -2914,23 +2945,25 @@ file, block,
        and typeof operators contained in the type names of generic associations are not evaluated. 
      </div>
      <div class="wording-newnumbered">
-      <p>If a generic selection has a generic association with a type name that is compatible with the controlling type, then the result expression of the generic selection is the expression in that generic association. Otherwise, the result expression of the generic selection is the expression in the <code class="highlight"><c- k>default</c-></code> generic association. None of the expressions from any other generic association of the generic selection is evaluated. The generic association whose expression is evaluated is the <em>selected generic association</em>.</p>
+      <p>
+       If a generic selection has a generic association with a type name that is compatible with the controlling type, then the result expression of the generic selection is the expression in that generic association. Otherwise, the result expression of the generic selection is the expression in the <code class="highlight"><c- k>default</c-></code> generic association. None of the expressions from any other generic association of the generic selection is evaluated. 
+       <ins>The generic association whose expression is evaluated is the <em>selected generic association</em>.</ins>
+      </p>
      </div>
      <ins>
       <div class="wording-newnumbered">
-       <p>The generic controlling operand is evaluated if and only if both the generic controlling operand is an assignment expression and the selected generic association:</p>
-       <ul>
-        <li data-md>
-         <p>has a declarator with an identifier;</p>
-        <li data-md>
-         <p>or, is a <code class="highlight"><c- k>default</c-></code> generic association with an identifier.</p>
-       </ul>
-       <p>Otherwise, it is not evaluated.</p>
+       <p>The generic controlling operand is evaluated if and only if both the generic controlling operand is an assignment expression and the selected generic association has a generic association name. Otherwise, it is not evaluated.</p>
       </div>
      </ins>
      <ins>
       <div class="wording-newnumbered">
-       <p>The identifier of a <code class="highlight"><c- k>default</c-></code> generic association has the type of the generic controlling operand’s expression and is an lvalue, a function designator, or a void expression if the generic controlling operand is. The identifier of a generic association with a declarator has a type compatible with the generic association type and is an lvalue, a function designator, or a void expression if the generic controlling operand is.</p>
+       <p>If present, the generic association name has the value of the generic controlling operand’s expression and is an lvalue, a function designator, or a void expression if the generic controlling operand is. It’s type is either:</p>
+       <ul>
+        <li data-md>
+         <p>the generic controlling operand type if it is part of a <code class="highlight"><c- k>default</c-></code> generic association;</p>
+        <li data-md>
+         <p>otherwise, the composite type of the generic association type and the generic controlling operand’s type.</p>
+       </ul>
       </div>
      </ins>
      <ins>
@@ -2941,11 +2974,63 @@ file, block,
      <div class="wording-newnumbered">
       <p>The type and value of a generic selection are identical to those of its result expression. It is an lvalue, a function designator, or a void expression if its result expression is, respectively, an lvalue, a function designator, or a void expression.</p>
      </div>
-     <div>
-      <p>...</p>
+     <div class="wording-numbered">
+      <p>EXAMPLE    A cbrt type-generic macro can be implemented as follows:</p>
+<pre class="language-cpp highlight"><c- cp>#define cbrt(X) _Generic((X), \</c->
+<c- cp>  long double: cbrtl, \</c->
+<c- cp>  default: cbrt, \</c->
+<c- cp>  float: cbrtf \</c->
+<c- cp>  )(X)</c->
+</pre>
+     </div>
+     <del>
+      <div class="wording-numbered">
+       <p>EXAMPLE    The following two generic selection expressions select different associations because the assignment expression operand undergoes lvalue conversion while the type name operand is unchanged:</p>
+<pre class="language-cpp highlight"><c- b>int</c-> <c- nf>func</c-><c- p>(</c-><c- k>const</c-> <c- b>int</c-> <c- n>i</c-><c- p>)</c-> <c- p>{</c->
+  <c- k>return</c-> <c- n>_Generic</c-><c- p>(</c-><c- n>i</c-><c- p>,</c->
+    <c- nl>int</c-> <c- p>:</c-> <c- mi>0</c-><c- p>,</c-> <c- c1>// int is selected</c->
+    <c- k>const</c-> <c- b>int</c-> <c- o>:</c-> <c- mi>1</c-><c- p>,</c->
+    <c- k>default</c-> <c- o>:</c-> <c- mi>2</c-><c- p>)</c-> <c- o>+</c->
+  <c- n>_Generic</c-><c- p>(</c-><c- n>typeof</c-><c- p>(</c-><c- n>i</c-><c- p>),</c->
+    <c- nl>int</c-> <c- p>:</c-> <c- mi>0</c-><c- p>,</c->
+    <c- k>const</c-> <c- b>int</c-> <c- o>:</c-> <c- mi>1</c-><c- p>,</c-> <c- c1>// const int is selected</c->
+    <c- k>default</c-> <c- o>:</c-> <c- mi>2</c-><c- p>);</c->
+<c- p>}</c->
+</pre>
+       <p>Thus, this function returns <code class="highlight"><c- mi>1</c-></code>.</p>
+      </div>
+     </del>
+     <ins>
+      <div class="wording-numbered wording-numbered-16">
+       <p>EXAMPLE    The following two generic selection expressions select the same associations:</p>
+<pre class="language-cpp highlight"><c- b>int</c-> <c- nf>func</c-><c- p>(</c-><c- k>const</c-> <c- b>int</c-> <c- n>i</c-><c- p>)</c-> <c- p>{</c->
+  <c- k>return</c-> <c- n>_Generic</c-><c- p>(</c-><c- n>i</c-><c- p>,</c->
+    <c- nl>int</c-> <c- p>:</c-> <c- mi>0</c-><c- p>,</c->
+    <c- k>const</c-> <c- b>int</c-> <c- o>:</c-> <c- mi>1</c-><c- p>,</c-> <c- c1>// const int is selected</c->
+    <c- k>default</c-> <c- o>:</c-> <c- mi>2</c-><c- p>)</c->
+  <c- o>+</c->
+  <c- n>_Generic</c-><c- p>(</c-><c- n>typeof</c-><c- p>(</c-><c- n>i</c-><c- p>),</c->
+    <c- nl>int</c-> <c- p>:</c-> <c- mi>3</c-><c- p>,</c->
+    <c- k>const</c-> <c- b>int</c-> <c- o>:</c-> <c- mi>4</c-><c- p>,</c-> <c- c1>// const int is selected</c->
+    <c- k>default</c-> <c- o>:</c-> <c- mi>5</c-><c- p>);</c->
+<c- p>}</c->
+</pre>
+       <p>Thus, this function returns <code class="highlight"><c- mi>5</c-></code>.</p>
+      </div>
+     </ins>
+     <div class="wording-numbered wording-numbered">
+      <p>EXAMPLE    The following generic selection expressions are valid and all evaluate to 1.</p>
+<pre class="language-cpp highlight"><c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- b>int</c-> <c- n>n</c-><c- p>,</c-> <c- b>int</c-> <c- n>m</c-><c- p>)</c-> <c- p>{</c->
+  <c- n>_Generic</c-><c- p>(</c-><c- b>int</c-><c- p>[</c-><c- mi>3</c-><c- p>][</c-><c- mi>2</c-><c- p>],</c-> <c- b>int</c-><c- p>[</c-><c- mi>3</c-><c- p>][</c-><c- o>*</c-><c- p>]</c-><c- o>:</c-> <c- mi>1</c-><c- p>,</c-> <c- b>int</c-><c- p>[</c-><c- mi>2</c-><c- p>][</c-><c- o>*</c-><c- p>]</c-><c- o>:</c-> <c- mi>0</c-><c- p>);</c->
+  <c- n>_Generic</c-><c- p>(</c-><c- b>int</c-><c- p>[</c-><c- mi>3</c-><c- p>][</c-><c- mi>2</c-><c- p>],</c-> <c- b>int</c-><c- p>[</c-><c- o>*</c-><c- p>][</c-><c- mi>2</c-><c- p>]</c-><c- o>:</c-> <c- mi>1</c-><c- p>,</c-> <c- b>int</c-><c- p>[</c-><c- o>*</c-><c- p>][</c-><c- mi>3</c-><c- p>]</c-><c- o>:</c-> <c- mi>0</c-><c- p>);</c->
+  <c- n>_Generic</c-><c- p>(</c-><c- b>int</c-><c- p>[</c-><c- mi>3</c-><c- p>][</c-><c- n>n</c-><c- p>],</c-> <c- b>int</c-><c- p>[</c-><c- mi>3</c-><c- p>][</c-><c- o>*</c-><c- p>]</c-><c- o>:</c-> <c- mi>1</c-><c- p>,</c-> <c- b>int</c-><c- p>[</c-><c- mi>2</c-><c- p>][</c-><c- o>*</c-><c- p>]</c-><c- o>:</c-> <c- mi>0</c-><c- p>);</c->
+  <c- n>_Generic</c-><c- p>(</c-><c- b>int</c-><c- p>[</c-><c- n>n</c-><c- p>][</c-><c- n>m</c-><c- p>],</c-> <c- b>int</c-><c- p>[</c-><c- o>*</c-><c- p>][</c-><c- o>*</c-><c- p>]</c-><c- o>:</c-> <c- mi>1</c-><c- p>,</c-> <c- b>char</c-><c- p>[</c-><c- o>*</c-><c- p>][</c-><c- o>*</c-><c- p>]</c-><c- o>:</c-> <c- mi>0</c-><c- p>);</c->
+  <c- n>_Generic</c-><c- p>(</c-><c- b>int</c-><c- p>(</c-><c- o>*</c-><c- p>)[</c-><c- mi>2</c-><c- p>],</c-> <c- b>int</c-><c- p>(</c-><c- o>*</c-><c- p>)[</c-><c- o>*</c-><c- p>]</c-><c- o>:</c-> <c- mi>1</c-><c- p>);</c->
+<c- p>}</c->
+</pre>
      </div>
      <ins>
-      <div class="wording-newnumbered wording-numbered-15">
+      <div class="wording-newnumbered">
        <p>EXAMPLE    The following generic selection within a macro appropriately evaluates the incoming expression and uses it to print out information.</p>
 <pre class="language-cpp highlight"><c- cp>#include</c-> &lt;stdio.h>
 
@@ -2971,7 +3056,7 @@ file, block,
       </div>
      </ins>
      <ins>
-      <div class="wording-newnumbered wording-numbered-16">
+      <div class="wording-newnumbered">
        <p>EXAMPLE    If the incoming operand of a generic selection expression is a modifiable lvalue, then such an expression can be used for modification.</p>
 <pre class="language-cpp highlight"><c- cp>#include</c-> &lt;stdio.h>
 
@@ -2992,7 +3077,7 @@ file, block,
       </div>
      </ins>
      <ins>
-      <div class="wording-newnumbered wording-numbered-17">
+      <div class="wording-newnumbered">
        <p>EXAMPLE    The generic controlling operand has the type of the expression itself when the branch is selected, which may be not exactly the generic association type, even if that branch matches.</p>
 <pre class="language-cpp highlight"><c- cp>#include</c-> &lt;stdio.h>
 
@@ -3148,4 +3233,6 @@ file, block,
   <dl>
    <dt id="biblio-n3685">[N3685]
    <dd>JeanHeyd Meneide; Freek Wiedjik. <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3685.pdf"><cite>C2y: Working Draft (Post-Brno)</cite></a>. Monday, December 22nd, 2025. URL: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3685.pdf">https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3685.pdf</a>
+   <dt id="biblio-workarounds-generic-c11">[WORKAROUNDS-GENERIC-C11]
+   <dd>Simon Tatham. <a href="https://www.chiark.greenend.org.uk/~sgtatham/quasiblog/c11-generic/"><cite>Workarounds for C11 _Generic</cite></a>. Saturday, July 29th, 2023. URL: <a href="https://www.chiark.greenend.org.uk/~sgtatham/quasiblog/c11-generic/">https://www.chiark.greenend.org.uk/~sgtatham/quasiblog/c11-generic/</a>
   </dl>
