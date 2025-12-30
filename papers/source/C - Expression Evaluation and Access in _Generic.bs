@@ -234,6 +234,35 @@ int main() {
 
 Effectively, if the input value into a generic selection expression would be an lvalue, then it remains as such after a generic association branch is chosen. It applies similarly if it is an r-value. Because generic selection is an expression, the use of any created temporary values will always last for the duration of the "full expression", and so this should not cause any lifetime issues at all in the confines of both existing code and newly written code.
 
+This sort of "write through" capability was present since the original feature in C11, though the primary focus was obviously on making sure code did not error when trying to make type-generic macros:
+
+```cpp
+#include <string.h>
+
+int one(int a) {
+	return a;
+}
+
+int two(int a, int b) {
+	return a + b;
+}
+
+int three(int a, int b, int c) {
+	return a + b * c;
+}
+
+int main () {
+	int x = 0;
+	return x + _Generic(x,
+		int: one,
+		double: two,
+		const char*: three
+	)(1);
+}
+```
+
+([Godbolt](https://godbolt.org/z/xzP18ncc6)). Therefore, we seek to preserve what has already been a feature since this was conceived in the middle of the C11 cycle.
+
 
 
 ## Evaluation of the Expression ## {#design-evaluation}
@@ -301,6 +330,23 @@ One of the problems with expressions is that it undergoes "l-value conversion" (
 
 The problem comes back again when we want to have that exact matching but still want to produce a named identifier for whatever expression has gone in The use of *type-name* as the *generic-controlling-operand* means that there **is** no expression to evaluate and therefore nothing to set the expression to. Therefore, with an expression, one would need to morph the input expression to have a different type than what is put in, just to be able to match qualifiers or arrays. This, of course, presents the immediately problem that this is creating a **new** expression of a different type than what is intended, resulting in unneeded temporaries or other issues.
 
+It also presents a problem when qualifiers are ignored but it matters to the input, where interacting with an e.g. `const int` is not the same as interacting with an `int`:
+
+```cpp
+#include <stdio.h>
+
+#define read_maybe_update(x) _Generic(x, \
+	int v: (printf("%d was read and updated\n", (v += 1)), v), \
+	const int v: (printf("%d was read\n", v), v) \
+)
+
+int main() {
+	const int var = 0;
+	return read_maybe_update(var);
+	// return 0;
+}
+```
+
 
 
 ## Identifier Scope and Lifetime ## {#design-lifetime.scope}
@@ -354,13 +400,15 @@ int main() {
 
 ## Other Potential Syntaxes ## {#design-syntax}
 
-We settled on simply adding the *declaration-name* branch to the *generic-association* syntax because it is, as we understand it, the least problematic and easiest to handle.
+We settled on simply adding the *declaration-name* branch to the *generic-association* syntax because it is, as we understand it, the least problematic and easiest to handle. It does present some issues with comprehension, unfortunately: the use of a declaration-like syntax implies that a new variable is being created, which doesn't feel proper with the ability of generic selection to yield an l-value based on what the resulting expression computes.
 
 There are other ways to introduce the identifier in the sequence.
 
 One possible choice is to use a real introducer for the identifier, so it doesn't look like a *declaration-name*. An example of this is with a `::`, so that the *type-name* is separated from the *identifier*, as in: `type-name :: identifier : ...`. Other than being conflicting with C++-style syntax of `identifier :: identifier ...`, it also seems a bit unnecessary given the solution we've settled on. It might get rid of the disambiguation rule that anything that can be parsed as a *type-name* should be parsed as a *type-name* rather than a *declaration-name*, where possible. Other than this, there are little benefits, unfortunately.
 
 It could also be something along the lines of `type-name : identifier : ...` for a generic association branch, but a single `:` does not really provide enough information to the parser to know if the following tokens will be the special new syntax versus just the existing syntax where `identifier` is meant to be parsed as an `expression`. One could delay the parsing and decide whether or not its either the new syntax or the old syntax by waiting for the first non-parenthesized `,` from showing up and then deciding how to interpret two top-level colons, but it can be hard to deal with given the use of e.g. `a ? b : c` nakedly as part of an *assignment-expression*. (This can make it such that the compiler might have to consider `a` and identifier and `?` an error before the `b :` portion, for example.)
+
+A separator between the type name and the identifier could strengthen the idea that the matching type may not exactly be the same as the input expression, as well, since that's how generic with expressions currently works (after the strict-matching capabilities added by this proposal's wording).
 
 
 
@@ -557,10 +605,10 @@ The generic controlling operand is evaluated if and only if both the generic con
 <ins>
 <div class="wording-newnumbered">
 
-If present, the generic association name has the value of the generic controlling operand's expression and is an lvalue, a function designator, or a void expression if the generic controlling operand is. It's type is either:
+If present, the generic association name has the value of the generic controlling operand's expression and is an lvalue, a function designator, or a void expression if the generic controlling operand is. Its type is either:
 
-- the generic controlling operand type if it is part of a `default` generic association;
-- otherwise, the composite type of the generic association type and the generic controlling operand's type.
+- the generic association type if it is not the selected generic association;
+- or, the generic controlling operand's type.
 
 </div>
 </ins>
@@ -709,22 +757,13 @@ int main() {
 <ins>
 <div class="wording-newnumbered">
 
-EXAMPLE&emsp;&emsp;&emsp; The generic controlling operand has the type of the expression itself when the branch is selected, which may be not exactly the generic association type, even if that branch matches.
+EXAMPLE&emsp;&emsp;&emsp; The generic controlling operand has the type of the expression itself when the branch is selected, which does not have to be exactly the generic association type due to lvalue conversions.
 
 ```cpp
-#include <stdio.h>
-
-#define is_it_const(x) _Generic(x, \
-	int v: puts("the integer expression is not const"), \
-	const int: puts("the integer expression is const") \
-)
-
 int main() {
 	const int var = 0;
-	_Generic(var,
-		int v: is_it_const(v)
-	);
-	// prints "the integer expression is const"
+	return _Generic(var, int v: v += 1); // constraint violation:
+	// assignment with `const` object
 }
 ```
 </div>

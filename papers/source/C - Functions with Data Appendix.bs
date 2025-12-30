@@ -1,0 +1,555 @@
+# Appendix # {#appendix}
+
+## Accessing Context in Nested Functions ## {#appendix-nested.functions.context}
+
+A newer paper by Dr. Martin Uecker discusses the various ways to access GNU Nested Functions and their potential future standardization ([[n3654]]). It addresses the executable stack / general-trampoline problem of GNU Nested Functions (by providing a wide function pointer type to get around it) before discussing various ways forward and various improvements around GNU Nested Functions, but takes a dissimilar approach to the one outlined in our proposal. We will go through the some of the sections in the paper and talk about how it differs from the approach this paper is going to take, and the criticisms it levies at the various aspects of other solutions such as Apple Blocks, Lambdas, GNU Nested Functions, and more.
+
+
+### §1 & §2 ### {#appendix-nested.functions.context-section.1.section.2}
+
+These are sections we agree with the most: the introduction of a wide function pointer type is necessary ([[#appendix-wide.function.pointer]]), no matter which solution is picked. Wide Function Pointers are a unifying part to make C more of the appropriate "lingua franca" between languages. This proposal even agrees that naked, unadorned GNU Nested Functions can be introduced as part of C: however, the caveat would be that, insofar as the design in [[#design-capture.functions]] is concerned, it would produce a constraint violation to not appropriately capture any objects from the outside local scope that are used inside. Secondly, the use of it in [[n3654]]'s `api_old` would not be "implementation-defined", but rather a constraint violation that GNU (and other compilers) could turn into well-defined behavior. From §2:
+
+```cpp
+typedef int (*cb_t)(int);
+typedef int (*cb_wide_t)(int) _Wide;
+
+void api_old_simple(cb_t cb);
+void api_old(cb_t cb, void *data);
+void api_new(cb_wide_t cb);
+
+void example4()
+{
+	int d = 4;
+	int bar(int x) {
+		return x + d; // constraint violation: `d` not captured
+	}
+	int bar_fixed(int x) _Capture(&) {
+		return x + d; // ok
+	}
+	api_old(bar, nullptr); // GNU extension, constraint violation in ISO C
+	api_new(bar); // ok
+}
+```
+
+NOTE: [[n3654]] does not seem to use its own API correctly, so the code above is not identical to what is in [[n3654]]: e.g. `api_old` is called in [[n3654]] with just `bar` and nothing else, leaving off the second required parameter.
+
+Our hope is to fix that with [[#appendix-make.trampoline]]:
+
+```cpp
+typedef int (*cb_t)(int);
+typedef int (*cb_wide_t)(int) _Wide;
+// or: typedef int (%cb_wide_t)(int);
+
+void api_old_simple(cb_t cb);
+void api_old(cb_t cb, void *data);
+void api_new(cb_wide_t cb);
+
+void example4()
+{
+	int d = 4;
+	int bar(int x) { // GNU Extension, Nested Functions
+		return x + d; 
+	}
+	int bar_fixed(int x) _Capture(&) { // (Proposed) ISO C, Capture Functions
+		return x + d;
+	}
+	cb_t bar_fn_ptr = stdc_make_trampoline(bar); // Extension, but works
+	cb_t bar_fixed_fn_ptr = stdc_make_trampoline(bar_fixed);
+	// all ok now
+	api_old_simple(bar_fn_ptr); 
+	api_old(bar_fn_ptr, nullptr);
+	api_new(bar);
+	api_old_simple(bar_fixed_fn_ptr); 
+	api_old(bar_fixed_fn_ptr, nullptr);
+	api_new(bar_fixed);
+	// trampolines must be freed
+	stdc_destroy_trampoline(bar_fn_ptr);
+	stdc_destroy_trampoline(bar_fixed_fn_ptr);
+}
+```
+
+Individuals can rely on the GNU Nested Functions, but would have an explicit way to opt-in to get ISO Standard C behavior. We think this is a better path forward for harmonizing things, and would let the user be explicit about where and when trampolines (and their effects) are created/used.
+
+
+### §3 ### {#appendix-nested.functions.context-section.3}
+
+We agree with the premise of section 3, including of the way that any capture can be used with the "old" style of API, so long as it passes a userdata parameter:
+
+```cpp
+typedef int (*cb_t)(int);
+typedef int (*cb_wide_t)(int) _Wide;
+
+void api_old(cb_t cb, void *data);
+
+void example5()
+{
+	int d = 4;
+	int bar(int x) { return x + d; }
+	// static (capture-less) nested function
+	static int trampoline(int x, void *ptr)
+	{
+		return (*(cb_wide_t)ptr)(x);
+	}
+	api_old(trampoline, &(cb_wide_t){ bar });
+}
+```
+
+[[n3654]] then introduces a potential new keyword to capture what is, effectively, the current function frame and reuse it in the same place:
+
+```cpp
+typedef int (*cb_t)(int);
+
+void api_old(cb_t cb, void *data);
+
+void example6()
+{
+	const int d = 4;
+	// static chain passed via specified argument
+	int bar(int x, void *data) _Closure(data)
+	{
+		return x + d;
+	}
+	api_old(bar, &_Closure(bar));
+}
+```
+
+`_Closure(bar)` can effectively be seen as a signal to the implementation for the invocation of `__builtin_frame_address`, while `_Closure(data)` attached to the function definition is a directive to the compiler to use `__builtin_call_with_static_chain`. Semantically, the use of `_Closure(data)` on the definition ties the contents of the nested function to the surrounding scope from the perspective of whatever function definition `_Closure` is attached to. It's a way to saying the surrounding scope is being provided by the `void*` argument (`data` in this case). This is mildly more type-safe than just a regular `void*` cast to a structure type inside. It is impossible to cast to the wrong type since it's some (unnamed) type related to the current scope, and therefore the location provides the safety. It also offers a way to have two different closures use the same `void*` data, meaning that one could theoretically optimize a function taking 2 or three callbacks to have only one `void*` userdata-style parameter.
+
+The problem with that is that assuming two or three callbacks all have the same environment or use the same userdata is, oftentimes, not a good idea. An example in the `thrd_create_attrs_err` proposed function ([[thread-attributes|Thread Attributes]]); if the API were to assume that all three `void*` provided to this function can or should be the same, there could be many possible issues (thread of invocation does not match expectations, race conditions, having access to the wrong data, and more). So it's unclear whether or not that would be good in general purpose, widely-adopted, or prolofic library interfaces.
+
+NOTE: Folding together multiple nested functions to have similar closure data would certainly be useful for internal APIs where the caller of a specific API can make assumptions of how things work; but it does not hold up for external or uncontrollably-available APIs.
+
+The final problem with this section is that it still assumes that the only kind of closure one would want is one that refers to variables in the current scope. This results in all the same problems documented in [[#intro-nested.functions-captures]]; undefined behavior, lifetime failures, and more. This could especially be the case for `thrd_create_attrs_err`, thread/worker pools, thread queues, and other asynchronous scheduling initiatives.
+
+
+### §4 ### {#appendix-nested.functions.context-section.4}
+
+This section introduces the concept of modifying how Nested Functions capture variables, recommending that some variables are captured by value inside of the data stored for a closure. The recommendation is that values that are `const` should be captured, while other mutable values are not. The examples do not seem to explain why capturing only `const` variables is helpful, as the primary reason to capture by value (particularly as Apple Blocks has explained ([[#intro-blocks-runtime]])) is for safety in copying the closure to another location. The following example, using an old-style, `void*` based API for the purposes of copying, is given:
+
+```cpp
+typedef int (*cb_t)(int);
+void api_old_copy(cb_t cb, void *data, size_t data_size);
+
+void example7()
+{
+	// const-qualified variables can be copied
+	int (*const p)[10] = malloc(sizeof *p);
+	if (!p) return;
+	int bar(int x, void *data) _Closure(data)
+	{
+		return (*p)[x];
+	}
+	// sizeof can be used to obtain the required size
+	api_old_copy(bar, &_Closure(bar), sizeof(_Closure(bar)));
+}
+```
+
+We do not see how the `const` qualification helps in this scenario, and also note that this isn't helpful for the vast majority of declarations and types that are non-`const` qualified. For example, if this pointer was not `const` qualified, a copy would have to be created solely for the purpose of capture:
+
+```cpp
+typedef int (*cb_t)(int);
+void api_old_copy(cb_t cb, void *data, size_t data_size);
+
+void example7_modified()
+{
+	// non const-qualified variable is by-name
+	int (*p)[10] = malloc(sizeof *p);
+	if (!p) return;
+	// change to `const` to enable capture
+	int (const *cap_p)[10] = p;
+	int bar(int x, void *data) _Closure(data)
+	{
+#if 0
+		// dangerous -- may not exist
+		return (*p)[x];
+#else
+		// not dangerous -- captured by value
+		return (*cap_p)[x];
+#endif
+	}
+	// sizeof can be used to obtain the required size
+	api_old_copy(bar, &_Closure(bar), sizeof(_Closure(bar)));
+}
+```
+
+One would need to form a copy of any mutable variable into a `const` one in order to ensure that it gets its whole value placed inside of whatever the implementation decides to place inside of `_Closure`. This is, in many ways, a by-proxy form of doing C++ Lambda captures or using `__block` in Apple blocks. At the very least with C++ Lambdas and Apple Blocks, their design is once again explicit; it allows the user to decide if something should be transported by-value, and then can be moved into a by-name state by the user. For 1980 direction, this requires duplicated variables, and given how `_Closure` works  rather than the user stating their intent directly ("put this variable inside of this thing so I can carry it around in the manner of my chosing"), they have to instead contort their declarations to be `const` as a means of perhaps making safe access to these variables ("this variable is now `const` so it should be copied in, but anything else is implementation-defiend or something"). This is a roundabout way of just being clear about what is coming and going and what the properties of that thing are; we believe this to be infinitely less clear than erroring on something that is not captured and making the user specify explicitly.
+
+Capture-by-`const` is not a useful or reliable scheme and would require users to contort their declarations for the sole purpose of making it work better with this new solution: we do not believe it to be a viable path forward.
+
+
+### §5 and §6 ### {#appendix-nested.functions.context-section.5.section.6}
+
+This is where the paper starts departing more strongly from what we believe to be the right direction. This section opens with a use of `api_old_copy_del`:
+
+```cpp
+typedef int (*cb_t)(int);
+void api_old_copy_del(cb_t cb, void *data, size_t size, void (*del)(void*));
+
+void example8()
+{
+	int (*const p)[10] = malloc(sizeof *p);
+	if (!p) return;
+	int bar(int x, void *data) _Closure(data)
+	{
+		return (*p)[x];
+	}
+	// static nested functions acting as destructor
+	static void del(void *_data)
+	{
+		// the structure type is visible at this point
+		typeof(_Closure(bar)) *data = _data;
+		free(data->p);
+	}
+	api_old_copy_del(bar, &_Closure(bar), sizeof(_Closure(bar)), del);
+}
+```
+
+The problem is that there seems to be a limitation in how `_Closure` can be used; the assertion is that `_Closure` is meant to strongly mimic "call with static chain" and map entirely towards that. This is fine for that architecture, but it begs the question in this example: why is `Closure(_data)` in `del` not allowed like so?
+
+```cpp
+typedef int (*cb_t)(int);
+void api_old_copy_del(cb_t cb, void *data, size_t size, void (*del)(void*));
+
+void example8_modified()
+{
+	int (*const p)[10] = malloc(sizeof *p);
+	if (!p) return;
+	int bar(int x, void *data) _Closure(data)
+	{
+		return (*p)[x];
+	}
+	// static nested functions acting as destructor
+	static void del(void *_data) _Closure(data)
+	{
+		free(p);
+	}
+	api_old_copy_del(bar, &_Closure(bar), sizeof(_Closure(bar)), del);
+}
+```
+
+One should be able to simply say that local variables can be looked up through whatever is given to `_Closure`. For example, if someone were to make a global `void*` variable and set it to the value, it would also be a viable way to saying "this is the function's current frame / environment" without necessarily requiring that the function be explicitly used with a static chain:
+
+```cpp
+typedef int (*cb_t)(int);
+// `del` takes no void* now
+void api_old_copy_del(cb_t cb, void *data, size_t size, void (*del)());
+
+static void* my_env;
+	
+void example8_modified()
+{
+	int (*const p)[10] = malloc(sizeof *p);
+	if (!p) return;
+	int bar(int x, void *data) _Closure(data)
+	{
+		return (*p)[x];
+	}
+	
+	static void del() _Closure(my_env)
+	{
+		free(p); // `p` is found because we have statically asserted
+		// that the stack frame of `example8_modified`
+		// comes from the variable `my_env`
+	}
+
+	my_env = &_Closure(bar); // get closure data pointer
+	api_old_copy_del(bar, &_Closure(bar), sizeof(_Closure(bar)), del);
+}
+```
+
+This is hinted at in §6 of the paper, but the chosen syntax and explanation uses a plain naked nested function that implicitly (?) knows the static chain without a `void *data` or `void *_data` argument:
+
+```cpp
+typedef int (*cb_t)(int);
+void api_old_copy_del(cb_t cb, void *data, size_t size, void (*del)());
+
+void example9()
+{
+	int (*p)[10] = malloc(sizeof *p);
+	if (!p) return;
+	int bar(int x, void *data) _Closure(data)
+	{
+		return (*p)[x];
+	}
+	// nested function acting as destructor
+	void del() { free(p); p = NULL; } // missing... `void*` and `_Closure`?
+	// wrong function name, as well
+	api_data_copy_del(bar, &_Closure(bar), sizeof(_Closure(bar)), del);
+}
+```
+
+It's completely unclear how `del` receives the environment for `bar` here: is it simply assumed that nested functions contained in the same scope all implicitly receive the environment? If so, how? And, importantly, how does an API compiled separately (e.g., as a DLL in a library) know to make the association between `bar` and `del` here? Is there something that needs to be done internally in `api_data_copy_del` (meant to be `api_old_copy_del`?) for this to happen?
+
+Adjusting this to allow for a callback that takes a `void*`, AND making it `static` so that the environment can be shared while `del` is can be used as a normal function pointer with a shared environment would likely look more like this:
+
+```cpp
+typedef int (*cb_t)(int);
+// signature adjusted to allow for `void*` into `del` callback
+void api_old_copy_del(cb_t, void *data, size_t size, void (*del)(void*));
+
+void example9_modified()
+{
+	int (*p)[10] = malloc(sizeof *p);
+	if (!p) return;
+	int bar(int x, void *data) _Closure(data)
+	{
+		return (*p)[x];
+	}
+	
+	static void del(void *data) _Closure(data)
+	{
+		free(p);
+		p = NULL;
+	}
+	api_old_copy_del(bar,
+		&_Closure(bar), // "environment" of `bar`
+		sizeof(_Closure(bar)), // size for closure data to be copied in and survive
+		del // `del` now appropriate is just a regular function pointer
+	);
+}
+```
+
+Whether the `void*` data is passed to the `del` callback or it comes from some other (`_Thread_local` or `static`) object, there's some amount of potential for "can take a pointer and using the surrounding scope assert that it is some implementation-defined environment containing values for use". There's nothing wrong with using the location of the nested function as a way of saying:
+
+- "any `_Closure(some-void-ptr)` represents the surrounding scope and should be used to look up identifiers if possible" (in the `static` nested function case);
+- OR, "any `_Closure(some-void-ptr)` represents a `__builtin_call_with_static_chain` (or Function Descriptor, or etc. etc. Implementation Decision Here) to appropriately call the function and set the necessary captures and data" (in the non-`static` nested function case).
+
+But [[n3654]] has a hard time communicating that effectively, if that is indeed what it is trying to communicate at all.
+
+NOTE: We are assuming this is what it means. This is why many of the code samples taken from the paper have been changed with the addition of `_modified` in the example function's name.
+
+We do not critique much of the rest of the paper because it is simply building on top of this API, but using partially related orchestrations for Polymorphic Types. We are not interested in what polymorphic types will or will not do for this, and it is outside the scope of what we care about for this.
+
+
+### Appendix B: C++ Lambda Quiz ### {#appendix-nested.functions.context-appendix.b}
+
+The final problem of this proposal is in the appendices. We will start with Appendix B, which has a quiz formulated using C++ Lambdas and asking "what will it print?":
+
+```cpp
+#include <stdio.h>
+
+int j = 3;
+
+int main()
+{
+	int i = 3;
+	auto foo = [=](){ printf("%d\n", i); };
+	auto bar = [=](){ printf("%d\n", j); };
+	i = j = 4;
+	foo();
+	bar();
+}
+```
+
+The answer is "3" and then "4" ([https://godbolt.org/z/KW4j1zG93](https://godbolt.org/z/KW4j1zG93)). Before we talk about the answer, we are going to *compare* this answer to what the answer would be with GNU Nested Functions and Apple Blocks. To start, let's try this quiz with GNU Nested Functions:
+
+```cpp
+#include <stdio.h>
+
+int j = 3;
+
+int main()
+{
+	int i = 3;
+	void foo(){ printf("%d\n", i); };
+	void bar (){ printf("%d\n", j); };
+	i = j = 4;
+	foo();
+	bar();
+}
+```
+
+The answer here is "4" and then "4" ([https://godbolt.org/z/voWG3Gjo3](https://godbolt.org/z/voWG3Gjo3)). The file-scope variable still gives the same answer (because of course it does): the change here is in the local variable. As explained in the above introduction to GNU Nested Functions ([[#intro-nested.functions-captures]]), it captures by-name, so the value is updated. This makes sense to what the expectation is. Apple Blocks behave differently:
+
+```cpp
+#include <stdio.h>
+
+int j = 3;
+
+int main()
+{
+	int i = 3;
+	auto foo = ^(){ printf("%d\n", i); };
+	auto bar = ^(){ printf("%d\n", j); };
+	i = j = 4;
+	foo();
+	bar();
+}
+```
+
+The answer is now back to "3" and then "4" ([https://godbolt.org/z/a9c79cjYb](https://godbolt.org/z/a9c79cjYb)). That is because, as explained above, the default for Apple Blocks is capturing by-value ([[#intro-blocks-captures]]).
+
+The implication of this quiz is that Apple Blocks -- the thing that has worked for the entirety of the Apple ecosystem -- is wrong and unexpected, and the GNU Nested Function behavior is correct and expected. It wouldn't be a "Quiz", after all, if the answer was anticipated to be entirely normal. In the rush to make a point about captures doing certain things, [[n3654]] effectively called the entirety of the Apple Blocks ecosystem fraudulent in its expectations. That's certainly a choice that can be made, but a more important point that overshadows this is that C++ Lambdas can have the *same behavior as GNU Nested Functions*:
+
+```cpp
+#include <stdio.h>
+
+int j = 3;
+
+int main()
+{
+	int i = 3;
+	auto foo = [&](){ printf("%d\n", i); };
+	auto bar = [&](){ printf("%d\n", j); };
+	i = j = 4;
+	foo();
+	bar();
+}
+```
+
+This changes the answer to "4" and then "4" ([https://godbolt.org/z/EW8PETdxz](https://godbolt.org/z/EW8PETdxz)). What this means is that this Quiz -- when properly displayed next to its counterparts -- shows that C++ Lambdas can be naturally configured to work like Apple Blocks OR like GNU Nested Functions, at the cost of one (1) character change in its capture clause. We can imagine that a person writing from the perspective of Apple Blocks could present the preceding C++ Lambda that doesn't have the same behavior they expect to be a "Quiz" that contains a big "Gotcha". The reality is that C++'s design can handle both defaults without compromising the ergonomics in any serious manner. The syntax for lambdas is, of course, "sinfully ugly" -- even C++ enthusiasts acknowledge this readily -- but the acknowlegement that there are engineering tradeoffs to be had -- and not things to poke fun at or make "gotcha"s out of -- is why the design is mature and useful.
+
+In contrast, [[n3654]] proposes capturing and copying based on things such as whether or not a variable is `const`, which does not approximate how it works in **any** existing practice.
+
+
+### Appendix A: List of Issues with C++ Lambdas ### {#appendix-nested.functions.context-appendix.a}
+
+Appendix A is a laundry list of issues with C++ Lambdas, in no particular order. Some of them are already addressed in the introduction of Lambdas ([[#intro-lambdas]]), but in-general the list of issues has many flaws in its reasoning.
+
+> - "Passing of a lambda as a regular parameter needs either trampolines or a new type."
+
+Every single solution requires trampolines or a new type to be useful, GNU Nested Functions and Apple Blocks included. C++ did not have this problem because they have a much stronger base language that can do this as a library type: C needs a fundamental "wide function pointer" type no matter what ([[#appendix-wide.function.pointer]]) and it needs trampoline-making functionality ([[#appendix-make.trampoline]]).
+
+> - Lambdas with lvalue capture suffer from the same lifetime limitations as nested functions. `auto foo(int i) { return [&](){ printf("%d\n", i); }; }`
+
+This is discussed earlier in the introduction, but GNU Nested Functions have an identical problem. At the very least, Lambdas have a mechanism to stop this from being a problem: there is no built-in solution with GNU Nested Functions. Apple Blocks use an entire heap runtime and thus avoid this problem completely.
+
+> - Not having destructors and smart pointers in C requires workarounds not needed in C++.
+> - Not having explicit access to the structure holding the captured values requires unsafe byte copies, causes issues with alignment and makes deep copying impossible.
+
+Everything in C is a byte copy, unless an explicit function is inserted to do something just before that byte copy happens. An example of this comes from Apple Blocks, with a required `Block_release` and `Block_copy` required to make usage of stored blocks safer ([[#intro-blocks-runtime-stack.based]]). To uphold this as a problem is to lambast the entirety of C and its object model as unsafe; which, honestly, is not an unfair assessment. The fix to that is to restore access to the objects captured inside of an object, as shown in [[#design-capture.functions-data.captures.fields]], which makes any capturing entity -- whether it's a `_Closure` like in [[n3654]], Capture Functions as in this paper, or Lambdas -- accessible once more.
+
+> - Making the lambda itself have a unique anonymous object type in C means it can only be invoked immediately which seems useful only in macros. In C++ it can be returned from and passed to template functions.
+
+This criticism is partly untrue: complete objects in C can have their type retrieved with `typeof`. That means it can be cast/assigned into heap storage, copied around, and called just fine in certain contexts (c.f. the "static trampoline" technique mentioned both in the paper and used extensively in the example code above). We also already have the `auto` type-specifier: as regular complete objects, such types can be created and then stored in what already exists as a feature in C23. Macros are a foundationally important use case: it means that expressions being passed into function-like macros can be evaluated once, and only once, by being passed to an immediately-invoked lambda expression.
+
+Storage outside of those contexts has to be powered by a wide function pointer type, and this proposal acknowledges that it will be necessary to solve that problem (but not in this proposal). GNU Nested Functions also need such a type, as do Apple Blocks (though they do come with their own Block type as well using the `^` syntax). This is also partly discussed in [[#design-lambdas-returns]]. Actual returns were handled by [[n2923]] but only the `auto` for variable definitions was handled: functions was left for later, and there was initially consensus for something of this nature for the purposes of lambdas.
+
+> - To address the various use cases, there are many different ways to capture variables `[&]`, `[=]`, `[]`, `[a]`, `[&b]`, `[a = b]`, `mutable`, etc. adding a lot of complexity that does not seem necessary.
+
+The complexity is necessary, as demonstrated by the Quiz example in [[#appendix-nested.functions.context-appendix.b]]: the fact that captures can be changed and are not dependent on unrelated properties like `const`-ness (as in [[n3654]]) is how it successfully blends into e.g. the GNU ecosystem or the Apple ecosystem without breaking either of them. The complexity is inherent to the problem domain: glossing over it like GNU Nested Functions does limits whether or not this can successfully be deployed to replace Apple Blocks as an ISO C Standard solution.
+
+> - Value captures can be confusing as they shadow the original variable under same name.
+
+It is unclear how captures in which the user makes an explicit choice can be more confusing than one where the user has no choice but the behavior changes. We have already established this in the Apple Ecosystem perspective with Blocks versus the GNU Nested Functions perspective in [[#appendix-nested.functions.context-appendix.b]]; switching from one to another can result in bugs when people do not expect the default capturing style to change. Being explicit means nobody is surprised, and having renames prevents shadowing confusion: but it all has to be the user's choice.
+
+> - Other features from C++ may need to be pulled in from C++ to make them fully useful, such as trailing return types, return type deduction, and generic arguments.
+
+Trailing return types enhance what is capable, but are not strictly required ([[#design-lambdas-returns]]). Generic arguments are the one part that was opposed for inclusion in C23 and did not have consensus; it was, in fact, generic arguments that served as one of the primary reason Gustedt's Lambdas were completely and utterly tanked. This proposal does not use it and the design below does not require it to be useful, especially as anything relating to an immediately-invoked lambda in a macro can be covered by the necessary `typeof(...)` from C23.
+
+> - Adopting lambdas from C++ would limit out design freedom relative to C++. We can not easily change specific aspects when it might be better for C, because it would then be a divergence from C++ that should be avoided and will be opposed by implementers.
+
+As a sole solution, certainly. But this proposal provides Capture Functions ([[#design-capture.functions]]) as the flagship proposal for C, and maintains 1:1 identical capabilities with the proposed secondary Lambda part ([[#design-lambdas]]). There are also other reasons as to why having lambdas is good (particularly, for macros and for use as an expression). But, the general improvement here is that one can have Capture Functions that are rooted in C history and C syntax and C needs, while maintaining just enough of Lambdas that serve as a compatibility layer.
+
+The fact that this paper is already proposing a depature from C++ for C lambdas and Capture Functions by having accessible data captures already shows we have the power to improve on things in C's favor, if we're willing to hold onto that ([[#design-capture.functions-data.captures.fields]]).
+
+
+### Insufficient ### {#appendix-nested.functions.context-conclusions}
+
+Given the state of [[n3654]], it seems like it has not sufficiently explored the consequences or implications of its proposed design, nor grounded it in sufficient existing practice for us to consider yielding to its principles. That does not mean all of the ideas are bad. In the above sections, after we repair some of the broken examples, there is clearly some potential in `_Closure` and the idea of an "environment" pointer. There is also perhaps merit in having a pointer that ties a specific function frame to a specific function call so that variable lookup that does not find a local variable can look in the "environment"/"`_Closure`" first before checking further surrounding variables (e.g., file-scope or `static` objects). But that is a separable problem -- and a lower-level problem -- that the tying of "function and its associated data".
+
+A wide function pointer type ([[#appendix-wide.function.pointer]]) would be a far better pursuit, separately, even if none of the solutions here or in other proposals are achieved.
+
+The paper also seems to be driven, largely, by three things:
+
+- animus and disdain for C++ Lambdas and their design;
+- a desire to formalize the (potentially advanced) uses of `__builtin_call_with_static_chain`;
+- and, a strong preference for all of the design decisions of GNU Nested Functions.
+
+It offers a "we can do these small things first" and then presents a wider narrative around how to handle the "data" part of "Functions with Data". Having a standardized solution that is less powerful than all of C++ Lambdas, GNU Nested Functions, Apple Blocks, and Jens Gustedt's proposed C Lambdas does not seem like a good or useful starting point. As much as WG14 as a Committee has many members that continue to extol the virtues of being slow, we believe that there has been significant existing practice and useful explanations of designs to move forward with something much more comprehensive and robust. Giving in to the temptation of "simplified GNU Nested Functions" with a somewhat incomplete and incoherent design plan based around the idea of `_Closure` after 30+ years of design work in this space from directly-related and applicable languages is not something we consider a good use of time.
+
+We do not comment on the Polymorphic Types API because that is beyond what we consider the useful scope of what can or should be addressed in our current proposal.
+
+
+
+## Wide Function Pointer Type ## {#appendix-wide.function.pointer}
+
+[[n2862]], by Dr. Martin Uecker, is already looking into standardizing a wide function pointer type. A wide function pointer type is necessary in the general-purpose ecosystem, but isn't directly required to be tied to this proposal. Because it is a smaller entity, it can be put directly into the standard separately. We hope it's explored that rather than using `_Closure(function-type)` or `function-type _Wide` syntax, that `function-type%` is deployed as a usable syntax instead. This would simplify its use and its introduction:
+
+```cpp
+typedef int foo_fn_t(int);
+
+foo_fn_t% call_me (int* x) {
+	return [x](int y) { return *x + y; };
+}
+
+int use_me(foo_fn_t% fn) {
+	return fn(2);
+}
+
+int main () {
+	int x = 30;
+	return use_me(call_me(&x));
+}
+```
+
+In the above example, `foo_fn_t%` can be replaced with `_Closure(foo_fn_t)` or `foo_fn_t _Wide`; we prefer the former than the two latter for obvious grammatical and ease-of-use reasons. Most importantly, there is a canonical and viably implementable conversion path for not only whatever is standardized in ISO C, but all of the existing extensions such as Blocks, Nested Functions, C++ Lambdas, and language-external closure types.
+
+NOTE: The caret (`^`) cannot be used for this purpose thanks to Apple and Objective-C/Objective-C++ taking that design space.
+
+NOTE: The percent sign (`%`) does not conflict with Managed C++/CLI `ref` declarations that use `%` because naked `%` can only be applied to "value types" -- that is `struct` types. There is no callback type that fits this description in the garbage-collected .NET imperative language universe (C# or Managed C++/CLI); all callback types are declared as either raw function pointer types or `class`-based, "reference type" delegates in Managed C++/CLI.
+
+
+
+## Make Trampoline and Singular Function Pointers ## {#appendix-make.trampoline}
+
+In the later examples in [[#intro-nested.functions-alternative.implementations]], a magic compiler builtin named `__gnu_make_trampoline`, with a secondary follow-on builtin named `__gnu_destroy_trampoline`, is used. This section talks about what that would look like, if it was to be implemented. In particular, an ideal solution that makes a trampoline needs to be an explicit request from the user because:
+
+- you want to opt-in to any dynamic allocations;
+- you want to provide a way to override the default allocation if possible;
+- and, you explicit control on when those resources (the allocation, the protected memory, and similar) are released.
+
+While this section was spawned from GNU Nested Functions, this same technique can be used to make possible single function pointer trampolines for Blocks with or without captures ([[#intro-blocks]]) as well as C++-style Lambdas ([[#intro-lambdas]]).
+
+Therefore, the best design to do this would be -- using the [[_Any_func]]* paper and its new type -- the following:
+
+```cpp
+typedef void* allocate_function_t(size_t alignment, size_t size);
+typedef void deallocate_function_t(void* p, size_t alignment, size_t size);
+
+_Any_func* stdc_make_trampoline(FUNCTION-WITH-DATA-IDENTIFIER func);
+_Any_func* stdc_make_trampoline_with(
+	FUNCTION-WITH-DATA-IDENTIFIER func,
+	allocation_function_t* alloc
+);
+
+void stdc_destroy_trampoline(_Any_func* func);
+void stdc_destroy_trampoline_with(_Any_func* func, deallocate_function_t* dealloc);
+```
+
+`stdc_make_trampoline(f)` would use some implementation-defined memory (including something pre-allocated, such as in Apple blocks ([[#intro-blocks-trampoline]])). The recommended default would be that it just calls `stdc_make_trampoline_with(f, aligned_alloc)`. `stdc_destroy_trampoline(f)` would undo, exactly, what `stdc_make_trampoline` would give. The recommended default would be that it is identical to `stdc_destroy_trampoline_with(f, free_aligned_size)`. Providing an allocation and a deallocation function means that while the implementation controls what is done to the memory and how it gets set up, the user controls where that memory is surfaced from. This would prevent the problem of the Heap Alternative Nested Function implementation: rather than creating a special stack or having to rely on memory allocation functions, the compiler can instead source the memory from a user. This also makes such an allocation explicit, and means that its lifetime could be  Though, given our memory primitives, a slightly better implementation that would allow the implementation to take care of (potentially) extra space handed down by alignment and what not would be:
+
+```cpp
+struct allocation { void* data; size_t size; };
+typedef allocation allocate_function_t (size_t alignment, size_t size);
+typedef void deallocate_function_t (void* p, size_t alignment, size_t size);
+
+_Any_func* stdc_make_trampoline(FUNCTION_TYPE func);
+_Any_func* stdc_make_trampoline_with(FUNCTION_TYPE func, allocation_function_t* alloc);
+
+void stdc_destroy_trampoline(_Any_func* func);
+void stdc_destroy_trampoline_with(_Any_func*, deallocate_function_t* dealloc);
+```
+
+Regardless the form that the `make`/`destroy` functions take, this sort of intrinsic would be capable of lifting not just a typical GNU nested functions but all types of functions to be a single, independent function pointer with some kind of backing storage. Some desire may still exist to make the allocation and deallocation process automatic, but that should be left to compiler vendors to decide for ease-of-use tradeoffs versus e.g. security, like in [[#intro-nested.functions-design]].
+
+It should be noted that Apple itself already has a version of this with this Objective-C Blocks Implementation ([[objective-c-block-trampoline]]), albeit with limitations discussed in [[#intro-blocks-trampoline]]. GCC does not expose an intrinsic for this per-se, but does provide `__builtin_call_with_static_chain` ([[builtin_call_with_static_chain_gcc|GCC Documentation: Builtin Call with Static Chain]]). One can build a trampoline mechanism overtop of that, provided they had the properly-created function plus the right stack frame / "environment" chain pointer to go with the function callable. Since C++ Lambdas -- and the proposed Capture Functions and C-Style Lambdas here -- are by themselves [[#design-capture.functions-complete.objects|Complete Objects]], one can always create a "thunk" or "trampoline" for them manually, using a wide variety of allowable techniques from heap allocation to pre-stored arrays to `_Thread_local`/`static` data or otherwise. C++ could implement `stdc_make_trampoline` entirely as a library function, but C cannot; so, this is something vendors will have to figure out on their own.
+
+The only part that needs to be user-configurable is the source of memory. Of course, if an implementation does not want to honor a user's request, they can simply return a `(Any_func*)nullptr;` all the time. This would be hostile, of course, so a vendor would have to choose wisely about whether or not they should do this. The paper proposing this functionality would also need to discuss setting `errno` to an appropriate indicator after use of the intrinsic, if only to appropriately indicate what went wrong. For example, `errno` could be set to:
+
+- `ENOMEM`: the allocation function call failed (that is, `alloc` returned `nullptr`).
+- `EADDRNOAVAIL`: the address cannot be used for function calls (e.g., somehow being given invalid memory such as an address in `.bss`).
+- `EINVAL`: `func` is a null function pointer or a null object.
+- `EACCESS`: the address could be used for function calls but cannot be given adequate permissions (e.g., it cannot be succesfully `mprotect`d or `VirtualProtect`d).
+
+to indicate a problem. Albeit, there are always complaints about `errno`, so it may also be possible to take an `int* p_errcode` parameter in the `make_trampoline` functions, and use that as a means of solving the problem (or swap the return type and the error code parameter to return the error code and output into an `_Any_func*`). The API design possibilities are, really, endless.
+
+
+## Executable Stack CVEs ## {#appendix-executable.stack.cves}
+
+ADVISEMENT: THIS SECTION IS INCOMPLETE.
+
+The following CVEs are related to executable stack issues.
+
+- [CVE 2017-100376: https://www.cve.org/CVERecord?id=CVE-2017-1000376](https://www.cve.org/CVERecord?id=CVE-2017-1000376)
+- [CVE 2023-38408: https://www.cve.org/CVERecord?id=CVE-2023-38408](https://www.cve.org/CVERecord?id=CVE-2023-38408)

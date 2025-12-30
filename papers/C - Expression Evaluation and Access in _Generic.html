@@ -1503,10 +1503,10 @@ Possible extra rowspan handling
       text-align: center;
     }
   </style>
-  <meta content="Bikeshed version ac5ea272d, updated Fri Dec 6 15:45:15 2024 -0800" name="generator">
+  <meta content="Bikeshed version c3a8ac783, updated Wed Jul 24 12:20:06 2024 -0700" name="generator">
   <link href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Expression%20Evaluation%20and%20Access%20in%20_Generic.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="3fd597e255faa4b50f92a03718ce500c82012c71" name="revision">
+  <meta content="ff8fad63c344026ba793e113dd8af3bd29588dcc" name="revision">
   <meta content="dark light" name="color-scheme">
 <style>
 :root {
@@ -2685,6 +2685,31 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 <c- p>}</c->
 </pre>
    <p>Effectively, if the input value into a generic selection expression would be an lvalue, then it remains as such after a generic association branch is chosen. It applies similarly if it is an r-value. Because generic selection is an expression, the use of any created temporary values will always last for the duration of the "full expression", and so this should not cause any lifetime issues at all in the confines of both existing code and newly written code.</p>
+   <p>This sort of "write through" capability was present since the original feature in C11, though the primary focus was obviously on making sure code did not error when trying to make type-generic macros:</p>
+<pre class="language-cpp highlight"><c- cp>#include</c-> &lt;string.h>
+
+<c- b>int</c-> <c- nf>one</c-><c- p>(</c-><c- b>int</c-> <c- n>a</c-><c- p>)</c-> <c- p>{</c->
+  <c- k>return</c-> <c- n>a</c-><c- p>;</c->
+<c- p>}</c->
+
+<c- b>int</c-> <c- nf>two</c-><c- p>(</c-><c- b>int</c-> <c- n>a</c-><c- p>,</c-> <c- b>int</c-> <c- n>b</c-><c- p>)</c-> <c- p>{</c->
+  <c- k>return</c-> <c- n>a</c-> <c- o>+</c-> <c- n>b</c-><c- p>;</c->
+<c- p>}</c->
+
+<c- b>int</c-> <c- nf>three</c-><c- p>(</c-><c- b>int</c-> <c- n>a</c-><c- p>,</c-> <c- b>int</c-> <c- n>b</c-><c- p>,</c-> <c- b>int</c-> <c- n>c</c-><c- p>)</c-> <c- p>{</c->
+  <c- k>return</c-> <c- n>a</c-> <c- o>+</c-> <c- n>b</c-> <c- o>*</c-> <c- n>c</c-><c- p>;</c->
+<c- p>}</c->
+
+<c- b>int</c-> <c- nf>main</c-> <c- p>()</c-> <c- p>{</c->
+  <c- b>int</c-> <c- n>x</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c->
+  <c- k>return</c-> <c- n>x</c-> <c- o>+</c-> <c- n>_Generic</c-><c- p>(</c-><c- n>x</c-><c- p>,</c->
+    <c- nl>int</c-><c- p>:</c-> <c- n>one</c-><c- p>,</c->
+    <c- nl>double</c-><c- p>:</c-> <c- n>two</c-><c- p>,</c->
+    <c- k>const</c-> <c- b>char</c-><c- o>*:</c-> <c- n>three</c->
+  <c- p>)(</c-><c- mi>1</c-><c- p>);</c->
+<c- p>}</c->
+</pre>
+   <p>(<a href="https://godbolt.org/z/xzP18ncc6">Godbolt</a>). Therefore, we seek to preserve what has already been a feature since this was conceived in the middle of the C11 cycle.</p>
    <h3 class="heading settled" data-level="3.2" id="design-evaluation"><span class="secno">3.2. </span><span class="content">Evaluation of the Expression</span><a class="self-link" href="#design-evaluation"></a></h3>
    <p>Currently, the controlling operand of a generic selection expression is not evaluated if it’s an expression. In the case of a generic association that uses the <em>declaration-name</em> form rather than the <em>type-name</em> form, the expression is <strong>only evaluated after selection chooses a branch that has the</strong> <em>declaration-name</em> <strong>form</strong>. This will prevent the addition of new generic associations within a list of existing generic associations forcing unexpected evaluations that were not previously considered. It is also only evaluated once, even if the <em>identifier</em> provided is used multiple times. Therefore, under the new feature, the following code returns <code class="highlight"><c- mi>0</c-></code> from <code class="highlight"><c- n>main</c-></code>:</p>
 <pre class="language-cpp highlight"><c- b>int</c-> <c- n>result</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c->
@@ -2742,6 +2767,20 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    <h3 class="heading settled" data-level="3.3" id="design-matching.expressions"><span class="secno">3.3. </span><span class="content">Direct Type Matching for Expressions</span><a class="self-link" href="#design-matching.expressions"></a></h3>
    <p>One of the problems with expressions is that it undergoes "l-value conversion" (qualifiers stripped, arrays converted to pointers, and similar) before the generic branch is matched. The problem was partially fixed by directly matching on an existing type, introduced by Aaron Ballman earlier into C2y. That allows directly matching on types that are e.g. <code class="highlight"><c- k>const</c-></code>-qualified, without having to make a pointer out of it.</p>
    <p>The problem comes back again when we want to have that exact matching but still want to produce a named identifier for whatever expression has gone in The use of <em>type-name</em> as the <em>generic-controlling-operand</em> means that there <strong>is</strong> no expression to evaluate and therefore nothing to set the expression to. Therefore, with an expression, one would need to morph the input expression to have a different type than what is put in, just to be able to match qualifiers or arrays. This, of course, presents the immediately problem that this is creating a <strong>new</strong> expression of a different type than what is intended, resulting in unneeded temporaries or other issues.</p>
+   <p>It also presents a problem when qualifiers are ignored but it matters to the input, where interacting with an e.g. <code class="highlight"><c- k>const</c-> <c- b>int</c-></code> is not the same as interacting with an <code class="highlight"><c- b>int</c-></code>:</p>
+<pre class="language-cpp highlight"><c- cp>#include</c-> &lt;stdio.h>
+
+<c- cp>#define read_maybe_update(x) _Generic(x, \</c->
+<c- cp>  int v: (printf("%d was read and updated\n", (v += 1)), v), \</c->
+<c- cp>  const int v: (printf("%d was read\n", v), v) \</c->
+<c- cp>)</c->
+
+<c- b>int</c-> <c- nf>main</c-><c- p>()</c-> <c- p>{</c->
+  <c- k>const</c-> <c- b>int</c-> <c- n>var</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c->
+  <c- k>return</c-> <c- n>read_maybe_update</c-><c- p>(</c-><c- n>var</c-><c- p>);</c->
+  <c- c1>// return 0;</c->
+<c- p>}</c->
+</pre>
    <h3 class="heading settled" data-level="3.4" id="design-lifetime.scope"><span class="secno">3.4. </span><span class="content">Identifier Scope and Lifetime</span><a class="self-link" href="#design-lifetime.scope"></a></h3>
    <p>The scope of the identifier introduced by this is from the <code class="highlight"><c- o>:</c-></code> and to the terminating <code class="highlight"><c- p>,</c-></code>. This is different from every other kind of identifier, so it needs a special carve out in §6.2.1 Scopes. We’re calling it <em>generic association scope</em>, for now. Just like labels, they’re a one-use-case kind of variable. This is just going to be called "generic lifetime" for the time being, because that’s the simplest possible way to call it. If we had statement expressions, we could simply say the scope is as-if the identifier was declared at the top of a statement expression that surrounds the <em>assignment-expression</em> that comes after the <code class="highlight"><c- o>:</c-></code> and before the <code class="highlight"><c- p>,</c-></code>, like so:</p>
 <pre class="language-cpp highlight"><c- b>int</c-> <c- n>r</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c->
@@ -2778,10 +2817,11 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
 <c- p>}</c->
 </pre>
    <h3 class="heading settled" data-level="3.5" id="design-syntax"><span class="secno">3.5. </span><span class="content">Other Potential Syntaxes</span><a class="self-link" href="#design-syntax"></a></h3>
-   <p>We settled on simply adding the <em>declaration-name</em> branch to the <em>generic-association</em> syntax because it is, as we understand it, the least problematic and easiest to handle.</p>
+   <p>We settled on simply adding the <em>declaration-name</em> branch to the <em>generic-association</em> syntax because it is, as we understand it, the least problematic and easiest to handle. It does present some issues with comprehension, unfortunately: the use of a declaration-like syntax implies that a new variable is being created, which doesn’t feel proper with the ability of generic selection to yield an l-value based on what the resulting expression computes.</p>
    <p>There are other ways to introduce the identifier in the sequence.</p>
    <p>One possible choice is to use a real introducer for the identifier, so it doesn’t look like a <em>declaration-name</em>. An example of this is with a <code class="highlight"><c- o>::</c-></code>, so that the <em>type-name</em> is separated from the <em>identifier</em>, as in: <code class="highlight"><c- n>type</c-><c- o>-</c-><c- n>name</c-> <c- o>::</c-> <c- n>identifier</c-> <c- o>:</c-> <c- p>...</c-></code>. Other than being conflicting with C++-style syntax of <code class="highlight"><c- n>identifier</c-> <c- o>::</c-> <c- n>identifier</c-> <c- p>...</c-></code>, it also seems a bit unnecessary given the solution we’ve settled on. It might get rid of the disambiguation rule that anything that can be parsed as a <em>type-name</em> should be parsed as a <em>type-name</em> rather than a <em>declaration-name</em>, where possible. Other than this, there are little benefits, unfortunately.</p>
    <p>It could also be something along the lines of <code class="highlight"><c- n>type</c-><c- o>-</c-><c- n>name</c-> <c- o>:</c-> <c- n>identifier</c-> <c- o>:</c-> <c- p>...</c-></code> for a generic association branch, but a single <code class="highlight"><c- o>:</c-></code> does not really provide enough information to the parser to know if the following tokens will be the special new syntax versus just the existing syntax where <code class="highlight"><c- n>identifier</c-></code> is meant to be parsed as an <code class="highlight"><c- n>expression</c-></code>. One could delay the parsing and decide whether or not its either the new syntax or the old syntax by waiting for the first non-parenthesized <code class="highlight"><c- p>,</c-></code> from showing up and then deciding how to interpret two top-level colons, but it can be hard to deal with given the use of e.g. <code class="highlight"><c- n>a</c-> <c- o>?</c-> <c- n>b</c-> <c- o>:</c-> <c- n>c</c-></code> nakedly as part of an <em>assignment-expression</em>. (This can make it such that the compiler might have to consider <code class="highlight"><c- n>a</c-></code> and identifier and <code class="highlight"><c- o>?</c-></code> an error before the <code class="highlight"><c- nl>b</c-> <c- p>:</c-></code> portion, for example.)</p>
+   <p>A separator between the type name and the identifier could strengthen the idea that the matching type may not exactly be the same as the input expression, as well, since that’s how generic with expressions currently works (after the strict-matching capabilities added by this proposal’s wording).</p>
    <h2 class="heading settled" data-level="4" id="prior"><span class="secno">4. </span><span class="content">Prior Art</span><a class="self-link" href="#prior"></a></h2>
    <p>Other than the "contravariant transformation" detailed in <a href="#intro">§ 2 Introduction and Motivation</a>, there is no direct prior art for this feature in compilers as a language feature.</p>
    <h2 class="heading settled" data-level="5" id="wording"><span class="secno">5. </span><span class="content">Wording</span><a class="self-link" href="#wording"></a></h2>
@@ -2957,12 +2997,12 @@ file, block,
      </ins>
      <ins>
       <div class="wording-newnumbered">
-       <p>If present, the generic association name has the value of the generic controlling operand’s expression and is an lvalue, a function designator, or a void expression if the generic controlling operand is. It’s type is either:</p>
+       <p>If present, the generic association name has the value of the generic controlling operand’s expression and is an lvalue, a function designator, or a void expression if the generic controlling operand is. Its type is either:</p>
        <ul>
         <li data-md>
-         <p>the generic controlling operand type if it is part of a <code class="highlight"><c- k>default</c-></code> generic association;</p>
+         <p>the generic association type if it is not the selected generic association;</p>
         <li data-md>
-         <p>otherwise, the composite type of the generic association type and the generic controlling operand’s type.</p>
+         <p>or, the generic controlling operand’s type.</p>
        </ul>
       </div>
      </ins>
@@ -3078,20 +3118,11 @@ file, block,
      </ins>
      <ins>
       <div class="wording-newnumbered">
-       <p>EXAMPLE    The generic controlling operand has the type of the expression itself when the branch is selected, which may be not exactly the generic association type, even if that branch matches.</p>
-<pre class="language-cpp highlight"><c- cp>#include</c-> &lt;stdio.h>
-
-<c- cp>#define is_it_const(x) _Generic(x, \</c->
-<c- cp>  int v: puts("the integer expression is not const"), \</c->
-<c- cp>  const int: puts("the integer expression is const") \</c->
-<c- cp>)</c->
-
-<c- b>int</c-> <c- nf>main</c-><c- p>()</c-> <c- p>{</c->
+       <p>EXAMPLE    The generic controlling operand has the type of the expression itself when the branch is selected, which does not have to be exactly the generic association type due to lvalue conversions.</p>
+<pre class="language-cpp highlight"><c- b>int</c-> <c- nf>main</c-><c- p>()</c-> <c- p>{</c->
   <c- k>const</c-> <c- b>int</c-> <c- n>var</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c->
-  <c- n>_Generic</c-><c- p>(</c-><c- n>var</c-><c- p>,</c->
-    <c- b>int</c-> <c- n>v</c-><c- o>:</c-> <c- n>is_it_const</c-><c- p>(</c-><c- n>v</c-><c- p>)</c->
-  <c- p>);</c->
-  <c- c1>// prints "the integer expression is const"</c->
+  <c- k>return</c-> <c- n>_Generic</c-><c- p>(</c-><c- n>var</c-><c- p>,</c-> <c- b>int</c-> <c- n>v</c-><c- o>:</c-> <c- n>v</c-> <c- o>+=</c-> <c- mi>1</c-><c- p>);</c-> <c- c1>// constraint violation:</c->
+  <c- c1>// assignment with `const` object</c->
 <c- p>}</c->
 </pre>
       </div>
