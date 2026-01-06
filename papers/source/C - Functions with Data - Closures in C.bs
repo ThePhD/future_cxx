@@ -4,7 +4,7 @@ Shortname: 37XA
 Revision: 2
 !Previous Revisions: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3694.htm">n3694 (r1)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3657.htm">n3657</a>
 Status: P
-Date: 2025-12-28
+Date: 2026-01-07
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -752,13 +752,34 @@ Capture Functions are able to refer to themselves for the purpose of recursion. 
 
 ```cpp
 int main () {
-	int tripling (int times, int start) {
+	const int mult = 3;
+	int tripling (int times, int start) _Capture(mult) {
 		if (times >= 5) {
 			return start;
 		}
-		return tripling(times + 1, start * 3); // normal recursion
+		return tripling(times + 1, start * mult); // normal recursion
 	}
 	return tripling(0, 1);
+}
+```
+
+
+### Capable of Self-Call ### {#design-capture.functions-self.call}
+
+Capture Functions are able to refer to themselves in the argument list, and that means it is possible to form a pointer to itself. While they are incomplete types until after the end of the `_Capture` list, the type is still there and thus taking a pointer to such a type and using it after the opening `{` thus results in using a complete type, though the usage is somewhat weird:
+
+```cpp
+int main () {
+	const int mult = 3;
+	int tripling (int times, int start, typeof(tripling)* self) _Capture(mult) {
+		if (times >= 5) {
+			return start;
+		}
+		return self[0](times + 1, start * mult, self);
+		// or
+		// return (*self)(times + 1, start * mult, self);
+	}
+	return tripling(0, 1, &tripling);
 }
 ```
 
@@ -945,6 +966,26 @@ int main () {
 ```
 
 
+### Capable of Self-Call ### {#design-lambdas-self.call}
+
+LAmbdas are able to refer to themselves in the argument list as they are object types. Unlike Capture Functions, which are incomplete during the argument list and complete after the `_Capture` specification, lambdas have their captures first. That means all the information to be a complete object is known by the time the argument list is opened. If `__self_func` is available ([[__self_func]]), this means one can use a "self" closure type without pointers or indirection:
+
+```cpp
+int main () {
+	const int mult = 3;
+	auto tripling = [mult](int times, int start, typeof(__self_func) self) {
+		if (times >= 5) {
+			return start;
+		}
+		return self(times + 1, start * mult, self);
+	}
+	return tripling(0, 1, &tripling);
+}
+```
+
+This is, obviously, not recommended because this takes the object itself by value and so can do lots of unnecessary copies. But, it can be taken as either a full complete object or just a pointer to said object, so the choice is up to the user since Lambdas are complete object types by the function argument list.
+
+
 ### Trailing Return Types / Deduced Return Type ### {#design-lambdas-returns}
 
 Finally, one may need to add the concept of a "trailing return type" to C in order to allow modifying the return type of a lambda. At the moment, the way a lambda with no specified return type works is that every single `return` statement must have exactly the same type (there is no negotiation for some "promoted" type or similar). That is, returning a `long` in one branch and an `int` in another branch is an error: they all must be cast to `int` or they all must be cast to `long`:
@@ -1066,7 +1107,7 @@ MSVC was not tested because MSVC implements none of the extensions being tested,
 
 #### Results #### {#design-benchmarks-manorboy-results}
 
-The result graphs are as follows, presented in pairs for Apple Clang 17 and GCC 15:
+The result graphs are as follows, presented in four images for both MacOS ARM64 with Apple Clang 17 and GCC 15, and Windows AMD64 with Clang 21 and GCC 15:
 
 <pre class="include">
 path: assets/C - Functions with Data/manorboy-appleclang17-linear.bs
@@ -1074,6 +1115,14 @@ path: assets/C - Functions with Data/manorboy-appleclang17-linear.bs
 
 <pre class="include">
 path: assets/C - Functions with Data/manorboy-gcc15-linear.bs
+</pre>
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-winclang21-linear.bs
+</pre>
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-wingcc15-linear.bs
 </pre>
 
 Because some of the checked categories perform so astronomically poorly, we have a version of the graphs that are logarithmic, which are the two following graphs:
@@ -1086,6 +1135,14 @@ path: assets/C - Functions with Data/manorboy-appleclang17-logarithmic.bs
 path: assets/C - Functions with Data/manorboy-gcc15-logarithmic.bs
 </pre>
 
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-winclang21-logarithmic.bs
+</pre>
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-wingcc15-logarithmic.bs
+</pre>
+
 This obscures some of the changes in performance because it skews towards big order-of-magnitude differences. To show the differences without the heavy skew due to the extremely poor performance of the bottom two/three categories, we also provide a "focused" graph which eliminates the poor performers and shows the linear performance of the more competitive top 12 performers.
 
 <pre class="include">
@@ -1094,6 +1151,14 @@ path: assets/C - Functions with Data/manorboy-appleclang17-linear-focused.bs
 
 <pre class="include">
 path: assets/C - Functions with Data/manorboy-gcc15-linear-focused.bs
+</pre>
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-winclang21-linear-focused.bs
+</pre>
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-wingcc15-linear-focused.bs
 </pre>
 
 A full writeup is available at [[closures-in-c-benchmark]] and [[closures-in-c-benchmark-followup]] which includes methodology and other information about the tests.
@@ -1111,6 +1176,8 @@ Note: Manual management of closure pointer-to-function pointer trampolines may p
 In addition to the key takeaways above, some other details we have understood are as follows. C++-style lambdas have the capability to be both awful (Lambdas using the Rosetta Code technique) and powerful (Lambdas with Perfect Type Information). Both of these techniques are unusable as-is in C as the things that make them awful or great are tied not due to lambdas design but moreso how they are used (e.g., `std::function` abstractions or translation-time recursion prevention.) Normal C functions (storing the integer `k` by value) can achieve near-parity with C++-style Lambdas at their best in terms of performance. However, it requires the modification of the function signature, which may not be viable in all cases (such as calling already-compiled interfaces or working with FFI). The use of `static` and `thread_local` to pass information across function boundaries comes with an unshakeable and implicit cost. `thread_local` is -- for obvious reasons -- more expensive than just `static`, but both incur overhead.
 
 After evaluating current industry extensions, we find them to be strangely poorly-performing despite being decades-old in some cases. Apple Blocks ([[apple-blocks]]) and similar heap-based solutions incur a fixed overhead due to the Blocks Runtime scheme, making it unsuitable for resource-constrained C environments. This means it is not worth pursuing this as a long-term solution in our technical opinion. GNU Nested Functions ([[nested-functions]]), as a quirk of its current most popular implementation, really inhibit inlining and other similar optimizations. A different implementation (e.g., the current `-ftrampoline-impl=heap` work that is currently available on 5 platforms in GCC trunk at time-of-writing) could be better. But, the fact that a typical quality of implementation provides such awful performance characteristics compared to every other solution despite being the oldest solution means that they too should be looked at skeptically for direct ISO C standardization. The heap-based trampolines of GNU Nested Functions also look like they may incur a similar fixed overhead just like the Apple Blocks implementation.
+
+There may be a way to avoid this by simply reducing the context pointer and the actual function pointer to something more directly usable with the `__builtin_call_with_static_chain` intrinsic available in GCC and Clang ([[builtin_call_with_static_chain_gcc]]). We expect that the performance benefits here could be quite good, but this is not proven and not implemented yet, unlike Lambdas and other solutions which have plenty of implementation and perform well based on user choice of type erasure or allocation or storage.
 
 The Function Literals and Local Functions ([[n3678]], [[n3679]]) proposals can have their performance approximated in their best-case as following the performance of the series of Normal Functions. This requires modifying the function signature. If the function signature isn't modified, there isn't really a point of comparison in these benchmarks other than falling back to other means of context transportation. All of these solutions vary wildly in performance, from Apple Blocks runtimes to various style of trampolines. This makes it impossible to understand Function Literals and Local Functions as solving the problem at hand, because they provide no plausible forward path on which to judge. Thus, we consider them incomplete.
 
@@ -1155,7 +1222,7 @@ path: C - Functions with Data Appendix.bs
 		"authors": [
 			"JeanHeyd Meneide"
 		],
-		"title": "The Cost of a Closure in C",
+		"title": "The Cost of a Closure in C, The Rest",
 		"date": "December 28th, 2025",
 		"href": "https://thephd.dev/the-cost-of-a-closure-in-c-c2y-followup"
 	},

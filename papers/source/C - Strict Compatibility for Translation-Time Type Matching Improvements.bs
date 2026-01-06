@@ -4,7 +4,7 @@ Shortname: 3695
 Revision: 0
 !Previous Revisions: None
 Status: P
-Date: 2025-12-17
+Date: 2026-01-07
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -16,7 +16,7 @@ Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
 Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
 Markup Shorthands: markdown yes
 Toggle Diffs: no
-Abstract: The recent changes to generic selection have allowed an undefined behavior that was only available to functions to now leak into generic. This paper attempts to provide some stricter constraints without jeopardizing the use cases of the necessary feature.
+Abstract: The recent changes to generic selection have allowed an undefined behavior that was only available to functions as a necessary evil to now leak into generic. This paper attempts to provide some stricter constraints without jeopardizing the use cases of the necessary feature.
 </pre>
 
 <pre class="include-raw">
@@ -32,7 +32,7 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 0 - December 16<sup>th</sup>, 2025 ## {#changelog-r0}
+## Revision 0 - January 7<sup>th</sup>, 2025 ## {#changelog-r0}
 
 - Initial release. ✨
 
@@ -160,19 +160,196 @@ Given these issues, we propose a general overhaul and a new phrase-of-power that
 
 This paper is, exclusively, focusing on improvements to `_Generic`. In particular, we:
 
-- make it so `T[]` can match specifically arrays of fixed size in `_Generic`;
-- make it so `T[*]` can match all array sizes in `_Generic` (as is the case after [[N3348]]);
-- make it so using both `T[]` and `T[*]` means that fixed-size arrays are matched by `T[]` and VLAs are matched by `T[*]`, if they are both present.
+- make it so `T[CONSTANT]` can match only other fixed 
+- make it so `T[]` can match specifically arrays of fixed size or other incomplete arrays in `_Generic`;
+- make it so `T[*]` can match all types of array sizes in `_Generic` (as is the case after [[N3348]]);
+- make it so using both `T[]` and `T[*]` means that fixed-size arrays are matched by `T[]` and VLAs are matched by `T[*]`, if they are both present (preferentially matching `T[]` over `T[*]`).
+
+We do this by defining "strict compatibility" first and foremost, which more precisely allows Known Constant Length Arrays, Incomplete Arrays, and Variable Length Arrays to match an array dimension with a size specification of `T[*]`. `T[]` allows Known Constant Length Arrays and Incomplete Arrays, but not Variable Length Arrays. `T[CONSTANT]` precisely matches `T[CONSTANT]`, where the two constants compute the same integer constant expression.
+
+Then, we define a second algorithm in the Generic Selection section of the standard that ranks certain kinds of array matches higher than others based on the use of `[]`, `[*]`/`[non_constant]`, and `[CONSTANT]`. The algorithm effectively states that, provided all of the strictly compatible associations are all derived from pointer or array types, we count how many constant, unknown size, and "any" (variable length or `*`) matches there are. The one with the highest "constant" dimensions wins, and if not that then the one with the highest "unknown size" dimensions win, and then finally the one with the highest "any" dimension matches wins. If any are equal and we run out of discriminators, then too many are compatible and it results in an error. The reason it is important to count is because you want something that looks like this:
+
+```cpp
+int main () {
+	return _Generic(int[2][2],
+		int[][2]: 0,
+		int[2][]: 1
+	);
+}
+```
+
+to be an error, while this:
+
+```cpp
+int main () {
+	return _Generic(int[2][2],
+		int[2][2]: 0,
+		int[2][]:  1
+	);
+}
+```
+
+should return `0`. It also makes it so `[*]` binds "last" since it binds to any given dimension, while `[]` either binds to itself or a constant:
+
+```cpp
+int main () {
+	return _Generic(int[2][2],
+		int[2][*]: 1
+		int[2][]:  0
+	)
+	+ _Generic(int[2][2],
+		int[*][*]: 1
+		int[*][]:  0
+	);
+	// equivalent to return 0 + 0;
+}
+```
+
+Obviously, `[2]` and `[3]` are considered different for the purposes of the algorithm as well (they have to compute the same known constant value in order to match), which finally gives up proper separation of array types in `_Generic`.
 
 
 
+## Undefined Behavior / Perceived Value Mismatch ## {#design-undefined.behavior}
+
+This paper eliminates the undefined behavior of matching constant-sized arrays or incomplete array to variable-length arrays and vice-versa. The case of undefined behavior / wrongful perception that it does not fix that was introduced by [[N3348]] is where a VLA is matched to another VLA of the wrong size:
+
+```cpp
+int main () {
+	int n = foo();
+	int m = n + 1;
+	_Generic(int[n][m],
+		int[n][m]: 1, // dimensions are swappe (incorrect), but
+		// generic selection still picks this one
+	);
+}
+```
+
+This is because the variable length array types are all substituted with `[*]`, such that the compiler reads it as:
+
+```cpp
+int main () {
+	int n = foo();
+	int m = n + 1;
+	_Generic(int[n][m],
+		int[*][*]: 1, // all variable length dimensions are
+		// replaced with [*], so technically fine even if
+		// visually misleading
+	);
+}
+```
+
+This can be problematic for reading purposes and for other uses. But, this 'cat" is already "out of the bag", so to speak, since the changes in [[N3348]]. There's no real fix for this, unfortunately, other than just going back to banning the use of non-`[*]` variable length arrays in the type names of generic associations. But we removed that constraint, so this paper simply leaves this one untouched case of seeming undefined behavior in place, even though by-the-specification the replacement makes it somewhat "better'.
+
+
+## Array Usage Examples: Constant Sized Input ## {#design-array.examples.constant}
+
+Here is an example of expected behavior from matching on a constant sized array with the whole gamut of different types deployed:
+
+```cpp
+#include <assert.h>
+
+int main () {
+	int arr[10] = {};
+	
+	int result_constants = _Generic(typeof(arr),
+		int[10]: 0,
+		int[11]: 1,
+		int[20]: 2,
+		default: 3
+	);
+	assert(result_constants == 0);
+
+	int result_constant_and_incomplete = _Generic(typeof(arr),
+		int[10]: 0,
+		int[]: 1,
+		default: 2
+	);
+	assert(result_constant_and_incomplete == 0);
+
+	int result_incomplete = _Generic(typeof(arr),
+		int[]: 0,
+		default: 1
+	);
+	assert(result_incomplete == 0);
+
+	int result_incomplete_and_vla = _Generic(typeof(arr),
+		int[]: 0,
+		int[*]: 1,
+		default: 2
+	);
+	assert(result_incomplete_and_vla == 0);
+
+	int result_incomplete_constant_and_vla = _Generic(typeof(arr),
+		int[10]: 0,
+		int[]: 1,
+		int[*]: 2,
+		default: 3
+	);
+	assert(result_incomplete_constant_and_vla == 0);
+	
+	return 0;
+}
+```
+
+
+
+## Array Usage Examples: Variable Length Input ## {#design-array.examples.vla}
+
+Here is a similar example, but with the input array being a VLA:
+
+```cpp
+#include <assert.h>
+
+int main () {
+	int n = 10;
+	int vla[n] = {};
+	
+	int vla_result_constants = _Generic(typeof(vla),
+		int[10]: 1,
+		int[11]: 2,
+		int[20]: 3,
+		default: 0
+	);
+	assert(vla_result_constants == 0);
+
+	int vla_result_constant_and_incomplete = _Generic(typeof(vla),
+		int[10]: 1,
+		int[]:   0,
+		default: 2
+	);
+	assert(vla_result_constant_and_incomplete == 0);
+
+	int vla_result_incomplete = _Generic(typeof(vla),
+		int[]:   1,
+		default: 0
+	);
+	assert(vla_result_incomplete == 0);
+
+	int vla_result_incomplete_and_vla = _Generic(typeof(vla),
+		int[]:   1,
+		int[*]:  0,
+		default: 2
+	);
+	assert(vla_result_incomplete_and_vla == 0);
+
+	int vla_result_incomplete_constant_and_vla = _Generic(typeof(vla),
+		int[10]: 1,
+		int[]:   2,
+		int[*]:  0,
+		default: 3
+	);
+	assert(vla_result_incomplete_constant_and_vla == 0);
+	
+	return 0;
+}
+```
 
 
 
 
 # Prior Art # {#prior}
 
-There is no prior art for this. We intend to gauge Committee reaction, refine the paper, and then submit patches to existing implementations for this behavioral improvement.
+There is no prior art for this. We intend to gauge Committee reaction since this was supported by commentary during the integration of Martin Uecker's [[N3348]].
 
 
 
@@ -187,154 +364,286 @@ The wording is relative to the latest Working Draft.
 
 The intent of this wording is to provide:
 
-- a change in the definition of incomplete types for arrays, which makes it so an incomplete constant sized array specification with `T[]` and incomplete variable size `T[*]` can complete their respective constant and incomplete array types;
-- move the array types wording and concentrate it into §6.2.5;
-- improvements to how type completion works for both categories of incomplete array types, allowing multiple type derivations to be completed at once.
-
-This wording is broken up into two major sections:
-
-1. the incomplete type changes and array matching changes for both `_Generic` and initialization in [[#wording-incomplete]];
-2. and, the wording that allows `_Generic` to start with "strict matching" and then fall back to "l-value conversion" matching in [[#wording-fallback]].
-
-These are the ways in which the changes are separable. If WG14 so desires, these two sections can be voted on separately using the paper's section numbers to indicate the section currently being voted on.
+- add a new definition for "strict compatible"/"strict compatibility" types;
+- and, modify Generic Selection to use this new "strict compatibility" for types.
 
 
-
-## Wording: Incomplete Types, Initialization, and Arrays ## {#wording-incomplete}
-
-
-### General Standard: Change "unspecified size" to "unknown size" globally ### {#wording-incomplete-unspecified.size}
-
-There are a handful of places where describing a VLA refers to an unspecified size, where the term of art should be an *unknown size*. There are far more uses of "unknown size" than "unspecified size".
-
-
-### Modify §6.2.5 Types ### {#wording-incomplete-6.2.5}
-
-> <sup>25</sup> Any number of derived types can be constructed from the object and function types, as follows:
->
-> - An array type describes a contiguously allocated nonempty set of objects with a particular member object type, called the *element type*. <del>The element type shall be complete whenever the array type is specified.</del><ins>If the element type is an incomplete type, then the array type is an incomplete type.</ins> Array types are characterized by their element type and by the number of elements in the array. An array type is said to be derived from its element type, and if its element type is *T*, the array type is sometimes called "array of *T*". The construction of an array type from an element type is called "array type derivation".
-> - …
-> 
-> …
->
-> <sup><ins>✨</ins></sup> <ins>A signed or unsigned bit-precise integer type with no specified width, `_BitInt()`, `signed _BitInt()` or `unsigned _BitInt()`, is an incomplete type called a *bit-precise incomplete integer type*. It is completed, for an identifier of that type, by specifying the width in a later declaration (with internal or external linkage) or during initialization.</ins>
->
-> <sup><ins>✨</ins></sup> <ins>An array type of known size is either a constant array type or a variable length array type. If the array type has an integer constant expression and the element type has a known constant size, the array type is a *constant array type*; otherwise, the array type is a *variable length array type*. (Variable length arrays with automatic storage duration are a conditional feature that implementations may support; see 6.10.10.4.)</ins>
-> 
-> <sup>27</sup> An array type of unknown size is an incomplete type.<ins>An *unknown size* for an array type is one where the size is not specified or the size is specified as `*`. An unknown size of `*` means the array type is a *variably incomplete array type*. An unknown size that is not specified means the array type is an *unspecified incomplete array type*.</ins> It is completed, for an identifier of that type, by specifying <del>the size</del><ins>the constant size, for an unspecified incomplete array type, or the non-constant size, for a variably incomplete array type,</ins> in a later declaration (with internal or external linkage)<ins>  or during initialization</ins>.
-> 
-> <sup><ins>✨</ins></sup> <ins>Array types have a *rank*, which is the number of dimensions of that array. An array type with a non-array element type has a rank of 1. For every element type of an array type that is itself also an array, the rank of the array increases by 1. Each dimension of a potentially nested array has an index from *0* (outermost) to *rank - 1* (innermost). Incomplete array types still have a rank and still have an index that identifies that dimension.</ins>
->
-> <sup><ins>✨</ins></sup> <ins>NOTE &emsp; Contrary to the lexicographic order in a multidimensional array type, the set of balanced square brackets seen first is the outermost dimension, with each subsequent set of balanced square brackets denoting inner array sizes. For a declaration `int arr[3][4][5];`, `3` is the size for the outermost array dimension and `5` is the size for the innermost array dimension in `arr`.</ins>
-
-
-### Modify §6.5.2.1 Generic selection ### {#wording-incomplete-6.5.2.1}
-
-> **Constraints**
->
-> <sup>2</sup> A generic selection shall have no more than one `default` generic association. The type name in a generic association shall specify a type, other than a variably modified type<ins> that is not a variably incomplete array type.</ins> No two generic associations in the same generic selection shall specify <del>compatible</del><ins>associated</ins> types<ins>, as defined later in this sublcause</ins>. If the generic controlling operand is an assignment expression, the *controlling type* of the generic selection expression is the type of the assignment expression as if it had undergone an lvalue conversion, array to pointer conversion, or function to pointer conversion. Otherwise, the controlling type of the generic selection expression is the type designated by the type name. The controlling type shall be compatible with at most one of the types named in the generic association list. If a generic selection has no `default` generic association, its controlling type shall be <del>compatible</del><ins>associated</ins> with exactly one of the types named in its generic association list.
->
-> <ins><sup>✨</sup> Given an input type and a target type, the input type is *associated* with the target type under the following conditions.
->
-> 1. If the input type is a bit-precise integer type:
-> 	- If target type is a bit-precise incomplete integer type of the same signedness and same width, then the two types are associated.
-> 	- Otherwise, if target type is a bit-precise incomplete integer type of the same signedness, then the two types are associated.
-> 2. If the input type is an array type and it has a constant size:
-> 	- If the target type is an array type with both an element type that is associated with the input array type's element type and a constant size that is equivalent to the input array type's constant size, then the two types are associated.
-> 	- Otherwise, if the target type is an array type with both an element type that is associated with the input array type's element type and is an empty incomplete array type, then the two types are associated.
-> 3. Otherwise, if the input type is an array type and it has a non-constant size:
-> 	- If the target type is an array type with both an element type that is associated with the input array type's element type and a constant size that is equivalent to the input array type's constant size, then the two types are associated.
-> 	- Otherwise, if the target type is an array type with both an element type that is associated with the input array type's element type and is an empty incomplete array type, then the two types are associated.
-> 4. Otherwise, if the input type is an array and it is an incomplete type:
-> 	- If the target type is an array type with both an element type that is associated with the input array type's element type and is an variably incomplete, then the two types are associated.
-> 	- Otherwise, if the target type is an array type with both an element type that is associated with the input array type's element type and is an empty incomplete array type, then the two types are associated.
-> 5. Otherwise, the two types are associated if they are compatible.
-> 
-> </ins>
->
-> **Semantics**
-> 
-> <sup>3</sup> The generic controlling operand is not evaluated. If a generic selection has a generic association with a type name that is <del>compatible</del><ins>associated</ins> with the controlling type, then the result expression of the generic selection is the expression in that generic association. Otherwise, the result expression of the generic selection is the expression in the `default` generic association. None of the expressions from any other generic association of the generic selection is evaluated.
->
-> ...
+## Modify §6.2.7 "Compatible type and composite type" ## {#wording-6.2.7}
 
 <blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.2.7</span> <span class="wording-clause-title">Compatible type and composite type</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-numbered">
+
+Two types are *compatible types* if they are the same. Additional rules for determining whether two types are compatible are described in 6.7.3 for type specifiers, in 6.7.4 for type qualifiers, and in 6.7.7 for <ins>certain</ins> declarators. <ins>Two pointer types are compatible if both are identically qualified and both are pointers to compatible types. Two array types are compatible if and only if both of the following hold:</ins>
+
+- <ins>they have compatible element types;</ins>
+- <ins>and, if both array length expressions are present, and are integer constant expressions, then they same constant value.</ins>
+
+<ins>If the two array types are used in a context which requires them to be compatible, the behavior is undefined if the lengths of both are specified and the corresponding array length expressions evaluate to unequal values.</ins> Moreover, two complete structure, union, or enumerated types declared with the same tag are compatible if members satisfy the following requirements:
+
+- there shall be a one-to-one correspondence between their members such that each pair of corresponding members are declared with compatible types;
+- if one member of the pair is declared with an alignment specifier, the other is declared with an equivalent alignment specifier;
+- and, if one member of the pair is declared with a name, the other is declared with the same name.
+
+For two structures, corresponding members shall be declared in the same order. For two unions declared in the same translation unit, corresponding members shall be declared in the same order. For two structures or unions, corresponding bit-fields shall have the same widths. For two enumerations, corresponding members shall have the same values; if one has a fixed underlying type, then the other shall have a compatible fixed underlying type. For determining type compatibility, anonymous structures and unions are considered a regular member of the containing structure or union type, and the type of an anonymous structure or union is considered compatible with the type of another anonymous structure or union, respectively, if their members fulfill the preceding requirements.
+
+Furthermore, two structure, union, or enumerated types declared in separate translation units are
+compatible in the following cases:
+
+- both are declared without tags and they fulfill the preceding requirements;
+- both have the same tag and are completed somewhere in their respective translation units and they fulfill the preceding requirements;
+- both have the same tag and at least one of the two types is not completed in its translation unit.
+
+Otherwise, the structure, union, or enumerated types are incompatible.</div>
+
 <ins>
-<sup>✨</sup> EXAMPLE &emsp; Generic selection can match multidimensional arrays by using incomplete array types.
+<div class="wording-newnumbered">
+
+Two types are *strictly compatible* if, in certain cases, they meet more stringent requirements than just being compatible. Two pointer types are strictly compatible if the referenced types are strictly compatible and both are identically qualified. For two array types:
+
+- if they both have a known constant length, then the two types are strictly compatible if the constant lengths are the same and the element types are strictly compatible;
+- if they both have an unknown size, then the two types are strictly compatible if the element types are strictly compatible;
+- if they both have a length expression of `*` , then the two types are strictly compatible if the element types are strictly compatible;
+- if one has a known constant length and the other has unknown size, then the two types are strictly compatible if the element types are strictly compatible;
+- if one has a non-constant length and the other has unknown size, then the two types are strictly compatible if the element types are strictly compatible;
+- or, if one has a non-constant length and the other has an array length expression of `*`, then the two types are strictly compatible if the element types are strictly compatible.
+
+Otherwise, the two array types are not strictly compatible. Other types are strictly compatible if they are compatible.
+</div>
+</ins>
+
+<div class="wording-numbered">
+
+All declarations that refer to the same object or function shall have compatible type; otherwise, the
+behavior is undefined.
+</div>
+
+<div>
+...
+</div>
+
+</div>
+</blockquote>
+
+
+## Modify §6.5.2.1 "Generic selection" ## {#wording-6.5.2.1}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.5.2.1</span> <span class="wording-clause-title">Generic selection</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+...
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+A generic selection shall have no more than one `default` generic association. No two generic associations in the same generic selection shall specify <ins>strictly </ins>compatible types. If the generic controlling operand is an assignment expression, the controlling type of the generic selection expression is the type of the assignment expression as if it had undergone an lvalue conversion, array to pointer conversion, or function to pointer conversion. Otherwise, the controlling type of the generic selection expression is the type designated by the type name. <del>The controlling type shall be compatible with at most one of the types named in the generic association list. If a generic selection has no `default` generic association, its controlling type shall be compatible with exactly one of the types named in its generic association list.</del><ins>One generic association shall be the selected association as described further in this subclause, unless there is a `default` generic association in the generic association list, in which case there may be one or zero selected associations.</ins>
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<ins>
+<div class="wording-newnumbered">
+
+Let <i>determine-association(<code>T<sub>control</sub></code>, <code>T<sub>assoc</sub></code>)</i> be the algorithm which takes two strictly compatible types <code>T<sub>control</sub></code> and <code>T<sub>assoc</sub></code>. It computes a triplet of integer values as the result, with each value called <i>(<code>N<sub>constant</sub></code>, <code>N<sub>unknown</sub></code>, <code>N<sub>any</sub></code>)</i>. Each value <code>N<sub>constant</sub></code>, <code>N<sub>unknown</sub></code>, and <code>N<sub>any</sub></code> starts at 0 when the algorithm is utilized.
+
+-  If <code>T<sub>assoc</sub></code> is a pointer type, then the current result is added to the result of *determine-association* utilized on <code>T<sub>control</sub></code> and <code>T<sub>assoc</sub></code>'s referenced type and that is yielded as the result.
+- Otherwise, if <code>T<sub>assoc</sub></code> is an array type, then the values of the triplet are added to the result of *determine-association* utilized on with the element types of <code>T<sub>control</sub></code> and <code>T<sub>assoc</sub></code>. Then, the values are increased by the first of the following that is true, before the algorithm then yields that as the result:
+	- if <code>T<sub>control</sub></code> has a known constant length and <code>T<sub>assoc</sub></code> has a known constant length, increase <code>N<sub>constant</sub></code> by 1;
+	- if <code>T<sub>control</sub></code> has unknown size and <code>T<sub>assoc</sub></code> has either a known constant length or unknown size, increase <code>N<sub>unknown</sub></code> by 1;
+	- or, if <code>T<sub>control</sub></code> has a size of `*` or a non-constant, variable length, increase <code>N<sub>any</sub></code> by one.
+- Otherwise, if <code>T<sub>assoc</sub></code> is not an array type or a pointer type, the algorithm yields the current value of the triplet (<code>N<sub>constant</sub></code>, <code>N<sub>unknown</sub></code>, <code>N<sub>any</sub></code>).
+
+</div>
+</ins>
+
+<ins>
+<div class="wording-newnumbered">
+
+Let the controlling type be "<code>T<sub>control</sub></code>" and the generic association's type name be "<code>T<sub>assoc</sub></code>". Let "compatible associations" be the generic associations where <code>T<sub>control</sub></code> is strictly compatible with <code>T<sub>assoc</sub></code>.
+
+- If there are zero compatible associations and there is no `default` generic association, a constraint is violated.
+- Otherwise, if there are zero compatible associations and there is a `default` generic association, that is the selected association.
+- Otherwise, if there is only one compatible association, that is the selected association.
+- Otherwise, there are two or more compatible associations. Each compatible association <code>T<sub>compat</sub></code> is used to produce a set of integer triplets using <i>determine-association(<code>T<sub>control</sub></code>, <code>T<sub>compat</sub></code>)</i>, and those triplets are translated as follows:
+	- If any of the resulting triplets is equivalent to *(`0`, `0`, `0`)*, then there are compatible associations which are neither pointer derivations or a constraint has been violated.
+	- Otherwise, the compatible association with the greatest value of <code>N<sub>constant</sub></code> that is not equal to any other is the selected association.
+	- Otherwise, if the greatest value of <code>N<sub>constant</sub></code> of the compatible associations is equal to any other compatible association's <code>N<sub>constant</sub></code> value, then the compatible association with the greatest value of <code>N<sub>unknown</sub></code> that is not equal to any other is the selected association.
+	- Otherwise, if the greatest value of <code>N<sub>unknown</sub></code> of the compatible associations is equal to any other compatible association's <code>N<sub>unknown</sub></code> value, then the compatible association with the greatest value of <code>N<sub>any</sub></code> that is not equal to any other is the selected association.
+	- Otherwise, there are multiple selected associations and a constraint is violated.
+
+</div>
+</ins>
+
+<div class="wording-numbered">
+
+The generic controlling operand is not evaluated. If a generic selection has a <ins>selected association</ins><del>generic association with a type name that is compatible with the controlling type</del>, then the result expression of the generic selection is the expression in that generic association. Otherwise, the result expression of the generic selection is the expression in the `default` generic association. None of the expressions from any other generic association of the generic selection is evaluated.
+</div>
+
+<div class="wording-numbered">
+
+The type and value of a generic selection are identical to those of its result expression. It is an lvalue, a function designator, or a void expression if its result expression is, respectively, an lvalue, a function designator, or a void expression.
+</div>
+
+<div class="wording-numbered">
+EXAMPLE &emsp;&emsp; A cbrt type-generic macro can be implemented as follows:
+```cpp
+#define cbrt(X) _Generic((X), \
+	long double: cbrtl, \
+	default: cbrt, \
+	float: cbrtf \
+	)(X)
+```
+</div>
+
+
+<div class="wording-numbered">
+EXAMPLE &emsp;&emsp; The following two generic selection expressions select different associations because the assign-
+ment expression operand undergoes lvalue conversion while the type name operand is unchanged:
+
+```cpp
+int func(const int i) {
+	return _Generic(i,
+		int : 0, // int is selected
+		const int : 1,
+		default : 2) +
+	_Generic(typeof(i),
+		int : 0,
+		const int : 1, // const int is selected
+		default : 2);
+}
+```
+
+Thus, this function returns 1.
+</div>
+
+<div class="wording-numbered">
+EXAMPLE &emsp;&emsp; The following generic selection expressions are valid and all evaluate to 1.
+
+```cpp
+void foo(int n, int m) {
+	_Generic(int[3][2], int[3][*]: 1, int[2][*]: 0);
+	_Generic(int[3][2], int[*][2]: 1, int[*][3]: 0);
+	_Generic(int[3][n], int[3][*]: 1, int[2][*]: 0);
+	_Generic(int[n][m], int[*][*]: 1, char[*][*]: 0);
+	_Generic(int(*)[2], int(*)[*]: 1);
+}
+```
+</div>
+
+<ins>
+<div class="wording-newnumbered">
+EXAMPLE &emsp;&emsp; Generic selection can match multidimensional arrays by using incomplete array types or variable length array types.
 
 ```cpp
 int main () {
 	int result = _Generic(int[20][10],
-		int[][]: 0,
+		int[][*]: 0,
 		default: 1
 	);
 	return result; // return 0
 }
 ```
 
-Constant array types are associated with other constant array types before they are associated with unspecified incomplete array types.
+Constant array types are associated with other constant array types before they are associated with incomplete array types.
 
 ```cpp
 int main () {
-	int a = _Generic(int[20][10],
-		int[][]: 0,
-		default: 1
-	);
-	int b = _Generic(int[20][10],
-		int[][]:   1,
-		int[20][]: 0,
-		default:   1
-	);
-	int c = _Generic(int[20][10],
-		int[][]:     1,
-		int[20][]:   1,
-		int[20][10]: 0,
-		default:     1
-	);
-	return a + b + c; // return 0
+	static_assert(_Generic(int[20][10],
+		int[][]: 1,
+		default: 0
+	))
+	static_assert(_Generic(int[20][10],
+		int[][]:   0,
+		int[20][]: 1,
+		default:   0
+	));
+	static_assert(_Generic(int[20][10],
+		int[][]:     0,
+		int[20][]:   0,
+		int[20][10]: 1,
+		default:     0
+	));
 }
 ```
 
-Multiple types associated with the controlling operand is a constraint violation.
+Multiple types compatible associations with the controlling operand is a constraint violation.
 
 ```cpp
 int main () {
-	int a = _Generic(int[20][10],
-		int[][]:   1,
-		int[][10]: 0,
-		int[][*]:  1,
-		default:   1
-	);
-	// okay, a is 0
+	static_assert(_Generic(int[20][10],
+		int[][]:   0,
+		int[][10]: 1,
+		int[][*]:  0,
+		default:   0
+	));
+
+	static_assert(_Generic(int[20][10],
+		int[*][]: 0,
+		int[][]:  1,
+	));
+	static_assert(_Generic(int[][],
+		int[*][]: 0,
+		int[][]:  1,
+	));
+	static_assert(_Generic(int[][],
+		int[][]:  1,
+		int[56][]: 0,
+	));
 	
 	_Generic(int,
-		int:     0,
-		int:     0, // constraint violation
-		default: 1
+		int: 1,
+		int: 1, // constraint violation
 	);
 	_Generic(int[20][10],
-		int[][]: 0,
-		int[][]: 0, // constraint violation
-		default: 1
+		int[20][]: 1,
+		int[20][]: 1, // constraint violation
 	);
 	_Generic(int[20][10],
-		int[][]:  0,
+		int[][]: 1,
+		int[][]: 1, // constraint violation
+	);
+	_Generic(int[20][10],
+		int[*][]: 1,
 		int[*][]: 1, // constraint violation
-		int[*][]: 1, // constraint violation
-		default:  1
+	);
+	_Generic(int[20][10],
+		int[20][]: 1,
+		int[][10]: 1, // constraint violation
 	);
 }
 ```
+</div>
 </ins>
-</blockquote>
 
-<blockquote>
 <ins>
-<sup>✨</sup> EXAMPLE &emsp; A variable length array is associated with variably incomplete array types before unspecified incomplete array types.
+<div class="wording-newnumbered">
+
+EXAMPLE &emsp; A variable length array is associated with variable length array types before incomplete array types.
 
 ```cpp
+extern int n;
+
 int main () {
-	int n = 10;
 	int vla[n] = {};
 	
 	static_assert(_Generic(typeof(vla),
@@ -368,97 +677,74 @@ int main () {
 		default: 0
 	));
 }
+
+int n = 10;
 ```
+</div>
 </ins>
+
+</div>
 </blockquote>
 
+
+
+## Delete compatibility requirements from §6.7.7.2 "Pointer declarators" to move them to Compatible/composite types section ## {#wording-6.7.7.2}
+
+> <del>
+> <sup>2</sup> For two pointer types to be compatible, both shall be identically qualified and both shall be pointers to compatible types.
+> </del>
+
+
+
+## Modify §6.7.7.3 "Array declarators", moving compatible requirements to Compatible/composite types section and allowing multiple incomplete array type specifications in generic selection ## {#wording-6.7.7.3}
 
 <blockquote>
-<ins>
-<sup>✨</sup> EXAMPLE &emsp; A bit-precise incomplete integer type can match on multiple kinds of bit int.
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.5.2.1</span> <span class="wording-clause-title">Generic selection</span>
+</div>
 
-```cpp
-int main () {
-	_BitInt() bits = 2wb; // type is _BitInt(2)
-	
-	static_assert(_Generic(typeof(bits),
-		signed _BitInt(): 1,
-		unsigned _BitInt(): 0,
-		default: 0
-	));
+<div class="wording-section">
 
-	static_assert(_Generic(typeof(3uwb),
-		_BitInt(): 0,
-		unsigned _BitInt(): 1,
-		default: 0
-	));
-}
-```
-</ins>
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+In addition to optional type qualifiers and the keyword `static`, the `[` and `]` can delimit an expression or `*`. If they delimit an expression, called the *array length expression*, the expression shall have an integer type. If the expression is a constant expression, it shall have a value greater than zero. The element type shall not be <del>an incomplete or function type.</del><ins>a function type. The element type shall not be an incomplete type, except when used as part of the potentially nested sequence of declarators or abstract declarators for the controlling type of a generic selection or as part of the type name for a generic association.</ins> The optional type qualifiers and the keyword `static` shall appear only in a declaration of a function parameter with an array type, and then only in the outermost array type derivation.
+</div>
+
+<div class="wording-numbered">
+...
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered">
+...
+</div>
+
+<div>
+...
+</div>
+
+<del>
+<div class="wording-numbered wording-numbered-6">
+
+Two array types are compatible if and only if both of the following hold:
+
+- They have compatible element types.
+- If both array length expressions are present, and are integer constant expressions, then they same constant value.
+
+If the two array types are used in a context which requires them to be compatible, the behavior is undefined if the lengths of both are specified and the corresponding array length expressions evaluate to unequal values.
+</div>
+</del>
+
+
+</div>
 </blockquote>
-
-
-### Modify §6.7.3 Type specifiers/§6.7.3.1 General ### {#wording-incomplete-6.7.3}
-
-> **Syntax**
->
-> *type-specifier:*
->
-> :: …
-> :: `_BitInt` `(` *constant-expression* `)`
-> :: <ins>`_BitInt` `(` `)`</ins>
-> :: …
-
-
-### Modify §6.7.7.3 Array declarators ### {#wording-incomplete-6.7.7.3}
-
-> <sup>1</sup> In addition to optional type qualifiers and the keyword `static`, the `[` and `]` can delimit an expression or `*`. If they delimit an expression (which specifies the size of an array), the expression shall have an integer type. If the expression is a constant expression, it shall have a value greater than zero. The element type shall not be a<del>n incomplete or</del> function type. The optional type qualifiers and the keyword `static` shall appear only in a declaration of a function parameter with an array type, and then only in the outermost array type derivation.
->
-> …
->
-> <sup><del>4</del></sup> <del>If the size is not present the array type is an incomplete type. If the size is `*` instead of being an expression, the array type is a variable length array type of unspecified size, which can only be usedas part of the nested sequence of declarators or abstract declarators for a parameter declaration, not including anything inside an array size expression in one of those declarators;<sup>163)</sup> such arrays are nonetheless complete types. If the size is an integer constant expression and the element type has a known constant size, the array type is not a variable length array type; otherwise, the array type is a variable length array type. (Variable length arrays with automatic storage duration are a conditional feature that implementations may support; see 6.10.10.4.)</del>
-> 
-> …
-
-
-### Modify §6.7.11 Initialization ### {#wording-incomplete-6.7.11}
-
-> **Constraints**
->
-> …
->
-> <sup>7</sup> <ins>For an array, if the element type of an array is itself an incomplete array type, the initializer shall be a brace-enclosed list of initializers. Otherwise, the initializer</ins><del>The initializer for an array</del> shall be either a string literal, optionally enclosed in braces, or a brace-enclosed list of initializers for the elements. An array initialized by character string literal or UTF-8 string literal shall have a character type as element type. An array initialized with a wide string literal shall have element type compatible with a qualified or unqualified `wchar_t`, `char16_t`, or `char32_t`, and the string literal shall have the corresponding encoding prefix (`L`, `u`, or `U`, respectively).
->
-> …
->
-> **Semantics**
->
-> …
->
-> <sup>25</sup> If an <del>array of unknown size</del><ins>incomplete array type</ins> is initialized, its size is determined by the largest indexed element with an explicit initializer. The array type is completed at the end of its initializer list.
->
-> <sup><ins>✨</ins></sup> <ins>If a bit-precise incomplete integer type is initialized, its width is determined by the smallest bit-precise integer type needed to hold a value of the type of the initialization.</ins>
->
-> …
-
-
-
-## Wording: Generic Strict Matching and Fallback Matching Harmonization ## {#wording-fallback}
-
-
-### Modify §6.5.2.1 Generic selection ### {#wording-fallback-6.5.2.1}
-
-> <sup>2</sup> A generic selection shall have no more than one `default` generic association. The type name in a generic association shall specify a type other than a variably modified type. No two generic associations in the same generic selection shall specify compatible types. <del>If the generic controlling operand is an assignment expression, the *controlling type* of the generic selection expression is the type of the assignment expression as if it had undergone an lvalue conversion, array to pointer conversion, or function to pointer conversion. Otherwise, the *controlling type* of the generic selection expression is the type designated by the type name.</del><ins> The generic controlling operand specifies the *controlling type* of the generic expression, which is:</ins>
-> 
-> - <ins>first, the type specified by the provided type name or assignment expression;</ins>
-> - <ins>otherwise, if none of the generic associations are compatible with that type (excluding `default` generic associations), the type specified by the provided type name or assignment expression as if it had undergone an lvalue conversion, array to pointer conversion, or function to pointer conversion.</ins>
-> 
->  The controlling type shall be compatible with at most one of the types named in the generic association list. If a generic selection has no `default` generic association, its controlling type shall be compatible with exactly one of the types named in its generic association list. If a generic selection has no `default` generic association, its controlling type shall be compatible with exactly one of the types named in its generic association list.
-
-
-### Modify §6.5.2.1 Generic selection EXAMPLE 2 to change `int` and `const int` matching based on type vs. expression ### {#wording-fallback-6.5.2.1.example2}
-
-
 
 
 
