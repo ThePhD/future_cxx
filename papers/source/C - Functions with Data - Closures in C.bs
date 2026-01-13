@@ -1,10 +1,10 @@
 <pre class='metadata'>
 Title: Functions with Data - Closures in C (A Comprehensive Proposal Overviewing Blocks, Nested Functions, and Lambdas)
-Shortname: 37XA
+Shortname: 3780
 Revision: 2
 !Previous Revisions: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3694.htm">n3694 (r1)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3657.htm">n3657</a>
 Status: P
-Date: 2026-01-07
+Date: 2026-01-13
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -32,11 +32,11 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 2 - December 28<sup>th</sup>, 2025 ## {#changelog-r2}
+## Revision 2 - January 13<sup>th</sup>, 2026 ## {#changelog-r2}
 
 - Talk more directly about `__builtin_call_with_static_chain`, which is sometimes used to call Go-style functions from C [[#intro-static.chain]].
-- Add benchmarks for various existing Closures solutions from the Man or Boy test into [[#design-benchmarks]]. Discusses performance and design impacts thorough for the Man or Boy tests and how it relates to other proposals in the conclusions section ([[#design-benchmarks-manorboy-conclusions]]).
-- Talk about how type names and non-identified declarators are silly for Capture Functions ([[#design-catpure.functions-forward.decls.silly]]).
+- Add benchmarks for various existing Closures solutions from the Man or Boy test into [[#benchmarks]]. Discusses performance and design impacts thorough for the Man or Boy tests and how it relates to other proposals in the conclusions section ([[#benchmarks-conclusions]]).
+- Talk about how type names and non-identified declarators are silly for Capture Functions ([[#design-capture.functions-forward.decls.silly]]).
 
 
 ## Revision 1 - October 6<sup>th</sup>, 2025 ## {#changelog-r1}
@@ -59,7 +59,7 @@ path: resources/css/bikeshed-wording.html
 
 
 <pre class="include">
-path: C - Functions with Data Introduction.bs
+path: C - Functions with Data - Closures in C - Introduction.bs
 </pre>
 
 
@@ -303,95 +303,22 @@ This paper does not standardize Statement Expressions, and leaves that to a futu
 We do hope that another paper creates a new "Wide Function Pointer" type of some kind. Some suggestions can be found in [[#appendix-wide.function.pointer]].
 
 
-## Capture Functions: Rehydrated Nested Function ## {#design-capture.functions}
 
-Capture Functions are a slight modification of the design of Nested Functions. We start from the base of Nested Functions with three goals in mind.
-
-- Implementers are not comfortable with the implementation baggage associated with Nested Functions or maintaining potential ABI compatibility with those choices (heap/stack trampolines versus separate-page allocations).
-- We want to allow a way to access captured values explicitly, and control how those captures work.
-- We want them to be safe to move around and relocate, whether to the heap or copied into static memory or otherwise.
-
-A brief demonstration of all of the well-defined behavior:
-
-```cpp
-auto make_seven (int x) {
-	int y = 7;
-	int seven_fn() _Capture(x, y) {
-		return x * y;
-	}
-	return seven_fn; // OK: unique type which
-	// is a complete object
-}
-
-typedef int eight_fn_t();
-
-eight_fn_t* make_eight () {
-	int eight_fn () _Capture() {
-		return 8;
-	}
-	return eight_fn; // OK: empty capture converts to function pointer
-}
-
-#if 0
-typedef int nine_fn_t();
-
-nine_fn_t* make_nine () {
-	int val = 30;
-	int nine_fn () _Capture(val) {
-		return val;
-	}
-	return nine_fn; // constraint violation: cannot convert
-	// captures to function pointer
-}
-#endif
-
-int main () {
-	int x = 3;
-	int zero () {
-		// OK, no external variables used
-		return 0;
-	}
-	int also_zero () _Capture() {
-		// same as above, just explicit
-		return 0;
-	}
-#if 0
-	int double_it () {
-		return x * 2; // constraint violation
-	}
-#endif
-	int triple_it () _Capture(x) {
-		return x * 3; // OK, x = 3 when called
-	}
-	int quadruple_it () _Capture(&x) {
-		return x * 4; // OK, x = 5 when called
-	}
-	int quintuple_it () _Capture(=) {
-		return x * 5; // OK, x = 3 when called
-	}
-	int sextuple_it () _Capture(&) {
-		return x * 6; // OK, x = 5 when caled
-	}
-	x = 5;
-	auto seven_tuple_it = make_seven(x);
-	eight_fn_t* eight = make_eight();
-	return zero() + triple_it() + quadruple_it()
-		+ quintuple_it() + sextuple_it() + seven_tuple_it()
-		+ eight();
-	// same as
-	// return 117;
-	// 0 + (3 * 3) + (5 * 4)
-	// + (3 * 5) + (5 * 6) + (5 * 7)
-	// + 8
-}
-```
-
-We go over the purpose of the design of this and the reasons for that design here.
+<pre class="include">
+path: C - Functions with Data - Closures in C - Design Capture Functions.bs
+</pre>
 
 
-### Capture Functions are Complete Objects (unless only Declared) ### {#design-capture.functions-complete.objects}
 
-The most important change from typical GNU Nested Functions and mirroring behavior from C++ Lambdas is that nested functions -- the identifier itself introduced by the definition of the function -- is a regular, normal, complete C object. This enables it to be:
+<pre class="include">
+path: C - Functions with Data - Closures in C - Design Lambdas.bs
+</pre>
+
+
+
+## Capture Functions and Lambdas are Complete Objects # {#design-complete.objects}
+
+The most important change from typical GNU Nested Functions and mirroring behavior from C++ Lambdas is that capture functions and these C-style lambdas -- the identifier itself introduced by the definition of the function -- is a regular, normal, complete C object. This enables it to be:
 
 - returned, if the type is knowable at the time of function definition (or `auto` return types are incorporated into the language);
 - passed to a function, if the function is defined after the creation of the capture functions;
@@ -446,759 +373,49 @@ int main (int argc, char* argv[]) {
 There are caveats about this, but they are related to forward declarations ([[#design-capture.functions-forward.decls]]).
 
 
-### Deduced Return Types, Unique Types ### {#design-capture.functions-unique.types}
 
-Reusing an example from the above code, the `make_seven` function needs to have a special, inferred/deduced return type. This is because the type of a capture function is not known until it is defined:
+## Mutability Problem ## {#design-mutability}
 
-```cpp
-auto make_seven (int x) {
-	int y = 7;
-	int seven_fn() _Capture(x, y) {
-		return x * y;
-	}
-	return seven_fn; // OK: unique type which
-	// is a complete object
-}
-```
+This proposal does not address the mutability issue of all captures being `const`-by-default. That required a new keyword in C++, `mutable`, to be applied to the lambda to allow captures to be modified by the function call. Another alternative is allowing type specifiers / qualifiers on the storage of these types, where `mutable` can be applied to allow for that specific capture to be updated as well as used.
 
-The `auto` return type here just means "the first `return` expression is the return type of the function". This only works with in-line function definitions, and does not allow for a separated function declaration/definition (as the separated declaration would not have a material, real type until the definition could be read). This only applies to functions with inferred return types like this, where the first declaration of such a function must also be its definition.
+We have not chosen a direction for this paper yet. This is something we can talk about in focused WG14 discussion, but the current attitude is to simply not bother until WG14 picks up the `mutable` keyword for the same reasons `mutable` exists in C++, which is to update certain parts of an e.g. `struct cache_t` type that is morally and spiritually `const` but has an internal field that needs to be updated to save computation for specific problems.
 
-If no `return` appears in such a function, or all the `return`s do not contain an expression, the return type is inferred to be `void`. Otherwise, all the `return <expr>;` must return the exact same type. If there exists one or more `return <expr>;`s and the types are not exactly the same in the whole function definition, then it is a hard error. This is already partly described in Jens Gustedt's "Type inference for variable definitions and function returns v6" ([[n2923]]); reviving this paper would be a matter of rebasing it on the current working draft and improving the wording present.
 
 
-### Data Captures are Explicit ### {#design-capture.functions-data.captures}
+## `restrict` Problem ## {#design-restrict}
 
-Data captures, the way in which local data is accessible inside of the function, are explicit. The only reason captures are explicit is because it is impossible to tell if something should be captured by value (and copied into whatever implementation-defined holding space is used for the Capture Functions's complete object), or if something should be captured by name/reference (and only have its pointer/address copied into whatever implementation-defined holding space is used for the Capture Functions's complete object). This detail matters both for safety reasons when assigning, copying, storing, and otherwise relocating a capture function from its original scope.
+Similar to the [[#design-mutability]] issue, `restrict` cannot be added to individual captures. This means that pointers may lose the ability to assert they are not aliasing anything when copied into the captured structure.
 
-NOTE: `static` and `_Thread_local` objects, as well as typical file-scope declarations, are accessible within a capture function in the normal way. `constexpr` objects, without a `static` specifier, at local scope are also accessible.
+NOTE: While this applies to essentially all qualifiers lost by l-value conversion, `_Atomic` as a qualifier does not mean the same thing, and therefore is safe from this problem.
 
-Allowing for explicit captures also allows for better type checking (used objects must be explicit acknowledged by the programmer that they should be used), and allows for covering both the use cases of Apple Blocks (default by-value capture) and GNU Nested Functions (default by-name capture) without breaking anything. The lack of a capture also covers all of the use cases that Function Literals would have covered, which means that Capture Functions can sufficiently cover all of the existing use cases currently in production in C ecosystems. To match the default behaviors:
+We think the proper direction here would follow the same path as the ability to use `mutable`. A solution devised for that will cover this space as well; the ability to use type specifiers, qualifiers, and more on captures or the closure function/object type itself would solve many of these issues, and we think it is a worthwhile endeavor. But, such a change deviates from how captures work in existing practice, and therefore will not be directly added to the proposal until discussion is had.
 
-- Apple Blocks: `_Capture(=)` (capture all by-value).
-- GNU Nested Functions: `_Capture(&)` (capture all by-name/reference).
-- Function Literals: `_Capture()` (capture nothing).
 
-Only one "capture all" is allowed. That is, `_Capture(=, &)` (and vice-versa) is illegal. The rest of the *specific* captures for accessible identifiers can be specified in any order. Note that *specific* captures for a given object override the default implicit "capture all" behavior. For example:
 
-```cpp
-int main () {
-	int x = 30;
-	int y = 10;
-	int fn () _Capture(&, x) {
-		return x + y;
-	}
-	x = 50;
-	y = 40;
-	return fn();
-}
-```
+## Not `constexpr` Capable ## {#design-constexpr}
 
-This program returns `70` (`x` is captured by-value as `30`, `y` is captured by-name and is changed to `40` before invocation). The change to `x` on the outside to `50` is not reflected inside of the invocation. This allows an ease-of-use for specifying the "default" implicit all-capture, while letting the user select specifically which captures should work.
-
-
-### Data Captures can be Renamed ### {#design-capture.functions-data.captures.rename}
-
-Data captures can be renamed (or computed, with an expression that does not include a `,` unless it is parenthesized). This is important for e.g. incrementing reference counters for copying large, important data structures into callbacks that may either be invoked multiple times or have their own long-lived lifetime. The syntax for this occurs within the `_Capture` clause of a capture function:
-
-```cpp
-#include <tree.h>
-
-TREE_DECLARE(int_tree_t, int_tree, int);
-TREE_IMPLEMENT(int_tree_t, int_tree, int);
-
-#include <stdcountof.h>
-
-enum queue_status {
-	qs_success,
-	qs_timedout,
-	qs_busy,
-	qs_fail,
-	qs_invalid
-};
-
-typedef int work_fn_t(void* user);
-
-queue_status add_dispatch_work(work_fn_t* work, void* user);
-queue_status is_work_done();
-void work_shutdown();
-
-int main () {
-	int data[] = { 2, 11, 32, 49, 57, 20, 110, 203 };
-	int_tree_t tree = int_tree_init_with(data, data + countof(data));
-	int work () _Capture(my_tree = int_tree_copy(tree)) {
-		/* do work.... */
-		int elem = int_tree_remove(my_tree, int_tree_min_node(my_tree));
-		/* blah blah blah */
-		return 0;
-	}
-	int work_trampoline (void* user) _Capture() {
-		return (*((typeof(work)*)user))();
-	}
-	if (add_dispatch_work(work_trampoline, &work) != qs_success) {
-		return 1;
-	}
-	queue_status err;
-	while ((err = work_done()) != qs_success) {
-		swith () {
-			case qs_invalid:
-			case qs_timedout:
-			case qs_failed:
-				// some error happened
-				work_shutdown();
-				return 2;
-			default:
-				break;
-		}
-	}
-	work_shutdown();
-	return 0;
-}
-```
-
-
-### NEW: Data Captures are Accessible ### {#design-capture.functions-data.captures.fields}
-
-An important adjustment to make sure this code works better than the way it did for Blocks or Nested Functions is the ability not only to copy ([[#design-capture.functions-complete.objects]]) or otherwise rename objects ([[#design-capture.functions-data.captures.rename]]), but ALSO to get at the internals of a given Capture Functions. This is something missing from GNU Nested Functions (which provides no real resolution for it) as well, and something that could matter for Apple Blocks but does not in practice because they can turn any object into a shared one with the `__block` modifier on an object. In particular, this only matters in the case of a closure which is given a (copied) resource that must either be released or freed.
-
-NOTE: Thanks to Alex Celeste, for being the first person to bring this to my attention!
-
-The syntax looks just like normal structure access, and is based on the names placed in the `_Capture` clause:
-
-```cpp
-#include <stdio.h>
-
-int main () {
-	int x = 30;
-	double y = 5.0;
-	char z = 'a';
-
-	int cap_fn0 () _Capture(=, &renamed_x = x) {
-		printf("inside cap_fn0 | renamed_x: %d, y: %f, z: %c\n",
-			renamed_x, y, z);
-	}
-	
-	int cap_fn1 () _Capture(&, renamed_y = y) {
-		printf("inside cap_fn1 | x: %d, renamed_y: %f, z: %c\n",
-			x, renamed_y, z);
-	}
-	
-	x = 60;
-	y = 10.0;
-	z = 'z';
-
-	cap_fn0();
-	cap_fn1();
-	
-	printf("\n");
-
-	printf("inside main fn | cap_fn0.renamed_x: %d, cap_fn0.y: %f, cap_fn0.z: %c\n",
-		cap_fn0.renamed_x, cap_fn0.y, cap_fn0.z);
-	printf("inside main fn | cap_fn1.x: %d, cap_fn1.renamed_y: %f, cap_fn1.z: %c\n",
-		cap_fn1.x, cap_fn1.renamed_y, cap_fn1.z);
-
-	return 0;
-}
-```
-
-This would print:
-
-```sh
-inside cap_fn0 | renamed_x: 60, y: 5.0, z: a
-inside cap_fn1 | x: 60, renamed_y: 10.0, z: z
-
-inside main fn | cap_fn0.renamed_x: 60, cap_fn0.y: 5.0, cap_fn0.z: a
-inside main fn | cap_fn1.x: 60, cap_fn1.renamed_y: 10.0, cap_fn1.z: z
-```
-
-How the implementation actually accesses the information is implementation-defined, and the layout of the Capture Functions object is not defined the specification, except to say it's implementation-defined ([[#wording]]).
-
-NOTE: This leaves room for an implementation to, for example, use creative ways to retrieve objects and object references. Using a pointer to the current stack frame and then computing a raw offset to get to a specific bit of data, or using entirely registers, are all possible depending on how the captures are implemented. Such improvements and optimizations -- especially in the face of potential asynchronous calls and the need to protect against false sharing -- must be left up to Quality of Implementation.
-
-As an example for releasing resources outside of the function call itself for the purposes of a function call that gets used more than once and isn't passed a "We're Done" signal, we can reuse the example from [[#intro-nested.functions-captures.no.workaround]]:
-
-```cpp
-#include <stdlib.h>
-#include <string.h>
-#include <stddef.h>
-
-typedef int compare_fn_t(const void* left, const void* right);
-
-auto make_compare(int argc, char* argv[]) {
-	/* LOCAL, heap-allocated variable.... */
-	int* in_reverse = malloc(sizeof(int));
-	*in_reverse = 0;
-
-	if (argc > 1) {
-		char* r_loc = strchr(argv[1], 'r');
-		if (r_loc != NULL) {
-			ptrdiff_t r_from_start = (r_loc - argv[1]);
-			if (r_from_start == 1 && argv[1][0] == '-' && strlen(r_loc) == 1) {
-				*in_reverse = 1;
-			} 
-		}
-	}
-	
-	int compare(const void* untyped_left, const void* untyped_right) _Capture(in_reverse) {
-		const int* left = untyped_left;
-		const int* right = untyped_right;
-		return (*in_reverse) ? *right - *left : *left - *right;
-	}
-	return compare;
-}
-
-int main(int argc, char* argv[]) {
-	int list[] = { 2, 11, 32, 49, 57, 20, 110, 203 };	
-
-	auto compare = make_compare(argc, argv);
-	qsort_r(list, (sizeof(list)/sizeof(*list)), sizeof(*list), compare, &compare);
-	// with data field captures, we can now `free` the
-	// field `in_reverse` from the lambda
-	free(compare.in_reverse);
-	
-	return list[0];
-}
-```
-
-Thanks to the capture of `in_reverse` with the by-value `_Capture(in_reverse)` indication, the return of this function is safe. And, since we have access to the unique type that is generated (through the `auto` return type), we can access the pointer `in_reverse` normally and naturally. This isn't possible with normal C++-style lambdas, as they haven't decided to make this available (though our design for Lambdas in C will also include the named captures as accessible fields). It's also not possible in the other solutions which rely on type-erasure as a first-class part of the design (Apple Blocks with the Blocks type, GNU Nested Functions only being accessible through a pointer or convertible to a wide function pointer in [[n2661]] or [[n3564]], Borland's closure annotation or function literals). This is why making it possible to access the unique type first and foremost is of great benefit.
-
-
-### Forward Declarations Work ### {#design-capture.functions-forward.decls}
-
-Capture functions can be forward declared, similar to how GNU Nested Functions can be forward-declared if one uses the `auto` keyword in front of the definition of a Nested Functions:
-
-```cpp
-#include <stdlib.h>
-#include <string.h>
-#include <stddef.h>
-
-int main(int argc, char* argv[]) {
-	int in_reverse = 0;
-	// forward-declared compare
-	int compare(const void* untyped_left, const void* untyped_right) _Capture(in_reverse);
-	// even though it is captured by value...
-	
-	if (argc > 1) {
-		char* r_loc = strchr(argv[1], 'r');
-		if (r_loc != NULL) {
-			ptrdiff_t r_from_start = (r_loc - argv[1]);
-			if (r_from_start == 1 && argv[1][0] == '-' && strlen(r_loc) == 1) {
-				in_reverse = 1;
-			} 
-		}
-	}
-
-	/*
-	compare.in_reverse; // CONSTRAINT VIOLATION: cannot access until definition
-	*/
-	
-	int compare_trampoline(const void* untyped_left,
-		const void* untyped_right,
-		void* user)
-	_Capture() {
-		return (*(typeof(compare)*)user)(untyped_left, untyped_right);
-	}
-
-	int list[] = { 2, 11, 32, 49, 57, 20, 110, 203 };
-	qsort_r(list, (sizeof(list)/sizeof(*list)), sizeof(*list),
-		compare_trampoline,
-		&compare
-	);
-	// define it here;
-	// captures and arguments must be identical otherwise it is a violation
-	// `in_reverse` is captured at the point of definition, not the point of declaration.
-	int compare(const void* untyped_left, const void* untyped_right) _Capture(in_reverse) {
-			const int* in_reverse = (const int*)user;
-			const int* left = untyped_left;
-			const int* right = untyped_right;
-			return (*in_reverse) ? *right - *left : *left - *right;
-	};
-	return list[0];
-}
-```
-
-Some important points for Capture Functions's forward declarations:
-
-- the values captured have their values taken at the point of definition, not at the point of declaration;
-- because of this, one cannot use the `.` or the `->` operators on a capture function declaration, only a definition;
-- and, forward declarations can only have the function call operation applied to them, before they are defined.
-
-NOTE: It is unclear whether the Apple Blocks-like by-value capture should occur at the point of the first declaration or the definition. Currently, the reasoning is that using the definition for the values captured is better because there can be multiple forward declarations (in perhaps sprawling manners due to `#include` and other code copy-paste mechanisms) but only one definition, and thus the definition should be the important part.
-
-NOTE: The other opinion is that restricting access to `.` and `->` by effectively labeling the "object" part of the closure type as an incomplete type is not worth it, and that capturing things by-value at the first forward declaration is good.
-
-There is no existing practice for this due to the way GNU Nested Functions -- the only existing practice where forward-declaraing the closure type is allowed -- work. That is, they only capture by-name/by-reference, and so the value is always the value at the point of execution and not at the point of evaluation. Apple Blocks and other solutions do not have this problem since they are expressions and thus do not have to engage in any sort of work with the "split between declaration vs. definition" issue at all.
-
-
-### Forward Declarations without a name are a bit useless ### {#design-catpure.functions-forward.decls.silly}
-
-Forward declarations without a name are a bit silly, because they are unique types. An unnamed declarator means that there's a unique type that has been forward-declared but serves no other purpose:
-
-```cpp
-int main(int argc, char* argv[]) {
-	typedef int (compare_closure1_t)(const void* untyped_left, const void* untyped_right) _Capture(=);
-	typedef int (compare_closure2_t)(const void* untyped_left, const void* untyped_right) _Capture(=);
-	typedef compare_closure_t compare_closure1_t;
-	typedef compare_closure_t compare_closure2_t; // constraint violation: not a compatible type redeclaration
-	return 0;
-}
-```
-
-The syntax is kept for parity with the rest of the declarator syntax. It also allows a user to make a unique type within a translation unit, though there are obviously other ways to do this.
-
-
-### Capable of Recursion ### {#design-capture.functions-recursion}
-
-Capture Functions are able to refer to themselves for the purpose of recursion. This means that `__self_func` ([[__self_func]]), unlike for expression-based/unnamed Function Literals/Lambdas/Block literals, is not required:
-
-```cpp
-int main () {
-	const int mult = 3;
-	int tripling (int times, int start) _Capture(mult) {
-		if (times >= 5) {
-			return start;
-		}
-		return tripling(times + 1, start * mult); // normal recursion
-	}
-	return tripling(0, 1);
-}
-```
-
-
-### Capable of Self-Call ### {#design-capture.functions-self.call}
-
-Capture Functions are able to refer to themselves in the argument list, and that means it is possible to form a pointer to itself. While they are incomplete types until after the end of the `_Capture` list, the type is still there and thus taking a pointer to such a type and using it after the opening `{` thus results in using a complete type, though the usage is somewhat weird:
-
-```cpp
-int main () {
-	const int mult = 3;
-	int tripling (int times, int start, typeof(tripling)* self) _Capture(mult) {
-		if (times >= 5) {
-			return start;
-		}
-		return self[0](times + 1, start * mult, self);
-		// or
-		// return (*self)(times + 1, start * mult, self);
-	}
-	return tripling(0, 1, &tripling);
-}
-```
-
-
-### Not An Expression ### {#design-capture.functions-expression}
-
-The one true technical downside is that Capture Functions are declarations / definitions. They cannot be used (without the Statement Expression extension) in a function call's argument list, which means that (short) closures and anonymous functions still need the full function definition. This is annoying and, honestly, one of the reasons [[#design-lambdas]] are preferred as a shorthand syntax.
-
-It also means that, without Statement Expressions, Capture Functions cannot be used for the implementation of many macros which are typically expected to be usable as normal expressions.
-
-
-### Footgun: By-Name Capture Exceeds Captures's Lifetime ### {#design-capture.functions-footgun.reference}
-
-A brief display of the undefined behavior:
-
-```cpp
-auto ub (int parameter) {
-	int automatic = 7;
-	int fn() _Capture(parameter, &automatic) {
-		return parameter + automatic;
-	}
-	return fn; // well-defined copy return
-	// but dangling reference to `automatic`!
-}
-
-int main () {
-	auto fn = ub(2);
-	return fn(); // undefined behavior:
-	// `automatic` no longer exists.
-}
-```
-
-In general, undefined behavior occurs in the same way that it occurs within existing C code: use of an object after its lifetime has ended (in this case, an automatic storage duration object has gone out-of-scope). The fix for `ub` in this case is to capture `automatic` by-value. This makes it safe to copy that function object to the heap, or the stack. Additionally, no UB is possible by conversion to a function pointer.
-
-
-### Future Footgun: Wide Function Pointers ### {#design-capture.functions-footgun.wide}
-
-Wide function pointers, if and when they come to C, can make for footguns with capturing lambdas given that they will (likely) allow conversions from any Nested Function / Block / Lambda to them implicitly. Using a fictional wide function pointer syntax using `%`:
-
-```cpp
-typedef int foo_fn_t(int);
-
-foo_fn_t% call_me (int x) {
-	return [x](int y) { return x + y; }; // converts to wide function pointer type!
-	// undefined behavior if the return value is ever
-	// called outside of this function 
-}
-
-int use_me(foo_fn_t% fn) {
-	return fn(2);
-}
-
-int main () {
-	int x = 30;
-	return use_me(call_me(x));
-}
-```
-
-This is a similar problem to Nested Functions returning a regular function pointer from a function call. Unfortunately, a conversion being allowed here is necessary to allow the 75%+ use case of passing it as a parameter, such as:
-
-```cpp
-typedef int foo_fn_t(int);
-
-void pass_to_me (foo_fn_t% func);
-
-int main () {
-	int x = 30;
-	pass_to_me(
-		[x](int y) { return x + y; }
-	); // converts to wide function pointer type!
-	return 0; 
-}
-```
-
-Thusly, in a future with a wide function pointer type, such a problem might be allowed. This is similar to the [[#design-capture.functions-footgun.reference]]. A special carveout in the specification for the return value case could be developed, but this would need work to avoid precluding useful cases.
-
-
-
-## Lambdas ## {#design-lambdas}
-
-Lambdas are simply a reskinned version of Capture Functions. They have all the same functionality, but with the benefits that they are:
-
-- expressions, and therefore can be used in-line in a function call as an argument or as part of an argument;
-- expressions, and therefore can be immediately invoked;
-- and, C++-compatible in their design.
-
-We are deliberately leaving these as the only three benefits of lambdas over Capture Functions for the sole reason that, after Capture Functions, Lambdas will be VERY minimal effort to support. The reason for that is that they are, semantically, just a "Syntactic Reskin" of Capture Functions, save for their presence as an expression.
-
-```cpp
-auto make_seven (int x) {
-	int y = 7;
-	return [x, y]() { return x * y; };
-}
-
-int main () {
-	int x = 3;
-	auto zero = [] () {
-		// OK, no external variables used
-		return 0;
-	};
-#if 0
-	auto double_it = [] () {
-		return x * 2; // constraint violation
-	};
-#endif
-	auto triple_it = [x] () {
-		return x * 3; // OK, x = 3 when called
-	};
-	auto quadruple_it = [&x] () {
-		return x * 4; // OK, x = 5 when called
-	};
-	auto quintuple_it = [=] () {
-		return x * 5; // OK, x = 3 when called
-	};
-	auto sextuple_it = [&] () {
-		return x * 6; // OK, x = 5 when caled
-	};
-	x = 5;
-	auto seven_tuple_it = make_seven(x);
-	return zero() + triple_it() + quadruple_it()
-		+ quintuple_it() + sextuple_it() + seven_tuple_it();
-	// return 109;
-	// 0 + (3 * 3) + (5 * 4)
-	// + (3 * 5) + (5 * 6)
-	// + (5 * 7)
-}
-```
-
-Given this, there is nothing else to write for this section: all of the benefits of Capture Functions ([[#design-capture.functions]]) applies to these types in full, and just copying all of that text from one to another to say exactly the same thing is not important. We will instead just talk about the differences exclusively in comparison to Capture Functions in the next few sections.
-
-
-### Lambdas are Expressions ### {#design-lambdas-expressions}
-
-```cpp
-#include <stdlib.h>
-#include <string.h>
-#include <stddef.h>
-
-static int in_reverse = 0;
-
-int main(int argc, char* argv[]) {
-	if (argc > 1) {
-		char* r_loc = strchr(argv[1], 'r');
-		if (r_loc != NULL) {
-			ptrdiff_t r_from_start = (r_loc - argv[1]);
-			if (r_from_start == 1 && argv[1][0] == '-' && strlen(r_loc) == 1) {
-				in_reverse = 1;
-			} 
-		}
-	}
-	int list[] = { 2, 11, 32, 49, 57, 20, 110, 203 };
-	qsort(list, (sizeof(list)/sizeof(*list)), sizeof(*list),
-		// expression, fits in-line
-		[](const void* untyped_left, const void* untyped_right) {
-			const int* left = (const int*)untyped_left;
-			const int* right = (const int*)untyped_right;
-			return (in_reverse) ? *right - *left : *left - *right;
-		}
-	);
-	
-	return list[0];
-}
-```
-
-This also makes it **suitable for use in macros**, which is not something a regular Capture Functions can accomplish.
-
-NOTE: This can be alleviated by using Statement Expressions, which would allow Capture Functions to work within typical macro contexts.
-
-
-### Recursion Is Impossible ### {#design-lambdas-recursion}
-
-Unfortunately, it is impossible to call a lambda from within itself (not without C++'s feature "deducing this", which requires templates and other things to work), and therefore that is another disadvantage. It can be fixed with the proposed `__self_func` feature ([[__self_func]]):
-
-```cpp
-int main () {
-	int tripling (int times, int start) {
-		if (times >= 5) {
-			return start;
-		}
-		return __self_func(times + 1, start * 3); // __self_func feature
-	}
-	return tripling(0, 1);
-}
-```
-
-
-### Capable of Self-Call ### {#design-lambdas-self.call}
-
-LAmbdas are able to refer to themselves in the argument list as they are object types. Unlike Capture Functions, which are incomplete during the argument list and complete after the `_Capture` specification, lambdas have their captures first. That means all the information to be a complete object is known by the time the argument list is opened. If `__self_func` is available ([[__self_func]]), this means one can use a "self" closure type without pointers or indirection:
-
-```cpp
-int main () {
-	const int mult = 3;
-	auto tripling = [mult](int times, int start, typeof(__self_func) self) {
-		if (times >= 5) {
-			return start;
-		}
-		return self(times + 1, start * mult, self);
-	}
-	return tripling(0, 1, &tripling);
-}
-```
-
-This is, obviously, not recommended because this takes the object itself by value and so can do lots of unnecessary copies. But, it can be taken as either a full complete object or just a pointer to said object, so the choice is up to the user since Lambdas are complete object types by the function argument list.
-
-
-### Trailing Return Types / Deduced Return Type ### {#design-lambdas-returns}
-
-Finally, one may need to add the concept of a "trailing return type" to C in order to allow modifying the return type of a lambda. At the moment, the way a lambda with no specified return type works is that every single `return` statement must have exactly the same type (there is no negotiation for some "promoted" type or similar). That is, returning a `long` in one branch and an `int` in another branch is an error: they all must be cast to `int` or they all must be cast to `long`:
-
-```cpp
-int main () {
-	auto okay0 = []() {
-		if (1) {
-			return 0;
-		}
-		else {
-			return 0;
-		}
-	}(); // ok
-	auto violation0 = []() {
-		if (1) {
-			return 0U;
-		}
-		else {
-			return 0L;
-		}
-	}(); // constraint violation: different return types
-	auto okay1 = []() {
-		if (1) {
-			return (unsigned long long)0U;
-		}
-		else {
-			return (unsigned long long)0L;
-		}
-	}(); // ok: cast to identical types
-	return 0;
-}
-```
-
-This can be **extremely** annoying to deal with. Trailing return types fix this problem by allowing lambdas to use a trailing `-> type-name` to have the function return type become `type-name`:
-
-```cpp
-int main () {
-	auto okay0 = []() {
-		if (1) {
-			return 0;
-		}
-		else {
-			return 0;
-		}
-	}(); // ok
-	auto violation0 = []() -> unsigned int {
-		if (1) {
-			return 0U;
-		}
-		else {
-			return 0L;
-		}
-	}(); // now okay: fixed return type, conversions happen normally
-	auto okay1 = []() {
-		if (1) {
-			return (unsigned long long)0U;
-		}
-		else {
-			return (unsigned long long)0L;
-		}
-	}(); // ok: cast to identical types
-	return 0;
-}
-```
-
-This fixes other problems in the C language as well, such as not being able to specify functions with proper variable-length array returns without using ugly syntax. The `auto` part only applies for regular function definitions, and could also be applied to Capture Functions for ease-of-use (but is not required for it to function appropriately). One could also just have `auto` but no `->` to have regular functions achieve the lambda behavior, where all `return` expressions must evaluate to the exact same type. Not having a `return` or having a `return;` both imply the return type is `void`, and thus any other kind of `return <expr>;` in that function would be illegal.
-
-
-### Forward-declaration is Impossible ### {#design-lambdas-forward.decls}
-
-It is impossible to forward-declare a lambda given the fact that every lambda is a definition of a unique object as an expression and does not do the usual declaration/definition split. Implementations may fold identical lambdas together but that is only observable as an optimization, and is not a guarantee of the design. This contrasts with Capture Functions, wherein they can be declared (with all of their captures) under a specific identifier in a specific scope and reserve that identifier for that type, and then later defined in that scope or a dependent scope.
-
-
-That is the full set of notable technical differences between Lambdas and Capture Functions.
-
-
-
-## Measuring Solution Spaces ## {#design-benchmarks}
-
-One of the ways we can increase the confidence we have in our data is to provide benchmarks for the things we are working on proposing to the C standard. We do not mind adding new and improved functionality to the benchmarks to do more measurements it is an open set and we would appreciate any help in benchmarking or measuring or coming up with new ways to observe behavior.
-
-
-### Donald Knuth's Man or Boy Test ### {#design-benchmarks-manorboy}
-
-This is a set of benchmarks using Donald Knuth's Man or Boy program, which tests self-references and recursion in the same function / closure object. It also flexes a number of properties that can evaluate the quality of a closure implementation, and so is suitable as a microbenchmark. Both a linear version and a logarithmic version of the graphs are made available due to how the performance differences skew things wildly in one direction or another. The benchmark's source code is available in the ztd.idk repository ([[ztd-idk-closures-benchmark]]).
-
-#### Methodology #### {#design-benchmarks-manorboy-methodology}
-
-The tests were ran on a 13-inch 2020 MacBook Pro M1. It has 16 GB of RAM and is on MacOS 15.7.2 Sequoia at the time the test was taken, using the stock MacOS AppleClang Compiler and the stock brew install gcc compiler in order to produce the numbers seen on December 28<sup>th</sup>, 2025.
-
-The experimental setup used the Man or Boy test, but with the given `k` value loaded by calling a function in a DLL / Shared Object. The expected `k` value that the Man or Boy test is supposed to yield is also loaded from a DLL / Shared Object. This prevents optimizing out all recursion and doing enough ahead-of-time computation to simply collapse the benchmarked code into a constant-time, translation-time calculation. It ensures the benchmark is actually measuring the actual performance characteristics of the technique used, as all of them are computing from the same initial `k` value and all of them are expected to produce the same `expected_k` answer.
-
-There 2 measures being conducted: Real ("wall clock") Time and CPU Time. The time is gathered by running a single iteration of the code within a `for` loop. That loop runs anywhere from a couple thousand to hundreds of thousands of times to produce confidence in that run of the benchmark, and each loop run is considered an individual iteration. The iterations are then averaged to produce the first point after there is confidence that the measurement is accurate and the benchmark is warm. The iteration process to produce a single mean was then repeated 150 times. All 150 means are used as the points for the values (shown as transparent dots) on the bar graph, and the average of all of those 150 means is then used as the height of a bar in a bar graph.
-
-The bars are presented side-by-side as a horizontal bar chart with various categories of C or C++ code being measured. The 13 total categories of C and C++ code are:
-
-- no-op: Literally doing nothing. It’s just there to test environmental noise and make sure none of our benchmarks are so off-base that we’re measuring noise rather than computation. Helps keep us grounded in reality.
-- Normal Functions: regular C functions which add an extra argument to the function call in order to pass more data. Somewhat similar in representation to rewriting `qsort` to `qsort_r`/`qsort_s` to pass a user data pointer.
-- Normal Functions (Rosetta Code): regular C functions which add an extra argument to the function call in order to pass more data. Taken directly from the Rosetta Code weekly, and uses a pointer `int* k` to refer to an already-existing value of `k` during a series of recursive calls.
-- Normal Functions (Static): regular C function which uses a static variable to pass the specific context to the next function. Not thread safe.
-- Normal Functions (Thread Local): same as "Normal Functions (Static)" but using a `thread_local` variable instead of a `static` variable. Obviously thread safe.
-- Lambdas (No Function Helpers): a solution using C++-style lambdas. Rather than using helper functions like `f0`, `f1`, and `f_1`, we compute a raw lambda that stores the value meant to be returned for the Man-or-Boy test (with a body of just `return i;`) in the lambda itself and then pass that uniquely-typed lambda to the core of the test. The entire test is templated and uses a fake recursion template parameter to halt the translation-time recursion after a certain depth.
-- Lambdas: The same as above but actually using `int f0(void)`, etc. helper functions at the start rather than lambdas. Tries to reduce optimizer pressure by using “normal” types which do not add to the generated number of lambda-typed, recursive, templated function calls.
-- Lambdas (`std::function_ref`): The same as above, but rather than using a function template to handle each uniquely-typed lambda like a precious baby bird, it instead erases the lambda behind a `std::function_ref<int(void)>`. This allows the recursive function to retain exactly one signature.
-- Lambdas (`std::function`): The same as above, but replaces `std::function_ref<int(void)>` with `std::function<int(void)>`. This is an allocating, C++03-style type.
-- Lambdas (Rosetta Code): The code straight out of the C++11 Rosetta Code Lambda section on the Man-or-Boy Rosetta Code implementation.
-- Apple Blocks: Uses Apple Blocks to implement the test, along with the __block specifier to refer directly to certain variables on the stack.
-- GNU Nested Functions (Rosetta Code): The code straight out of the C Rosetta Code section on the Man-or-Boy Rosetta Code implementation.
-- GNU Nested Functions: GNU Nested Functions similar to the Rosetta Code implementation, but with some slight modifications in a hope to potentially alleviate some stack pressure if possible by using regular helper functions like `f0`, `f1`, and `f_1`.
-- Custom C++ Class: A custom-written C++ class using a discriminated union to decide whether it’s doing a straight function call or attempting to engage in the Man-or-Boy recursion.
-- C++03 shared_ptr (Rosetta Code): A C++ class using `std::enable_shared_from_this` and `std::shared_ptr` with a virtual function call to invoke the “right” function call during recursion.
-
-Each bar graph has a black error bar at the end, representing the standard error of the measurements performed. At 150 iterations, the error bars (which are most easily understood and read in the linear graphs) are a decent visual approximation of whether or not two solutions are within a statistical threshold of one another.
-
-The two compilers tested are Apple Clang 17 and GCC 15. There are two graph images for each kind of measurement (linear, logarithmic, and linear-but-with-outliers-removed) because one is for Apple Clang and the other is for GCC. This is particularly important because neither compiler implements the other’s closure extension (Clang does Apple Blocks but not Nested Functions, while GCC does Nested Functions in exclusively its C frontend but does not implement Apple Blocks).
-
-MSVC was not tested because MSVC implements none of the extensions being tested, and we do not expect that its performance characteristics would be wildly different.
-
-#### Results #### {#design-benchmarks-manorboy-results}
-
-The result graphs are as follows, presented in four images for both MacOS ARM64 with Apple Clang 17 and GCC 15, and Windows AMD64 with Clang 21 and GCC 15:
-
-<pre class="include">
-path: assets/C - Functions with Data/manorboy-appleclang17-linear.bs
-</pre>
-
-<pre class="include">
-path: assets/C - Functions with Data/manorboy-gcc15-linear.bs
-</pre>
-
-<pre class="include">
-path: assets/C - Functions with Data/manorboy-winclang21-linear.bs
-</pre>
-
-<pre class="include">
-path: assets/C - Functions with Data/manorboy-wingcc15-linear.bs
-</pre>
-
-Because some of the checked categories perform so astronomically poorly, we have a version of the graphs that are logarithmic, which are the two following graphs:
-
-<pre class="include">
-path: assets/C - Functions with Data/manorboy-appleclang17-logarithmic.bs
-</pre>
-
-<pre class="include">
-path: assets/C - Functions with Data/manorboy-gcc15-logarithmic.bs
-</pre>
-
-<pre class="include">
-path: assets/C - Functions with Data/manorboy-winclang21-logarithmic.bs
-</pre>
-
-<pre class="include">
-path: assets/C - Functions with Data/manorboy-wingcc15-logarithmic.bs
-</pre>
-
-This obscures some of the changes in performance because it skews towards big order-of-magnitude differences. To show the differences without the heavy skew due to the extremely poor performance of the bottom two/three categories, we also provide a "focused" graph which eliminates the poor performers and shows the linear performance of the more competitive top 12 performers.
-
-<pre class="include">
-path: assets/C - Functions with Data/manorboy-appleclang17-linear-focused.bs
-</pre>
-
-<pre class="include">
-path: assets/C - Functions with Data/manorboy-gcc15-linear-focused.bs
-</pre>
-
-<pre class="include">
-path: assets/C - Functions with Data/manorboy-winclang21-linear-focused.bs
-</pre>
-
-<pre class="include">
-path: assets/C - Functions with Data/manorboy-wingcc15-linear-focused.bs
-</pre>
-
-A full writeup is available at [[closures-in-c-benchmark]] and [[closures-in-c-benchmark-followup]] which includes methodology and other information about the tests.
-
-#### Conclusions, Comparisons to Other Proposals, and Inferences #### {#design-benchmarks-manorboy-conclusions}
-
-Note: A wide function pointer type is necessary no matter the solution chosen.
-
-Note: A fixed, statically-known object that can be optionally type-erased behind a Wide Function Pointer seems optimal for even complex usages of closures in C.
-
-Note: Apple Blocks and GNU Nested Functions have intrinsic design flaws that drastically impact their performance, meaning that even transporting a context pointer through a global variable with a normal C function is better.
-
-Note: Manual management of closure pointer-to-function pointer trampolines may produce much better code generation and quality than implementation can currently handle, while allowing the user to have as much or as little security as possible.
-
-In addition to the key takeaways above, some other details we have understood are as follows. C++-style lambdas have the capability to be both awful (Lambdas using the Rosetta Code technique) and powerful (Lambdas with Perfect Type Information). Both of these techniques are unusable as-is in C as the things that make them awful or great are tied not due to lambdas design but moreso how they are used (e.g., `std::function` abstractions or translation-time recursion prevention.) Normal C functions (storing the integer `k` by value) can achieve near-parity with C++-style Lambdas at their best in terms of performance. However, it requires the modification of the function signature, which may not be viable in all cases (such as calling already-compiled interfaces or working with FFI). The use of `static` and `thread_local` to pass information across function boundaries comes with an unshakeable and implicit cost. `thread_local` is -- for obvious reasons -- more expensive than just `static`, but both incur overhead.
-
-After evaluating current industry extensions, we find them to be strangely poorly-performing despite being decades-old in some cases. Apple Blocks ([[apple-blocks]]) and similar heap-based solutions incur a fixed overhead due to the Blocks Runtime scheme, making it unsuitable for resource-constrained C environments. This means it is not worth pursuing this as a long-term solution in our technical opinion. GNU Nested Functions ([[nested-functions]]), as a quirk of its current most popular implementation, really inhibit inlining and other similar optimizations. A different implementation (e.g., the current `-ftrampoline-impl=heap` work that is currently available on 5 platforms in GCC trunk at time-of-writing) could be better. But, the fact that a typical quality of implementation provides such awful performance characteristics compared to every other solution despite being the oldest solution means that they too should be looked at skeptically for direct ISO C standardization. The heap-based trampolines of GNU Nested Functions also look like they may incur a similar fixed overhead just like the Apple Blocks implementation.
-
-There may be a way to avoid this by simply reducing the context pointer and the actual function pointer to something more directly usable with the `__builtin_call_with_static_chain` intrinsic available in GCC and Clang ([[builtin_call_with_static_chain_gcc]]). We expect that the performance benefits here could be quite good, but this is not proven and not implemented yet, unlike Lambdas and other solutions which have plenty of implementation and perform well based on user choice of type erasure or allocation or storage.
-
-The Function Literals and Local Functions ([[n3678]], [[n3679]]) proposals can have their performance approximated in their best-case as following the performance of the series of Normal Functions. This requires modifying the function signature. If the function signature isn't modified, there isn't really a point of comparison in these benchmarks other than falling back to other means of context transportation. All of these solutions vary wildly in performance, from Apple Blocks runtimes to various style of trampolines. This makes it impossible to understand Function Literals and Local Functions as solving the problem at hand, because they provide no plausible forward path on which to judge. Thus, we consider them incomplete.
-
-Accessing the Context of Nested Functions ([[n3654]]), even in its later iterations, approximates either the Normal Functions (can modify the signature, best case) or GNU Nested Functions (([[nested-functions]], [[n2661]])) (creates an invisible trampoline to transport closure context, worst case) performance. We are unsure of how this would continue given the deeply negative impact given access to the current invocation's stack frame / "function environment" is on the optimizer's ability to push for performance. While we think there is potential for this, we believe explicitly or implicitly capturing just the data -- and not the environment or stack frame abstraction itself -- would result in better performance characteristics no matter the design.
-
-Finally, any solution is going to need a Wide Function Pointer type in the C ecosystem to make it usable and worthwhile. In particular, Lambdas with `std::function_ref` is a directly applicable proxy to what "Capture Functions and Wide Function Pointers" and/or "Lambdas and Wide Function Pointers" could bring in terms of worst-case performance to the C ecosystem as a whole.
+The lambdas and capture functions here cannot be used to compute translation-time (compile-time) values. This is something to be explored only after further advancements of the Generalized Function Calls / `constexpr` Technical Specification ([[constexpr-functions-ts]]). It is alright if this is not `constexpr` at the moment, because no C functions can be `constexpr`. Whatever rules for `constexpr` functions appear from the TS, we would likely incorporate here by allowing the addition of a `constexpr` specifier for the closure's function type.
 
 
 
 
 <pre class="include">
-path: C - Functions with Data Wording.bs
+path: C - Functions with Data - Closures in C - Benchmarks.bs
 </pre>
 
 
 
 
 <pre class="include">
-path: C - Functions with Data Appendix.bs
+path: C - Functions with Data - Closures in C - Wording.bs
 </pre>
 
+
+
+
+<pre class="include">
+path: C - Functions with Data - Closures in C - Appendix.bs
+</pre>
 
 <pre class="biblio">
 {
@@ -1472,6 +689,14 @@ path: C - Functions with Data Appendix.bs
 		"title": "Thread Attributes - Implementation Extensible and ABI-Resistant",
 		"date": "July 6th, 2025",
 		"href": "https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Thread%20Attributes%20-%20Implementation%20Extensible%20and%20ABI-Resistant.html"
+	},
+	"constexpr-functions-ts": {
+		"authors": [
+			"Alexandria Celeste"
+		],
+		"title": "Programming Languages — C — C Extensions to support generalized function calls",
+		"date": "July 6th, 2025",
+		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3582.pdf"
 	}
 }
 </pre>

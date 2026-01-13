@@ -1,0 +1,125 @@
+# Measuring Solution Spaces # {#benchmarks}
+
+One of the ways we can increase the confidence we have in our data is to provide benchmarks for the things we are working on proposing to the C standard. We do not mind adding new and improved functionality to the benchmarks to do more measurements it is an open set and we would appreciate any help in benchmarking or measuring or coming up with new ways to observe behavior.
+
+
+
+## Donald Knuth's Man or Boy Test ## {#benchmarks-manorboy}
+
+This is a set of benchmarks using Donald Knuth's Man or Boy program, which tests self-references and recursion in the same function / closure object. It also flexes a number of properties that can evaluate the quality of a closure implementation, and so is suitable as a microbenchmark. Both a linear version and a logarithmic version of the graphs are made available due to how the performance differences skew things wildly in one direction or another. The benchmark's source code is available in the ztd.idk repository ([[ztd-idk-closures-benchmark]]).
+
+
+### Methodology ### {#benchmarks-manorboy-methodology}
+
+The tests were ran on a 13-inch 2020 MacBook Pro M1. It has 16 GB of RAM and is on MacOS 15.7.2 Sequoia at the time the test was taken, using the stock MacOS AppleClang Compiler and the stock brew install gcc compiler in order to produce the numbers seen on December 28<sup>th</sup>, 2025.
+
+The experimental setup used the Man or Boy test, but with the given `k` value loaded by calling a function in a DLL / Shared Object. The expected `k` value that the Man or Boy test is supposed to yield is also loaded from a DLL / Shared Object. This prevents optimizing out all recursion and doing enough ahead-of-time computation to simply collapse the benchmarked code into a constant-time, translation-time calculation. It ensures the benchmark is actually measuring the actual performance characteristics of the technique used, as all of them are computing from the same initial `k` value and all of them are expected to produce the same `expected_k` answer.
+
+There 2 measures being conducted: Real ("wall clock") Time and CPU Time. The time is gathered by running a single iteration of the code within a `for` loop. That loop runs anywhere from a couple thousand to hundreds of thousands of times to produce confidence in that run of the benchmark, and each loop run is considered an individual iteration. The iterations are then averaged to produce the first point after there is confidence that the measurement is accurate and the benchmark is warm. The iteration process to produce a single mean was then repeated 150 times. All 150 means are used as the points for the values (shown as transparent dots) on the bar graph, and the average of all of those 150 means is then used as the height of a bar in a bar graph.
+
+The bars are presented side-by-side as a horizontal bar chart with various categories of C or C++ code being measured. The 13 total categories of C and C++ code are:
+
+- no-op: Literally doing nothing. It’s just there to test environmental noise and make sure none of our benchmarks are so off-base that we’re measuring noise rather than computation. Helps keep us grounded in reality.
+- Normal Functions: regular C functions which add an extra argument to the function call in order to pass more data. Somewhat similar in representation to rewriting `qsort` to `qsort_r`/`qsort_s` to pass a user data pointer.
+- Normal Functions (Rosetta Code): regular C functions which add an extra argument to the function call in order to pass more data. Taken directly from the Rosetta Code weekly, and uses a pointer `int* k` to refer to an already-existing value of `k` during a series of recursive calls.
+- Normal Functions (Static): regular C function which uses a static variable to pass the specific context to the next function. Not thread safe.
+- Normal Functions (Thread Local): same as "Normal Functions (Static)" but using a `thread_local` variable instead of a `static` variable. Obviously thread safe.
+- Lambdas (No Function Helpers): a solution using C++-style lambdas. Rather than using helper functions like `f0`, `f1`, and `f_1`, we compute a raw lambda that stores the value meant to be returned for the Man-or-Boy test (with a body of just `return i;`) in the lambda itself and then pass that uniquely-typed lambda to the core of the test. The entire test is templated and uses a fake recursion template parameter to halt the translation-time recursion after a certain depth.
+- Lambdas: The same as above but actually using `int f0(void)`, etc. helper functions at the start rather than lambdas. Tries to reduce optimizer pressure by using “normal” types which do not add to the generated number of lambda-typed, recursive, templated function calls.
+- Lambdas (`std::function_ref`): The same as above, but rather than using a function template to handle each uniquely-typed lambda like a precious baby bird, it instead erases the lambda behind a `std::function_ref<int(void)>`. This allows the recursive function to retain exactly one signature.
+- Lambdas (`std::function`): The same as above, but replaces `std::function_ref<int(void)>` with `std::function<int(void)>`. This is an allocating, C++03-style type.
+- Lambdas (Rosetta Code): The code straight out of the C++11 Rosetta Code Lambda section on the Man-or-Boy Rosetta Code implementation.
+- Apple Blocks: Uses Apple Blocks to implement the test, along with the __block specifier to refer directly to certain variables on the stack.
+- GNU Nested Functions (Rosetta Code): The code straight out of the C Rosetta Code section on the Man-or-Boy Rosetta Code implementation.
+- GNU Nested Functions: GNU Nested Functions similar to the Rosetta Code implementation, but with some slight modifications in a hope to potentially alleviate some stack pressure if possible by using regular helper functions like `f0`, `f1`, and `f_1`.
+- Custom C++ Class: A custom-written C++ class using a discriminated union to decide whether it’s doing a straight function call or attempting to engage in the Man-or-Boy recursion.
+- C++03 shared_ptr (Rosetta Code): A C++ class using `std::enable_shared_from_this` and `std::shared_ptr` with a virtual function call to invoke the “right” function call during recursion.
+
+Each bar graph has a black error bar at the end, representing the standard error of the measurements performed. At 150 iterations, the error bars (which are most easily understood and read in the linear graphs) are a decent visual approximation of whether or not two solutions are within a statistical threshold of one another.
+
+The two compilers tested are Apple Clang 17 and GCC 15. There are two graph images for each kind of measurement (linear, logarithmic, and linear-but-with-outliers-removed) because one is for Apple Clang and the other is for GCC. This is particularly important because neither compiler implements the other’s closure extension (Clang does Apple Blocks but not Nested Functions, while GCC does Nested Functions in exclusively its C frontend but does not implement Apple Blocks).
+
+MSVC was not tested because MSVC implements none of the extensions being tested, and we do not expect that its performance characteristics would be wildly different.
+
+
+### Results ### {#benchmarks-manorboy-results}
+
+The result graphs are as follows, presented in four images for both MacOS ARM64 with Apple Clang 17 and GCC 15, and Windows AMD64 with Clang 21 and GCC 15:
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-appleclang17-linear.bs
+</pre>
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-gcc15-linear.bs
+</pre>
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-winclang21-linear.bs
+</pre>
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-wingcc15-linear.bs
+</pre>
+
+Because some of the checked categories perform so astronomically poorly, we have a version of the graphs that are logarithmic, which are the two following graphs:
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-appleclang17-logarithmic.bs
+</pre>
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-gcc15-logarithmic.bs
+</pre>
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-winclang21-logarithmic.bs
+</pre>
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-wingcc15-logarithmic.bs
+</pre>
+
+This obscures some of the changes in performance because it skews towards big order-of-magnitude differences. To show the differences without the heavy skew due to the extremely poor performance of the bottom two/three categories, we also provide a "focused" graph which eliminates the poor performers and shows the linear performance of the more competitive top 12 performers.
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-appleclang17-linear-focused.bs
+</pre>
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-gcc15-linear-focused.bs
+</pre>
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-winclang21-linear-focused.bs
+</pre>
+
+<pre class="include">
+path: assets/C - Functions with Data/manorboy-wingcc15-linear-focused.bs
+</pre>
+
+A full writeup is available at [[closures-in-c-benchmark]] and [[closures-in-c-benchmark-followup]] which includes methodology and other information about the tests.
+
+
+
+## Conclusions, Comparisons to Other Proposals, and Inferences ## {#benchmarks-conclusions}
+
+Note: A wide function pointer type is necessary no matter the solution chosen.
+
+Note: A fixed, statically-known object that can be optionally type-erased behind a Wide Function Pointer seems optimal for even complex usages of closures in C.
+
+Note: Apple Blocks and GNU Nested Functions have intrinsic design flaws that drastically impact their performance, meaning that even transporting a context pointer through a global variable with a normal C function is better.
+
+Note: Manual management of closure pointer-to-function pointer trampolines may produce much better code generation and quality than implementation can currently handle, while allowing the user to have as much or as little security as possible.
+
+In addition to the key takeaways above, some other details we have understood are as follows. C++-style lambdas have the capability to be both awful (Lambdas using the Rosetta Code technique) and powerful (Lambdas with Perfect Type Information). Both of these techniques are unusable as-is in C as the things that make them awful or great are tied not due to lambdas design but moreso how they are used (e.g., `std::function` abstractions or translation-time recursion prevention.) Normal C functions (storing the integer `k` by value) can achieve near-parity with C++-style Lambdas at their best in terms of performance. However, it requires the modification of the function signature, which may not be viable in all cases (such as calling already-compiled interfaces or working with FFI). The use of `static` and `thread_local` to pass information across function boundaries comes with an unshakeable and implicit cost. `thread_local` is -- for obvious reasons -- more expensive than just `static`, but both incur overhead.
+
+After evaluating current industry extensions, we find them to be strangely poorly-performing despite being decades-old in some cases. Apple Blocks ([[apple-blocks]]) and similar heap-based solutions incur a fixed overhead due to the Blocks Runtime scheme, making it unsuitable for resource-constrained C environments. This means it is not worth pursuing this as a long-term solution in our technical opinion. GNU Nested Functions ([[nested-functions]]), as a quirk of its current most popular implementation, really inhibit inlining and other similar optimizations. A different implementation (e.g., the current `-ftrampoline-impl=heap` work that is currently available on 5 platforms in GCC trunk at time-of-writing) could be better. But, the fact that a typical quality of implementation provides such awful performance characteristics compared to every other solution despite being the oldest solution means that they too should be looked at skeptically for direct ISO C standardization. The heap-based trampolines of GNU Nested Functions also look like they may incur a similar fixed overhead just like the Apple Blocks implementation.
+
+There may be a way to avoid this by simply reducing the context pointer and the actual function pointer to something more directly usable with the `__builtin_call_with_static_chain` intrinsic available in GCC and Clang ([[builtin_call_with_static_chain_gcc]]). We expect that the performance benefits here could be quite good, but this is not proven and not implemented yet, unlike Lambdas and other solutions which have plenty of implementation and perform well based on user choice of type erasure or allocation or storage.
+
+The Function Literals and Local Functions ([[n3678]], [[n3679]]) proposals can have their performance approximated in their best-case as following the performance of the series of Normal Functions. This requires modifying the function signature. If the function signature isn't modified, there isn't really a point of comparison in these benchmarks other than falling back to other means of context transportation. All of these solutions vary wildly in performance, from Apple Blocks runtimes to various style of trampolines. This makes it impossible to understand Function Literals and Local Functions as solving the problem at hand, because they provide no plausible forward path on which to judge. Thus, we consider them as invalid solutions to this problem space.
+
+Accessing the Context of Nested Functions ([[n3654]]), even in its later iterations, approximates either the Normal Functions (can modify the signature, best case) or GNU Nested Functions (([[nested-functions]], [[n2661]])) (creates an invisible trampoline to transport closure context, worst case) performance. We are unsure of how this would continue given the deeply negative impact given access to the current invocation's stack frame / "function environment" is on the optimizer's ability to push for performance. While we think there is potential for this, we believe explicitly or implicitly capturing just the data -- and not the environment or stack frame abstraction itself -- would result in better performance characteristics no matter the design.
+
+Finally, any solution is going to need a Wide Function Pointer type in the C ecosystem to make it usable and worthwhile. In particular, Lambdas with `std::function_ref` is a directly applicable proxy to what "Capture Functions and Wide Function Pointers" and/or "Lambdas and Wide Function Pointers" could bring in terms of worst-case performance to the C ecosystem as a whole.

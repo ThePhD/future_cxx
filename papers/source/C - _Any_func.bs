@@ -1,11 +1,11 @@
 <pre class='metadata'>
 Title: _Any_func* - A Universal Function Pointer Storage Type
 H1: <code>_Any_func*</code> - A Universal Function Pointer Storage Type
-Shortname: 3692
-Revision: 2
-!Previous Revisions: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3625.htm">n3625 (r1)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3556.htm">n3556 (r0)</a>
+Shortname: 3782
+Revision: 3
+!Previous Revisions: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3692.htm">n3692 (r2)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3625.htm">n3625 (r1)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3556.htm">n3556 (r0)</a>
 Status: P
-Date: 2025-09-26
+Date: 2026-01-13
 Group: WG14
 !Proposal Category: Change Request, Feature Request
 !Target: C2y
@@ -34,7 +34,7 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 3 - November 12<sup>th</sup>, 2025 ## {#changelog-r3}
+## Revision 3 - January 13<sup>th</sup>, 2026 ## {#changelog-r3}
 
 - Terminology: change "representation equivalence" to "representation affinity", since "equivalence" in mathematics and science tends to mean bidirectional conversions, and this is a one-way conversion (from the first type to the second type).
 - Because of the terminology change, the word "equivalence" is now freed up for the case where things **are** bidirectionally convertible. Therefore, rather than "corresponding representation equivalence", it is not "equivalent representation affinity".
@@ -108,7 +108,7 @@ func4(a, b);
 
 Storing `func` in a KnR function pointer `int(*)()` and then calling it as such was not required to work in any version of C (it's explicitly undefined behavior in every version of C, see "6.3.3.3 Pointers" in the latest working draft and similar paragraphs in C23, C17, and further back). It just so happens that it *did* happen to work (though technically can and could fail in invisible-to-the-Abstract-Machine ways) for the vast majority of existing C code, due to how most ABIs tend to be designed. (There were ABI issues between `func2` and `func3`, in particular when people would declare `time_t time()` as a KnR function on some platforms while competing with `time_t time(time_t* arg)` and similar definitions on various extern-and-exported-interface libraries.)
 
-Not having `_Any_func` be callable avoids this problem entirely, by refusing to attach a binary representation that represents "all function calls". A cast must be inserted, and that prevents small usability errors. This does not mean that a omni-callable type should not exist. It's just that there's likely some form of small "shim" or "trampoline" that might need to be created in order to facilitate this correctly (or, in typical cases with most ABIs, just a raw copy). This is something that should be facilitated by a dedicated language ure for that express purpose, rather than something falling out of an accident of syntax.
+Not having `_Any_func` be callable avoids this problem entirely, by refusing to attach a binary representation that represents "all function calls". A cast must be inserted, and that prevents small usability errors. This does not mean that a omni-callable type should not exist. It's just that there's likely some form of small "shim" or "trampoline" that might need to be created in order to facilitate this correctly (or, in typical cases with most ABIs, just a raw copy). This is something that should be facilitated by a dedicated language carveout for that express purpose, rather than something falling out of an accident of syntax.
 
 
 
@@ -124,18 +124,47 @@ Therefore, we define a new concept "*representation affinity*" so that we can su
 
 These predefined macros and their definitions are then applied to four new different predefined macros, which has one of the above 3 value macros as its definition:
 
-- `__STDC_PTR_REPR_ANY_FUNC_AND_FUNC__` -- describes representation affinity for `_Any_func*` and all function pointer types; must be at least `__STC_PTR_REPR_CONVERTIBLE__` (this proposal and matches `void*` with object pointers). Can be upgraded to `__STDC_REPR_EQUIVALENT__` by an implementation.
+- `__STDC_PTR_REPR_ANY_FUNC_AND_FUNC__` -- describes representation affinity for `_Any_func*` and all function pointer types; must be at least `__STC_PTR_REPR_CONVERTIBLE__` (i.e., what this proposal asks for and what matches `void*` with object pointers). Can be upgraded to `__STDC_REPR_EQUIVALENT__` by an implementation.
 - `__STDC_PTR_REPR_ANY_FUNC_AND_VOID__` -- describes representation affinity between `_Any_func*` and `void*`; can be `__STDC_REPR_INCOMPATIBLE__`.
 - `__STDC_PTR_REPR_FUNC_AND_VOID__` -- describes representation affinity between any function pointer and `void*`; can be `__STDC_REPR_INCOMPATIBLE__`.
 - `__STDC_PTR_REPR_OBJECT_AND_VOID__` -- describes representation affinity for all object pointers and `void*`; must be at least `__STC_PTR_REPR_CONVERTIBLE__` (guaranteed by wording in C standard currently). Can be upgraded to `__STDC_REPR_EQUIVALENT__` by an implementation.
 
-Each implementation can support the level that is appropriate for their platform. Some basic support is already supported for 2 of the conversions, both as per this proposal and as per the original purpose of the type since 1989: `void*` to any object pointer (and back) always reports at least `__STDC_REPR_CONVERTIBLE__` (a value of 1), and `_Any_func*` to any function pointer (and back) always reports at least `__STDC_REPR_CONVERTIBLE__` (a value of 1). However, conversion between `void*` and `_Any_func*` need not be supported (reports `__STDC_REPR_INCOMPATIBLE__` (a value of 0)), as that is not guaranteed to work on all platforms. This is useful for implementations that decide they do not want to take on an impossible task where object/data pointers and function/code points address completely different kinds of memory. Implementations that can not handle it (e.g. 16-bit Texas Instrument DSPs or 8-bit multi-address-space chips that have 21 bit function pointers but 16 bit memory addresses). Most modern implementations -- Windows/NT since forever and POSIX since the 90s with XSI extensions (and just simply required by POSIX 2018) -- would have this defined, and users could `#error` inside of an `#if` check if their code happens to any more advanced properties.
+Each implementation can support the level that is appropriate for their platform. Some basic support is already supported for 2 of the conversions, both as per this proposal and as per the original purpose of the type since 1989: `void*` to any object pointer (and back) always reports at least `__STDC_REPR_CONVERTIBLE__` (a value of 1), and `_Any_func*` to any function pointer (and back) always reports at least `__STDC_REPR_CONVERTIBLE__` (a value of 1).
 
-Finally, implementations that opt into having at least convertible representation affinity for `void*` and `_Any_func*` should be able to use those types in conversions without constraint violations. Similarly, there is additional wording to allow for any function pointer type to work with (implicit) assignment to `void*` or vice-versa if the representation affinity is high enough. This standardizes existing practice, where many implementations do not warn or error on the constraint violation of for unrelated pointer types.
+However, conversion between `void*` and `_Any_func*` need not be supported (reports `__STDC_REPR_INCOMPATIBLE__` (a value of 0)), as that is not guaranteed to work on all platforms. This is useful for implementations that decide they do not want to take on an impossible task where object/data pointers and function/code points address completely different kinds of memory. Implementations that can not handle it (e.g. 16-bit Texas Instrument DSPs or 8-bit multi-address-space chips that have 21 bit function pointers but 16 bit memory addresses). Most modern implementations -- Windows/NT since forever and POSIX since the 90s with XSI extensions (and just simply required by POSIX 2018) -- would have this defined, and users could `#error` inside of an `#if` check if their code happens to any more advanced properties.
 
+Finally, implementations that opt into having at least convertible representation affinity for `void*` and `_Any_func*` should be able to use those types in conversions without constraint violations. Similarly, there is additional wording to allow for any function pointer type to work with (implicit) assignment to `void*` or vice-versa if the representation affinity is high enough. This standardizes existing practice, where many implementations do not warn or  error on the constraint violation of for unrelated pointer types unless the flags are set to be strict enough:
 
+```cpp
+extern void use(void* p);
 
-## 
+int f (void) {
+	return 1;
+}
+
+int main () {
+	void* p = f;
+	use(p);
+	return 0;
+}
+```
+
+GCC 2026.01.12 trunk (`-O3 -Wall -Wpedantic -std=c2y`):
+
+```
+<source>:8:15: warning: ISO C forbids initialization between function pointer and 'void *' [-Wpedantic]
+	8 |     void* p = f;
+	  |               ^
+Compiler returned: 0
+```
+
+GCC 2026.01.12 trunk, without pedantic warnings (`-O3 -Wall -std=c2y`):
+
+```
+Compiler returned: 0
+```
+
+Similar things happen with many other compilers and other alternatives. It's very clear that this is something that many compilers assume is the default behavior, and the standard should give them an option to reflect that and make it simple while letting more far-out platforms have ways of directly erroring on specific failure conditions (by making it an explicit constraint violation, but only in those cases).
 
 
 

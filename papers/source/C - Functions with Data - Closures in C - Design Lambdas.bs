@@ -1,0 +1,203 @@
+## Lambdas ## {#design-lambdas}
+
+Lambdas are simply a reskinned version of Capture Functions. They have all the same functionality, but with the benefits that they are:
+
+- expressions, and therefore can be used in-line in a function call as an argument or as part of an argument;
+- expressions, and therefore can be immediately invoked;
+- and, C++-compatible in their design.
+
+We are deliberately leaving these as the only three benefits of lambdas over Capture Functions for the sole reason that, after Capture Functions, Lambdas will be VERY minimal effort to support. The reason for that is that they are, semantically, just a "Syntactic Reskin" of Capture Functions, save for their presence as an expression.
+
+```cpp
+auto make_seven (int x) {
+	int y = 7;
+	return [x, y]() { return x * y; };
+}
+
+int main () {
+	int x = 3;
+	auto zero = [] () {
+		// OK, no external variables used
+		return 0;
+	};
+#if 0
+	auto double_it = [] () {
+		return x * 2; // constraint violation
+	};
+#endif
+	auto triple_it = [x] () {
+		return x * 3; // OK, x = 3 when called
+	};
+	auto quadruple_it = [&x] () {
+		return x * 4; // OK, x = 5 when called
+	};
+	auto quintuple_it = [=] () {
+		return x * 5; // OK, x = 3 when called
+	};
+	auto sextuple_it = [&] () {
+		return x * 6; // OK, x = 5 when caled
+	};
+	x = 5;
+	auto seven_tuple_it = make_seven(x);
+	return zero() + triple_it() + quadruple_it()
+		+ quintuple_it() + sextuple_it() + seven_tuple_it();
+	// return 109;
+	// 0 + (3 * 3) + (5 * 4)
+	// + (3 * 5) + (5 * 6)
+	// + (5 * 7)
+}
+```
+
+Given this, there is nothing else to write for this section: all of the benefits of Capture Functions ([[#design-capture.functions]]) applies to these types in full, and just copying all of that text from one to another to say exactly the same thing is not important. We will instead just talk about the differences exclusively in comparison to Capture Functions in the next few sections.
+
+
+### Lambdas are Expressions ### {#design-lambdas-expressions}
+
+```cpp
+#include <stdlib.h>
+#include <string.h>
+#include <stddef.h>
+
+static int in_reverse = 0;
+
+int main(int argc, char* argv[]) {
+	if (argc > 1) {
+		char* r_loc = strchr(argv[1], 'r');
+		if (r_loc != NULL) {
+			ptrdiff_t r_from_start = (r_loc - argv[1]);
+			if (r_from_start == 1 && argv[1][0] == '-' && strlen(r_loc) == 1) {
+				in_reverse = 1;
+			} 
+		}
+	}
+	int list[] = { 2, 11, 32, 49, 57, 20, 110, 203 };
+	qsort(list, (sizeof(list)/sizeof(*list)), sizeof(*list),
+		// expression, fits in-line
+		[](const void* untyped_left, const void* untyped_right) {
+			const int* left = (const int*)untyped_left;
+			const int* right = (const int*)untyped_right;
+			return (in_reverse) ? *right - *left : *left - *right;
+		}
+	);
+	
+	return list[0];
+}
+```
+
+This also makes it **suitable for use in macros**, which is not something a regular Capture Functions can accomplish.
+
+NOTE: This can be alleviated by using Statement Expressions, which would allow Capture Functions to work within typical macro contexts.
+
+
+### Recursion Is Impossible ### {#design-lambdas-recursion}
+
+Unfortunately, it is impossible to call a lambda from within itself (not without C++'s feature "deducing this", which requires templates and other things to work), and therefore that is another disadvantage. It can be fixed with the proposed `__self_func` feature ([[__self_func]]):
+
+```cpp
+int main () {
+	int tripling (int times, int start) {
+		if (times >= 5) {
+			return start;
+		}
+		return __self_func(times + 1, start * 3); // __self_func feature
+	}
+	return tripling(0, 1);
+}
+```
+
+
+### Capable of Self-Call ### {#design-lambdas-self.call}
+
+LAmbdas are able to refer to themselves in the argument list as they are object types. Unlike Capture Functions, which are incomplete during the argument list and complete after the `_Capture` specification, lambdas have their captures first. That means all the information to be a complete object is known by the time the argument list is opened. If `__self_func` is available ([[__self_func]]), this means one can use a "self" closure type without pointers or indirection:
+
+```cpp
+int main () {
+	const int mult = 3;
+	auto tripling = [mult](int times, int start, typeof(__self_func) self) {
+		if (times >= 5) {
+			return start;
+		}
+		return self(times + 1, start * mult, self);
+	}
+	return tripling(0, 1, &tripling);
+}
+```
+
+This is, obviously, not recommended because this takes the object itself by value and so can do lots of unnecessary copies. But, it can be taken as either a full complete object or just a pointer to said object, so the choice is up to the user since Lambdas are complete object types by the function argument list.
+
+
+### Trailing Return Types / Deduced Return Type ### {#design-lambdas-returns}
+
+Finally, one may need to add the concept of a "trailing return type" to C in order to allow modifying the return type of a lambda. At the moment, the way a lambda with no specified return type works is that every single `return` statement must have exactly the same type (there is no negotiation for some "promoted" type or similar). That is, returning a `long` in one branch and an `int` in another branch is an error: they all must be cast to `int` or they all must be cast to `long`:
+
+```cpp
+int main () {
+	auto okay0 = []() {
+		if (1) {
+			return 0;
+		}
+		else {
+			return 0;
+		}
+	}(); // ok
+	auto violation0 = []() {
+		if (1) {
+			return 0U;
+		}
+		else {
+			return 0L;
+		}
+	}(); // constraint violation: different return types
+	auto okay1 = []() {
+		if (1) {
+			return (unsigned long long)0U;
+		}
+		else {
+			return (unsigned long long)0L;
+		}
+	}(); // ok: cast to identical types
+	return 0;
+}
+```
+
+This can be **extremely** annoying to deal with. Trailing return types fix this problem by allowing lambdas to use a trailing `-> type-name` to have the function return type become `type-name`:
+
+```cpp
+int main () {
+	auto okay0 = []() {
+		if (1) {
+			return 0;
+		}
+		else {
+			return 0;
+		}
+	}(); // ok
+	auto violation0 = []() -> unsigned int {
+		if (1) {
+			return 0U;
+		}
+		else {
+			return 0L;
+		}
+	}(); // now okay: fixed return type, conversions happen normally
+	auto okay1 = []() {
+		if (1) {
+			return (unsigned long long)0U;
+		}
+		else {
+			return (unsigned long long)0L;
+		}
+	}(); // ok: cast to identical types
+	return 0;
+}
+```
+
+This fixes other problems in the C language as well, such as not being able to specify functions with proper variable-length array returns without using ugly syntax. The `auto` part only applies for regular function definitions, and could also be applied to Capture Functions for ease-of-use (but is not required for it to function appropriately). One could also just have `auto` but no `->` to have regular functions achieve the lambda behavior, where all `return` expressions must evaluate to the exact same type. Not having a `return` or having a `return;` both imply the return type is `void`, and thus any other kind of `return <expr>;` in that function would be illegal.
+
+
+### Forward-declaration is Impossible ### {#design-lambdas-forward.decls}
+
+It is impossible to forward-declare a lambda given the fact that every lambda is a definition of a unique object as an expression and does not do the usual declaration/definition split. Implementations may fold identical lambdas together but that is only observable as an optimization, and is not a guarantee of the design. This contrasts with Capture Functions, wherein they can be declared (with all of their captures) under a specific identifier in a specific scope and reserve that identifier for that type, and then later defined in that scope or a dependent scope.
+
+
+That is the full set of notable technical differences between Lambdas and Capture Functions.

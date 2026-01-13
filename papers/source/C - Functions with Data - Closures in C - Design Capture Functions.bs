@@ -1,0 +1,503 @@
+## Capture Functions: Rehydrated Nested Function ## {#design-capture.functions}
+
+Capture Functions are a slight modification of the design of Nested Functions. We start from the base of Nested Functions with three goals in mind.
+
+- Implementers are not comfortable with the implementation baggage associated with Nested Functions or maintaining potential ABI compatibility with those choices (heap/stack trampolines versus separate-page allocations).
+- We want to allow a way to access captured values explicitly, and control how those captures work.
+- We want them to be safe to move around and relocate, whether to the heap or copied into static memory or otherwise.
+
+A brief demonstration of all of the well-defined behavior:
+
+```cpp
+auto make_seven (int x) {
+	int y = 7;
+	int seven_fn() _Capture(x, y) {
+		return x * y;
+	}
+	return seven_fn; // OK: unique type which
+	// is a complete object
+}
+
+typedef int eight_fn_t();
+
+eight_fn_t* make_eight () {
+	int eight_fn () _Capture() {
+		return 8;
+	}
+	return eight_fn; // OK: empty capture converts to function pointer
+}
+
+#if 0
+typedef int nine_fn_t();
+
+nine_fn_t* make_nine () {
+	int val = 30;
+	int nine_fn () _Capture(val) {
+		return val;
+	}
+	return nine_fn; // constraint violation: cannot convert
+	// captures-with-Lambdas sto function pointer
+}
+#endif
+
+int main () {
+	int x = 3;
+	int zero () {
+		// OK, no external variables used
+		return 0;
+	}
+	int also_zero () _Capture() {
+		// same as above, just explicit
+		return 0;
+	}
+#if 0
+	int double_it () {
+		return x * 2; // constraint violation
+	}
+#endif
+	int triple_it () _Capture(x) {
+		return x * 3; // OK, x = 3 when called
+	}
+	int quadruple_it () _Capture(&x) {
+		return x * 4; // OK, x = 5 when called
+	}
+	int quintuple_it () _Capture(=) {
+		return x * 5; // OK, x = 3 when called
+	}
+	int sextuple_it () _Capture(&) {
+		return x * 6; // OK, x = 5 when caled
+	}
+	x = 5;
+	auto seven_tuple_it = make_seven(x);
+	eight_fn_t* eight = make_eight();
+	return zero() + triple_it() + quadruple_it()
+		+ quintuple_it() + sextuple_it() + seven_tuple_it()
+		+ eight();
+	// same as
+	// return 117;
+	// 0 + (3 * 3) + (5 * 4)
+	// + (3 * 5) + (5 * 6) + (5 * 7)
+	// + 8
+}
+```
+
+We go over the purpose of the design of this and the reasons for that design here.
+
+
+### Deduced Return Types, Unique Types ### {#design-capture.functions-unique.types}
+
+Reusing an example from the above code, the `make_seven` function needs to have a special, inferred/deduced return type. This is because the type of a capture function is not known until it is defined:
+
+```cpp
+auto make_seven (int x) {
+	int y = 7;
+	int seven_fn() _Capture(x, y) {
+		return x * y;
+	}
+	return seven_fn; // OK: unique type which
+	// is a complete object
+}
+```
+
+The `auto` return type here just means "the first `return` expression is the return type of the function". This only works with in-line function definitions, and does not allow for a separated function declaration/definition (as the separated declaration would not have a material, real type until the definition could be read). This only applies to functions with inferred return types like this, where the first declaration of such a function must also be its definition.
+
+If no `return` appears in such a function, or all the `return`s do not contain an expression, the return type is inferred to be `void`. Otherwise, all the `return <expr>;` must return the exact same type. If there exists one or more `return <expr>;`s and the types are not exactly the same in the whole function definition, then it is a hard error. This is already partly described in Jens Gustedt's "Type inference for variable definitions and function returns v6" ([[n2923]]); reviving this paper would be a matter of rebasing it on the current working draft and improving the wording present.
+
+
+### Data Captures are Explicit ### {#design-capture.functions-data.captures}
+
+Data captures, the way in which local data is accessible inside of the function, are explicit. The only reason captures are explicit is because it is impossible to tell if something should be captured by value (and copied into whatever implementation-defined holding space is used for the Capture Functions's complete object), or if something should be captured by name/reference (and only have its pointer/address copied into whatever implementation-defined holding space is used for the Capture Functions's complete object). This detail matters both for safety reasons when assigning, copying, storing, and otherwise relocating a capture function from its original scope.
+
+NOTE: `static` and `_Thread_local` objects, as well as typical file-scope declarations, are accessible within a capture function in the normal way. `constexpr` objects, without a `static` specifier, at local scope are also accessible.
+
+Allowing for explicit captures also allows for better type checking (used objects must be explicit acknowledged by the programmer that they should be used), and allows for covering both the use cases of Apple Blocks (default by-value capture) and GNU Nested Functions (default by-name capture) without breaking anything. The lack of a capture also covers all of the use cases that Function Literals would have covered, which means that Capture Functions can sufficiently cover all of the existing use cases currently in production in C ecosystems. To match the default behaviors:
+
+- Apple Blocks: `_Capture(=)` (capture all by-value).
+- GNU Nested Functions: `_Capture(&)` (capture all by-name/reference).
+- Function Literals: `_Capture()` (capture nothing).
+
+Only one "capture all" is allowed. That is, `_Capture(=, &)` (and vice-versa) is illegal. The rest of the *specific* captures for accessible identifiers can be specified in any order. Note that *specific* captures for a given object override the default implicit "capture all" behavior. For example:
+
+```cpp
+int main () {
+	int x = 30;
+	int y = 10;
+	int fn () _Capture(&, x) {
+		return x + y;
+	}
+	x = 50;
+	y = 40;
+	return fn();
+}
+```
+
+This program returns `70` (`x` is captured by-value as `30`, `y` is captured by-name and is changed to `40` before invocation). The change to `x` on the outside to `50` is not reflected inside of the invocation. This allows an ease-of-use for specifying the "default" implicit all-capture, while letting the user select specifically which captures should work.
+
+
+### Data Captures can be Renamed ### {#design-capture.functions-data.captures.rename}
+
+Data captures can be renamed (or computed, with an expression that does not include a `,` unless it is parenthesized). This is important for e.g. incrementing reference counters for copying large, important data structures into callbacks that may either be invoked multiple times or have their own long-lived lifetime. The syntax for this occurs within the `_Capture` clause of a capture function:
+
+```cpp
+#include <tree.h>
+
+TREE_DECLARE(int_tree_t, int_tree, int);
+TREE_IMPLEMENT(int_tree_t, int_tree, int);
+
+#include <stdcountof.h>
+
+enum queue_status {
+	qs_success,
+	qs_timedout,
+	qs_busy,
+	qs_fail,
+	qs_invalid
+};
+
+typedef int work_fn_t(void* user);
+
+queue_status add_dispatch_work(work_fn_t* work, void* user);
+queue_status is_work_done();
+void work_shutdown();
+
+int main () {
+	int data[] = { 2, 11, 32, 49, 57, 20, 110, 203 };
+	int_tree_t tree = int_tree_init_with(data, data + countof(data));
+	int work () _Capture(my_tree = int_tree_copy(tree)) {
+		/* do work.... */
+		int elem = int_tree_remove(my_tree, int_tree_min_node(my_tree));
+		/* blah blah blah */
+		return 0;
+	}
+	int work_trampoline (void* user) _Capture() {
+		return (*((typeof(work)*)user))();
+	}
+	if (add_dispatch_work(work_trampoline, &work) != qs_success) {
+		return 1;
+	}
+	queue_status err;
+	while ((err = work_done()) != qs_success) {
+		swith () {
+			case qs_invalid:
+			case qs_timedout:
+			case qs_failed:
+				// some error happened
+				work_shutdown();
+				return 2;
+			default:
+				break;
+		}
+	}
+	work_shutdown();
+	return 0;
+}
+```
+
+
+### NEW: Data Captures are Accessible ### {#design-capture.functions-data.captures.fields}
+
+An important adjustment to make sure this code works better than the way it did for Blocks or Nested Functions is the ability not only to copy ([[#design-complete.objects]]) or otherwise rename objects ([[#design-capture.functions-data.captures.rename]]), but ALSO to get at the internals of a given Capture Functions. This is something missing from GNU Nested Functions (which provides no real resolution for it) as well, and something that could matter for Apple Blocks but does not in practice because they can turn any object into a shared one with the `__block` modifier on an object. In particular, this only matters in the case of a closure which is given a (copied) resource that must either be released or freed.
+
+NOTE: Thanks to Alex Celeste, for being the first person to bring this to my attention!
+
+The syntax looks just like normal structure access, and is based on the names placed in the `_Capture` clause:
+
+```cpp
+#include <stdio.h>
+
+int main () {
+	int x = 30;
+	double y = 5.0;
+	char z = 'a';
+
+	int cap_fn0 () _Capture(=, &renamed_x = x, &z) {
+		printf("inside cap_fn0 | renamed_x: %d, y: %f, z: %c\n",
+			renamed_x, y, z);
+	}
+	
+	int cap_fn1 () _Capture(&, renamed_y = y, z) {
+		printf("inside cap_fn1 | x: %d, renamed_y: %f, z: %c\n",
+			x, renamed_y, z);
+	}
+	
+	x = 60;
+	y = 10.0;
+	z = 'z';
+
+	cap_fn0();
+	cap_fn1();
+	
+	printf("\n");
+
+	printf("inside main fn | cap_fn0.renamed_x: %d, cap_fn0.y: %f, cap_fn0.z: %c\n",
+		cap_fn0.renamed_x, cap_fn0.y, cap_fn0.z);
+	printf("inside main fn | cap_fn1.x: %d, cap_fn1.renamed_y: %f, cap_fn1.z: %c\n",
+		cap_fn1.x, cap_fn1.renamed_y, cap_fn1.z);
+
+	return 0;
+}
+```
+
+This would print:
+
+```sh
+inside cap_fn0 | renamed_x: 60, y: 5.0, z: a
+inside cap_fn1 | x: 60, renamed_y: 10.0, z: z
+
+inside main fn | cap_fn0.renamed_x: 60, cap_fn0.y: 5.0, cap_fn0.z: a
+inside main fn | cap_fn1.x: 60, cap_fn1.renamed_y: 10.0, cap_fn1.z: z
+```
+
+How the implementation actually accesses the information is implementation-defined, and the layout of the Capture Functions object is not defined the specification, except to say it's implementation-defined ([[#wording]]).
+
+NOTE: This leaves room for an implementation to, for example, use creative ways to retrieve objects and object references. Using a pointer to the current stack frame and then computing a raw offset to get to a specific bit of data, or using entirely registers, are all possible depending on how the captures are implemented. Such improvements and optimizations -- especially in the face of potential asynchronous calls and the need to protect against false sharing -- must be left up to Quality of Implementation.
+
+As an example for releasing resources outside of the function call itself for the purposes of a function call that gets used more than once and isn't passed a "We're Done" signal, we can reuse the example from [[#intro-nested.functions-captures.no.workaround]]:
+
+```cpp
+#include <stdlib.h>
+#include <string.h>
+#include <stddef.h>
+
+typedef int compare_fn_t(const void* left, const void* right);
+
+auto make_compare(int argc, char* argv[]) {
+	/* LOCAL, heap-allocated variable.... */
+	int* in_reverse = malloc(sizeof(int));
+	*in_reverse = 0;
+
+	if (argc > 1) {
+		char* r_loc = strchr(argv[1], 'r');
+		if (r_loc != NULL) {
+			ptrdiff_t r_from_start = (r_loc - argv[1]);
+			if (r_from_start == 1 && argv[1][0] == '-' && strlen(r_loc) == 1) {
+				*in_reverse = 1;
+			} 
+		}
+	}
+	
+	int compare(const void* untyped_left, const void* untyped_right) _Capture(in_reverse) {
+		const int* left = untyped_left;
+		const int* right = untyped_right;
+		return (*in_reverse) ? *right - *left : *left - *right;
+	}
+	return compare;
+}
+
+int main(int argc, char* argv[]) {
+	int list[] = { 2, 11, 32, 49, 57, 20, 110, 203 };	
+
+	auto compare = make_compare(argc, argv);
+	qsort_r(list, (sizeof(list)/sizeof(*list)), sizeof(*list), compare, &compare);
+	// with data field captures, we can now `free` the
+	// field `in_reverse` from the lambda
+	free(compare.in_reverse);
+	
+	return list[0];
+}
+```
+
+Thanks to the capture of `in_reverse` with the by-value `_Capture(in_reverse)` indication, the return of this function is safe. And, since we have access to the unique type that is generated (through the `auto` return type), we can access the pointer `in_reverse` normally and naturally. This isn't possible with normal C++-style lambdas, as they haven't decided to make this available (though our design for Lambdas in C will also include the named captures as accessible fields). It's also not possible in the other solutions which rely on type-erasure as a first-class part of the design (Apple Blocks with the Blocks type, GNU Nested Functions only being accessible through a pointer or convertible to a wide function pointer in [[n2661]] or [[n3564]], Borland's closure annotation or function literals). This is why making it possible to access the unique type first and foremost is of great benefit.
+
+
+### Forward Declarations Work ### {#design-capture.functions-forward.decls}
+
+Capture functions can be forward declared, similar to how GNU Nested Functions can be forward-declared if one uses the `auto` keyword in front of the definition of a Nested Functions:
+
+```cpp
+#include <stdlib.h>
+#include <string.h>
+#include <stddef.h>
+
+int main(int argc, char* argv[]) {
+	int in_reverse = 0;
+	// forward-declared compare
+	int compare(const void* untyped_left, const void* untyped_right) _Capture(in_reverse);
+	// even though it is captured by value...
+	
+	if (argc > 1) {
+		char* r_loc = strchr(argv[1], 'r');
+		if (r_loc != NULL) {
+			ptrdiff_t r_from_start = (r_loc - argv[1]);
+			if (r_from_start == 1 && argv[1][0] == '-' && strlen(r_loc) == 1) {
+				in_reverse = 1;
+			} 
+		}
+	}
+
+	/*
+	compare.in_reverse; // CONSTRAINT VIOLATION: cannot access until definition
+	*/
+	
+	int compare_trampoline(const void* untyped_left,
+		const void* untyped_right,
+		void* user)
+	_Capture() {
+		return (*(typeof(compare)*)user)(untyped_left, untyped_right);
+	}
+
+	int list[] = { 2, 11, 32, 49, 57, 20, 110, 203 };
+	qsort_r(list, (sizeof(list)/sizeof(*list)), sizeof(*list),
+		compare_trampoline,
+		&compare
+	);
+	// define it here;
+	// captures and arguments must be identical otherwise it is a violation
+	// `in_reverse` is captured at the point of definition, not the point of declaration.
+	int compare(const void* untyped_left, const void* untyped_right) _Capture(in_reverse) {
+			const int* in_reverse = (const int*)user;
+			const int* left = untyped_left;
+			const int* right = untyped_right;
+			return (*in_reverse) ? *right - *left : *left - *right;
+	};
+	return list[0];
+}
+```
+
+Some important points for Capture Functions's forward declarations:
+
+- the values captured have their values taken at the point of definition, not at the point of declaration;
+- because of this, one cannot use the `.` or the `->` operators on a capture function declaration, only a definition;
+- and, forward declarations can only have the function call operation applied to them, before they are defined.
+
+NOTE: It is unclear whether the Apple Blocks-like by-value capture should occur at the point of the first declaration or the definition. Currently, the reasoning is that using the definition for the values captured is better because there can be multiple forward declarations (in perhaps sprawling manners due to `#include` and other code copy-paste mechanisms) but only one definition, and thus the definition should be the important part.
+
+NOTE: The other opinion is that restricting access to `.` and `->` is not worthwhile, and that capturing things by-value at the first forward declaration is good.
+
+There is no existing practice for this due to the way GNU Nested Functions -- the only existing practice where forward-declaring the closure type is allowed -- work. That is, they only capture by-name/by-reference, and so the value is always the value at the point of closure invocation and not at the point of closure evaluation. Apple Blocks and other solutions do not have this problem since they are expressions and thus do not have to engage in any sort of work with the "split between declaration vs. definition" issue at all. Other solutions always capture by reference / by lvalue / by name, so they offer no insight.
+
+
+### Forward Declarations without a name are a bit useless ### {#design-capture.functions-forward.decls.silly}
+
+Forward declarations without a name are a bit silly, because they are unique types. An unnamed declarator means that there's a unique type that has been forward-declared but serves no other purpose:
+
+```cpp
+int main(int argc, char* argv[]) {
+	typedef int (compare_closure1_t)(
+		const void* untyped_left,
+		const void* untyped_right
+	) _Capture(=);
+	typedef int (compare_closure2_t)(
+		const void* untyped_left,
+		const void* untyped_right)
+	_Capture(=);
+	typedef compare_closure_t compare_closure1_t;
+	typedef compare_closure_t compare_closure2_t; // constraint violation: not a compatible type redeclaration
+	return 0;
+}
+```
+
+The syntax is kept for parity with the rest of the declarator syntax. It also allows a user to make a unique type within a translation unit, though there are obviously other ways to do this that do not rely on such arcane knowledge. Nevertheless, we do not ban the construct since we just want this and everything surrounding it to work "as it would", even if the result is silly.
+
+
+### Capable of Recursion ### {#design-capture.functions-recursion}
+
+Capture Functions are able to refer to themselves for the purpose of recursion. This means that `__self_func` ([[__self_func]]), unlike for expression-based/unnamed Function Literals/Lambdas/Block literals, is not required:
+
+```cpp
+int main () {
+	const int mult = 3;
+	int tripling (int times, int start) _Capture(mult) {
+		if (times >= 5) {
+			return start;
+		}
+		return tripling(times + 1, start * mult); // normal recursion
+	}
+	return tripling(0, 1);
+}
+```
+
+However, `__self_func` should still work in this code for consistency's sake with the rest of where `__self_func` would be applicable (such as in regular function calls).
+
+
+### Capable of Self-Call ### {#design-capture.functions-self.call}
+
+Capture Functions are able to refer to themselves in the argument list, and that means it is possible to form a pointer to itself. While they are incomplete types until after the end of the `_Capture` list, the type is still there and thus taking a pointer to such a type and using it after the opening `{` thus results in using a complete type, though the usage is somewhat weird:
+
+```cpp
+int main () {
+	const int mult = 3;
+	int tripling (int times, int start, typeof(tripling)* self) _Capture(mult) {
+		if (times >= 5) {
+			return start;
+		}
+		return self[0](times + 1, start * mult, self);
+		// or
+		// return (*self)(times + 1, start * mult, self);
+	}
+	return tripling(0, 1, &tripling);
+}
+```
+
+
+### Not An Expression ### {#design-capture.functions-expression}
+
+The one true technical downside is that Capture Functions are declarations / definitions. They cannot be used (without the Statement Expression extension) in a function call's argument list, which means that (short) closures and anonymous functions still need the full function definition. This is annoying and, honestly, one of the reasons [[#design-lambdas]] are preferred as a shorthand syntax.
+
+It also means that, without Statement Expressions, Capture Functions cannot be used for the implementation of many macros which are typically expected to be usable as normal expressions.
+
+
+### Footgun: By-Name Capture Exceeds Captures's Lifetime ### {#design-capture.functions-footgun.reference}
+
+A brief display of the undefined behavior:
+
+```cpp
+auto ub (int parameter) {
+	int automatic = 7;
+	int fn() _Capture(parameter, &automatic) {
+		return parameter + automatic;
+	}
+	return fn; // well-defined copy return
+	// but dangling reference to `automatic`!
+}
+
+int main () {
+	auto fn = ub(2);
+	return fn(); // undefined behavior:
+	// `automatic` no longer exists.
+}
+```
+
+In general, undefined behavior occurs in the same way that it occurs within existing C code: use of an object after its lifetime has ended (in this case, an automatic storage duration object has gone out-of-scope). The fix for `ub` in this case is to capture `automatic` by-value. This makes it safe to copy that function object to the heap, or the stack. Additionally, no UB is possible by conversion to a function pointer.
+
+
+### Future Footgun: Wide Function Pointers ### {#design-capture.functions-footgun.wide}
+
+Wide function pointers, if and when they come to C, can make for footguns with capturing lambdas given that they will (likely) allow conversions from any Nested Function / Block / Lambda to them implicitly. Using a fictional wide function pointer syntax using `%`:
+
+```cpp
+typedef int foo_fn_t(int);
+
+foo_fn_t% call_me (int x) {
+	return [x](int y) { return x + y; }; // converts to wide function pointer type!
+	// undefined behavior if the return value is ever
+	// called outside of this function 
+}
+
+int use_me(foo_fn_t% fn) {
+	return fn(2);
+}
+
+int main () {
+	int x = 30;
+	return use_me(call_me(x));
+}
+```
+
+This is a similar problem to Nested Functions returning a regular function pointer from a function call. Unfortunately, a conversion being allowed here is necessary to allow the 75%+ use case of passing it as a parameter, such as:
+
+```cpp
+typedef int foo_fn_t(int);
+
+void pass_to_me (foo_fn_t% func);
+
+int main () {
+	int x = 30;
+	pass_to_me(
+		[x](int y) { return x + y; }
+	); // converts to wide function pointer type!
+	return 0; 
+}
+```
+
+Thusly, in a future with a wide function pointer type, such a problem might be allowed. This is similar to the [[#design-capture.functions-footgun.reference]]. A special carveout in the specification for the return value case could be developed, but this would need work to avoid precluding useful cases.
