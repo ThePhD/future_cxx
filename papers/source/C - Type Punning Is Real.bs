@@ -1,0 +1,279 @@
+<pre class='metadata'>
+Title: Type Punning Is (Not?!) Real
+Shortname: 38X7
+Revision: 0
+!Previous Revisions: None
+Status: P
+Date: 2026-02-12
+Group: WG14
+!Proposal Category: Change Request, Feature Request  
+!Target: C2y
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20The%20Big%20Size%20Survey.html
+!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/source/C%20-%20The%20Big%20Size%20Survey">GitHub</a>
+Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
+Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+Abstract: Type punning should be real or it should not be real. Right now it exists in a sort of pseudo-real, where implementers and experts reply with conflicting opinions and diverge on whether or not union type punning is effectively the same as performing a memory copy and accessing the copied data in the new type.
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<div class="pagebreak"></div>
+
+
+
+
+# Changelog # {#changelog}
+
+
+
+## Revision 0 - February 12<sup>th</sup>, 2026 ## {#changelog-r0}
+
+- Initial release. ✨
+
+
+
+
+# Introduction and Motivation # {#intro}
+
+We have personally claimed that type punning is a legal action in C. It is unambiguously **NOT** allowed in C++, but vendors fall on different sides of the divide when it comes to the behavior of type punning with a `union` in C. That is, given the following asserts produce no cosntraint violations on a given implementation:
+
+```cpp
+int main () {
+	static_assert(sizeof(float) == sizeof(int));
+	static_assert(alignof(float) == alignof(int));
+	typedef union u {
+		float f;
+		int i;
+	} u;
+	static_assert(offsetof(u.f) == offsetof(u.i));
+
+	return 0;
+}
+```
+
+([Godbolt](https://godbolt.org/z/968YqnoWW)). Is this program guaranteed to work and return `0`? Some implementers say no, and others say yes. This proposal provides 2 pieces of wording attempting to either formalize that wording officially in a "Semantics" section, or to move the type-punning to an explicit "Recommended practice" section so that the divergence is either harmonized in a single, unified direction or explicitly blessed.
+
+NOTE: There was explicit divergence in implementer **understanding**. Whether or not they have leveraged this into actual implementation divergence or not is not something the author has looked into, but getting conflicting answers from e.g. two Clang developers or two GCC developers has not been very encouraging for the future.
+
+
+
+
+# Wording # {#wording}
+
+The wording is against the latest working draft.
+
+The intent is to provide 2 options.
+
+- OPTION 1: formalize the semantics of `union` type punning by moving the bulk of the footnote's text into normative text and make the object representation identical to using `memcpy`.
+- OPTION 2: allow implementation divergence by placing the appropriate wording and examples in the recommended practice.
+
+
+
+
+## OPTION 1: Modify "§6.5.3.4 Structure and union members" to formalize union semantics ## {#wording-option.1}
+
+
+<blockquote>
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.5.3.4</span> <span class="wording-clause-title">Structure and union members</span>
+</div>
+
+<div class="wording-section">
+
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+The first operand of the `.` operator shall have an atomic, qualified, or unqualified complete structure or union type, and the second operand shall name a member of that type.
+</div>
+
+
+<div class="wording-numbered">
+
+The first operand of the `->` operator shall be a pointer to an atomic, qualified, or unqualified complete structure or union type, and the second operand shall name a member of the type pointed to.
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered">
+
+A postfix expression followed by the `.` operator and an identifier designates a member of a structure or union object.<ins>If the named member is a member of a union and it is not the member last stored into then the value is the reinterpretation of the appropriate portion of the object representation (6.2.6) of the last stored value. Otherwise, the</ins><del>The</del> value is that of the named member<del>,</del><span class="footnote-ref"><del>94)</del></span><del> and</del><ins>. The value</ins> is an lvalue if the first expression is an lvalue. If the first expression has qualified type, the result has the so-qualified version of the type of the designated member.
+</div>
+
+<ins>
+<div class="wording-newnumbered">
+
+EXAMPLE&emsp;&emsp;&emsp; The process of reading members not explicitly written to in a union is sometimes called type punning. This can possibly be a non-value representation. The following fragment returns `0` if no constraints are violated:
+
+```cpp
+#include <stddef.h>
+#include <string.h>
+
+int main () {
+	static_assert(sizeof(float) == sizeof(int), "sizes are not similar");
+	static_assert(alignof(float) == alignof(int), "alignments are not similar");
+	typedef union u {
+		float f;
+		int i;
+	} u;
+	static_assert(offsetof(u, f) == offsetof(u, i), "offsets are not similar");
+
+	u pun = {.i = 0};
+	int nopun_i = 0;
+	float nopun_f = 12334.0;
+
+	memcpy(&nopun_f, &nopun_i, sizeof(int));
+	if (memcmp(&nopun_f, &pun.f, sizeof(int)) == 0) {
+		return 0;
+	}
+	return 1;
+}
+```
+</div>
+</ins>
+
+<div class="wording-numbered">
+
+A postfix expression followed by the -> operator and an identifier designates a member of a structure or union object. The value is that of the named member of the object to which the first expression points, and is an lvalue.<span class="footnote-ref">95)</span> If the first expression is a pointer to a qualified type, the result has the so-qualified version of the type of the designated member.
+</div>
+
+<div class="wording-numbered">
+
+Accessing a member of an atomic structure or union object results in undefined behavior.96)
+</div>
+
+<div class="wording-numbered">
+
+One special guarantee is made to simplify the use of unions: if a union contains several structures that share a common initial sequence (see following sentence), and if the union object currently contains one of these structures, it is permitted to inspect the common initial part of any of them anywhere that a declaration of the completed type of the union is visible. Two structures share a *common initial sequence* if corresponding members have compatible types (and, for bit-fields, the same widths) for a sequence of one or more initial members.
+</div>
+
+
+<div>
+<del>
+<span class="footnote"><sup>94)</sup>If the member used to read the contents of a union object is not the same as the member last used to store a value in the object the appropriate part of the object representation of the value is reinterpreted as an object representation in the new type as described in 6.2.6 (a process sometimes called type punning). This can possibly be a non-value representation.</span>
+</del>
+</div>
+
+</div>
+
+</blockquote>
+
+
+## OPTION 2: Modify "§6.5.3.4 Structure and union members" to make union semantics a recommended practice ## {#wording-option.2}
+
+<blockquote>
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.5.3.4</span> <span class="wording-clause-title">Structure and union members</span>
+</div>
+
+<div class="wording-section">
+
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+The first operand of the `.` operator shall have an atomic, qualified, or unqualified complete structure or union type, and the second operand shall name a member of that type.
+</div>
+
+
+<div class="wording-numbered">
+
+The first operand of the `->` operator shall be a pointer to an atomic, qualified, or unqualified complete structure or union type, and the second operand shall name a member of the type pointed to.
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered">
+
+A postfix expression followed by the `.` operator and an identifier designates a member of a structure or union object. The value is that of the named member<span class="footnote-ref"><del>94)</del></span> and is an lvalue if the first expression is an lvalue. If the first expression has qualified type, the result has the so-qualified version of the type of the designated member.
+</div>
+
+
+<div class="wording-numbered">
+
+A postfix expression followed by the -> operator and an identifier designates a member of a structure or union object. The value is that of the named member of the object to which the first expression points, and is an lvalue.<span class="footnote-ref">95)</span> If the first expression is a pointer to a qualified type, the result has the so-qualified version of the type of the designated member.
+</div>
+
+<div class="wording-numbered">
+
+Accessing a member of an atomic structure or union object results in undefined behavior.96)
+</div>
+
+<div class="wording-numbered">
+
+One special guarantee is made to simplify the use of unions: if a union contains several structures that share a common initial sequence (see following sentence), and if the union object currently contains one of these structures, it is permitted to inspect the common initial part of any of them anywhere that a declaration of the completed type of the union is visible. Two structures share a *common initial sequence* if corresponding members have compatible types (and, for bit-fields, the same widths) for a sequence of one or more initial members.
+</div>
+
+<ins>
+<div class="wording-clause-section-title">
+Recommended practice
+</div>
+</ins>
+
+<ins>
+<div class="wording-numbered">
+
+In the case a union member accessed with the `.` or `->` operators, if the named member is not the member last stored into then the value is the reinterpretation of appropriate portion of the object representation (6.2.6) of the last stored value.
+</div>
+</ins>
+
+
+<ins>
+<div class="wording-numbered">
+EXAMPLE&emsp;&emsp;&emsp; The process of reading members not explicitly written to in a union is sometimes called type punning. This can possibly be a non-value representation. The following fragment returns `0` if no constraints are violated:
+
+```cpp
+#include <stddef.h>
+#include <string.h>
+
+int main () {
+	static_assert(sizeof(float) == sizeof(int), "sizes are not similar");
+	static_assert(alignof(float) == alignof(int), "alignments are not similar");
+	typedef union u {
+		float f;
+		int i;
+	} u;
+	static_assert(offsetof(u, f) == offsetof(u, i), "offsets are not similar");
+
+	u pun = {.i = 0};
+	int nopun_i = 0;
+	float nopun_f = 12334.0;
+
+	memcpy(&nopun_f, &nopun_i, sizeof(int));
+	if (memcmp(&nopun_f, &pun.f, sizeof(int)) == 0) {
+		return 0;
+	}
+	return 1;
+}
+```
+</div>
+</ins>
+
+<div>
+<del>
+<span class="footnote"><sup>94)</sup>If the member used to read the contents of a union object is not the same as the member last used to store a value in the object the appropriate part of the object representation of the value is reinterpreted as an object representation in the new type as described in 6.2.6 (a process sometimes called type punning). This can possibly be a non-value representation.</span>
+</del>
+</div>
+
+</div>
+
+</blockquote>
+
