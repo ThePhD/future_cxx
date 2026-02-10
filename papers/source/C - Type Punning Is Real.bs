@@ -41,23 +41,44 @@ path: resources/css/bikeshed-wording.html
 
 # Introduction and Motivation # {#intro}
 
-We have personally claimed that type punning is a legal action in C. It is unambiguously **NOT** allowed in C++, but vendors fall on different sides of the divide when it comes to the behavior of type punning with a `union` in C. That is, given the following asserts produce no cosntraint violations on a given implementation:
+We have personally claimed that type punning is a legal action in C. It is unambiguously **NOT** allowed in C++, but vendors fall on different sides of the divide when it comes to the behavior of type punning with a `union` in C. That is, given the following asserts produce no constraint violations on a given implementation:
 
 ```cpp
+#include <stddef.h>
+#include <string.h>
+#include <stdalign.h>
+
 int main () {
-	static_assert(sizeof(float) == sizeof(int));
-	static_assert(alignof(float) == alignof(int));
+	static_assert(sizeof(float) == sizeof(int), "sizes are not similar");
+	static_assert(alignof(float) == alignof(int), "alignments are not similar");
 	typedef union u {
 		float f;
 		int i;
 	} u;
-	static_assert(offsetof(u.f) == offsetof(u.i));
+#if defined(UNNECESSARY_CHECK) && UNNECESSARY_CHECK == 1
+	// Not ncessary: both members start at an offset of `0` due to
+	// §6.7.3.2 Structure and union specifiers, ❡18:
+	// «A pointer to a union object, suitably converted,
+	// points to each of its members (or if a member is a bit-field,
+	// then to the unit in which it resides),
+	// and vice versa. The members of a union object overlap in such a way
+	// that pointers to them when
+	// converted to pointers to character type point to the same byte.»
+	static_assert(offsetof(u, f) == offsetof(u, i), "offsets are not similar");
+#endif
+	u pun = {.i = 0};
+	const int nopun_i = 0;
+	float nopun_f = 12334.0;
 
-	return 0;
+	memcpy(&nopun_f, &nopun_i, sizeof(int));
+	if (memcmp(&nopun_f, &pun.f, sizeof(int)) == 0) {
+		return 0;
+	}
+	return 1;
 }
 ```
 
-([Godbolt](https://godbolt.org/z/968YqnoWW)). Is this program guaranteed to work and return `0`? Some implementers say no, and others say yes. This proposal provides 2 pieces of wording attempting to either formalize that wording officially in a "Semantics" section, or to move the type-punning to an explicit "Recommended practice" section so that the divergence is either harmonized in a single, unified direction or explicitly blessed.
+([Godbolt](https://godbolt.org/z/jrcPzKh5j)). Is this program guaranteed to work and return `0`? Some implementers say no, and others say yes. This proposal provides 2 pieces of wording attempting to either formalize that wording officially in a "Semantics" section, or to move the type-punning to an explicit "Recommended practice" section so that the divergence is either harmonized in a single, unified direction or explicitly blessed.
 
 NOTE: There was explicit divergence in implementer **understanding**. Whether or not they have leveraged this into actual implementation divergence or not is not something the author has looked into, but getting conflicting answers from e.g. two Clang developers or two GCC developers has not been very encouraging for the future.
 
@@ -109,13 +130,13 @@ Semantics
 
 <div class="wording-numbered">
 
-A postfix expression followed by the `.` operator and an identifier designates a member of a structure or union object.<ins>If the named member is a member of a union and it is not the member last stored into then the value is the reinterpretation of the appropriate portion of the object representation (6.2.6) of the last stored value. Otherwise, the</ins><del>The</del> value is that of the named member<del>,</del><span class="footnote-ref"><del>94)</del></span><del> and</del><ins>. The value</ins> is an lvalue if the first expression is an lvalue. If the first expression has qualified type, the result has the so-qualified version of the type of the designated member.
+A postfix expression followed by the `.` operator and an identifier designates a member of a structure or union object.<ins>If the named member is a member of a union and it is not the member last stored into, then the value is the reinterpretation of the appropriate portion with the object representation (6.2.6) of the last stored value represented by the named member. Otherwise, the</ins><del>The</del> value is that of the named member<del>,</del><span class="footnote-ref"><del>94)</del></span><del> and</del><ins>. The value</ins> is an lvalue if the first expression is an lvalue. If the first expression has qualified type, the result has the so-qualified version of the type of the designated member.
 </div>
 
 <ins>
 <div class="wording-newnumbered">
 
-EXAMPLE&emsp;&emsp;&emsp; The process of reading members not explicitly written to in a union is sometimes called type punning. This can possibly be a non-value representation. The following fragment returns `0` if no constraints are violated:
+EXAMPLE&emsp;&emsp;&emsp; The process of reading members not explicitly written to in a union is sometimes called "type punning". This can possibly be a non-value representation. The following fragment returns `0` if no constraints are violated:
 
 ```cpp
 #include <stddef.h>
@@ -128,10 +149,9 @@ int main () {
 		float f;
 		int i;
 	} u;
-	static_assert(offsetof(u, f) == offsetof(u, i), "offsets are not similar");
 
 	u pun = {.i = 0};
-	int nopun_i = 0;
+	const int nopun_i = 0;
 	float nopun_f = 12334.0;
 
 	memcpy(&nopun_f, &nopun_i, sizeof(int));
@@ -231,14 +251,14 @@ Recommended practice
 <ins>
 <div class="wording-numbered">
 
-In the case a union member accessed with the `.` or `->` operators, if the named member is not the member last stored into then the value is the reinterpretation of appropriate portion of the object representation (6.2.6) of the last stored value.
+In the case a union member accessed with the `.` or `->` operators, if the named member is not the member last stored into, then the value is the reinterpretation of the appropriate portion with the object representation (6.2.6) of the last stored value represented by the named member. The process of reading members not explicitly or implicitly written to in a union is sometimes called "type punning".
 </div>
 </ins>
 
 
 <ins>
 <div class="wording-numbered">
-EXAMPLE&emsp;&emsp;&emsp; The process of reading members not explicitly written to in a union is sometimes called type punning. This can possibly be a non-value representation. The following fragment returns `0` if no constraints are violated:
+EXAMPLE&emsp;&emsp;&emsp; Type punning can possibly be a non-value representation. The following fragment returns `0` if no constraints are violated:
 
 ```cpp
 #include <stddef.h>
@@ -251,10 +271,9 @@ int main () {
 		float f;
 		int i;
 	} u;
-	static_assert(offsetof(u, f) == offsetof(u, i), "offsets are not similar");
 
 	u pun = {.i = 0};
-	int nopun_i = 0;
+	const int nopun_i = 0;
 	float nopun_f = 12334.0;
 
 	memcpy(&nopun_f, &nopun_i, sizeof(int));
