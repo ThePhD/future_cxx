@@ -82,6 +82,37 @@ int main () {
 
 NOTE: There was explicit divergence in implementer **understanding**. Whether or not they have leveraged this into actual implementation divergence or not is not something the author has looked into, but getting conflicting answers from e.g. two Clang developers or two GCC developers has not been very encouraging for the future.
 
+The wording that supports the undefined behavior interpretation comes from what is currently §6.2.5 "Representation of types":
+
+> When a value is stored in a member of an object of union type, the bytes of the object representation that do not correspond to that member but do correspond to other members take unspecified values.
+
+Thus, reading from such a member is undefined because there are no guarantees as to what those values may be, whether they are suitable for the type they have been placed into, and similar concerns. Additionally, the "Effective Type" rule from §6.5 "Expressions" requires that after a write into a byte array through a specific type, a read of that same data with a non-compatible type that is not otherwise covered by such Effective Type rules is undefined behavior (a violation of the semantic requirements of the subclause with no proscribed behavior or case):
+
+> The *effective type* of an object that is not a byte array, for an access to its stored value, is the declared type of the object.<sup>84)</sup> If a value is stored into a byte array through an lvalue having a type that is not a byte type, then the type of the lvalue becomes the effective type of the object for that access and for subsequent accesses that do not modify the stored value. If a value is copied into a byte array using memcpy or memmove, or is copied as an array of byte type, then the effective type of the modified object for that access and for subsequent accesses that do not modify the value is the effective type of the object from which the value is copied, if it has one. For all other accesses to a byte array, the effective type of the object is simply the type of the lvalue used for the access
+>
+> ...
+>
+> An object shall have its stored value accessed only by an lvalue expression that has one of the following types:
+> 
+> - a type compatible with the effective type of the object,
+> - a qualified version of a type compatible with the effective type of the object,
+> - the signed or unsigned type corresponding to a type compatible with the underlying type of the effective type of the object,
+> - the signed or unsigned type corresponding to a type compatible with a qualified version of the underlying type of the effective type of the object,
+> - a byte type, or
+> - an aggregate or union type that includes one of the aforementioned types among its members (including, recursively, a member of a subaggregate or contained union).
+
+However, "effective type" rules only apply to storing things into a byte array; it does not apply for preexisting objects. Preexisting objects explicitly have "the declared type of the object". Therefore, storing into it does not allow the type to change because a `union` object already has a fixed effective type that is not a byte array and that cannot be changed.
+
+The understanding here was supposed to be fixed by [[c99-issue-0283|C99's Issue 0283]], which added a footnote that, in conjunction with 6.2.5 "Representation of types" wording, should have solved the problem. The footnote's current form is:
+
+> <sup>84)</sup> If the member used to read the contents of a union object is not the same as the member last used to store a value in the object the appropriate part of the object representation of the value is reinterpreted as an object representation in the new type as described in 6.2.6 (a process sometimes called type punning). This can possibly be a non-value representation.
+
+This footnote was suppsoed to make it clear that while the overall union and structure object could not become a ticking bombo due to the change in presentation of its members, the member that is read from could become a non-value representation (trap representations, abort representations, signaling/interrupt representations). It is these effects that are the focus of this paper. In one interpretation, if trap representations, aborts, signals, etc. can all manifest due to this, it is fairly specifically undefined behavior (that is, there's no bounds on what can or cannot happen upon reading this value). The other interpretation is that reading those unspecified values, even if it can result in all of these things, is not undefined behavior and is simply some lesser form of implementation-defined or unspecified behavior.
+
+It cannot be unspecified behavior because it is not bounded or something an implementation can choose to do out of a select list of options. It could be implementation-defined, but it would be hard to have an implementation account for the (nearly infinite?) was a bit representation laid over another bit representation and interpretated as a different kind of object could go awry. This is the core conceit of the argument surrounding why it is undefined behavior or not.
+
+Unfortunately, opinions continue to diverge on the matter. It seems like more explicit, clear text with regard to the use of the member access operators is required to make clear that this is an allowed and permitted operation. Or, more explicitly, the footnote needs to be moved up to a "Recommended practice" section, to make it clear the intentions of the code.
+
 
 
 
@@ -166,7 +197,7 @@ int main () {
 
 <div class="wording-numbered">
 
-A postfix expression followed by the -> operator and an identifier designates a member of a structure or union object. The value is that of the named member of the object to which the first expression points, and is an lvalue.<span class="footnote-ref">95)</span> If the first expression is a pointer to a qualified type, the result has the so-qualified version of the type of the designated member.
+A postfix expression followed by the `->` operator and an identifier designates a member of a structure or union object. The value is that of the named member of the object to which the first expression points, and is an lvalue.<span class="footnote-ref">95)</span> If the first expression is a pointer to a qualified type, the result has the so-qualified version of the type of the designated member.
 </div>
 
 <div class="wording-numbered">
@@ -229,7 +260,7 @@ A postfix expression followed by the `.` operator and an identifier designates a
 
 <div class="wording-numbered">
 
-A postfix expression followed by the -> operator and an identifier designates a member of a structure or union object. The value is that of the named member of the object to which the first expression points, and is an lvalue.<span class="footnote-ref">95)</span> If the first expression is a pointer to a qualified type, the result has the so-qualified version of the type of the designated member.
+A postfix expression followed by the `->` operator and an identifier designates a member of a structure or union object. The value is that of the named member of the object to which the first expression points, and is an lvalue.<span class="footnote-ref">95)</span> If the first expression is a pointer to a qualified type, the result has the so-qualified version of the type of the designated member.
 </div>
 
 <div class="wording-numbered">
@@ -258,7 +289,7 @@ In the case a union member accessed with the `.` or `->` operators, if the named
 
 <ins>
 <div class="wording-numbered">
-EXAMPLE&emsp;&emsp;&emsp; Type punning can possibly be a non-value representation. The following fragment returns `0` if no constraints are violated:
+EXAMPLE&emsp;&emsp;&emsp; Type punning can possibly result a non-value representation. The following fragment returns `0` if no constraints are violated:
 
 ```cpp
 #include <stddef.h>
@@ -296,3 +327,16 @@ int main () {
 
 </blockquote>
 
+<pre class="biblio">
+{
+	"c99-issue-0283": {
+		"authors": [
+			"J11",
+			"Clark Nelson"
+		],
+		"title": "Accessing a non-current union member (\"type punning\")",
+		"date": "September 18th, 2002",
+		"href": "https://www.open-std.org/jtc1/sc22/wg14/issues/c99/issue0283.html"
+	}
+}
+</pre>
