@@ -1,10 +1,10 @@
 <pre class='metadata'>
 Title: Thread Attributes - Implementation Extensible and ABI-Resistant
-Shortname: 3690
-Revision: 2
-!Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3627.htm">n3627 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3554.htm">n3554 (r0)</a>
+Shortname: 38X6
+Revision: 3
+!Previous Revisions: <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3690.htm">n3690 (r2)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3627.htm">n3627 (r1)</a>, <a href="https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3554.htm">n3554 (r0)</a>
 Status: P
-Date: 2025-09-26
+Date: 2026-02-26
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -39,6 +39,16 @@ path: resources/css/bikeshed-wording.html
 # Revision History # {#changelog}
 
 
+## Revision 3 - February 26<sup>th</sup>, 2025 ## {#changelog-r3}
+
+- Rename `THRD_NAME_LEN_MAX` to `THRD_NAME_SIZE_MAX` as it is a byte count and not a (wide) string length.
+- Fix typos in description and design like missing `thrd_t*` parameters in the design.
+- Wording fixes:
+	- Keep the same "Returns" for the `thrd_create` function and add a new description instead that uses the "equivalent to" language.
+	- Remove the numeric requirements (except that it has enough value space for a 32 bit unsigned integer). This is not a fight worth doing.
+
+
+
 
 ## Revision 2 - August 18<sup>th</sup>, 2025 ## {#changelog-r2}
 
@@ -50,6 +60,7 @@ path: resources/css/bikeshed-wording.html
 	- Move all of the changes related to reserved identifiers to the future directions section.
 	- Remove all of the hardcoded values except for the implementation-defined enumeration constant. That is worth keeping.
 	- All field names are prefixed with `thrd_` to prevent clashes with poorly-named macros.
+	- "can potentially produces" ➡️ "can potentially produce"
 
 
 ## Revision 1 - July 6<sup>th</sup>, 2025 ## {#changelog-r1}
@@ -280,10 +291,10 @@ typedef struct thrd_attr_detached {
 
 typedef int(thrd_attr_err_func_t)(const thrd_attr_kind[static 1], int err, void* err_func_arg);
 
-int thrd_create_attrs(thrd_start_func func, void* arg,
+int thrd_create_attrs(thrd_t* thr, thrd_start_t func, void* arg,
 	size_t n, const thrd_attr_kind *attrs[static n]);
 
-int thrd_create_attrs_err(thrd_start_func func, void* arg,
+int thrd_create_attrs_err(thrd_t* thr, thrd_start_t func, void* arg,
 	size_t n, const thrd_attr_kind *attrs[static n],
 	thrd_attr_err_func_t* err_func, void* err_func_arg);
 ```
@@ -292,7 +303,7 @@ int thrd_create_attrs_err(thrd_start_func func, void* arg,
 
 ## Thread Attribute Kind & ABI-Resistance ## {#design-attr_kind}
 
-The thread attribute kind enumeration has 65,535 reserved values `[0, 65'535)` for the standard, and 4294967295 reserved values [65'636, 4,294,967,295] for implementation-defined attributes. It is important to have a minimum supported number of values in the case that someone hard-codes a value when using the API that is e.g. greater than what a 16-bit `thrd_attr_kind` can handle: this could lead to accidental truncation of the value. Such a truncation could result in the incorrect interpretation of the value. An implementation can add more attributes to cover more cases and information that the standard could not conceivably provide a unified interface for, such as:
+The thread attribute kind enumeration has a minimum of $2^{32}-1$ values. It is important to have a minimum supported number of values in the case that someone hard-codes a value when using the API that is e.g. greater than what a 16-bit `thrd_attr_kind` can handle: this could lead to accidental truncation of the value. Such a truncation could result in the incorrect interpretation of the value. An implementation can add more attributes to cover more cases and information that the standard could not conceivably provide a unified interface for, such as:
 
 - stack address + stack size (POSIX Threads);
 - starting "Suspended" (Win32 Threads);
@@ -300,7 +311,7 @@ The thread attribute kind enumeration has 65,535 reserved values `[0, 65'535)` f
 - setting implementation-specific scheduler or thread priority (many different values for POSIX, fixed set of enumeration values for Win32);
 - setting commit vs. reserved stack size values (Win32 Threads);
 
-and so much more. 65 thousand values for the standard more than covers the set of interfaces WG14 could possibly manage to standardize (one per standard structure), and 4.2 billion values (one per implementation-defined structure) gives implementations plenty of room to play around and not conflict with each other (hopefully they are nice and send each other e-mails so avoid potential conflicts, as they should in this day and age).
+and so much more.
 
 This design is also ABI-resistant. If structures need to change, rather than trying to change them in-line and suffering from a problem of adding members or otherwise disturbing how reads and writes of such structures will be treated, a new one can be added seamlessly and without pain both on the standard side and the implementation side.
 
@@ -362,9 +373,9 @@ We leave getter/query APIs to future papers after ironing out this paper.
 
 
 
-## `THRD_NAME_LEN_MAX` Macro and Size ## {#design-name.max}
+## `THRD_NAME_SIZE_MAX` Macro and Size ## {#design-name.max}
 
-The macro `THRD_NAME_LEN_MAX` is to accommodate that many platforms will produce errors if provided with a name that is too long. This is to allow external users to check their names before submitting, to save themselves some amount of grief. On Windows, this value would be 8192 (4096 multiplied by `sizeof(wchar_t)` on their platforms, which is 2). On POSIX, this is some ridiculously small value such as 8. Other operating systems might have a much larger values.
+The macro `THRD_NAME_SIZE_MAX` is to accommodate that many platforms will produce errors if provided with a name that is too long. This is to allow external users to check their names before submitting, to save themselves some amount of grief. On Windows, this value would be 8192 (4096 multiplied by `sizeof(wchar_t)` on their platforms, which is 2). On POSIX, this is some ridiculously small value such as 8. Other operating systems might have a much larger values.
 
 Implementations that do not support the feature at all can use 0. The value is not expected to be used in arrays (though, certainly, some people will try to do it anyways since the value will be an integer constant expression).
 
@@ -383,7 +394,7 @@ Similarly, users can pick and choose the kinds of errors they care about:
 ```cpp
 #include <threads.h>
 #include <stdcountof.h>
-#include <stdio.h?>
+#include <stdio.h>
 
 inline static int thrd_main(void* arg) {
 	(void)arg;
@@ -396,7 +407,7 @@ int handle_attribute_errors(const thrd_attr_kind* attr_kind, int err, void* user
 	if (*attr_kind == thrd_attr_kind_c8name) {
 		// we don't care if name is unrecognized: not critical to us
 		printf("We could not set the name of the thread "
-			"with a UTF-32 string (%d)", err);
+			"with a UTF-8 string (%d)", err);
 		return thrd_success;
 	}
 	else if (*attr_kind == thrd_attr_kind_stack_size) {
@@ -519,7 +530,7 @@ destructors will be called when a thread terminates;<ins> and,</ins>
 <ins>
 
 ```c
-THRD_NAME_LEN_MAX
+THRD_NAME_SIZE_MAX
 ```
 
 which expands to a integer constant expression suitable for use in conditional expression inclusion preprocessing directives representing the maximum number of bytes that the implementation can retain internally when using thread attributes (7.30.2✨).
@@ -530,7 +541,7 @@ which expands to a integer constant expression suitable for use in conditional e
 <div class="wording-newnumbered wording-newnumbered-4">
 <ins>
 
-NOTE&emsp;&emsp;While `THRD_NAME_LEN_MAX` provides a maximum limit to the number of internal characters, what an implementation does when a provided thread name is longer than `THRD_NAME_LEN_MAX` is implementation-defined. Implementations can potentially produces an error in the `thrd_create_attrs_err` function, or accept the input name but truncate it. `THRD_NAME_LEN_MAX` can be applied against the provided thread name after an internal conversion has been performed, meaning names provided through, for example, `thrd_attr_mwcname` may seem short in the wide execution encoding but could be longer in a potential internal unspecified encoding used for the storage of such name, if honored.
+NOTE&emsp;&emsp;While `THRD_NAME_SIZE_MAX` provides a maximum (byte size) limit to the number of internal characters, what an implementation does when a provided thread name is longer than `THRD_NAME_SIZE_MAX` is implementation-defined. Implementations can potentially produce an error in the `thrd_create_attrs_err` function, or accept the input name but truncate it. `THRD_NAME_SIZE_MAX` can be applied against the provided thread name after an internal conversion has been performed, meaning names provided through, for example, `thrd_attr_mwcname` may seem short in the wide execution encoding but could be longer in a potential internal unspecified encoding used for the storage of such name, if honored.
 
 </ins>
 </div>
@@ -551,7 +562,7 @@ which is the function pointer type `int (*)(void*)` that is passed to `thrd_crea
 thrd_attr_kind
 ```
 
-which is an enumeration type that is compatible with `int_least32_t` and used to provide type associations for the functions `thrd_create_attrs` and `thrd_create_attrs_err`;
+which is an enumeration type that can hold the values $0$ through $2^{32}-1$ and is used to provide type associations for the functions `thrd_create_attrs` and `thrd_create_attrs_err`;
 
 ```c
 thrd_attr_err_func_t
@@ -610,10 +621,9 @@ thrd_attr_kind_mwcname
 thrd_attr_kind_c8name
 thrd_attr_kind_stack_size
 thrd_attr_kind_detached
-thrd_attr_kind_implementation_defined = 0xFFFF
 ```
 
-and are set as the value of the `thrd_kind` member field of thread attributes described in 7.30.2✨. They provide a way to uniquely identify each thread attribute, except for the `thrd_attr_kind_implementation_defined` which has no associated structure. `thrd_attr_kind` is capable of holding values $0$ to $2^{32}-1$.
+and are set as the value of the `thrd_kind` member field of thread attributes described in 7.30.2✨. They provide a way to uniquely identify each thread attribute. `thrd_attr_kind` is capable of holding values $0$ through $2^{32}-1$.
 </ins>
 </div>
 
@@ -626,7 +636,7 @@ and are set as the value of the `thrd_kind` member field of thread attributes de
 
 <blockquote class="quote-ins">
 <div class="wording-clause-header">
-<span class="wording-clause-number">7.30.5.2✨</span><span class="wording-clause-title">Thread Attributes</span>
+<span class="wording-clause-number">7.30.2✨</span><span class="wording-clause-title">Thread Attributes</span>
 </div>
 
 <div class="wording-section">
@@ -647,7 +657,7 @@ For `thrd_create_attrs` and `thrd_create_attrs_err` function calls, it is unspec
 
 <div class="wording-numbered">
 
-With the exception of `thrd_attr_kind_implementation_defined`, for every `thrd_attr_kind` enumeration constant defined in this document of the form `thrd_attr_kind_X`, where `X` is the rest of the identifier, there is a corresponding `thrd_attr_X` complete structure type. The value of `thrd_attr_kind` enumeration constants corresponding to the standard thread attributes shall be less than `thrd_attr_kind_implementation_defined`. The `thrd_kind` member must be set to the corresponding `thrd_attr_kind_X` enumeration constant's value for every `thrd_attr_X` structure before use with the `thrd_create_attrs` and `thrd_create_attrs_with` functions, otherwise the behavior is undefined.
+For every `thrd_attr_kind` enumeration constant defined in this document of the form `thrd_attr_kind_X`, where `X` is the rest of the identifier, there is a corresponding `thrd_attr_X` complete structure type. The `thrd_kind` member must be set to the corresponding `thrd_attr_kind_X` enumeration constant's value for every `thrd_attr_X` structure before use with the `thrd_create_attrs` and `thrd_create_attrs_with` functions, otherwise the behavior is undefined.
 </div>
 
 <div class="wording-numbered">
@@ -712,11 +722,18 @@ int thrd_create(thrd_t *thr, thrd_start_t func, void *arg);
 ```
 </div>
 
-<del>
 <div class="wording-clause-section-title">
 Description
 </div>
 
+<ins>
+<div class="wording-numbered-2 wording-newnumbered">
+
+The `thrd_create` function is equivalent to `thrd_create_attrs_err(thr, func, arg, 0, nullptr, nullptr, nullptr)`.
+</div>
+</ins>
+
+<del>
 <div class="wording-numbered">
 
 The `thrd_create` function creates a new thread executing func(arg). If the `thrd_create` function succeeds, it sets the object pointed to `by thr` to the identifier of the newly created thread. (A thread’s identifier can be reused for a different thread once the original thread has exited and either been detached or joined to another thread.) The completion of the `thrd_create` function synchronizes with the beginning of the execution of the new thread.
@@ -732,25 +749,16 @@ Returning from `func` has the same behavior as invoking `thrd_exit` with the val
 Returns
 </div>
 
-<del>
 <div class="wording-numbered">
 
 The `thrd_create` function returns `thrd_success` on success, or `thrd_nomem` if no memory could be allocated for the thread requested, or `thrd_error` if the request could not be honored.
 </div>
-</del>
-
-<ins>
-<div class="wording-numbered-2 wording-newnumbered">
-
-The `thrd_create` function returns and is equivalent to `thrd_create_attrs_err(thr, func, arg, 0, nullptr, nullptr, nullptr)`.
-</div>
-</ins>
 
 </div>
 </blockquote>
 
 
-## Add a new sub-clause "§7.30.5.2✨ The `thrd_create_attrs` function" after "The `thrd_create` function" ## {#wording-7.30.5.2✨}
+## Add a new sub-clause "§7.30.5.2✨ The `thrd_create_attrs` function" after "The `thrd_create` function" ## {#wording-7.30.5.3}
 
 <blockquote class="quote-ins">
 <div class="wording-clause-header">
@@ -806,7 +814,7 @@ Synopsis
 ```c
 #include <threads.h>
 int thrd_create_attrs_err(thrd_t *thr, thrd_start_t func, void *arg,
-	size_t attrs_n, const thrd_attr_kind *attrs[static attrs_n]
+	size_t attrs_n, const thrd_attr_kind *attrs[static attrs_n],
 	thrd_attr_err_func_t *err_func, void *err_func_arg);
 ```
 </div>
@@ -822,7 +830,7 @@ The `thrd_create_attrs_err` function creates a new thread executing `func(arg)` 
 
 <div class="wording-numbered">
 
-If `attrs` is a null pointer, no thread attributes are processed. If `attrs_n` is 0, no thread attributes are processed. Each pointer `p` in the range `[attrs, attrs + attrs_n)` must point to a thread attribute or be a null pointer. If `p` is a null pointer, it is ignored and has no effect. Otherwise, if `*p` is a thread attribute that is not honored by the implementation, `err_func` is called with the arguments `p`,`thrd_error`, and `err_func_arg`. Otherwise, the implementation processes the attribute and affects the thread according to the semantics in 7.30.5.2✨. If the implementation encounters an error during processing the attribute, `err_func` is invoked with:
+If `attrs` is a null pointer, no thread attributes are processed. If `attrs_n` is 0, no thread attributes are processed. Each pointer `p` in the range `[attrs, attrs + attrs_n)` must point to a thread attribute or be a null pointer. If `p` is a null pointer, it is ignored and has no effect. Otherwise, if `*p` is a thread attribute that is not honored by the implementation, `err_func` is called with the arguments `p`,`thrd_error`, and `err_func_arg`. Otherwise, the implementation processes the attribute and affects the thread according to the semantics in 7.30.2✨. If the implementation encounters an error during processing the attribute, `err_func` is invoked with:
 
 - the first argument as `p`;
 - the second argument as an unspecified value of one of `thrd_error`, `thrd_nomem`, `thrd_timedout`, or `thrd_busy`;
@@ -834,6 +842,11 @@ If `attrs` is a null pointer, no thread attributes are processed. If `attrs_n` i
 <div class="wording-numbered">
 
 Returning from `func` has the same behavior as invoking `thrd_exit` with the value returned from `func`. `err_func` is always executed on the same thread that invoked `thrd_create_attrs_err`. The processing of all thread attributes, the invocations and completions of any necessary calls to `err_func`, and the completion of the `thrd_create_attrs_err` function synchronize with the beginning of the execution of `func` in the new thread.
+</div>
+
+<div class="wording-numbered">
+
+NOTE&emsp;&emsp;
 </div>
 
 <div class="wording-clause-section-title">

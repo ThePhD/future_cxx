@@ -5,7 +5,7 @@ Shortname: 3810
 Revision: 4
 !Previous Revisions: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3782.htm">n3782 (r3)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3692.htm">n3692 (r2)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3625.htm">n3625 (r1)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3556.htm">n3556 (r0)</a>
 Status: P
-Date: 2026-02-24
+Date: 2026-02-26
 Group: WG14
 !Proposal Category: Change Request, Feature Request
 !Target: C2y
@@ -34,12 +34,14 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 4 - February 24<sup>th</sup>, 2026 ## {#changelog-r4}
+## Revision 4 - February 26<sup>th</sup>, 2026 ## {#changelog-r4}
 
-- Spelling failure fix: "Affinitys" -> "Affinities"
-- 
-
-
+- Spelling failure fix: "Affinitys" -> "Affinities".
+- `_Generic` mentioned explicitly in the design to ensure we talk about how compatibility is not changed here in [[#design-compatibility]].
+- Wording Changes:
+	- Add additional wording saying that the`_Any_func` function type does not have a return type, which is why its unlike every other function type.
+	- Use the new wording of "derivable function types" to refer to function types that do not include `_Any_func`, and let other constraints eliminate it from usage in the appropriate places.
+	- Fix inappropriate usage of qualifers of the `_Any_func` type in the simple assignment and conditional operators.
 
 ## Revision 3 - January 13<sup>th</sup>, 2026 ## {#changelog-r3}
 
@@ -175,6 +177,18 @@ Similar things happen with many other compilers and other alternatives. It's ver
 
 
 
+
+## But Seriously, Why The Macros? ## {#design.macros}
+
+There are three reasons: the principle of conditional features in C, it's ubiquitous use in FFI, and finally how utterly cheap and harmless it is to implement.
+
+The principle is that this is a conditional feature. Conditionally supported features in C typically come with a feature test macro. Some previous feature test macros were slightly misguided because they purported to provide language knowledge that was actually library knowledge (e.g., `__STDC_ISO_10646__`). Otherwise, conditional features that can change how code is compiled and allowed is reserved for use by the compiler, such as `__STDC_NO_THREADS__`, `__STDC_HOSTED__`, `__STDC_NO_ATOMICS__`, `__STDC_NO_VLA__`, and others. If your code requires atomic support or relies on the ability to byte-copy `void*` pointers or function pointers, it is just as important as these other conditional features and thus deserves the same level of macro support.
+
+For FFI, it's doubly important. Knowing that a `void*` is suitable transfer for a function pointer, or even that a `void*` is bit-for-bit identical to its typed counterpart means that FFI layers can save on conversion routines when setting up function call stacks for foreign function interfaces. It's also important for within-C interfacing, such as using `memcpy` on an array of weakly-typed intake structures/unions and being to an array of strongly-typed intake structures whose layouts have been otherwise verified by the use of `static_assert`. These allow users to take these performance gains with confidence and work with FFI with much greater ease without having to first go through a layer of convertibility-indirection and then optionally patching it out based on `__SYSV__` or `_POSIX_SOURCE` or similar constructs.
+
+It is cheap to implement because compilers already know the answer to the questions asked here. They **have** to know for every platform they support; therefore, they can provide the macros with accurate answers. For 90% of compilers, all of these will simply report the maximum affinity values, because that is what all modern compilers and platforms give: full `void*` and `_Any_func*` interoperability and complete amnesty for `void*` to function pointers and back, even in the case of direct use of `memcpy` and even for `memcpy` of arrays of structures.
+
+
 ## Naming ## {#design.naming}
 
 The name chosen here is the one that had the no clashes in both its reserved form `_Foo_bar` and it's header form `foo_bar`. The following **other** names were considered and searched for in public (and some private) code repositories for their prevalence as possible name candidates:
@@ -193,6 +207,24 @@ Many of these had issues with existing standard library type names (e.g. `_Fn` a
 ## `...ptr` In the Name or a Pointer to a Type? ## {#design-ptr}
 
 The goal of this design was to feel as close to `void*` as possible, since that is what this type represents. This means that we wanted to have the `*` present to have it look and feel just like a regular pointer type under regular pointer rules, rather than having it be part of the name. Since this is a core language type and a not a library definition, we preferred to define it closer to `void` than anything else. It also helps in putting this type into the specification, as all we have to do is mirror exactly the specification style and places that "A pointer to `void`" and "`void*`" exist in the current standard. This eases integration and is -- after first explanation -- immediately understandable to those who have been using `void*` as the omni-object pointer.
+
+
+
+## Compatibility Changes? ## {#design-compatibility}
+
+There are no compatible / composite type changes here.
+
+This is important, as we want to ensure we do not accidentally make `_Generic` ambiguous or start triggering strange function call type decay semantics:
+
+```cpp
+float func(int);
+
+static_assert(_Generic(typeof(&func), float(*)(int) : 1, default : 0, _Any_func*: 2) == 1, 
+	"must match with a function pointer and nothing else");
+// compiles and works just fine
+```
+
+This code will continue to work as-given, and adding `_Any_func` into it will not provoke a change in which branch is chosen. This is important to maintain forward-compatibility even as `_Any_func` proliferates through the ecosystem.
 
 
 
@@ -260,7 +292,7 @@ The `void` type comprises an empty set of values; it is an incomplete object typ
 <ins>
 <div class="wording-newnumbered wording-numbered-25">
 
-The `_Any_func` type comprises the concept of a function; it is a function type unlike any other and has no return type and no parameter types. Unlike all other function types, it cannot be derived as a functiont type as it has no return type. It cannot be called.
+The `_Any_func` type comprises the concept of a function; it is a function type unlike any other and has no return type and no parameter types. Unlike all other function types, it cannot be derived as a typical function type (sometimes called a "derived function type" or "derivable function type") as it has no return type. It cannot be called.
 </div>
 </ins>
 
