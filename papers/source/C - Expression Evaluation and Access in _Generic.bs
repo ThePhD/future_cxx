@@ -3,7 +3,7 @@ Title: Expression Evaluation and Access in _Generic
 H1: Expression Evaluation and Access in <code>_Generic</code>
 Shortname: 38X3
 Revision: 1
-!Previous Revisions: None
+!Previous Revisions: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3785.htm">n3785 (r0)</a>
 Status: P
 Date: 2026-04-16
 Group: WG14
@@ -72,15 +72,15 @@ will spit out this error from latest trunk GCC (January 20, 2026):
 ```sh
 <source>: In function 'main':
 <source>:6:30: error: passing argument 1 of 'use_dbl_ptr' from incompatible pointer type [-Wincompatible-pointer-types]
-    6 |         double*: use_dbl_ptr(&v), \
-      |                              ^~
-      |                              |
-      |                              int *
+	6 |         double*: use_dbl_ptr(&v), \
+	  |                              ^~
+	  |                              |
+	  |                              int *
 <source>:12:17: note: in expansion of macro 'USE_THING'
-   12 |         int v = USE_THING(c);
-      |                 ^~~~~~~~~
+	12 |         int v = USE_THING(c);
+	   |                 ^~~~~~~~~
 <source>:2:25: note: expected 'double *' but argument is of type 'int *'
-    2 | int use_dbl_ptr(double* pd);
+	2 | int use_dbl_ptr(double* pd);
 ```
 ([Godbolt](https://godbolt.org/z/xfhsTG79b).)
 
@@ -124,7 +124,7 @@ This is not the first time this problem has been brought up. In fact, it's come 
 
 A viable solution for expression-based `_Generic` is to allow the creation of an l-value or an r-value of the right type based on the input of a `_Generic` selection that uses an controlling expression rather than a controlling type. This allows all branches to be type-checked, but checked with a type that is appropriate rather than allowing a single use of a generic macro or similar to completely and utterly destroy any hope at proper compilation.
 
-This paper proposes adding *declaration-name* as one of the new productions of *generic-association*, which will add an `identifier` as the name of the inserted controlling expression as an r-value or an l-value. It also modifies the rules of a controlling expression to match against both the exact type first (to allow for an l-value expression that may be `const` qualified to be selected) and then the type after typical l-value conversion strips the qualifiers and does other removals.
+This paper proposes adding *generic-declaration-name* as one of the new productions of *generic-association*, which will add an `identifier` as the name of the inserted controlling expression as an r-value or an l-value. It also modifies the rules of a controlling expression to match against both the exact type first (to allow for an l-value expression that may be `const` qualified to be selected) and then the type after typical l-value conversion strips the qualifiers and does other removals.
 
 
 
@@ -135,13 +135,13 @@ The design is simple. There will be three productions for a *generic-association
 
 > *generic-association*:
 > :: *type-name* `:` *assignment-expression*
-> :: *declaration-name* `:` *assignment-expression*
+> :: *generic-declaration-name* `:` *assignment-expression*
 > :: `default` *identifier*<sub>opt</sub> `:` *assignment-expression*
 >
-> *declaration-name*:
-> :: *declaration-specifiers* *declarator*
+> *generic-declaration-name*:
+> :: *generic-declaration-specifiers* *declarator*
 
-The use of *declaration-name* is primarily to allow a non-optional *identifier* to appear in the grammar in the usual expected place, with *type-name* being the same just without the identifier in its grammar. That makes the previously shown code samples look as follows:
+The use of *generic-declaration-name* is primarily to allow a non-optional *identifier* to appear in the grammar in the usual expected place, with *type-name* being the same just without the identifier in its grammar. *generic-declaration-specifiers* is the same as *declaration-specifiers*, except that the *storage-class-qualifiers* part is removed so that grammatically it cannot show up. That makes the previously shown code samples look as follows:
 
 ```cpp
 int use_int_ptr(int* pi);
@@ -488,9 +488,10 @@ A generic association name is the only kind of identifier that has *generic asso
 
 
 
-## Modify §6.5.2.1 Generic selection ## {#wording-6.5.2.1}
+## PICK ONE OPTION: SYNTAX ## {#wording-syntax}
 
-📝 EDITOR'S NOTE: The constraints text of the generic selection section is moved into three paragraphs to break it up. 📝
+
+### SYNTAX OPTION 1 "REQUIRED SCOPE BRACES": Modify §6.5.2.1 Generic selection ### {#wording-syntax-requiredbraces.6.5.2.1}
 
 <blockquote>
 <div class="wording-clause-header">
@@ -518,25 +519,119 @@ Syntax
 
 *generic-association*:
 :: *type-name* `:` *assignment-expression*
-:: <ins>*declaration-name* `:` *assignment-expression*</ins>
+:: `default` `:` *assignment-expression*
+:: <ins>`{` *type-name* `:` *assignment-expression* `}`</ins>
+:: <ins>`{` *generic-declaration-name* `:` *assignment-expression* `}`</ins>
+:: <ins>`{` `default` *identifier*<sub>opt</sub> `:` *assignment-expression* `}` </ins>
+
+<ins>
+
+*generic-declaration-specifiers*:
+:: *generic-declaration-specifiers* *attribute-specifier-sequence*<sub>opt</sub>
+:: *generic-declaration-specifier* *generic-declaration-specifiers*
+
+*generic-declaration-specifier*:
+:: *type-specifier-qualifier*
+:: *function-specifier*
+
+*generic-declaration-name*:
+:: *generic-declaration-specifiers* *declarator*
+
+</ins>
+
+</div>
+
+<div class="wording-numbered">
+...
+</div>
+
+...
+</div>
+</blockquote>
+
+
+### SYNTAX OPTION 2 "BRACELESS": Modify §6.5.2.1 Generic selection ### {#wording-syntax-braceless.6.5.2.1}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.5.2.1</span> <span class="wording-clause-title">Generic selection</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+
+*generic-selection*:
+:: `_Generic` `(` *generic-controlling-operand* `,` *generic-assoc-list* `)`
+
+*generic-controlling-operand*:
+:: *assignment-expression*
+:: *type-name*
+
+*generic-assoc-list*:
+:: *generic-association*
+:: *generic-assoc-list* `,` *generic-association*
+
+*generic-association*:
+:: *type-name* `:` *assignment-expression*
+:: <ins>*generic-declaration-name* `:` *assignment-expression*</ins>
 :: `default` <ins>*identifier*<sub>opt</sub></ins> `:` *assignment-expression*
 
 <ins>
 
-*declaration-name*:
-:: *declaration-specifiers* *declarator*
+*generic-declaration-specifiers*:
+:: *generic-declaration-specifiers* *attribute-specifier-sequence*<sub>opt</sub>
+:: *generic-declaration-specifier* *generic-declaration-specifiers*
+
+*generic-declaration-specifier*:
+:: *type-specifier-qualifier*
+:: *function-specifier*
+
+*generic-declaration-name*:
+:: *generic-declaration-specifiers* *declarator*
 
 </ins>
 
+</div>
+
+<div class="wording-numbered">
+...
+</div>
+
+...
+</div>
+</blockquote>
+
+
+
+## Modify the rest of §6.5.2.1 Generic selection ## {#wording-6.5.2.1}
+
+📝 EDITOR'S NOTE: The constraints text of the generic selection section is moved into three paragraphs to break it up. 📝
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.5.2.1</span> <span class="wording-clause-title">Generic selection</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Syntax
+</div>
+
+<div class="wording-numbered">
+...
 </div>
 
 <ins>
 <div class="wording-clause-section-title">
 Description
 </div>
-</ins>
 
-<ins>
 <div class="wording-newnumbered">
 
 The *controlling type* of a generic selection is the type or set of types used to select a branch in the list of generic associations in the generic selection. The *generic association type* is the type indicated by a generic association's type name or declaration name, if present. The *generic association name* is either the identifier in the declaration name or the identifier after `default`, if present.
@@ -562,12 +657,10 @@ The controlling type shall be compatible with at most one of the types named in 
 
 If an identifier can be treated either as a typedef name or as a generic association name, it shall be taken as a typedef name.
 </div>
-</ins>
 
-<ins>
 <div class="wording-newnumbered">
 
-There shall be no storage-class specifiers on a declaration name, if present. 
+If the generic controlling operand is a type name, then no generic association's shall be composed of either a generic declaration name nor `default` with an identifier.
 </div>
 </ins>
 
@@ -598,7 +691,14 @@ If a generic selection has a generic association with a type name that is compat
 <ins>
 <div class="wording-newnumbered">
 
-The generic controlling operand is evaluated if and only if both the generic controlling operand is an assignment expression and the selected generic association has a generic association name. Otherwise, it is not evaluated.
+The generic controlling operand is evaluated if and only if both the generic controlling operand is an assignment expression and the selected generic association has a generic association name. If the generic association name is present but is unused in the selected generic association, the generic controlling operand's expression behaves as a void expression (6.8.4). Otherwise, it is not evaluated.
+</div>
+</ins>
+
+<ins>
+<div class="wording-newnumbered">
+
+NOTE&emsp;&emsp;&emsp;If evaluated, the generic controlling operand's expression is evaluated once and only once, regardless of the number of times the generic association name is used or if its even used at all.
 </div>
 </ins>
 
@@ -616,7 +716,17 @@ If present, the generic association name has the value of the generic controllin
 <ins>
 <div class="wording-newnumbered">
 
-NOTE&emsp;&emsp;&emsp;If evaluated, the generic controlling operand's expression is evaluated once and only once, regardless of the number of times the generic association name is used or if its even used at all.
+EXAMPLE&emsp;&emsp;&emsp;The use of the generic association name in the selected generic expression can change the semantics of a program.
+
+```cpp
+int main () {
+	int arr[1];
+	_Generic(arr[1], int i:  i); // semantic violation, undefined behavior
+	_Generic(arr[1], int i,  0); // semantic violation, undefined behavior
+	_Generic(arr[1], int i: &i); // ok, `i` is an lvalue and
+	                             // used as an lvalue, &arr[1] is fine.
+}
+```
 </div>
 </ins>
 
