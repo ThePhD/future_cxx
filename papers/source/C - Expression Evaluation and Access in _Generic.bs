@@ -35,7 +35,7 @@ path: resources/css/bikeshed-wording.html
 
 ## Revision 1 - April 16<sup>th</sup>, 2026 ## {#changelog-r1}
 
-- Initial release. ✨
+- Add a second choice for Syntax in [[#design-syntax]].
 
 
 
@@ -343,11 +343,17 @@ If we could only match on `int` in this scenario (as is the case currently, toda
 
 One could argue that simply disallowing this kind of behavior in general would be wiser (by, e.g., backing these declarations with *new* variables whose types are `register const` and effectively removing this use case), but that would be a strict reduction in power (as demonstrated by [[#design-lvalues]]).
 
-Therefore, the solution proposed herein is for finding a matching association in two passes for any generic expression that includes an association with the *declaration-name* **form**:
+Therefore, the solution proposed herein is for finding a matching association in two passes for any generic expression that includes an association with the *generic-declaration-name* **form**:
 
-- In the first pass, the actual type of controlling operand is used to search the associations.
-- If there is a non-default matching association, then that association is chosen.
-- Otherwise, selection works as it currently does.
+- In the first pass, the actual type of controlling operand without "l-value conversion" is used to search the associations.
+- If there is a non-`default`, exactly compatible type association, then that association is chosen.
+- Otherwise, selection works as it currently does when given an object:
+	- The type of the controlling operand is taken an "l-value conversion" is applied to the type.
+	- If there is a non-default type that compatible, then that association is chosen.
+	- Otherwise, if there's a `default` association, that is chosen.
+	- Finally, if there is no match and there is no `default` association, it is an error (a constraint is violated).
+
+
 
 ## Identifier Scope and Lifetime ## {#design-lifetime.scope}
 
@@ -404,11 +410,13 @@ We settled on simply adding the *declaration-name* branch to the *generic-associ
 
 There are other ways to introduce the identifier in the sequence.
 
-One possible choice is to use a real introducer for the identifier, so it doesn't look like a *declaration-name*. An example of this is with a `::`, so that the *type-name* is separated from the *identifier*, as in: `type-name :: identifier : ...`. Other than being conflicting with C++-style syntax of `identifier :: identifier ...`, it also seems a bit unnecessary given the solution we've settled on. It might get rid of the disambiguation rule that anything that can be parsed as a *type-name* should be parsed as a *type-name* rather than a *declaration-name*, where possible. Other than this, there are little benefits, unfortunately.
+One possible choice is to use a real introducer for the identifier, so it doesn't look like a *declaration-name*. An example of this is with a `::`, so that the *type-name* is separated from the *identifier*, as in: `type-name :: identifier : ...`. Other than being conflicting with C++-style syntax of `identifier :: identifier ...`, it also seems a bit unnecessary given the solution we've settled on. It might get rid of the disambiguation rule that anything that can be parsed as a *type-name*/*typedef*-name should be parsed as a *type-name*/*typedef*-name rather than a *generic-declaration-name*, where possible. Other than this, there are little benefits, unfortunately.
 
 It could also be something along the lines of `type-name : identifier : ...` for a generic association branch, but a single `:` does not really provide enough information to the parser to know if the following tokens will be the special new syntax versus just the existing syntax where `identifier` is meant to be parsed as an `expression`. One could delay the parsing and decide whether or not its either the new syntax or the old syntax by waiting for the first non-parenthesized `,` from showing up and then deciding how to interpret two top-level colons, but it can be hard to deal with given the use of e.g. `a ? b : c` nakedly as part of an *assignment-expression*. (This can make it such that the compiler might have to consider `a` and identifier and `?` an error before the `b :` portion, for example.)
 
 A separator between the type name and the identifier could strengthen the idea that the matching type may not exactly be the same as the input expression, as well, since that's how generic with expressions currently works (after the strict-matching capabilities added by this proposal's wording).
+
+Finally, because of scoping rules, some folks have suggested that the new name-based syntax be surrounded in `{` and `}`. This is meant to improve the mental association with a new "scope" for typical C users. At the time of writing, someone already implemented it using the same semantics without the `{` or `}` around the *generic-association* (March 2, 2026) and found no issue with it, but we are including it so we can get WG14 feedback about it.
 
 
 
