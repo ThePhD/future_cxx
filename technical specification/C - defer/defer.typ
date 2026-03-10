@@ -4,18 +4,22 @@
 	title: "Programming Languages — C — defer, a mechanism for general purpose, lexical scope-based undo",
 	authors: ("JeanHeyd Meneide (wg14@soasis.org)"),
 	keywords: ("C", "defer", "ISO/IEC 9899", "Technical Specification", "Safety", "Resource"),
-	id: "N3734",
+	id: "N3YZ6",
 	ts_id: "25755",
 	stage: "cd",
 	abstract: [The advent of resource leaks in programs created with ISO/IEC 9899#index[ISO/IEC 9899] ⸺ Programming Languages, C has necessitated the need for better ways of tracking and automatically releasing resources in a given scope. This document provides a feature to address this need in a reliable, translation-time, opt-in manner for implementations to furnish to programmers.],
 	doc
 )
 
+
+
+
 = Scope #stable_tag("scope") <scope>
 
 This Technical Specification specifies a series of extensions of the programming language C, specified by the international standard ISO/IEC 9899:2024#index[ISO/IEC 9899:2024].
 
 Each clause in this Technical Specification deals with a specific topic. The first sub-clauses of clauses 4 through 7 contain a technical description of the features of the topic and what is necessary for an implementation to achieve conformance through extensions or additions to ISO/IEC 9899:2024#index[ISO/IEC 9899:2024].
+
 
 
 
@@ -36,19 +40,26 @@ For the purposes of this document, the terms and definitions of ISO/IEC 9899:202
 
 
 
+
 = Conformance #stable_tag("conf") <conf>
 
 The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 4 apply without any additional requirements in this document.
 
 
 
+
 = Environment #stable_tag("env") <env>
+
+
 
 == General #stable_tag("env-general") <env-general>
 
-The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 5 apply along with the following additional requirements to support the ```c _Defer```#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer") feature.
+The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 5 apply along with the following additional requirements to support the defer feature.
+
+
 
 == Program termination #stable_tag("prog.term") <prog.term>
+
 
 === Semantics
 
@@ -59,21 +70,29 @@ If the return type of the ```c main``` function#index(apply-casing: false, displ
 
 = Language #stable_tag("lang") <lang>
 
+
+
 == General #stable_tag("lang-general") <lang-general>
 
 The requirements from ISO/IEC 9899:2024#index[ISO/IEC 9899:2024], clause 6 apply along with the following additional requirements to support the ```c _Defer```#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer") feature.
+
+
 
 == Keywords #stable_tag("keywords") <keywords>
 
 In addition to the keywords in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.4.2, an implementation shall additionally recognize ```c _Defer```#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer") as a keyword.
 
+
 === Recommended practice
 
 Implementations are encouraged to provide an additional keyword ```c defer```#index(apply-casing: false, display: [```c defer```], "Keywords", "defer") as an alternative spelling for the ```c _Defer``` keyword#index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer"). It should have all the significance of the ```c _Defer``` keyword described in this document.
 
+
+
 == Statements #stable_tag("statements") <statements>
 
 In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.8, implementations shall allow the unlabeled statement grammar production to produce a defer statement#index[defer statement] which contains a deferred block#index[deferred block]. A deferred block#index[deferred block] is also considered a _block_ just like a primary block or a secondary block.
+
 
 === Syntax
 
@@ -96,7 +115,10 @@ In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.
 #index("unlabeled statement")
 #index("defer statement")
 
+
+
 == Defer statements #stable_tag("defer") <defer>
+
 
 === Syntax
 
@@ -110,9 +132,11 @@ In addition to the statements in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §6.
 #index("defer statement")
 #index(apply-casing: false, display: [```c _Defer```], "Keywords", "_Defer")
 
+
 === Description
 
 Let _D_ be a defer statement#index[defer statement], _S_ be the deferred block#index[deferred block] of _D_, and _E_ be the enclosing block of _D_. The scope of _D_ is the same as an identifier declared and completed immediately after the end of _S_.
+
 
 === Constraints
 
@@ -121,6 +145,7 @@ Jumps by means of:
 - ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) or ```c switch```#index("Keywords", "switch", apply-casing: false, display:[```c switch```]) shall not jump into any defer statement;#index[defer statement]
 - ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) or ```c switch```#index("Keywords", "switch", apply-casing: false, display:[```c switch```]) shall not jump from outside the scope of a defer statement#index[defer statement] _D_ to inside that scope;
 - and, ```c return```#index("Keywords", "return", apply-casing: false, display:[```c return```]), ```c break```#index("Keywords", "break", apply-casing: false, display:[```c break```]), ```c continue```#index("Keywords", "continue", apply-casing: false, display:[```c continue```]) or ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) shall not exit _S_.
+
 
 === Semantics
 
@@ -138,7 +163,7 @@ If a non-local jump #index("non-local jump") is used in _D_'s scope but before t
 - if execution leaves _D_'s scope, _S_ is not executed;
 - otherwise, if control returns to a point in _E_ and causes _D_ to be reached more than once, the effect is the same as reaching _D_ only once.
 
-#note() The "execution" of a defer statement#index[defer statement] only enures that _S_ is run on any exit from that scope. There is no observable side effect to repeat from reaching _D_, as the manifestation of any of the effects of _S_ happen if and only if the scope of _D_ is exited or terminated after reaching _D_, as previously specified. "Tracking" of reached defer statements at execution time is not necessary: if the non-local jump leaves the scope it is not executed (forgotten); and, if its reached again it behaves as it would during normal execution.
+#note() The "execution" of a defer statement#index[defer statement] only ensures that _S_ is run on any exit from that scope. There is no observable side effect to repeat from reaching _D_, as the manifestation of any of the effects of _S_ happen if and only if the scope of _D_ is exited or terminated after reaching _D_, as previously specified. "Tracking" of reached defer statements at execution time is not necessary: if the non-local jump leaves the scope it is not executed (forgotten); and, if it is reached again it behaves as it would during normal execution.
 
 
 If a non-local jump #index("non-local jump") is executed from _S_ and control leaves _S_, the behavior is undefined#index("undefined behavior").
@@ -155,9 +180,7 @@ If _E_ has any defer statements#index[defer statement] _D_ that have been reache
 - a function with the `_Noreturn` function specifier, or a function annotated with the `noreturn` or `_Noreturn` attribute, is called;#index(initial: "n", display: [`_Noreturn`], apply-casing: false, "_Noreturn")#index(apply-casing: false, display: [`noreturn`], "noreturn")
 - or, any signal `SIGABRT`, `SIGINT`, or `SIGTERM` occurs;#index("signal")
 
-#para_continue() then any such _S_ are not run, unless otherwise specified by the implementation. Any other _D_ that have not been reached do not have their _S_ run.
-
-#note() The execution of deferred statements upon non-local jumps (i.e., `longjmp` and `setjmp` described in ISO/IEC 9899:2024#index[ISO/IEC 9899:2024] §7.13)#index("non-local jump") or program termination is a technique sometimes known as "unwinding" or "stack unwinding", and some implementations perform it. See also ISO/IEC 14882#index[ISO/IEC 14882] Programming languages — C++ *[except.ctor]*.
+#para_continue() then any such _S_ are not run. Any other _D_ that have not been reached do not have their _S_ run.
 
 #example() Defer statements#index[Defer statement] cannot be jumped over.#index("Keywords", "goto", apply-casing: false, display:[```c goto```])
 
@@ -359,7 +382,7 @@ int main() {
 #include <stdlib.h>
 #include <stddef.h>
 
-int f(size_t n, void* buf) {
+int use_buffer(size_t n, void* buf) {
 	/* ... */
 	return 0;
 }
@@ -377,6 +400,7 @@ int main() {
 
 ```c
 #include <float.h>
+#include <fenv.h>
 #include <assert.h>
 
 bool f() {
@@ -551,6 +575,35 @@ int main() {
 	handle h;
 	int err = purr(&h);
 	_Defer if (!err) un_purr(h);
+	return 0;
+}
+```
+
+#example() Non-local jumps do not execute defer statements, and jumping backwards to reach the same defer statement does not accumulate defer statements.
+
+```cpp
+#include <stdio.h>
+#include <setjmp.h> 
+#include <stdlib.h>
+
+static jmp_buf jbuf;
+
+int f(int count) {
+	_Defer { fputs("cat says meow", stdout); }
+	if (count == 2) {
+		return 1;
+	}
+	longjmp(jbuf, count + 1);
+	return 0;
+}
+
+int main(void) {
+	volatile int count = 0;
+	if (setjmp(jbuf) == 2) {
+		// prints "cat says meow"
+		return 1;
+	}
+	f(count);
 	return 0;
 }
 ```

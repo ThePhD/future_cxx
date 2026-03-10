@@ -1,11 +1,11 @@
 <pre class='metadata'>
 Title: _Any_func* - A Universal Function Pointer Storage Type
 H1: <code>_Any_func*</code> - A Universal Function Pointer Storage Type
-Shortname: 3810
-Revision: 4
+Shortname: 38Y4
+Revision: 5
 !Previous Revisions: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3782.htm">n3782 (r3)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3692.htm">n3692 (r2)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3625.htm">n3625 (r1)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3556.htm">n3556 (r0)</a>
 Status: P
-Date: 2026-02-26
+Date: 2026-04-12
 Group: WG14
 !Proposal Category: Change Request, Feature Request
 !Target: C2y
@@ -32,6 +32,15 @@ path: resources/css/bikeshed-wording.html
 
 # Revision History # {#changelog}
 
+
+
+## Revision 5 - April 12<sup>th</sup>, 2026 ## {#changelog-r5}
+
+- Taking into account new [[#polls]], some impactful changes were made:
+	- Remove everything about the predefined macros and representation affinities, almost. Rather than talk about the representation, we just talking about the convertibility. The predefined macros just have a `0` or `1` value and remove any of the latitude to tell what *kind* of convertible it is. There are also only 2 of them now since it is impossible to differentiate the kind of conversion done for object pointers to `void*` and derivable function pointers to `_Any_func*`.
+	- Fix up the design and prose to remove all of the "affinities" wording and to add special mentions in places where it was removed.
+- Typo fixes in various parts of the paper.
+- Several wording adjustments based on WG14 feedback.
 
 
 ## Revision 4 - February 26<sup>th</sup>, 2026 ## {#changelog-r4}
@@ -85,7 +94,47 @@ The majority of the motivation is the same as it was 30 years ago, 20 years, and
 >
 > However, C does not specify an analogous generic function pointer. Unlike object types, a pointer to a function of one type can be converted to a pointer to a function of any other type and back with no change. This is a useful guarantee that makes function pointers safely interchangeable (except to call a function, of course). At the same time, the absence of a generic function pointer analogous to void* has led to a proliferation of workarounds in applications, libraries, and implementations alike. ...
 
-Popular distributions, operating systems, and platforms such as POSIX (with XSI extensions or since 2017/2018), Windows/NT, and many other platforms require that a data pointer (`void*`) is interconvertible with **any** function pointer (`R(*)(Args...)`). But, for many other platforms, function pointers are not the same size as data pointers nor convertible altogether, either because there are multiple data segments and the data pointers are larger or -- less common but still present -- because function pointers are larger than data pointers. Rather than try to force `void*` to change to patch this hole (which would be a very fundamental ABI break on many platforms), this proposal focuses instead on following in [[n2230]]'s footsteps and proposing a (core language) type to satisfy this need properly. It then adds the concept of "representation affinity" to allow for the use of `void*` in an increased number of situations, to standardize existing practice.
+Popular distributions, operating systems, and platforms such as POSIX (with XSI extensions or since 2017/2018), Windows/NT, and many other platforms require that a data pointer (`void*`) is interconvertible with **any** function pointer (`R(*)(Args...)`). But, for many other platforms, function pointers are not the same size as data pointers nor convertible altogether, either because there are multiple data segments and the data pointers are larger or -- less common but still present -- because function pointers are larger than data pointers. Rather than try to force `void*` to change to patch this hole (which would be a very fundamental ABI break on many platforms), this proposal focuses instead on following in [[n2230]]'s footsteps and proposing a (core language) type to satisfy this need properly.
+
+
+
+
+# Polls # {#polls}
+
+The following polls are being used to guide the decisions made in this revision of the paper.
+
+
+
+## February-March 2026 Virtual Meeting ## {#polls-february.march.2026}
+
+> "For N3782 do we want to have something along the lines of a universal function type?"
+> 21 Favor / 2 Against / 2 Abstain
+
+This is understood as wanting the core feature of this paper. The core feature is being maintained. There was some discussion about wanting a different name. Unfortunately, no other good names have been offered.
+
+> "For N3782 do we want to have something along the lines of `intfuncptr_t` / `uintfuncptr_t`?"
+> 10 In Favor / 2 Against / 11 Abstain
+
+This is being understood as weak support. It's optional and it also is aliasable as a `_BitInt` -- which means a trivial implementation is:
+
+```cpp
+typedef          _BitInt(sizoef(_Any_func*) * CHAR_BIT)  intfuncptr_t;
+typedef unsigned _BitInt(sizoef(_Any_func*) * CHAR_BIT) uintfuncptr_t;
+```
+
+(Assuming a large-enough `_BitInt` size.) We understand that every architecture with function pointers has an appropriately-sized integer value, but it is optional for the same reasons that `intptr_t` and `uintptr_t` are optional.
+
+> "For N3782 do we want to have something along the lines of  `printf` / `scanf` support?"
+> 11 Favor / 5 Against / 6 Abstain
+
+This is being taken as weak consensus that may improve with some degree of explanation as to why it's necessary. Previsions revisions of this paper had close to no exact motivation for this, other than it would be typical full library support. We also heard from vendors during the meeting that this is not at all difficult to implement. Some additional "no" votes came from not understanding what the `PRI` macros were placed here for. We have included all of that wording and explanation so that a more conscientious vote that might have a more strongly defined for/against and less abstensions would be manifest.
+
+> "For N3782 do we want to have something along the lines of all the pieces about affinity and predefined macros for properties of conversions?"
+> 6 Favor / 9 Against / 6 Abstain
+
+This is interpreted as not wanting the predefined macros about affinity for the properties of conversion. However, during discussion it was specifically noted that affinities were the problem and that perhaps a more general-purpose.
+
+One vendor noted that an implementation-defined value for the predefined macros would be preferred to state that other kinds of conversions (such as partial or address-space non-conserving) could be added. However, given the strong resistance to affinities and getting into "implementation details" with the macro values, we have flattened all of this information down and removed all information about affinities from the proposal. We hope that, in the future, this vendor could come forth and add new representation-specific macros. For this proposal, all of the predefined macros have been changed to talk explicitly about whether convertibility is valid or not, and uses the `__STDC_PTR_CONV_*`-style names now, to leave the `_STDC_REPR_*` macros open for that vendor to work with in a future proposal.
 
 
 
@@ -123,26 +172,7 @@ Not having `_Any_func` be callable avoids this problem entirely, by refusing to 
 
 ## Giving `void*` Additional Powers ## {#design-voidptr}
 
-Furthermore, as this is defined in the core language, we can also provide a core language predefined macro for whether or not `void*` -> `some_function_type*` and vice-versa is an allowable, legal translation. This also allows us to put wording in the core language that blesses such an (implicit) conversion, given that it's highly prevalent on a wide variety of architectures. It is often seen as a "gotcha" that this conversion doesn't work, and users have been asking for this change for a very long time. We obviously do not want to make things worse for embedded platforms or make them non-conforming; they are an important bedrock of C.
-
-Therefore, we define a new concept "*representation affinity*" so that we can support the notion of conversion not only between `_Any_func*` and `void*`, but `void*` and any function pointer type. This also further helps us because we can specify properties beyond what is currently blessed by the C standard, and make allowances for the popular platforms which form the overwhelming super majority of platforms that developers work on, even in C:
-
-- `__STDC_REPR_INCOMPATIBLE__` (value 0, "incompatible representation affinity").
-- `__STDC_REPR_CONVERTIBLE__` (value 1, "convertible representation affinity" - what is guaranteed by basic C conformance today with `void*` and object pointers).
-- `__STDC_REPR_EQUIVALENT__` (value 2, "equivalent representation affinity" - what Windows, POSIX:2018, etc. platforms guarantee but have to warn/error about in strictly-conforming C).
-
-These predefined macros and their definitions are then applied to four new different predefined macros, which has one of the above 3 value macros as its definition:
-
-- `__STDC_PTR_REPR_ANY_FUNC_AND_FUNC__` -- describes representation affinity for `_Any_func*` and all function pointer types; must be at least `__STDC_PTR_REPR_CONVERTIBLE__` (i.e., what this proposal asks for and what matches `void*` with object pointers). Can be upgraded to `__STDC_REPR_EQUIVALENT__` by an implementation.
-- `__STDC_PTR_REPR_ANY_FUNC_AND_VOID__` -- describes representation affinity between `_Any_func*` and `void*`; can be `__STDC_REPR_INCOMPATIBLE__`.
-- `__STDC_PTR_REPR_FUNC_AND_VOID__` -- describes representation affinity between any function pointer and `void*`; can be `__STDC_REPR_INCOMPATIBLE__`.
-- `__STDC_PTR_REPR_OBJECT_AND_VOID__` -- describes representation affinity for all object pointers and `void*`; must be at least `__STDC_PTR_REPR_CONVERTIBLE__` (guaranteed by wording in C standard currently). Can be upgraded to `__STDC_REPR_EQUIVALENT__` by an implementation.
-
-Each implementation can support the level that is appropriate for their platform. Some basic support is already supported for 2 of the conversions, both as per this proposal and as per the original purpose of the type since 1989: `void*` to any object pointer (and back) always reports at least `__STDC_REPR_CONVERTIBLE__` (a value of 1), and `_Any_func*` to any function pointer (and back) always reports at least `__STDC_REPR_CONVERTIBLE__` (a value of 1).
-
-However, conversion between `void*` and `_Any_func*` need not be supported (reports `__STDC_REPR_INCOMPATIBLE__` (a value of 0)), as that is not guaranteed to work on all platforms. This is useful for implementations that decide they do not want to take on an impossible task where object/data pointers and function/code points address completely different kinds of memory. Implementations that can not handle it (e.g. 16-bit Texas Instrument DSPs or 8-bit multi-address-space chips that have 21 bit function pointers but 16 bit memory addresses). Most modern implementations -- Windows/NT since forever and POSIX since the 90s with XSI extensions (and just simply required by POSIX:2018) -- would have this defined, and users could `#error` inside of an `#if` check if their code happens to any more advanced properties.
-
-Finally, implementations that opt into having at least convertible representation affinity for `void*` and `_Any_func*` should be able to use those types in conversions without constraint violations. Similarly, there is additional wording to allow for any function pointer type to work with (implicit) assignment to `void*` or vice-versa if the representation affinity is high enough. This standardizes existing practice, where many implementations do not warn or  error on the constraint violation of for unrelated pointer types unless the flags are set to be strict enough:
+Implementations that opt into having convertibility for `void*` and `_Any_func*` should be able to use those types in conversions without constraint violations. Similarly, there is additional wording to allow for any function pointer type to work with (implicit) assignment to `void*` or vice-versa if the compiler blesses the conversion. This standardizes existing practice, where many implementations do not warn or  error on the constraint violation of for unrelated pointer types unless the flags are set to be strict enough:
 
 ```cpp
 extern void use(void* p);
@@ -184,9 +214,12 @@ There are three reasons: the principle of conditional features in C, it's ubiqui
 
 The principle is that this is a conditional feature. Conditionally supported features in C typically come with a feature test macro. Some previous feature test macros were slightly misguided because they purported to provide language knowledge that was actually library knowledge (e.g., `__STDC_ISO_10646__`). Otherwise, conditional features that can change how code is compiled and allowed is reserved for use by the compiler, such as `__STDC_NO_THREADS__`, `__STDC_HOSTED__`, `__STDC_NO_ATOMICS__`, `__STDC_NO_VLA__`, and others. If your code requires atomic support or relies on the ability to byte-copy `void*` pointers or function pointers, it is just as important as these other conditional features and thus deserves the same level of macro support.
 
-For FFI, it's doubly important. Knowing that a `void*` is suitable transfer for a function pointer, or even that a `void*` is bit-for-bit identical to its typed counterpart means that FFI layers can save on conversion routines when setting up function call stacks for foreign function interfaces. It's also important for within-C interfacing, such as using `memcpy` on an array of weakly-typed intake structures/unions and being to an array of strongly-typed intake structures whose layouts have been otherwise verified by the use of `static_assert`. These allow users to take these performance gains with confidence and work with FFI with much greater ease without having to first go through a layer of convertibility-indirection and then optionally patching it out based on `__SYSV__` or `_POSIX_SOURCE` or similar constructs.
+For FFI, it's doubly important. Knowing that a `void*` is suitable transfer for a function pointer means that FFI layers can save on conversion routines when setting up function call stacks for foreign function interfaces.
 
-It is cheap to implement because compilers already know the answer to the questions asked here. They **have** to know for every platform they support; therefore, they can provide the macros with accurate answers. For 90% of compilers, all of these will simply report the maximum affinity values, because that is what all modern compilers and platforms give: full `void*` and `_Any_func*` interoperability and complete amnesty for `void*` to function pointers and back, even in the case of direct use of `memcpy` and even for `memcpy` of arrays of structures.
+It is cheap to implement because compilers already know the answer to the questions asked here. They **have** to know for every platform they support; therefore, they can provide the macros with accurate answers. For 90% of compilers, all of these will simply report `1`, because that is what all modern compilers and platforms give: full `void*` and `_Any_func*` interoperability and complete amnesty for `void*` to function pointers and back, even in the case of direct use of `memcpy` and even for `memcpy` of arrays of structures.
+
+NOTE: As this paper no longer includes affinities, there is no portable way to determine if the copying of an array of `void*` pointers to an array of `_Any_func*` using `memcpy` or similar byte-level copy functions is appropriate or suitable. It is also impossible to tell if this is possible for regular `void*` and `T*` generally as well. Removing affinities and the macros to do coarse detection and adjustment of code based on these actions was seen as preferable, since it is a much simpler design. This can also disrupt FFI, where -- especially for function pointers -- additional conversions may be performed on the pointer value before it is serialized to something like `(u)intfuncptr_t`. The authors of this paper strongly disagree with the Committee's consensus and believe it user-hostile to consider users too simplistic to understand the implications of these macros, or that it was too complicated for a dedicated C programmer to want to wield them. Nevertheless, they have been removed.
+
 
 
 ## Naming ## {#design.naming}
@@ -239,14 +272,22 @@ There were a bunch of potential candidates but a lot of them had problems both b
 
 Thusly, we settled for `%jp` in this proposal. It can be read mnemonically as "jump pointer", which is reminiscent of assembly `jmp` and for assembly junkies gives the feeling of both `jmp` and `call`. `j` is also, already, a length modifier and has no known uses in the wild in combination with `%p`. It is the best we can do given the Wild Wild West of specifiers and modifiers in the C-and-derivative ecosystem, at this point.
 
+Debugging is not the only use case for printing (function) pointer values. It is a valuable thing to do in reverse engineering, serialization for cross-language FFI, and many other purposes. It is squarely within the purpose of the "lingua franca" to be able to print its core types, and both `void*` and `_Any_func*` are fit for this purpose. There is no reason to offer the ability to print object pointers and not also print function pointers.
+
 
 ### `(u)intfuncptr_t` and printing/scanning macros ### {#design-library-uintfuncptr_t} 
 
 Given that we have a new pointer type for functions, individuals will want to manipulate the numeric representation of these pointers. The reason for this is simple: in the GCC extension, `void(*)(void)` is used as a generic catch-all function pointer storage type, but **also** has incrementing ability as part of its extension behavior. `_Any_func*` does not have such powers, and it was not added to the Additive Operators in the wording. Thus, in order to appropriately manipulate such pointers -- while knowing that there is not `char*` or `unsigned char*` analogue for this like with `void*` -- we have to employ the other means of address manipulation through a new integer type. `(u)intfuncptr_t` is exactly like `(u)intptr_t`, just with `func` in the name. It's optional as well.
 
+This is notably important not just for printing support, but for meaningful capture of (address-space qualified) function pointers and many other things that the typical `(u)intptr_t` and `void*` types may not be able to successfully capture. Having an integer type large enough for this is important for reading, writing, and low-level manipulation.
+
 The `_MAX` macros for this type are already taken care of by blanket specification. The only additional specification needed is for `_WIDTH`, which is straightforward to write.
 
-Finally, `PRI(i/u/U/x/X/b/B/o)FUNCPTR` macros for printing and similar `SCN(i/u/x/b/o)FUNCPTR` macros for scanning macros were added to the appropriate headers. This rounds out full library support for I/O with these numbers, mirroring `uintptr_t` support.
+Finally, `PRI(i/u/U/x/X/b/B/o)FUNCPTR` macros for printing and similar `SCN(i/u/x/b/o)FUNCPTR` macros for scanning macros were added to the appropriate headers. The reason for adding these is similar to the changes made when binary number printing support was added: at first, these printing macros were not added to C23 when support for `%b` was aadded to the standard. A national body comment and a paper were written to add it to the standard, and we ended up having to add support for all of the `PRI(LEAST/FAST/FAST/MAX)bN` at a late date, rushing it through. This was annoying and a waste of time.
+
+NOTE: When reviewing a previous revision of this paper, it was asserted that these macros are "not good" and "old"; if this is true, someone should write a paper to deprecate these macros officially so we can stop adding to it. Until then, any such expressions or implications of these things being "not worth touching" are simply not grounded in the reality, and the authors of this paper would not like to have to put in support for this functionality only to have to turn around and be forced to add it later as National Body comment-gun point.
+
+This rounds out full library support for I/O with these numbers, mirroring `uintptr_t` support.
 
 
 
@@ -310,7 +351,7 @@ The `_Any_func` type comprises the concept of a function; it is a function type 
 
 <blockquote>
 <div class="wording-clause-header">
-<span class="wording-clause-number">6.2.6.3✨</span> <span class="wording-clause-title">Pointer types</span>
+<span class="wording-clause-number">6.2.6.3</span> <span class="wording-clause-title">Pointer types and `nullptr_t`</span>
 </div>
 
 <div class="wording-section">
@@ -325,83 +366,28 @@ A pointer to `void` shall have the same representation and alignment requirement
 The size and alignment of `nullptr_t` is the same as for a pointer to character type. An object representation of the value of `nullptr` is the same as the object representation of a null pointer value of type `void*`. All other object representations are non-value representations for this type.
 </div>
 
-<ins>
-<div class="wording-numbered">
-
-For certain types, there are three levels of increasing *representation affinity* between them:
-
-- *incompatible representation affinity*, where they do not have a common alignment or representation requirements and cannot be converted to one another and back while preserving its value;
-- *convertible representation affinity*, where they do not have a common alignment or representation requirements but can be converted to one another and back while preserving its value;
-- or, *equivalent representation affinity*, where they have a compatible alignment and representation.
-
-Each of these levels correspond to the predefined macros `__STDC_REPR_INCOMPATIBLE__`, `__STDC_REPR_CONVERTIBLE__`, and `__STDC_REPR_EQUIVALENT__` (6.10.10.2), respectively. Representation affinity can be compared against other representation affinities; higher values subsume the permissions and properties of lower values, except for incompatible representation affinity which has no permissions and provides no additional properties.
-</div>
-
-<div class="wording-numbered">
-
-Two pointer types with incompatible representation affinities cannot be converted implicitly from one to another and back. An explicit conversion from a pointer to the first type to the second type and then back to the first type can possibly result in a pointer with a different representation that does not compare equal to the original.
-</div>
-
-<div class="wording-numbered">
-
-Two pointer types with convertible representation affinities can be converted implicitly or explicitly from a value of the first type to the value of the second type and back. A conversion, implicit or explicit, from a pointer to the first type to the second type and then back to the first type shall result in a pointer comparing equal to the the original. The alignment and representation of the first and second pointer types can be different.
-</div>
-
-<div class="wording-numbered">
-
-Two pointer types with equivalent representation affinities have equivalent alignments and representations. A conversion, implicit or explicit, from a pointer to the first type to the second type shall result in two pointers whose object representations are identical.
-</div>
-
-<div class="wording-numbered">
-
-NOTE 1 &emsp;&emsp;Convertible and equivalent representation affinity guarantee that a given pointer can roundtrip through the first pointer type to the second pointer type and back, but it does not guarantee that the pointer is a valid pointer of the second pointer type. For example, if `void*` and `_Any_func*` have convertible representation affinity, and a pointer to an `int` object is converted to pointer to `void`, it does not imply that the pointer to `void` can be converted into a pointer to `_Any_func` and then be cast and used as a valid function pointer. The program is still responsible for ensuring pointers are used appropriately.
-</div>
-
-<div class="wording-numbered">
-
-NOTE 2 &emsp;&emsp;Typically, the byte arrays of two pointers that have equivalent representation affinities compare equal after conversions, except for any padding bits which have unspecified values.
-</div>
-
-<div class="wording-numbered">
-
-Outside of what is defined in 6.3.3.3 and 6.5, representation affinity is implementation defined and any operations or conversions associated with such representation affinities are conditionally supported. The representation affinity in both directions between:
-
-- pointers to `_Any_func` and pointers to derivable function types characterizes the value of `__STDC_PTR_REPR_ANY_FUNC_AND_FUNC__`;
-- pointers to `_Any_func` and pointers to `void` characterizes the value of `__STDC_PTR_REPR_ANY_FUNC_AND_VOID__`;
-- pointers to derivable function types and pointers to `void` characterizes the value of `__STDC_PTR_REPR_FUNC_AND_VOID__`;
-- and, pointers to object types and pointers to `void` characterizes the value of `__STDC_PTR_REPR_OBJECT_AND_VOID__`.
-
-</div>
-
-<div class="wording-numbered">
-
-EXAMPLE &emsp;&emsp;The file-scope declarations
-
-```cpp
-static_assert(__STDC_PTR_REPR_OBJECT_AND_VOID__
-		>= __STDC_REPR_CONVERTIBLE__);
-static_assert(__STDC_PTR_REPR_ANY_FUNC_AND_FUNC__
-		>= __STDC_REPR_CONVERTIBLE__);
-```
-
-do not provoke a constraint violation on any implementation. However, the following file scope declarations potentially trigger constraint violations on implementations:
-
-```cpp
-// "Any_func *" may be incompatible with "void *",
-// and vice-versa
-static_assert(__STDC_PTR_REPR_ANY_FUNC_AND_VOID__
-		!= __STDC_REPR_INCOMPATIBLE__);
-// "void *" may be incompatible with one or more
-// function pointer types, and vice-versa
-static_assert(__STDC_PTR_REPR_FUNC_AND_VOID__
-		!= __STDC_REPR_INCOMPATIBLE__);
-```
-</div>
-
-
-</ins>
 </div>
 </blockquote>
+
+
+
+## Modify §6.3.3.1 "Lvalues, arrays, and function designators" ## {#wording-6.3.3.1}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.3.3.1</span> <span class="wording-clause-title">Lvalues, arrays, and function designators</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-numbered">
+
+A *function designator* is an expression that has function type. Except when it is the operand of the `sizeof` operator, a typeof operator, or the unary `&` operator, a function designator with <del>type "function returning type" is converted to an expression that has type "pointer to function returning type"</del><ins>function type is converted to an expression that has pointer to that same function type</ins>.
+</div>
+
+</div>
+</blockquote>
+
 
 
 
@@ -416,7 +402,7 @@ static_assert(__STDC_PTR_REPR_FUNC_AND_VOID__
 
 <div class="wording-numbered">
 
-<ins>A pointer to `void` shall have at least convertible representation affinity (6.2.6.3✨) to a pointer to any object type. </ins>A pointer to `void` can be converted to or from a pointer to any object type. A pointer to any object type can be converted to a pointer to `void` and back again; the result shall compare equal to the original pointer.
+A pointer to `void` can be converted to or from a pointer to any object type. A pointer to any object type can be converted to a pointer to `void` and back again; the result shall compare equal to the original pointer.
 </div>
 
 <div>
@@ -426,12 +412,12 @@ static_assert(__STDC_PTR_REPR_FUNC_AND_VOID__
 <ins>
 <div class="wording-newnumbered wording-numbered-9">
 
-A pointer to `_Any_func` shall have at least convertible representation affinity (6.2.6.3✨) to a pointer to any other derivable function type. A pointer to any derivable function type can be converted to a pointer to `_Any_func` and back again and vice-versa; the result shall compare equal to the original pointer.
+A pointer to any derivable function type can be converted to a pointer to `_Any_func` and back again and vice-versa; the result shall compare equal to the original pointer.
 </div>
 
 <div class="wording-newnumbered">
 
-If a pointer to `_Any_func` have at least convertible representation affinity (6.2.6.3✨) pointer to `void`:
+Conversion of a pointer to `_Any_func` to a pointer to `void` and vice-versa is conditionally supported. If a pointer to `_Any_func` is convertible to a pointer to `void`:
 
 - a pointer to `_Any_func` can be converted to or from a pointer to `void`;
 - and, a pointer to `void` can be converted to a pointer to `_Any_func` and back again and vice-versa, where the result shall compare equal to the original pointer.
@@ -440,7 +426,7 @@ If a pointer to `_Any_func` have at least convertible representation affinity (6
 
 <div class="wording-newnumbered">
 
-If a pointer to any derivable function type have at least convertible representation affinity (6.2.6.3✨) to pointer to `void`:
+Conversion of a pointer to a derivable function type to a pointer to `void` and vice-versa is conditionally supported. If a pointer to any derivable function type is convertible to a pointer to `void`:
 
 - a pointer to `void` can be converted to or from a pointer to any derivable function type;
 - and, a pointer to any derivable function type can be converted to a pointer to `void` and back again and vice-versa, where the result shall compare equal to the original pointer.
@@ -506,8 +492,8 @@ One of the following shall hold: ...
 - ...
 - one operand is a pointer to an object type and the other is a pointer to a qualified or unqualified version of `void`;
 - <ins>one operand is a pointer to a derivable function type and the other is a pointer to `_Any_func`;</ins>
-- <ins>if pointers to derivable function types have at least convertible representation affinity to pointers to `void`, one operand is a pointer to a derivable function type and the other is a pointer to a qualified or unqualified version of `void`;</ins>
-- <ins>if pointers to `_Any_func` have at least convertible representation affinity to pointers to `void`, one operand is a pointer to `_Any_func` and the other is a pointer to qualified or unqualified `void`;</ins>
+- <ins>if pointers to derivable function are convertible to pointers to `void`, one operand is a pointer to a derivable function type and the other is a pointer to a qualified or unqualified version of `void`;</ins>
+- <ins>if pointers to `_Any_func` are convertible to pointers to `void`, one operand is a pointer to `_Any_func` and the other is a pointer to qualified or unqualified `void`;</ins>
 - ...
 
 </div>
@@ -518,7 +504,7 @@ One of the following shall hold: ...
 
 <div class="wording-numbered wording-numbered-6">
 
-Otherwise, at least one operand is a pointer. If one operand is a pointer and the other is a null pointer constant or has type `nullptr_t`, they compare equal if the former is a null pointer. If one operand is a pointer to an object type and the other is a pointer to a qualified or unqualified version of `void`, the former is converted to the type of the latter. <ins>If one operand is a pointer to a derivable function type and the other is a pointer to `_Any_func`, the former is converted to the type of the latter. If pointers to `_Any_func` and pointers to `void` have at least convertible representation affinity, one operand is a pointer to `_Any_func`, and the other operand is a pointer to qualified or unqualified `void`, the former is converted to the type of the latter. If pointers to derivable function types and pointers to `void` have at least convertible representation affinity, one operand is a pointer to derivable function type, and the other operand is a pointer to qualified or unqualified `void`, the former is converted to the type of the latter.</ins>
+Otherwise, at least one operand is a pointer. If one operand is a pointer and the other is a null pointer constant or has type `nullptr_t`, they compare equal if the former is a null pointer. If one operand is a pointer to an object type and the other is a pointer to a qualified or unqualified version of `void`, the former is converted to the type of the latter. <ins>If one operand is a pointer to a derivable function type and the other is a pointer to `_Any_func`, the former is converted to the type of the latter. If pointers to `void` are convertible to pointers to `_Any_func`, one operand is a pointer to `_Any_func`, and the other operand is a pointer to qualified or unqualified `void`, the former is converted to the type of the latter. If pointers to derivable function types are convertible to pointers to `void`, one operand is a pointer to derivable function type, and the other operand is a pointer to qualified or unqualified `void`, the former is converted to the type of the latter.</ins>
 </div>
 
 </div>
@@ -553,8 +539,8 @@ One of the following shall hold: ...
 
 - ...<del>; or</del>
 - one operand is a pointer to an object type and the other is a pointer to a qualified or unqualified version of `void`<del>.</del><ins>;</ins>
-- <ins>if pointer to derivable function types have at least convertible representation affinity to a pointer to `void`, one operand is a pointer to a function type and the other is a pointer to a qualified or unqualified version of `void`;</ins>
-- <ins>if pointer to `_Any_func` have at least convertible representation affinity to a pointer to `void`, one operand is a pointer to `_Any_func` and the other is a pointer to a qualified or unqualified version of `void`;</ins>
+- <ins>if a pointer to derivable function type is convertible to a pointer to `void`, one operand is a pointer to a function type and the other is a pointer to a qualified or unqualified version of `void`;</ins>
+- <ins>if a pointer to `_Any_func` is convertible to a pointer to `void`, one operand is a pointer to `_Any_func` and the other is a pointer to a qualified or unqualified version of `void`;</ins>
 - <ins>or, one operand is a pointer to a derivable function type and the other is a pointer to `_Any_func`.</ins>
 
 </div>
@@ -595,9 +581,9 @@ One of the following shall hold: ...
 - ...
 - the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) one operand is a pointer to an object type, and the other is a pointer to a qualified or unqualified version of `void`, and the type pointed to by the left operand has all the qualifiers of the type pointed to by the right operand;
 - <ins>the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) one operand is a pointer to a derivable function type, and the other is a pointer to `_Any_func`;</ins>
-- <ins>if a pointer to `_Any_func` has at least convertible representation affinity to pointer to `void`, and the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) the left operand is a pointer to of `void`, and the other is a pointer to `_Any_func`;</ins>
-- <ins>if a pointer to `void` has at least convertible representation affinity to pointer to `_Any_func`, and (considering the type the left operand would have after lvalue conversion) the left operand is pointer to `_Any_func`, and the other is a pointer to a qualified or unqualified version of `void`;</ins>
-- <ins>if pointers to `void` have at least convertible representation affinity to pointers to derivable function types, and (considering the type the left operand would have after lvalue conversion) the left operand is a pointer to a derivable function type, and the other is a pointer to a qualified or unqualified version of `void`;</ins>
+- <ins>if a pointer to `_Any_func` is convertible to pointer to `void`, and the left operand has atomic, qualified, or unqualified pointer type, and (considering the type the left operand would have after lvalue conversion) the left operand is a pointer to of `void`, and the other is a pointer to `_Any_func`;</ins>
+- <ins>if a pointer to `void` is convertible to pointer to `_Any_func`, and (considering the type the left operand would have after lvalue conversion) the left operand is pointer to `_Any_func`, and the other is a pointer to a qualified or unqualified version of `void`;</ins>
+- <ins>if pointers to `void` is convertible to pointers to derivable function types, and (considering the type the left operand would have after lvalue conversion) the left operand is a pointer to a derivable function type, and the other is a pointer to a qualified or unqualified version of `void`;</ins>
 - ...
 
 </div>
@@ -638,19 +624,10 @@ The following macro names shall be defined by the implementation:
 
 <tr>
 <td>
-<ins>`__STDC_PTR_REPR_ANY_FUNC_AND_FUNC__`</ins>
-</td>
-<td>
-<ins>One of `__STDC_REPR_CONVERTIBLE__` or `__STDC_REPR_EQUIVALENT__` tied to the level of representation affinity (6.2.6.3✨) between `_Any_func *` and all function pointer types (6.3.3.3).</ins>
-</td>
-</tr>
-
-<tr>
-<td>
 <ins>`__STDC_PTR_REPR_ANY_FUNC_AND_VOID__`</ins>
 </td>
 <td>
-<ins>One of `__STDC_REPR_INCOMPATIBLE__`, `__STDC_REPR_CONVERTIBLE__`, or `__STDC_REPR_EQUIVALENT__` tied to the level of representation affinity (6.2.6.3✨) between `_Any_func *` and `void *` (6.3.3.3).</ins>
+<ins>The integer literal `1` if a pointer to `void` is convertible to a pointer to `_Any_func` and vice-versa. Otherwise, the integer literal `0`.</ins>
 </td>
 </tr>
 
@@ -659,52 +636,7 @@ The following macro names shall be defined by the implementation:
 <ins>`__STDC_PTR_REPR_FUNC_AND_VOID__`</ins>
 </td>
 <td>
-<ins>One of `__STDC_REPR_INCOMPATIBLE__`, `__STDC_REPR_CONVERTIBLE__`, or `__STDC_REPR_EQUIVALENT__` tied to the level of representation affinity (6.2.6.3✨) between all function pointer types and `void *` (6.3.3.3).</ins>
-</td>
-</tr>
-
-<tr>
-<td>
-<ins>`__STDC_PTR_REPR_OBJECT_AND_VOID__`</ins>
-</td>
-<td>
-<ins>One of `__STDC_REPR_CONVERTIBLE__` or `__STDC_REPR_EQUIVALENT__` tied to the level of representation affinity (6.2.6.3✨) between all object pointer types and `void *` (6.3.3.3).</ins>
-</td>
-</tr>
-
-<tr>
-<td>
-...
-</td>
-<td>
-...
-</td>
-</tr>
-
-<tr>
-<td>
-<ins>`__STDC_REPR_INCOMPATIBLE__`</ins>
-</td>
-<td>
-<ins>The integer literal `0`, indicating incompatible representation affinity (6.2.6.3✨).</ins>
-</td>
-</tr>
-
-<tr>
-<td>
-<ins>`__STDC_REPR_CONVERTIBLE__`</ins>
-</td>
-<td>
-<ins>The integer literal `1`, indicating convertible representation affinity (6.2.6.3✨).</ins>
-</td>
-</tr>
-
-<tr>
-<td>
-<ins>`__STDC_REPR_EQUIVALENT__`</ins>
-</td>
-<td>
-<ins>The integer literal `2`, indicating equivalent representation affinity (6.2.6.3✨).</ins>
+<ins>The integer literal `1` if pointers to `void` is convertible to pointers to derivable function types and vice-versa. Otherwise, the integer literal `0`.</ins>
 </td>
 </tr>
 
@@ -1060,7 +992,7 @@ EXAMPLE &emsp;&emsp; A function pointer can be printed by casting it to `_Any_fu
 ```cpp
 #include <stdio.h>
 
-int f(void) {}
+void f(void) {}
 
 int main () {
 	fprintf(stdout, "printable pointer: %jp\n", (_Any_func*)&f);
@@ -1246,6 +1178,39 @@ which expands to `_Any_func`.
 
 </div>
 </blockquote>
+
+
+
+
+# Appendix # {#appendix}
+
+Things that were either changed or scrapped about this paper, as well as additional supporting details, are contained in this appendix.
+
+
+## Giving `void*` Additional Powers with Predefined Macros ## {#appendix-voidptr}
+
+While we retained some of the power that `void*` gives, all of the predefined macros and representation affinity work has been abandoned due to the lack of interest in the Committee. Many simply believed that it is "overengineered" and "overcomplicated" to expose these details to users, and others stated that they do not trust users to make use of this information. While some voied support for this and said it was extremely useful for Lingua Franca purposes (shuttling information between languages, being aware of the layout and ABI of pointer types, and so on and so forth), it was not enough to convince people that this was worth the effort and they decided that such platform details should not be obserable by standard means. The below text was lifted from the previons design section about this.
+
+<hr></hr>
+
+Furthermore, as this is defined in the core language, we can also provide a core language predefined macro for whether or not `void*` -> `some_function_type*` and vice-versa is an allowable, legal translation. This also allows us to put wording in the core language that blesses such an (implicit) conversion, given that it's highly prevalent on a wide variety of architectures. It is often seen as a "gotcha" that this conversion doesn't work, and users have been asking for this change for a very long time. We obviously do not want to make things worse for embedded platforms or make them non-conforming; they are an important bedrock of C.
+
+Therefore, we define a new concept "*representation affinity*" so that we can support the notion of conversion not only between `_Any_func*` and `void*`, but `void*` and any function pointer type. This also further helps us because we can specify properties beyond what is currently blessed by the C standard, and make allowances for the popular platforms which form the overwhelming super majority of platforms that developers work on, even in C:
+
+- `__STDC_REPR_INCOMPATIBLE__` (value 0, "incompatible representation affinity").
+- `__STDC_REPR_CONVERTIBLE__` (value 1, "convertible representation affinity" - what is guaranteed by basic C conformance today with `void*` and object pointers).
+- `__STDC_REPR_EQUIVALENT__` (value 2, "equivalent representation affinity" - what Windows, POSIX:2018, etc. platforms guarantee but have to warn/error about in strictly-conforming C).
+
+These predefined macros and their definitions are then applied to four new different predefined macros, which has one of the above 3 value macros as its definition:
+
+- `__STDC_PTR_REPR_ANY_FUNC_AND_FUNC__` -- describes representation affinity for `_Any_func*` and all function pointer types; must be at least `__STDC_PTR_REPR_CONVERTIBLE__` (i.e., what this proposal asks for and what matches `void*` with object pointers). Can be upgraded to `__STDC_REPR_EQUIVALENT__` by an implementation.
+- `__STDC_PTR_REPR_ANY_FUNC_AND_VOID__` -- describes representation affinity between `_Any_func*` and `void*`; can be `__STDC_REPR_INCOMPATIBLE__`.
+- `__STDC_PTR_REPR_FUNC_AND_VOID__` -- describes representation affinity between any function pointer and `void*`; can be `__STDC_REPR_INCOMPATIBLE__`.
+- `__STDC_PTR_REPR_OBJECT_AND_VOID__` -- describes representation affinity for all object pointers and `void*`; must be at least `__STDC_PTR_REPR_CONVERTIBLE__` (guaranteed by wording in C standard currently). Can be upgraded to `__STDC_REPR_EQUIVALENT__` by an implementation.
+
+Each implementation can support the level that is appropriate for their platform. Some basic support is already supported for 2 of the conversions, both as per this proposal and as per the original purpose of the type since 1989: `void*` to any object pointer (and back) always reports at least `__STDC_REPR_CONVERTIBLE__` (a value of 1), and `_Any_func*` to any function pointer (and back) always reports at least `__STDC_REPR_CONVERTIBLE__` (a value of 1).
+
+However, conversion between `void*` and `_Any_func*` need not be supported (reports `__STDC_REPR_INCOMPATIBLE__` (a value of 0)), as that is not guaranteed to work on all platforms. This is useful for implementations that decide they do not want to take on an impossible task where object/data pointers and function/code points address completely different kinds of memory. Implementations that can not handle it (e.g. 16-bit Texas Instrument DSPs or 8-bit multi-address-space chips that have 21 bit function pointers but 16 bit memory addresses). Most modern implementations -- Windows/NT since forever and POSIX since the 90s with XSI extensions (and just simply required by POSIX:2018) -- would have this defined, and users could `#error` inside of an `#if` check if their code happens to any more advanced properties.
 
 
 

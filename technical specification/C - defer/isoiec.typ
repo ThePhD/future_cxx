@@ -423,20 +423,20 @@ set par(justify: true)
 		v(0.25em)
 	}
 	show par: it => context {
-		if not iso {
-			// first, we check if the body is just straight text
-			let para_continue_search = is_content_para_continue(it.body)
-			let target_body = if para_continue_search.at(0) {
-				if it.body.has("text") and para_continue_search.at(1) == 1 {
-					(true, it.body.text.trim(para_continue_marker, at: start, repeat: false))
-				}
-				else {
-					(true, it.body.func()(it.body.at("children").slice(1)))
-				}
+		// first, we check if the body is just straight text
+		let para_continue_search = is_content_para_continue(it.body)
+		let target_body = if para_continue_search.at(0) {
+			if it.body.has("text") and para_continue_search.at(1) == 1 {
+				(true, it.body.text.trim(para_continue_marker, at: start, repeat: false))
 			}
 			else {
-				(false, it.body)
+				(true, it.body.func()(it.body.at("children").slice(1)))
 			}
+		}
+		else {
+			(false, it.body)
+		}
+		if not iso {
 			if target_body.at(0) {
 				grid(
 					target_body.at(1)
@@ -457,7 +457,7 @@ set par(justify: true)
 		}
 		else {
 			grid(
-				it.body
+				target_body.at(1)
 			)
 		}
 	}
