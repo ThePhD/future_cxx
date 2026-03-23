@@ -4,7 +4,7 @@
 	title: "Programming Languages — C — defer, a mechanism for general purpose, lexical scope-based undo",
 	authors: ("JeanHeyd Meneide (wg14@soasis.org)"),
 	keywords: ("C", "defer", "ISO/IEC 9899", "Technical Specification", "Safety", "Resource"),
-	id: "N3YZ6",
+	id: "N3853",
 	ts_id: "25755",
 	stage: "cd",
 	abstract: [The advent of resource leaks in programs created with ISO/IEC 9899#index[ISO/IEC 9899] ⸺ Programming Languages, C has necessitated the need for better ways of tracking and automatically releasing resources in a given scope. This document provides a feature to address this need in a reliable, translation-time, opt-in manner for implementations to furnish to programmers.],
@@ -144,7 +144,7 @@ Jumps by means of:
 
 - ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) or ```c switch```#index("Keywords", "switch", apply-casing: false, display:[```c switch```]) shall not jump into any defer statement;#index[defer statement]
 - ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) or ```c switch```#index("Keywords", "switch", apply-casing: false, display:[```c switch```]) shall not jump from outside the scope of a defer statement#index[defer statement] _D_ to inside that scope;
-- and, ```c return```#index("Keywords", "return", apply-casing: false, display:[```c return```]), ```c break```#index("Keywords", "break", apply-casing: false, display:[```c break```]), ```c continue```#index("Keywords", "continue", apply-casing: false, display:[```c continue```]) or ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]) shall not exit _S_.
+- and, ```c goto```#index("Keywords", "goto", apply-casing: false, display:[```c goto```]), ```c break```#index("Keywords", "break", apply-casing: false, display:[```c break```]), ```c continue```#index("Keywords", "continue", apply-casing: false, display:[```c continue```]) or ```c return```#index("Keywords", "return", apply-casing: false, display:[```c return```]) shall not exit _S_.
 
 
 === Semantics
@@ -158,17 +158,17 @@ When execution reaches a defer statement#index[defer statement] _D_ and its scop
 
 Multiple defer statements#index[defer statement] execute their _S_ in the reverse order they appeared in _E_. Within a single defer statement#index[defer statement] _D_, if _D_ contains one or more defer statements#index[defer statement] _D#sub[sub]_ of its own, then the _S#sub[sub]_ of the _D#sub[sub]_ are also executed in reverse order at the termination and/or exit of _E#sub[sub]_ and/or _D#sub[sub]_'s scope, recursively, according to the rules of this subclause.
 
-If a non-local jump #index("non-local jump") is used in _D_'s scope but before the execution of the _S_ of _D_:
+If a non-local jump #index("non-local jump") (e.g. ```c longjmp```) is used in _D_'s scope but before the execution of the _S_ of _D_:
 
 - if execution leaves _D_'s scope, _S_ is not executed;
 - otherwise, if control returns to a point in _E_ and causes _D_ to be reached more than once, the effect is the same as reaching _D_ only once.
 
-#note() The "execution" of a defer statement#index[defer statement] only ensures that _S_ is run on any exit from that scope. There is no observable side effect to repeat from reaching _D_, as the manifestation of any of the effects of _S_ happen if and only if the scope of _D_ is exited or terminated after reaching _D_, as previously specified. "Tracking" of reached defer statements at execution time is not necessary: if the non-local jump leaves the scope it is not executed (forgotten); and, if it is reached again it behaves as it would during normal execution.
+#note() The "execution" of a defer statement#index[defer statement] only ensures that _S_ is run on any exit from _D_'s scope. There is no observable side effect to repeat from reaching _D_, as the manifestation of any of the effects of _S_ happen if and only if the scope of _D_ is exited or terminated after reaching _D_, as previously specified. "Tracking" of reached defer statements at execution time is not necessary: if the non-local jump leaves the scope it is not executed (forgotten); and, if it is reached again it behaves as it would during normal execution.
 
 
-If a non-local jump #index("non-local jump") is executed from _S_ and control leaves _S_, the behavior is undefined#index("undefined behavior").
+If a non-local jump #index("non-local jump") (e.g. ```c longjmp```) is executed from _S_ and control leaves _S_, the behavior is undefined#index("undefined behavior").
 
-If a non-local jump #index("non-local jump") is executed outside of any _D_ and:
+If a non-local jump #index("non-local jump") (e.g. ```c longjmp```) is executed outside of any _D_ and:
 
 - it jumps into any _S_;
 - or, it jumps outside any _D_'s scope to inside that _D_'s scope;
@@ -189,24 +189,24 @@ If _E_ has any defer statements#index[defer statement] _D_ that have been reache
 
 int f() {
 	goto target; // constraint violation
-	_Defer { fputs(" meow", stdout); }
+	_Defer { fputs(" meow\n", stdout); }
 target:
 	fputs("cat says", stdout);
 	return 1;
 }
 
 int g() {
-	// print "cat says" to standard output
 	return fputs("cat says", stdout);
-	_Defer { fputs(" meow", stdout); } // okay: no constraint violation,
+	_Defer { fputs(" meow\n", stdout); } // okay: no constraint violation,
 	// not executed
+	// print "cat says" to standard output
 }
 
 int h() {
 	goto target;
 	{
 		// okay: no constraint violation
-		_Defer { fputs(" meow", stdout); }
+		_Defer { fputs(" meow\n", stdout); }
 	}
 target:
 	fputs("cat says", stdout);
@@ -220,14 +220,14 @@ int i() {
 		goto target;
 	}
 target:
-	fputs(" meow", stdout);
+	fputs(" meow\n", stdout);
 	return 1; // prints "cat says meow" to standard output
 }
 
 int j() {
 	_Defer {
 		goto target; // constraint violation
-		fputs(" meow", stdout);
+		fputs(" meow\n", stdout);
 	}
 target:
 	fputs("cat says", stdout);
@@ -237,7 +237,7 @@ target:
 int k() {
 	_Defer {
 		return 5; // constraint violation
-		fputs(" meow", stdout);
+		fputs(" meow\n", stdout);
 	}
 	fputs("cat says", stdout);
 	return 1;
@@ -245,8 +245,8 @@ int k() {
 
 int l() {
 	_Defer {
-target:
-		fputs(" meow", stdout);
+	target:
+		fputs(" meow\n", stdout);
 	}
 	goto target; // constraint violation
 	fputs("cat says", stdout);
@@ -256,18 +256,18 @@ target:
 int m() {
 	goto target; // okay: no constraint violation
 	{
-target:
+	target:
 		_Defer { fputs("cat says", stdout); }
 	}
-	fputs(" meow", stdout);
+	fputs(" meow\n", stdout);
 	return 1; // prints "cat says meow" to standard output
 }
 
 int n() {
 	goto target; // constraint violation
 	{
-		_Defer { fputs(" meow", stdout); }
-target:
+		_Defer { fputs(" meow\n", stdout); }
+	target:
 	}
 	fputs("cat says", stdout);
 	return 1;
@@ -279,14 +279,14 @@ int o() {
 		goto target;
 	}
 target:;
-	fputs(" meow", stdout);
+	fputs(" meow\n", stdout);
 	return 1; // prints "cat says meow"
 }
 
 int p() {
 	{
 		goto target;
-		_Defer fputs(" meow", stdout);
+		_Defer fputs(" meow\n", stdout);
 	}
 target:;
 	fputs("cat says", stdout);
@@ -295,8 +295,8 @@ target:;
 
 int q() {
 	{
-		_Defer { fputs(" meow", stdout); }
-target:
+		_Defer { fputs(" meow\n", stdout); }
+	target:
 	}
 	goto target; // constraint violation
 	fputs("cat says", stdout);
@@ -305,29 +305,31 @@ target:
 
 int r() {
 	{
-target:
+	target:
 		_Defer { fputs("cat says", stdout); }
 	}
-	goto target; // ok
+	goto target; // ok: prints "cat says" repeatedly
+	// never reached
 	fputs(" meow\n", stdout);
-	return 1; // prints "cat says" repeatedly
+	return 1;
 }
 
 int s() {
 	{
-target:
+	target:
 		_Defer { fputs("cat says", stdout); }
 		goto target; // ok
+		// prints "cat says" repeatedly
 	}
 	// never reached
 	fputs(" meow", stdout);
-	return 1; // prints "cat says" repeatedly
+	return 1;
 }
 
 int t() {
 	int count = 0;
 	{
-target:
+	target:
 		_Defer { fputs("cat says ", stdout); }
 		++count;
 		if (count <= 2) {
@@ -354,9 +356,10 @@ int u() {
 
 int v() {
 	int count = 0;
-target: if (count >= 2) {
+target:
+	if (count >= 2) {
 		fputs("meow", stdout);
-		return 1; // prints "cat says cat says meow "
+		return 1; // prints "cat says cat says meow"
 	}
 	_Defer { fputs("cat says ", stdout); }
 	count++;
@@ -396,7 +399,7 @@ int main() {
 }
 ```
 
-#para_continue() Conversions#index("conversions") for the purposes of return are also computed before any defer statements are entered.
+#para_continue() Conversions#index("conversions") for the purposes of ```c return``` are also computed before any defer statements are entered.
 
 ```c
 #include <float.h>
@@ -406,6 +409,7 @@ int main() {
 bool f() {
 	double x = DBL_SNAN;
 	_Defer {
+#pragma STDC FENV_ACCESS ON
 		// fetestexcept(FE_INVALID) is nonzero because of the
 		// comparison during the conversion to bool
 		assert(fetestexcept(FE_INVALID) != 0);
@@ -510,7 +514,7 @@ int main() {
 }
 ```
 
-#example() Defer statements#index[Defer statement] can be executed within a ```c switch```#index("Keywords", "switch", apply-casing: false, display: [```c switch```]), but a switch cannot be used to jump into the scope of a defer statement#index[defer statement].
+#example() Defer statements#index[Defer statement] can be executed within a ```c switch```#index("Keywords", "switch", apply-casing: false, display: [```c switch```]), but a ```c switch```#index("Keywords", "switch", apply-casing: false, display: [```c switch```]) cannot be used to jump into the scope of a defer statement#index[defer statement].
 
 ```c
 #include <stdlib.h>
