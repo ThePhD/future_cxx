@@ -2,15 +2,15 @@
 Title: Module Resource Dependency Propagation
 Shortname: P1130
 Revision: 2
-Audience: EWG
-Status: D
+Audience: EWG, SG15
+Status: P
 Group: WG21
-URL: 
+URL: https://thephd.dev/_vendor/future_cxx/papers/d1130.html
+Date: 2026-03-27
 !Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/d1130.html">https://thephd.dev/_vendor/future_cxx/papers/d1130.html</a>
 Repository: ThePhD/future_cxx
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
-Abstract: This paper attempts to provide a level of indirection upon which build system and package management tools build sane, higher-level abstractions.
-Date: 2019-01-21
+Abstract: This proposal provides a way of tracking dependencies at preprocessor time and allows modules to further understand those dependencies by understanding which are available to consumers of those modules ("public", marked by the keyword export) and which are module or translation unit-internal ("private", not marked by any keyword).
 Markup Shorthands: markdown yes, biblio yes, markup yes
 </pre>
 
@@ -23,26 +23,27 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 2 - February 30th, 2019 ## {#changelog-r2}
+## Revision 2 - March 28th, 2026 ## {#changelog-r2}
 
-	- Fix bad link.
-	- Give normative teeth to the feature, making not-found files ill-formed (Carruth, Dominiak).
+- Rework and put forward in response to `std::embed` only working within a single translation unit.
+- Much simpler syntax and design.
+- There is no wording until the initial design discussion happens in EWG / SG15 for the direction here.
 
 
 
 ## Revision 1 - January 21st, 2019 ## {#changelog-r1}
 
-	- Add words of power, "resource location".
-	- Clarify wording around it not being a hard error.
-	- Track changes to [[p1103]] accordingly.
-	- Fix description in motivation of the use of `require`.
-	- Add HRESOURCE example.
+- Add words of power, "resource location".
+- Clarify wording around it not being a hard error.
+- Track changes to [[p1103]] accordingly.
+- Fix description in motivation of the use of `require`.
+- Add HRESOURCE example.
 
 
 
 ## Revision 0 - November 26th, 2018 ## {#changelog-r0}
 
-	- Initial release.
+- Initial release.
 
 
 
@@ -50,138 +51,382 @@ path: resources/css/bikeshed-wording.html
 
 # Motivation # {#motivation}
 
-The only way to declare a dependency in C++ currently is to use a `#include` statement. With Modules coming to C++, dependency information was greatly enhanced by preambles and globule module fragments which allow for both the compiler and build system to understand physical and semantic layout of code. However, there is still a problem area that C++ has not addressed that people in the brave new Modules ecosystem want to answer: external dependency information for Modular C++. There is a huge opportunity to add a small directive to C++ which can be transiently ignored by the compiler but allows a build system or dependency graph generator to stay up to date without compiler-specific and tool-specific hacks.
+The only way to declare a dependency in C++ currently is to use a `#include` statement. With Modules coming to C++, dependency information was greatly enhanced by preambles and globule module fragments which allow for both the compiler and build system to understand physical and semantic layout of code. However, there is still a problem area that C++ has not addressed that people in the brave new Modules ecosystem want to answer: external dependency information for Modular C++.
 
-In particular, consider a resource file on Windows (`.rc`) or an injected resource on Linux (with `objcopy`) or Apple's Bundles. At present, there's no way to inform C++ of these dependencies or inform the build system in a way that keeps both the source code and the build system in-sync: it is easy to fall out of lock-step with each other, and often requires custom rules on the part of the build system vendor or the application author. While resource files are a problem that [[p1040]] plan to solve, San Diego discussion around such a proposal demonstrated that people were conflicted with the idea that there might not be a way to communicate without doing full Semantic Analysis the actual source dependencies (e.g., Phase 1-7 of compilation).
+Part of this issue was tackled as part of [[p1040|p1040 std::embed]] and its `#depend` statement, but after a vote during by the Evolution Working Group in the 2025 Sofia C++ Meeting, `#depend` was restricted to be translation unit-specific while a solution for dependencies was explored. This paper is the exploration requested by EWG and by proponents of SG15. Given this example, as of March 2026 EWG Consensus, the comments show which actions are well-formed or ill-formed:
 
-Reducing the complexity of the build system and its dependency on vendor-specific extensions and tools for handling source dependency information is of high priority. This proposal wants to add 2 new statements to the Preprocessing Module Tokens for [[p1103]], in particular `requires { identifier = requires "blah.txt" }` and `requires "blah.txt"` in the Module Declaration.
+`m0.c++m`:
 
+```cpp
+export module m0;
 
+#depend "header.bin"
 
+import <embed>;
+import combine;
 
-# Proposed Solution # {#solution}
-
-The proposed solution to the problem is to add a general purpose marker for communication of dependencies in the preamble. There is also an addition for making the string literal used to show dependencies as a global variable, allowing it to be used in `constexpr` contexts. It will be used as part of the typical modules declaration, making it available in public and private modules. For example:
-
-```
-module;
-// communicate this module
-// relies on a file "foo.txt"
-module bar requires "foo.txt";
-```
-
-For multiple dependencies for a single module, we use a multi-clause requires with brackets:
-
-```
-module mega_bar requires { "qux.txt", "meow.jpg", "uuids.csv" };
+export consteval auto f0(std::string_view f) {
+	const auto h = std::embed("header.bin");
+	const auto t = std::embed(f);
+	return combine(h, t);
+}
 ```
 
-This allows us to inform the build system of dependencies with no new keywords. This also lets the compiler export dependency information with user-added information at no additional cost to the compiler, not occurring semantic analysis.
+`m1.c++m`:
 
-A program may also set one or more of the string literals to an identifier made available after the preamble. The value of that identifier will be the string literal set equal to the identifier in the module requires:
+```cpp
+export module m1;
 
+#depend "default.stuff"
+
+import m0;
+
+export consteval auto f1(std::string_view f = "default.stuff") {
+	return f0(f);
+}
+
+export consteval auto getpath() {
+	return "default.stuff";
+}
 ```
-module bar requires { bar_ico_name = L"bar.ico" };
 
-// later, same module unit ...
+`translation_unit0.c++`:
 
-// using, for example, 
-// Windows's RC system
-HRSRC hResource = FindResourceExW(m_hmoduleInstance, 
-	bar_ico_name,
-	m_hresource_type, 
-	MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL));
+```cpp
+import m1;
+import print;
+import <embed>
+
+#depend "coolstuff.bin"
+
+int main() {
+	print(f1("coolstuff.bin"));  // [0] fails
+	print(f1());                 // [1] fails
+	std::embed("header.bin");    // [2] fails
+	std::embed(getpath());       // [3] fails	
+	std::embed("coolstuff.bin"); // [4] ok	
+}
 ```
 
-This allows individuals to not suffer from the multi-location-updating problem: specify the name in the preamble, use that name everywhere else without having to update multiple places or keep 2 names in sync.
+All of `[0]`, `[1]`, `[2]`, and `[3]` fail because each of them is trying to access dependencies that are part of translation units outside of the current translation unit. This was an intentional decision because of module privacy. To make it more clear why this decision was taken, consider a more appropriately named set of items that illustrate the issue:
 
-The proposal's wording also introduces a "Word of Power" — *resource-locations* — to specify and allow the rest of the C++ Standard to all reference the same place about resource locations and lookup. It is important that this is distinct from inclusion paths, because the two lookup specifications are inherently separate and serve different purposes. Having it as something that can be referenced means that we can keep all resource interaction attempts -- from [[p1040|p1040 - std::embed]] to any upcoming initiatives later in the standard -- perfectly in-sync with one another.
+`deps.c++m`:
 
-The compiler is normatively required to error if it cannot find anything along the *resource-locations* type.
+```cpp
+export module deps;
+
+#depend <sdk/private/​**>
+#depend <sdk/everything/​**>
+```
+
+`main.cpp`:
+
+```cpp
+import deps;
+
+int main () {
+	std::embed("sdk/everything/meow.wav"); // ok
+	std::embed("sdk/private/super_secret_sauce.mix"); // uh-oh, ok?!
+	return 0;
+}
+```
+
+Using a strategy that said "all `#depend` statements accumulate in the module and are passed down" means that the "private" part of the SDK that is only available (or meant to be available) to the module is now exposed. The user should not be able to access the `sdk/private` portion, but the `sdk/everything` directory should be avaible to downstream consumers.
+
+Thusly, we propose adding the `export` identifier as a (contextual?) keyword to solve this problem, and make clear which depended-on things are meant to be propagated to public consumers, and give build tools the chance to properly accumulate a list of file and folder matchers that let them know to rebuild downstream dependents appropriately.
+
+
+
+# Design # {#design}
+
+The solution we are proposing is simple, here. Any `#depend` not marked as `export` is not combined into the module.
+
+`deps.c++m`:
+
+```cpp
+export module deps;
+
+#depend <sdk/private/​**> // module and translation unit-internal
+#depend export <sdk/everything/​**> // module public
+```
+
+`main.cpp`:
+
+```cpp
+import deps;
+
+int main () {
+	std::embed("sdk/everything/meow.wav"); // previously ill-formed -- ok, now
+	std::embed("sdk/private/super_secret_sauce.mix"); // ill-formed
+	return 0;
+}
+```
+
+The syntax piggybacks off of [[p1040|p1040 std::embed]], so we hope that this proposal succeeds alongside or after [[p1040|p1040 std::embed]].
+
+An open question is if we want to have **two** keywords for **three** levels: module-internal, translation unit-internal, and then module-public. It does not seem very beneficial to have this kind of differentiation. It's also unclear what "module-internal" would mean -- there is still no standards-mandated way to identify all of the translation units that make up a module, definitively, by the end of preprocessor time without additional external assistance. This is different from having just translation unit-internal and module-public, as module dependencies can at the very least be traced between each other based on `import` statements and ordering can be established properly before the `import`-ing modules are done.
+
+
+## Global Module Fragment? ## {#design-globle.module.fragment}
+
+We are not proposing this information should go in the global module fragment. Such a requirement is unnecessary and does not help when replacing cases of `#include ...` or `#embed ...` which already can appearing anywhere in a translation unit. There is no reason for this to be added explicitly and only to the global module fragment, so this proposal does not require us to put it there.
+
+The ownership of dependencies is squarely for the module. The "inheriting" of dependencies only comes from properly `export`-marked `#depend` directives. All of this information is available after preprocessing, which is exactly the phase we want input dependencies in-general (such as `#include` and `#embed`) to be resolved. `#depend` should be no different in this regard and should not impose a burden greater than either `#include` or `#embed` already do in the current modules ecosystem.
+
+
+
+## Example Cases ## {#design-cases}
+
+We evaluate the following code sample with minor tweaks to illustrate the reachability and dependency behavior for Modules with this paper as compared to the status quo.
+
+
+### Semi-Related Case: Reachability of Data with `#embed` ### {#design-cases-pp.embed}
+
+First, a question was brought up about the "reachability" of certain kinds of data from preprocessor directives / constant expressions. A simple example is this:
+
+
+`mod.c++m`.
+```cpp
+export module mod;
+
+constexpr export const unsigned char x[] = {
+#embed <data.bin>
+};
+```
+
+The question came up is it possible to "stream" the data from `<data.bin>` and otherwise include that information in the module when it is imported to downstream consumers, such that an implementation could not embed the initializer in the module's code but instead embed just a reference to the file. The answer is yes. It is no different from the following case:
+
+`mod-oldstyle.c++m`.
+```cpp
+export module mod;
+
+export constexpr const unsigned char x[] = {
+#include <data.bin.h>
+};
+```
+
+Where a pre-build tool generated the header data from `"data.bin"` and required a user to interact with the generated header. Whether an implementation decided to make available the sequence of integer literals generated by the pre-build tool or try to be clever with a streaming solution was always a matter of QoI. `#embed` offers both the user and the implementation a chance to represent what they are trying to do better than the status quo, and gives that information by the end of preprocessing.
+
+
+### Modules and Exported Functions ### {#design-case-exported.functions}
+
+Here is an example of a translation unit that is consuming a module `m`. We will use various flavors of this with `#depend` statements and `std::embed` calls to illustrate what is allowed and what is not allowed.
+
+`m.c++m`:
+```cpp
+export module m;
+
+#include <embed>
+
+void xyz() {
+	std::embed("foo.bin"); // (1)
+}
+
+export void abc() {
+	xyz();
+}
+```
+
+`main.c++`:
+```cpp
+import m;
+
+#include <embed>
+
+int main() {
+	std::embed("foo.bin"); // (2)
+	abc();
+}
+```
+
+In this plain example, both `(1)` and `(2)` are ill-formed for the obvious reason tha there is no `#depend` directive greenlighting access. This allows us to set up cases based on the use of the `#depend` directive.
+
+#### Case 0: `#depend` in the Module but not in the Consumer #### {#design-case-exported.function-0}
+
+`m.c++m`:
+```cpp
+export module m;
+
+#include <embed>
+
+#depend "foo.bin"
+
+void xyz() {
+	std::embed("foo.bin"); // (1)
+}
+
+export void abc() {
+	xyz();
+}
+```
+
+`main.c++`:
+```cpp
+import m;
+
+#include <embed>
+
+int main() {
+	std::embed("foo.bin"); // (2)
+	abc();
+}
+```
+
+Under the design of this paper, `(1)` is legal but `(2)` is ill-formed. The reason is simple: `#depend`s do not exit the module / translation unit they are contained inside of. This allows relying on private dependencies that may only be available to the module's translation units during complilation without "poisoning" or "contaminating" downstream users.
+
+#### Case 1: `#depend` in the Consumer but not in the Module #### {#design-case-exported.function-1}
+
+`m.c++m`:
+```cpp
+export module m;
+
+#include <embed>
+
+void xyz() {
+	std::embed("foo.bin"); // (1)
+}
+
+export void abc() {
+	xyz();
+}
+```
+
+`main.c++`:
+```cpp
+import m;
+
+#include <embed>
+
+#depend "foo.bin"
+
+int main() {
+	std::embed("foo.bin"); // (2)
+	abc();
+}
+```
+
+Under the design of this paper, `(1)` is ill-formed but `(2)` is legal. `#depend`s are still private and do not flow upwards. Even if -- somehow -- the `#depend` was placed before the `import m;`, it would not "leak" that information into importing modules. It also cannot do this even if the `export` keyword was added and `main.c++` looked like this:
+
+`main.c++`:
+```cpp
+import m;
+
+#include <embed>
+
+#depend export "foo.bin"
+
+int main() {
+	std::embed("foo.bin"); // (2)
+	abc();
+}
+```
+
+`(1)` is still ill-formed and `(2)` is still legal.
+
+#### Case 2: `#depend` in the Module but not in the Consumer #### {#design-case-exported.function-2}
+
+`m.c++m`:
+```cpp
+export module m;
+
+#include <embed>
+
+#depend export "foo.bin"
+
+void xyz() {
+	std::embed("foo.bin"); // (1)
+}
+
+export void abc() {
+	xyz();
+}
+```
+
+`main.c++`:
+```cpp
+import m;
+
+#include <embed>
+
+int main() {
+	std::embed("foo.bin"); // (2)
+	abc();
+}
+```
+
+Both `(1)` and `(2)` are well-formed here. The `export` on the `#depend` directive means that the module exports that specific dependency pattern to its modules consumers. This makes the `std::embed` calls in both locations legal and safe to perform. A modification of `"foo.bin"` would trigger a reconsideration of inputs in the module and any of its consumers.
+
+
+### What About Templates? ### {#design-case-exported.function.templates}
+
+The answers if both `abc` and `xyz` were templated with `template <typename T>` would not change the answers to these questions, even if the inputs to `std::embed` were to be dependent types/values that relied on the template parameters. The reason for this is very simple: dependency information flowing backwards into the templates of a module would result in templates that could easily violate ODR rules by behaving differently based on where it was instantiated in a downstream template. Therefore, to end up in a situation that is not like `__COUNTER__` or similar problems, that case should remain banned. That is:
+
+`m.c++m`:
+```cpp
+export module m;
+
+#include <embed>
+
+template <typename T>
+void xyz() {
+	std::embed("foo.bin"); // (1)
+}
+
+template <typename T>
+export void abc() {
+	xyz<T>();
+}
+```
+
+`main.c++`:
+```cpp
+import m;
+
+#include <embed>
+
+#depend "foo.bin"
+
+int main() {
+	std::embed("foo.bin"); // (2)
+	abc<T>();
+}
+```
+
+`(1)` is still ill-formed here while `(2)` is legal, just like in the original non-templated code. This is imperative to avoid needing to "inject" information from downstream input dependencies into upstream consumers. This is to preserve the integrity of modular boundaries and module ownership and to prevent `#depend` statements from having information from consumers "flow up" into modules and poison them in a way that could result in many different problems, such as ODR traps or template substitutions failures that only happen some of the time. Determinism is an important quality of the system.
 
 
 
 
 # Proposed Changes to the Standard # {#wording}
 
-These changes are relative to [[p1103]]. If this is successful in being merged to C++20, then this paper will be rebased on the C++ Working Draft.
-
-
-
-## Proposed Feature Test Macro ## {#wording-feature}
-
-The proposed feature test macro for this is `__cpp_module_dependency_depends`.
+No wording is being provided just yet as we need to wait for [[p1040]] to get closer to proper review. We do list the feature test macro and the intent, just so individuals reading this paper understand what we want. The intent is relative to the latest [[p1040]] draft and the latest C++ working draft.
 
 
 
 ## Intent ## {#wording-intent}
 
-The intent of this wording is to:
+The intent of the upcoming wording is to:
 
-- provide a Word of Power called "*resource-locations*" in the Standard that allow other places to reference the same lookup mechanism;
-- allow a `requires` clause at the end of a module declaration to specify resource identifiers;
-- and, allow resource identifiers to be set to a variable name that can be used throughout the <i>module-unit</i>.
+- enable a `#depend` to accumulate dependencies for a translation unit if it is not immediately followed by the keyword `export`;
+- enable a `#depend` to accumulate dependences **that are propagated** to other modules if it **is** immediately followed by the keyword `export`.
 
-This proposal wants to ensure that future and concurrent proposals (such as [[p1040|std::embed]]) can refer to this same lookup mechanism by using the specified word of power ("*resource-locations*").
+
+
+## Proposed Feature Test Macro ## {#wording-feature}
+
+The proposed feature test macro for this is `__cpp_pp_depend_export`.
+
+
 
 ## Proposed Wording ## {#wording-language}
 
-Modify section §100.1 Modules units and purview [**module.unit**] to also include the following:
-
-<blockquote>
-<dl>
-	<dt><i>module-declaration:</i></dt>
-		<dd>
-			export<sub>opt</sub> module <i>module-name</i> <i>module-partition<sub>opt</sub></i> <i>attribute-specifier-seq<sub>opt</sub></i> <ins> <i>module-requires<sub>opt</sub></i></ins> ;
-		</dd>
-</dl>
-</blockquote>
-
-Add a section §100.� Resource requirement propagation [**module.requires**] to §100 [**modules**]:
-
-<blockquote>
-<ins>
-<b>100.� Resource requirement propagation <span style="float: right">[module.requires]</span></b>
-
-<dl style="text-indent: 5em">
-	<dt><i>module-requires-name:</i></dt>
-		<dd>
-			<i>string-literal</i>
-		</dd>
-		<dd>
-			<i>identifier</i> = <i>string-literal</i>
-		</dd>
-	<dt><i>module-requires-name-seq:</i></dt>
-		<dd>
-			<i>module-requires-name</i>
-		</dd>
-		<dd>
-			<i>module-requires-name</i> , <i>module-requires-name-seq<sub>opt</sub></i>
-		</dd>
-	<dt><i>module-requires:</i></dt>
-		<dd>
-			requires { <i>module-requires-name-seq<sub>opt</sub></i> }
-		</dd>
-		<dd>
-			requires <i>string-literal</i>
-		</dd>
-</dl>
-
-<p><sup>1</sup> A resource requirement is a way for a module unit to communicate its dependency on certain unique resources for the well-formedness of the program. A program may specify one or more <i>string-literal</i>s in the requirements clause to make clear this dependency in the <i>module-declaration</i>. Each <i>string-literal</i> of a resource requirement uniquely identifies one resource.</p>
-
-<p><sup>2</sup> When the <i>module-requires-name</i> specifies an <i>identifier</i> set to a value, then the <i>module-requires-name</i>'s <i>identifier</i> is made available to the module unit as-if by `decltype(string-literal)& identifier = string-literal;`.</p>
-
-<p><sup>3</sup> The locations the implementation may search for the resource uniquely identified by the `string-literal` is implementation defined, and is called the <i>resource-locations</i>.</p>
-
-<p><sup>4</sup> If the implementation cannot find the specified resource, then the program is ill-formed.</p>
-</ins>
-</blockquote>
+NOTE: The wording will not exist until a decision is rendered by EWG.
 
 
 
 # Acknowledgements # {#acknowledgements}
 
-Thanks to Isabella Muerte for helping to select the right type of syntax for this feature.
+Thanks to Wyatt Childers, Michael Spencer, and Hana Dusíková for guiding this direction with their important feedback on [[p1040]].
 
 
 <pre class=biblio>

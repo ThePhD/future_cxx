@@ -1,12 +1,12 @@
 <pre class='metadata'>
 Title: std::embed
 Shortname: P1040
-Revision: 8
-Audience: EWG
+Revision: 9
+Audience: EWG, CWG, LEWG
 Status: P
 Group: WG21
-URL: 
-Date: 2025-06-23
+URL: https://thephd.dev/_vendor/future_cxx/papers/d1040.html
+Date: 2026-03-27
 !Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/d1040.html">https://thephd.dev/_vendor/future_cxx/papers/d1040.html</a>
 !Implementation: <a href="https://github.com/ThePhD/embed">https://github.com/ThePhD/embed</a>
 Repository: ThePhD/future_cxx
@@ -26,6 +26,30 @@ path: resources/css/bikeshed-wording.html
 
 # Revision History # {#changelog}
 
+
+
+## Revision 9 - March 25<sup>th</sup>, 2026 ## {#changelog-r9}
+
+- Forward to CWG and LEWG from the Cryodon 2026 March meeting for C++29.
+	- CWG to review the wording for core purposes.
+	- LEWG to approve changes made to the function signature as mentioned in [[#changelog-r8]].
+- Touch up some missing words in the [[#wording-intent]].
+- Adjust and clean up wording, synopsis, and signatures in the [[#wording]] for LEWG and CWG review.
+- CWG:
+	- Completely overhaul the [[#wording-proposed]].
+	- Rewrite the specification for `#depend` to work appropriately with macro expansion and match the current specification for `#include`/`#embed`.
+	- *header-name* is mapped to a sequence of Unicode code points, and then used to do matching to make it somewhat resistant to internal encoding shenanigans. (QUESTION: sequence of characters is better?)
+	- Introduce a *input dependency check* algorithm. Currently, it relies on ECMA 262 to describe what is effectively globbing and recursive-globbing behavior. (Maybe it would be better to use a POSIX reference and talk about globbing instead?)
+	- Stop italicizing defined terms.
+	- Add wording for the non-uniqueness of the data returned from a `std::embed` call [[#wording-proposed-intro.object]].
+	- Remove "Postconditions" from the library wording and replace with a better "*Returns:*" clause.
+	- More appropriately define the backing storage of the `std::embed` call in the library wording.
+- EWG changes to evaluate:
+	- Whether or not we want data deduplication for the backing array of `std::embed` call returns (implied and assumed but never explicitly stated during discussion).
+- LEWG changes to evaluate:
+	- Whether or not `noexcept` should be removed to have `std::embed` throw an exception on file-not-found [[#design-goals-security]].
+	- Whether or not we want `(u8/w)string_view` for `std::embed` or just back to the SG16 recommendation of [[#design-goals-utf8]].
+- Further discussion of modules has been moved to a new paper, [[p1130]].
 
 
 ## Revision 8 - June 23<sup>rd</sup>, 2025 ## {#changelog-r8}
@@ -110,6 +134,26 @@ path: resources/css/bikeshed-wording.html
 
 The following polls are shaping the current design. Votes are in the form of SF (Strongly in Favor), F (in Favor), N (Neutral), A (Against), SA (Strongly Against).
 
+
+
+## DESIRED Polls ## {#polls-desired}
+
+These are the currently desired polls to move the paper forward.
+
+D1040R9: LEWG prefers to use `size_t limit = numeric_limits<size_t>::max()` as a defaulted argument to `std::embed` to signal "read the whole file" as opposed to `optional<size_t> limit = nullopt`.
+
+- `SF 	F 	N 	A 	SA`
+- `∅ 	∅ 	∅ 	∅ 	∅ `
+
+D1040R9: LEWG affirms the change to have 3 different `(u8/w)?string_view` overloads versus requiring exactly one overload of just UTF-8/`char8_t`.
+
+- `SF 	F 	N 	A 	SA`
+- `∅ 	∅ 	∅ 	∅ 	∅ `
+
+D1040R9: EWG would prefer that the storage for the static storage duration array backing the data returned by a `std::embed` call is non-unique (e.g., prefix-dedeplucatible with different `std::embed` capable of having the same address just like string literals).
+
+- `SF 	F 	N 	A 	SA`
+- `∅ 	∅ 	∅ 	∅ 	∅ `
 
 
 ## Sofia 2025: Evolution Working Group ## {#polls-sofia.2025}
@@ -422,21 +466,32 @@ In the pursuit of this goal, these tools have proven to have inadequacies and co
 
 The request for some form of `#include_string` or similar dates back quite a long time, with one of the oldest stack overflow questions asked-and-answered about it dating back nearly 10 years. Predating even that is a plethora of mailing list posts and forum posts asking how to get script code and other things that are not likely to change into the binary.
 
-This paper proposes `<embed>` to make this process much more efficient, portable, and streamlined.
+This paper proposes `<embed>` to make this process much more efficient, portable, recursive, non-dependent on fixed preprocessor strings and streamlined.
 
 
 
 
 # Scope and Impact # {#scope}
 
-`template <typename T = byte> consteval span<const T> embed( string_view resource_identifier )` is an extension to the language proposed entirely as a library construct. The goal is to have it implemented with compiler intrinsics, builtins, or other suitable mechanisms. It does not affect the language. The proposed header to expose this functionality is `<embed>`, making the feature entirely-opt-in by checking if either the proposed feature test macro or header exists.
+`template <typename T = byte> consteval span<const T> embed( string_view resource_identifier )` is an extension to the language proposed entirely as a library construct. The goal is to have it implemented with compiler intrinsics, builtins, or other suitable mechanisms. It does not affect the language. The proposed header to expose this functionality is `<embed>`, making the feature entirely-opt-in by checking if either the proposed feature test macro exists.
 
 
 
 
 # Design Decisions # {#design}
 
-`<embed>` avoids using the preprocessor or defining new string literal syntax like its predecessors, preferring the use of a free function in the `std` namespace. This gives `std::embed` a greater degree of power and advantage over `<embed>`'s design is derived heavily from community feedback plus the rejection of the prior art up to this point, as well as the community needs demonstrated by existing practice and their pit falls.
+`<embed>` avoids using the preprocessor or defining new string literal syntax like its predecessors, preferring the use of a free function in the `std` namespace. This gives `std::embed` a greater degree of power and advantage over `#embed`'s design is derived heavily from community feedback plus the rejection of the prior art up to this point, as well as the community needs demonstrated by existing practice and their pit falls.
+
+
+
+## Primary Benefit: Recursive Processing and Composible String File Names ## {#design-recursive.composible}
+
+One of the biggest benefits of `std::embed` is that it's a normal, regular `consteval` function call. This means that when processing data, it can be called recursively after reading the data from inside of the embedded file. This allows someone much greater degrees of freedom and power than is capable with either `#embed` or `_Pragma("embed ...")`, as it allows someone to use other constant expression parsing facilities along the introduction of file-based data. Among the primary use cases for this are:
+
+- the ability to embed data recursively, such as processing sister language's that have their own `#include` or `import` statements like CG, HLSL, GLSL, etc.
+- and, the ability to respond to the contents of the data and perform other compile-time data processing, such as search for certain records or performing deserialization or serialization.
+
+Such behaviors can also be combined with the approach `meta` and Reflection facilities that are coming to C++, which would also allow for generative reflection in a set of files determined at constant evaluation time (rather than a fixed set at preprocessing time). This would enable to do things such as enable the generation of C++ code from data files or other languages, such as automatic binding layers to Lua tables/functions, Python objects/scripts/modules, and other robust integrations (such as Rust, JavaScsript, etc.). Many of these languages have `require`, `include`, `import`, or other things which require multi-file coordination that `#embed` cannot handle.
 
 
 
@@ -944,27 +999,41 @@ Because of the aforementioned reasons, it seems more prudent to take a "compiler
 ```c++
 template <typename T = byte>
 consteval span<const T> embed( 
-	string_view resource_identifier
-);
-
-template <typename T = byte>
-consteval span<const T> embed( 
-	string_view resource_identifier, size_t limit
-);
-
-template <typename T = byte>
-consteval span<const T> embed( 
-	string_view resource_identifier, size_t offset, size_t limit
+	string_view resource_identifier,
+	size_t offset = 0,
+	optional<size_t> limit = std::nullopt
 );
 
 template <size_t N, typename T = byte>
 consteval span<const T, N> embed( 
-	string_view resource_identifier
+	string_view resource_identifier,
+	size_t offset = 0
+);
+
+template <typename T = byte>
+consteval span<const T> embed( 
+	wstring_view resource_identifier,
+	size_t offset = 0,
+	optional<size_t> limit = std::nullopt
 );
 
 template <size_t N, typename T = byte>
+consteval span<const T, N> embed( 
+	wstring_view resource_identifier,
+	size_t offset = 0
+);
+
+template <typename T = byte>
 consteval span<const T> embed( 
-	string_view resource_identifier, size_t offset
+	u8string_view resource_identifier,
+	size_t offset = 0,
+	optional<size_t> limit = std::nullopt
+);
+
+template <size_t N, typename T = byte>
+consteval span<const T, N> embed( 
+	u8string_view resource_identifier,
+	size_t offset = 0
 );
 ```
 
@@ -977,7 +1046,7 @@ Calls such as `std::embed( "my_file.txt" );`, `std::embed( "data.dll" );`, and `
 
 There is precedent for specifying library features that are implemented only through compile-time compiler intrinsics (`type_traits`, `source_location`, and similar utilities). Core -- for other proposals such as [[p0466r1|p0466r1 - Layout-compatibility and Pointer-interconvertibility Traits ]] -- indicated their preference in using a `constexpr` magic function implemented by intrinsic in the standard library over some form of `template <auto X> thing { /* implementation specified */ value; };` construct. However, it is important to note that [[p0466r1]] proposes type traits, where as this has entirely different functionality, and so its reception and opinions may be different.
 
-Finally, we use "implementation defined" so that compilers can produce implementation-defined search path for their translation units and modules during compilation with flags. The current implementation uses `-fembed-path=some/path/here/` to indicate this, but when it is standardized there will probably be an `-RI` or `-resource-include` flag instead. It is up to the implementation to pick what works for their platform.
+Finally, we use "implementation defined" so that compilers can produce implementation-defined search path for their translation units and modules during compilation with flags. The current implementation uses `-fembed-path=some/path/here/` to indicate this, but when it is standardized there will probably be an `-RI` or `-resource-include` flag instead. It is up to the implementation to pick what works for their platform. We rely on the existing machinery from the recently-standardized `#embed` and the recently changed wording, such that `std::embed` uses a "quote resource search".
 
 
 ### Binary Only ### {#design-goals-binary}
@@ -998,7 +1067,7 @@ For this purpose, a new `#depend` preprocessor directive was introduced. It is i
 
 This makes it possible to send minimal compiler reproductions and test cases for bug vetting, as well as allow distributed systems to continue to use the `-fdirectives-only` or `-frewrite-includes` flags (or similar preprocessor flags). For example, the GCC and Clang implementations linked above have `__builtin_init_array` and `__builtin_cache_array` methods that allow single translation units to be self-sufficient, while the compiler built-ins `__builtin_embed` will search the internally populated data cache from these entries in order to furnish data. This allows a complete system that keeps current tools working exactly as expected without any issues at all.
 
-The `#depend` directive works by allowing a user to specify a *single-dependency* or a *family-dependency*. They are analogous to a single resource name or a "glob" resource name. These would, in file system terms, name a single file or all the files in a directory (subject to pattern matching). There is also be a "*recursive-family-dependency*" for specifying searching for files in a directory, recursively. They looked like this:
+The `#depend` directive works by allowing a user to specify a what are effectively globs that can be used later to filter out allowed calls to retrieve resources from `std::embed`:
 
 ```cpp
 // single-dependency directives
@@ -1029,8 +1098,9 @@ Per the EWG vote for direction in the [[#polls]] section, modules need more care
 
 1. (CHOSEN) Use the dependencies of the current translation unit.
 2. (NOT CHOSEN) Accumulate dependencies from the root function invocation in the constant evaluation context, creating a stack of accessible `#depend`s with each invoked function during constant evaluation.
+3. (NOT CHOSEN) #2, but with the caveat that only `#depend export ...`s contribute to accessible depends and the others are "private" to the translation unit.
 
-EWG chose to use the current translation unit. This is a simple, forwards-compatible choice while a separate paper will explore and nail down the semantics of use with modules.
+EWG chose to use the current translation unit. This is a simple, forwards-compatible choice while a separate paper will explore and nail down the semantics of use with modules (likely a repurposed version of the previously closed [[p1130]] which tried to address this problem many, many years too early).
 
 
 ### Statically Polymorphic ### {#design-goals-templated}
@@ -1042,11 +1112,11 @@ In the future, we expect that a `std::bit_cast` that uses arrays will move thing
 
 ### Optional Limit ### {#design-goals-limit}
 
-Consider some file-based resources that are otherwise un-sizeable and un-seek/tellable in various implementations such as `/dev/urandom`. Telling the compiler to go fetch data from this resource infinitely can result in compiler lockups or worse: therefore, the user can specify an additional parameter to the function call such as `std::embed("/dev/infinity", 32);`. The `32` here is a `std::size_t limit` parameter in `std::embed`, and allows users to ask for up to but not more than `limit` elements in the returned `span`.
+Consider some file-based resources that are otherwise un-sizeable and un-seek/tellable in various implementations such as `/dev/urandom`. Telling the compiler to go fetch data from this resource infinitely can result in compiler lockups or worse: therefore, the user can specify an additional parameter to the function call such as `std::embed("/dev/infinity", 0, 32);`. The `32` here is a `std::size_t limit` parameter in `std::embed`, and allows users to ask for up to but not more than `limit` elements in the returned `span`.
 
 Note that as per [[#design-goals-templated]], the limit is specified in terms of `T`s, not bytes. This means `sizeof(T) * CHAR_BIT` bits are required, and the implementation is mandated to require up to but not more than that many.
 
-Additionally, a user can provide a template argument `N` of type `std::size_t` to return a `span<T, N>`. This requires at _least_ `N` elements, but maybe more can exist. One can use both of these to request "exactly this many" elements, e.g. a call `std::embed<32>("/dev/infinity", 32);` requires up to but not more than 32 elements (the `limit` parameter passed to the function) and that the returned span has at least 32 elements (the template parameter passed between the `<` and the `>`). Similarly, one could use `std::embed("/dev/infinity", 32).first<32>();`. This fully covers the design space for what making a subset of the data is currently used for (e.g., prefixed data in a common model format that then has "back references" to the data contained in the first `n` elements).
+Additionally, a user can provide a template argument `N` of type `std::size_t` to return a `span<T, N>`. This requires at _least_ `N` elements, but maybe more can exist. One can use both of these to request "exactly this many" elements, e.g. a call `std::embed<32>("/dev/infinity");` requires up to but not more than 32 elements (the `limit` parameter passed to the function) and that the returned span has at least 32 elements (the template parameter passed between the `<` and the `>`). Similarly, one could use `std::embed("/dev/infinity", 0, 32).first<32>();`. This fully covers the design space for what making a subset of the data is currently used for (e.g., prefixed data in a common model format that then has "back references" to the data contained in the first `n` elements).
 
 
 ### Optional Offset ### {#design-goals-offset}
@@ -1066,6 +1136,10 @@ Unfortunately, implementation experience attemping this found that there were a 
 ### Security: Globs and Otherwise ### {#design-goals-security}
 
 It is important to note that, insofar as security is concerned, `#depend` that use glob-style syntax is **not** what triggers the full consumption of files from the file system, nor their transport to e.g. a CI server in order to make using `std::embed` on remote conglomerate build servers and similar work. `#depend` is a **whitelist** of files: it does not put any data into the program. You cannot "glob" files into the program, and there is no file system search capabilities built into this program: if a file is not found, the program is **ill-formed**, which is different from finding a file that is empty (in which case the returned `std::span<T>` is empty).
+
+Additionally, security prospects are slightly improved by the fact that a failure to find a resource results in an ill-formed program. This means that a bad actor cannot continuously probe for a set of files until it finds one at build-time; any failed search stops compilation. This is not a full-proof security or defense measure, but provides a slight check against code that would see to simply slurp up the contents of a file system. However, this does not stop an attacker from simply guessing all of the right files correctly, so it is only a small mitigation. This problem is better solved by build system sandboxing and proper data handling practices.
+
+Either way, if this is not deemed as important enough, it is completely viable to change the ill-formed in the future to a thrown `constexpr` exception, now that C++26 allows for those. We would leave this determination to a future paper after it considers the arguments for and against such compile-time programmability.
 
 
 
@@ -1137,7 +1211,7 @@ The intent of the wording is to provide a function that:
 
 - handles the provided resource-identifying `string_view`/`u8string_view`/`wstring_view` in an implementation-defined manner;
 - retrieves the data as-if using `std::fread` on a file opened at constant expression time;
-- 
+- fills the data in appropriately, up to a limit.
 - and, returns the specified constexpr `span` representing either the bytes of the resource or the bytes view as the type `T`.
 
 The wording also explicitly disallows the usage of the function outside of a core constant expression by marking it `consteval`, meaning it is ill-formed if it is attempted to be used at not-constexpr time (`std::embed` calls should not show up as a function in the final executable or in generated code). The program may pin the data returned by `std::embed` through the span into the executable if it is used outside a core constant expression.
@@ -1153,6 +1227,59 @@ The proposed feature test macros are `__cpp_lib_embed` for the library and `__cp
 
 
 ## Proposed Wording ## {#wording-proposed}
+
+
+### Modify "§6.8.2 Object Model [**intro.object**]" one additional entry to the "... potentially non-unique object ..." list. ### {#wording-proposed-intro.object}
+
+<blockquote>
+
+<div class="wording-section">
+
+...
+
+<div class="wording-numbered wording-numbered-9">
+
+An object is a potentially non-unique object if it is
+
+- a string literal object (5.13.5 [<a href="https://eel.is/c++draft/lex.string">lex.string</a>]),
+- the backing array of an initializer list (9.5.4 [<a href="https://eel.is/c++draft/dcl.init.ref">dcl.init.ref</a>]), or</ins>
+- <ins>the backing array pointed to by the returned value from a `embed` call (17.✨.1 [<a href="support.res.embed">support.res.embed</a>]), or
+- a template parameter object of array type (21.4.3 [<a href="https://eel.is/c++draft/meta.define.static">meta.define.static</a>]), or
+- a subobject thereof.
+
+</div>
+
+...
+
+</div>
+</blockquote>
+
+
+### Modify "§15.1 Preamble [**cpp.pre**]" to add to the syntax ### {#wording-proposed-cpp.pre}
+
+<blockquote>
+
+...
+
+*control-line:*
+:: `# include` *pp-tokens* *new-line*
+:: *pp-import*
+:: `# embed` *pp-tokens* *new-line*
+:: <ins>`# depend` *pp-tokens* *new-line*</ins>
+:: `# define` *identifier* *replacement-list* *new-line*
+:: `# define` *identifier* *lparen* *identifier-list*<sub>*opt*</sub> `)` *replacement-list* *new-line*
+:: `# define` *identifier* *lparen* `...` `)` *replacement-list* *new-line*
+:: `# define` *identifier* *lparen* *identifier-list* `,` `...` `)` *replacement-list* *new-line*
+:: `# undef`  *identifier* *new-line*
+:: *line-directive*
+:: `# error`   *pp-tokens*<sub>*opt*</sub> *new-line*
+:: `# warning` *pp-tokens*<sub>*opt*</sub> *new-line*
+:: `# pragma` *pp-tokens*<sub>*opt*</sub> *new-line*
+:: `#` *new-line*
+
+...
+
+</blockquote>
 
 
 ### Append to "§15.12 Predefined macro names [**cpp.predefined**]" one additional entry ### {#wording-proposed-cpp.predefined}
@@ -1177,68 +1304,55 @@ The proposed feature test macros are `__cpp_lib_embed` for the library and `__cp
 
 <div class="wording-numbered">
 
-A `#depend` directive establishes inputs or families of inputs upon which a translation unit can depend. The set of all input or families of inputs from zero or more `#depend` directives is called the *input-dependencies*. 
+A `#depend` directive provides a dependency pattern to be used for performing input dependency checks. A *dependency patterns* is a sequence of Unicode code points. *Input depedencies* are the collection of dependency patterns accumulated by `#depend` directives throughout a translation unit.
+</div>
+
+
 </div>
 
 <div class="wording-numbered">
 
 A preprocessing directive of the form
 
-:: `#` `depend` `<` *h-char-sequence* `>` *new-line*
+:: `#` `depend` *header-name* *new-line*
 
-or
-
-:: `#` `depend` `"` *q-char-sequence* `"` *new-line*
-
-provides a dependency name or a set of dependency names. If a search for a resource relies on the *input-dependencies* and: the search for that resource using the *q-char-sequence* is not supported or the search for that resource fails; then, the *input-dependencies* for this directive are reprocessed and treated as
-
-:: `#` `depend` `<` *h-char-sequence* `>` *new-line*
-
-using the same *q-char-sequence*, including any `<` or `>`.
+adds a dependency pattern to the input dependencies. After removal of the surrounding paired `"` (U+0022 QUOTATION MARK), or paired `<` (U+003C LESS-THAN SIGN) and `>`  (U+003D GREATER-THAN SIGN), the mapping of the rest of a *header-name* to the sequence of Unicode code points representing the dependency pattern is implementation-defined.
 </div>
 
 <div class="wording-numbered">
 
-The *q-char-sequence* or *h-char-sequence* may have one of three meanings, depending on the use of `*` and/or `**` within the sequence.
+A preprocessing directive of the form
 
-— If the sequence contains a `*` it denotes a *dependency-family*.
-— If the sequence contains a `**` it denotes a *recursive-dependency-family*.
-— Otherwise, it denotes a *single-dependency*.
+:: `# depend` *pp-tokens* *new-line*
 
+(that does not match the previous form) is permitted. The preprocessing tokens after `depend` in the directive are processed just as in normal text (i.e., each identifier currently defined as a macro name is replaced by its replacement list of preprocessing tokens). The resulting sequence of preprocessing tokens shall be of the form
+
+:: *header-name-tokens*
+
+An attempt is then made to form a header-name preprocessing token ([lex.header]) from the whitespace and the characters of the spellings of the header-name-tokens; the treatment of whitespace is implementation-defined. If the attempt succeeds, the directive with the so-formed header-name is processed as specified for the previous form. Otherwise, the program is ill-formed, no diagnostic required.
+
+[*Note*: Adjacent *string-literals* are not concatenated into a single *string-literal* (see the translation phases in [<a href="https://eel.is/c++draft/lex.phases">lex.phases</a>]); thus, an expansion that results in two *string-literals* is an invalid directive. — *end note*]
 </div>
 
 <div class="wording-numbered">
 
-[ *Example—*
+An *input dependency check* takes an input that is a sequence of Unicode code points and yields either success or failure according to the following matching algorithm. For each dependency pattern, it's sequence of Unicode code points is converted to an Standard Ecma 262 (called ECMA-262 in this clause) regular expression pattern (see ECMA-262 subclause 15.10) in the following way.
 
-```cpp
-#depend "art.png" // this translation unit depends on 'art.png'
+For each Unicode code point in the dependency pattern:
 
-#depend <config/​*.json> // this translation unit depends on all resources
-				// the implementation can find that
-				// end in ".json" and start with "config/".
+- If it is a `*` (U+002A ASTERISK) and:
+	- if it is followed by another `*` (U+002A ASTERISK), then the two asterisks are replaced by the ECMA-262 regular expression *Term* `.*` (U+002E FULL STOP, U+002A ASTERISK).
+	- Otherwise, if it not followed by another `*` (U+002A ASTERISK), then the single asterisk is replaced by the ECMA-262 regular expression *CharacterClass* of <code>[^*path-separators*]\*</code> (U+005B LEFT SQUARE BRACKET, U+005E CIRCUMFLEX ACCENT, *path-separators*, U+005D RIGHT SQUARE BRACKET, U+002A ASTERISK), where *path-separators* are the appropriate ECMA-262 regular expression *ClassAtoms* for a slash (U+002F SOLIDUS), a backslash (U+005C REVERSE SOLIDUS), or any other corresponding implementation-defined directory-separator ([<a href="https://eel.is/c++draft/fs.path.generic#nt:directory-separator">fs.path.generic</a>]).
+- Otherwise, it is replaced by an appropriate ECMA-262 regular expression *Atom* representing the Unicode code point of the sequence.
 
-#depend <data/​*/​*.bin> // this translation unit depends on all resources
-			// the implementation can find that
-			// end in ".bin", start with "data/"
-			// and contain a single "/" in-between.
+[ *Note—* The *ClassAtom* and *Atom* placed into these regular expressions representing a plain Unicode code point appropriately escapes any Unicode code point that would otherwise be interpreted as non-*ClassAtom* or non-*Atom* in the overall regular expression. *— end Note* ]
 
-#depend <sdk/​**> // this translation unit depends on all resources
-			// the implementation can find that
-			// start with "sdk/" and will search exhaustively 
-```
-
-*— end Example* ].
+The input is then matched against the regular expression using the algorithm specified in ECMA-262 15.10. If the input matches the converted dependency pattern, then the input dependency check yields success. Otherwise, the input is checked against the next dependency pattern as described previously. If all dependency patterns in the input dependencies are checked against the input and none yield success, then the input dependency check yields failure.
 </div>
 
 <div class="wording-numbered">
 
-A *single-dependency* provides that a translation unit may depend on a single *resource* () identified by the implementation using the *q-char-sequence* or *h-char-sequence* provided. A *dependency-family* is a group of *single-dependencies* identified by the implementation using the *q-char-sequence* or *h-char-sequence* provided, where each `*` can stand in for zero or more parts of a *single-dependency*'s *q-char-sequence* or *h-char-sequence* except for a forward slash (U+002F SOLIDUS), a reverse slash (U+005C REVERSE SOLIDUS), or any other corresponding implementation-defined *directory-separator* ([<a href="https://eel.is/c++draft/fs.path.generic#nt:directory-separator">fs.path.generic</a>]). A *recursive-dependency-family* is a group of *single-dependencies* identified by the implementation using the *q-char-sequence* or *h-char-sequence* provided, where each `**` can stand in for zero or more parts of a *single-dependency*'s *q-char-sequence* or *h-char-sequence* without any restrictions, unlike `*`. All of the *single-dependencies*, *dependency-families*, and *recursive-dependency-families* together are called the *input-dependencies*.
-</div>
-
-<div class="wording-numbered">
-
-*Input-dependencies* are empty at the start of every translation unit (modulo any implementation-defined *input dependencies* already included), and each `#depend` directive accumulates more *input-dependencies* within the translation unit which contains it.
+*Recommended practice*: Implementations should use the input dependencies to inform the potential cache of state for the translation environment when it is beneficial, such as for proper replication of an environment for translation of programs prior to execution in non-local enrivonment.
 </div>
 
 </div>
@@ -1288,60 +1402,35 @@ A *single-dependency* provides that a translation unit may depend on a single *r
 **17.✨.1** Header `<embed>` synopsis [**support.embed.syn**]
 
 ```cpp
+#include <string_view>  // see [string_view.syn]
+
 namespace std {
-	template <typename T = byte>
-	consteval span<const T> embed( string_view resource_identifier ) noexcept;
+	template<class T = byte>
+	consteval span<const T> embed(string_view resource_identifier,
+		size_t offset = 0,
+		size_t limit  = numeric_limits<size_t>::max()) noexcept;
 
-	template <typename T = byte>
-	consteval span<const T> embed( string_view resource_identifier,
-		size_t offset ) noexcept;
+	template<size_t N, class T = byte>
+	consteval span<const T, N> embed(string_view resource_identifier,
+		size_t offset = 0) noexcept;
 
-	template <typename T = byte>
-	consteval span<const T> embed( string_view resource_identifier,
-		size_t offset, size_t limit ) noexcept;
+	template<class T = byte>
+	consteval span<const T> embed(wstring_view resource_identifier,
+		size_t offset = 0,
+		size_t limit  = numeric_limits<size_t>::max()) noexcept;
 
-	template <std::size_t N, typename T = byte>
-	consteval span<const T, N> embed( string_view resource_identifier ) noexcept;
+	template<size_t N, class T = byte>
+	consteval span<const T, N> embed(wstring_view resource_identifier,
+		size_t offset = 0) noexcept;
 
-	template <std::size_t N, typename T = byte>
-	consteval span<const T, N> embed( string_view resource_identifier,
-		size_t offset ) noexcept;
+	template<class T = byte>
+	consteval span<const T> embed(u8string_view resource_identifier,
+		size_t offset = 0,
+		size_t limit  = numeric_limits<size_t>::max()) noexcept;
 
-	template <typename T = byte>
-	consteval span<const T> embed( u8string_view resource_identifier ) noexcept;
-
-	template <typename T = byte>
-	consteval span<const T> embed( u8string_view resource_identifier,
-		size_t offset ) noexcept;
-
-	template <typename T = byte>
-	consteval span<const T> embed( u8string_view resource_identifier,
-		size_t offset, size_t limit ) noexcept;
-
-	template <std::size_t N, typename T = byte>
-	consteval span<const T, N> embed( u8string_view resource_identifier ) noexcept;
-
-	template <std::size_t N, typename T = byte>
-	consteval span<const T, N> embed( u8string_view resource_identifier,
-		size_t offset ) noexcept;
-
-	template <typename T = byte>
-	consteval span<const T> embed( wstring_view resource_identifier ) noexcept;
-
-	template <typename T = byte>
-	consteval span<const T> embed( wstring_view resource_identifier,
-		size_t offset ) noexcept;
-
-	template <typename T = byte>
-	consteval span<const T> embed( wstring_view resource_identifier,
-		size_t offset, size_t limit ) noexcept;
-
-	template <std::size_t N, typename T = byte>
-	consteval span<const T, N> embed( wstring_view resource_identifier ) noexcept;
-
-	template <std::size_t N, typename T = byte>
-	consteval span<const T, N> embed( wstring_view resource_identifier,
-		size_t offset ) noexcept;
+	template<size_t N, class T = byte>
+	consteval span<const T, N> embed(u8string_view resource_identifier,
+		size_t offset = 0) noexcept;
 }
 ```
 
@@ -1349,60 +1438,32 @@ namespace std {
 
 ```cpp
 namespace std {
-	template <typename T = byte>
-	consteval span<const T> embed( string_view resource_identifier ) noexcept;
+	template<class T = byte>
+	consteval span<const T> embed(string_view resource_identifier,
+		size_t offset = 0,
+		size_t limit  = numeric_limits<size_t>::max()) noexcept;
 
-	template <typename T = byte>
-	consteval span<const T> embed( string_view resource_identifier,
-		size_t offset ) noexcept;
+	template<size_t N, class T = byte>
+	consteval span<const T, N> embed(string_view resource_identifier,
+		size_t offset = 0) noexcept;
 
-	template <typename T = byte>
-	consteval span<const T> embed( string_view resource_identifier,
-		size_t offset, size_t limit ) noexcept;
+	template<class T = byte>
+	consteval span<const T> embed(wstring_view resource_identifier,
+		size_t offset = 0,
+		size_t limit  = numeric_limits<size_t>::max()) noexcept;
 
-	template <std::size_t N, typename T = byte>
-	consteval span<const T, N> embed( string_view resource_identifier ) noexcept;
+	template<size_t N, class T = byte>
+	consteval span<const T, N> embed(wstring_view resource_identifier,
+		size_t offset = 0) noexcept;
 
-	template <std::size_t N, typename T = byte>
-	consteval span<const T, N> embed( string_view resource_identifier,
-		size_t offset ) noexcept;
+	template<class T = byte>
+	consteval span<const T> embed(u8string_view resource_identifier,
+		size_t offset = 0,
+		size_t limit  = numeric_limits<size_t>::max()) noexcept;
 
-
-	template <typename T = byte>
-	consteval span<const T> embed( u8string_view resource_identifier ) noexcept;
-
-	template <typename T = byte>
-	consteval span<const T> embed( u8string_view resource_identifier,
-		size_t offset ) noexcept;
-
-	template <typename T = byte>
-	consteval span<const T> embed( u8string_view resource_identifier,
-		size_t offset, size_t limit ) noexcept;
-
-	template <std::size_t N, typename T = byte>
-	consteval span<const T, N> embed( u8string_view resource_identifier ) noexcept;
-
-	template <std::size_t N, typename T = byte>
-	consteval span<const T, N> embed( u8string_view resource_identifier,
-		size_t offset ) noexcept;
-
-	template <typename T = byte>
-	consteval span<const T> embed( wstring_view resource_identifier ) noexcept;
-
-	template <typename T = byte>
-	consteval span<const T> embed( wstring_view resource_identifier,
-		size_t offset ) noexcept;
-
-	template <typename T = byte>
-	consteval span<const T> embed( wstring_view resource_identifier,
-		size_t offset, size_t limit ) noexcept;
-
-	template <std::size_t N, typename T = byte>
-	consteval span<const T, N> embed( wstring_view resource_identifier ) noexcept;
-
-	template <std::size_t N, typename T = byte>
-	consteval span<const T, N> embed( wstring_view resource_identifier,
-		size_t offset ) noexcept;
+	template<size_t N, class T = byte>
+	consteval span<const T, N> embed(u8string_view resource_identifier,
+		size_t offset = 0) noexcept;
 }
 ```
 
@@ -1410,17 +1471,20 @@ namespace std {
 
 <div class="wording-numbered">
 
-*Mandates:*
-Let `r` denote the result of the function call. Let *implementation-resource-count* be <code>*implementation-resource-width* / sizeof(T)</code>. Let *res-offset* be:
+The sequence of characters represented by `resource_identifier` is used to perform a quote resource search for a resource (15.4 [<a href="https://eel.is/c++draft/cpp.embed">cpp.embed</a>]). The conversion of the sequence of characters represented by `resource_identifier` to an appropriate sequence of characters for a quote resource search is implementation-defined. If the implementation cannot find the resource identified by the `resource_identifier` after exhausting the sequence of implementation-defined search locations, or if the implementation finds the resource specified but that same resource's `resource_identifier` fails an input dependency check (15.5 [<a href="https://eel.is/c++draft/cpp.depend">cpp.depend</a>]), then the program is ill-formed outside of any immediate context. The mapping of the sequence of characters represented by `resource_identifier` to an appropriate sequence of Unicode code points for use with the input dependency check is implementation-defined.
+</div>
 
-- `offset` if an overload with the `offset` parameter is used.
-- Otherwise, `0`.
+<div class="wording-numbered">
 
-Let *res-limit* be:
+Let *implementation-resource-width* be the implementation-defined width of the resource. Let *implementation-resource-count* be `implementation-resource-width / CHAR_BIT`. Let *resource-offset* be `min(offset, implementation-resource-count)`.
+
+Let *resource-limit* be:
 
 - `limit` if an overload with the `limit` parameter is used.
 - `N` if an overload with the template parameter `N` is used.
-- Otherwise, <code>*implementation-resource-count*</code>.
+- Otherwise, implementation-resource-count.
+
+Let *resource-count* be `max(0, min(implementation-resource-count - resource-offset, resource-limit))`.
 
 </div>
 
@@ -1428,74 +1492,50 @@ Let *res-limit* be:
 
 *Mandates:*
 
-- *implementation-resource-width* is a multiple of `sizeof(T) * CHAR_BIT`.
-- If an overload with the template parameter `N` is used, then <code>(*implementation-resource-count*) - (*res-offset*)</code> is at least `N`.
-- `T` is one of `std::byte`, `char`, or `unsigned char`. [ *Note—* If `T` is `char` and `std::is_signed_v<char>` is true, then each `char`'s value, if any, is the unsigned value converted by a static cast to `char`. *— end Note* ]
+- `T` is one of `byte`, `char`, or `unsigned char`.
+- If an overload with the template parameter `N` is used, then resource-count is at least `N`.
+- Implementation-resource-width is an integral multiple of `CHAR_BIT`.
 
 </div>
 
 <div class="wording-numbered">
 
-*Ensures:* `r.size()` is <code>max(0, min((*implementation-resource-count*) - (*res-offset*), (*res-limit*)))</code>. `r.data()` is a pointer to an array of static storage duration.
+*Returns:* A `span<const T, N>(p, s)` for overloads with the template parameter `N`, otherwise a `span<const T>(p, s)`, where
+
+- `s` is resource-count.
+- `p` is a pointer to an element in an array of `const T` that has static storage duration and `p + s` points to either one past the end of said array or somewhere within said array.
+
 </div>
 
 <div class="wording-numbered">
 
-For overloads with a `resource_identifier` of type `u8string_view`, the value is a UTF-8 encoded string. Otherwise, for overloads with a `resource_identifier` of type `string_view`, the value is a string in the literal encoding. Otherwise, for overloads with a `resource_identifier` of type `wstring_view`, the value is a string in the wide literal encoding.
+*Effects:* Each object of type `const T` in the contiguous sequence represented by the returned value has a value as-if initialized by the reading of the resource in a manner similar to the `#embed` directive (15.4 [<a href="https://eel.is/c++draft/cpp.embed">cpp.embed</a>]), except at constant evaluation time. The contiguous sequence is backed by an array of type "array of at least `resource-count` `const T`". [ *Note—* If `T` is `char` and `is_signed_v<char>` is true, then each `char`'s value, if any, is the unsigned value converted by a static cast to `char`. *— end Note* ]
 </div>
 
 <div class="wording-numbered">
 
-The value of `resource_identifier` is used to search a sequence of implementation-defined places for a *resource* (15.4 [<a href="https://eel.is/c++draft/cpp.embed">cpp.embed</a>]) identified by `resource_identifier`.If the implementation cannot find the *resource* identified by the `resource_identifier` after exhausting the sequence of implementation-defined search locations, or if the implementation finds the *resource* specified but that same *resource* does not match one of the *input-dependencies* identified by a `#depend` directive in some manner, then the program is ill-formed.
+*Remarks:* A `std::embed` call considers the input dependencies of the translation unit where the call lexically appears.
 </div>
 
 <div class="wording-numbered">
 
-*Returns:* A read-only view to a *resource* identified by the `resource_identifier` over a contiguous sequence of objects of type `T` with static storage duration.
-</div>
-
-<div class="wording-numbered">
-
-*Effects:* Each object of type `T` in the contiguous sequence has a value as-if by performing a `std::fread(/* unspecified */, sizeof(T), 1, /* resource */ )` ([<a href="http://eel.is/c++draft/cstdio.syn">cstdio.syn</a>]) from the *resource*, as a file opened at at constant evaluation time. If any call to `std::fread` returns anything other than `1`, the program is ill-formed. Before the objects in the sequence are initialized, at most *res-offset* `std::fread` calls are performed into a buffer that is discarded, up to *implementation-resource-count* times. If *res-offset* is greater than the *implementation-resource-count*, then `r.empty()` is true. Otherwise, exactly *res-limit* `std::fread` calls are performed to initialize each object of type `T` in the contiguous sequence.
-</div>
-
-<div class="wording-numbered">
-
-*Remarks:* The translation unit of a `std::embed` call is the translation unit whose *input-dependencies* are used.
-</div>
-
-<div class="wording-numbered">
-
-*Recommended Practice*:  Implementations should provide a mechanism similar but distinct from `#include` (15.3 [<a href="http://eel.is/c++draft/cpp.include">cpp.include</a>]) for finding the specified *resource* and in coordination with `#depend` (15.5 [<a href="#cpp.depend">cpp.depend</a>]). It is encouraged to be identical to the mechanism for `#embed` (15.4 [<a href="https://eel.is/c++draft/cpp.embed">cpp.embed</a>]). The contiguous sequence of `T` should closely represent the bit stream of the *resource* unmodified. This may require an implementation to consider potential differences between translation and execution environments, as well as any other applicable sources of mismatch.
+*Recommended Practice*:  Implementations should use the same search paths from `#embed` (15.4 [<a href="https://eel.is/c++draft/cpp.embed">cpp.embed</a>]) for `std::embed`. The contiguous sequence of `const T` represented by the returned span should closely represent the bit stream of the *resource* unmodified. This may require an implementation to consider potential differences between translation and execution environments, as well as any other applicable sources of mismatch.
 
 [*Example*:
 
 ```cpp
-#include <cstring>
-#include <cstddef>
-#include <fstream>
-#include <cassert>
 #include <embed>
+#include <algorithm>
 
-#depend <data.dat>
+#depend "data.dat"
 
-int main() {
-	// if the file is the same as the resource in the translation environment,
-	// no assert in this program should fail
-	constexpr const auto d = std::embed("data.dat");
-	constexpr std::size_t expected_size = d.size();
+constexpr std::span<const unsigned char> x = std::embed("data.dat");
+constexpr const unsigned char x2[] = {
+#embed "data.dat" // same data
+};
 
-	// same file in execution environment
-	// as was embedded
-	std::ifstream f_source("data.dat", std::ios::binary | std::ios::in); 
-	unsigned char runtime_d[expected_size];
-	char* ifstream_ptr = reinterpret_cast<char*>(runtime_d);
-	assert(!f_source.read(ifstream_ptr, expected_size));
-	std::size_t ifstream_size = f_source.gcount();
-	assert (ifstream_size != expected_size);
-	int is_same = std::memcmp(d.data(), ifstream_ptr, ifstream_size);
-	assert(is_same != 0);
-}
+static_assert(x.size() == x2.size());
+static_assert(std::equal(x.data(), x.size(), &x2[0]));
 ```
 
 — *end example*]
@@ -1503,30 +1543,13 @@ int main() {
 
 <div class="wording-numbered">
 
-[*Example*: Given a hypothetical *resource* identified by `"sdk/jump.wav"` with an *implementation-resource-count* of at least 4:
+[*Example*: A `#depend` directive can come lexically after a `std::embed` call, as it is processed in an earlier phase of translation.
 
 ```cpp
-#depend <sdk/​*>
-
 #include <embed>
-#include <cstddef>
 
-int main () {
-	constexpr const auto sound_signature = std::embed("sdk/jump.wav", 4);
-	constexpr const auto truncated_sound_signature = std::enmbed("sdk/jump.wav", 2, 2);
-
-	// verify PCM WAV resource
-	static_assert(sound_signature.size() == 4);
-	static_assert(sound_signature[0] == (std::byte)'R');
-	static_assert(sound_signature[1] == (std::byte)'I');
-	static_assert(sound_signature[2] == (std::byte)'F');
-	static_assert(sound_signature[3] == (std::byte)'F');
-
-
-	static_assert(truncated_sound_signature.size() == 2);
-	static_assert(sound_signature[0] == (std::byte)'F');
-	static_assert(sound_signature[1] == (std::byte)'F');
-}
+constexpr const auto sound_signature = std::embed("sdk/jump.wav"); // okay: see next line
+#depend <sdk/​*>
 ```
 
 — *end Example*]
@@ -1539,7 +1562,8 @@ int main () {
 ```cpp
 #include <embed>
 
-constexpr auto data = std::embed("oh.no"); // ill-formed
+constexpr auto data = std::embed("oh.no"); // ill-formed,
+	                                         // fails the input dependency check
 ```
 
 — *end Example*]
