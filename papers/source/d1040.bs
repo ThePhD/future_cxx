@@ -1,12 +1,12 @@
 <pre class='metadata'>
 Title: std::embed
 Shortname: P1040
-Revision: 9
+Revision: 10
 Audience: EWG, CWG, LEWG
 Status: P
 Group: WG21
 URL: https://thephd.dev/_vendor/future_cxx/papers/d1040.html
-Date: 2026-03-27
+Date: 2026-05-15
 !Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/d1040.html">https://thephd.dev/_vendor/future_cxx/papers/d1040.html</a>
 !Implementation: <a href="https://github.com/ThePhD/embed">https://github.com/ThePhD/embed</a>
 Repository: ThePhD/future_cxx
@@ -25,6 +25,14 @@ path: resources/css/bikeshed-wording.html
 
 
 # Revision History # {#changelog}
+
+
+
+## Revision 10 - March 25<sup>th</sup>, 2026 ## {#changelog-r10}
+
+- Prepare for an EWG presentation at the request of the CWG chair by changing a significant portion (particularly the Tony Table and later parapgraphs) of the [[#motivation]].
+- Once more point to existing implementation completed at ThePhD/embed GitHub repository and the existing patches for both GCC and Clang in [[#implementation]].
+- 
 
 
 
@@ -74,58 +82,58 @@ path: resources/css/bikeshed-wording.html
 
 ## Revision 6 - March 2<sup>nd</sup>, 2020 ## {#changelog-r6}
 
-	- Add new section [[#polls]].
-	- Add new section [[#design-goals-dependencies]].
-	- Add new section [[#appendix-modules]].
-	- Improve section [[#design-goals-templated]].
-	- Add new section [[#design-goals-limit]].
-	- Add new section [[#design-goals-utf8]].
-	- Add new section [[#previous]].
-	- Improve wording and add static version (thanks, @lichray).
+- Add new section [[#polls]].
+- Add new section [[#design-goals-dependencies]].
+- Add new section [[#appendix-modules]].
+- Improve section [[#design-goals-templated]].
+- Add new section [[#design-goals-limit]].
+- Add new section [[#design-goals-utf8]].
+- Add new section [[#appendix-previous]].
+- Improve wording and add static version (thanks, @lichray).
 
 
 
 ## Revision 5 - January 13<sup>th</sup>, 2020 ## {#changelog-r5}
 
-	- Split `#embed` into a new paper.
-	- Add memory and time benchmarks from various implementation strategies in the [[#design-practice|new Current Practice section]].
-	- Address concerns for a generic API and similar in the [[#design-practice-analysis|new Results Analysis section]].
-	- Retarget to EWG and SG 7.
+- Split `#embed` into a new paper.
+- Add memory and time benchmarks from various implementation strategies in the [[#implementation|new Current Practice section]].
+- Address concerns for a generic API and similar in the [[#implementation-analysis|new Results Analysis section]].
+- Retarget to EWG and SG 7.
 
 
 
 ## Revision 4 - November 26<sup>th</sup>, 2018 ## {#changelog-r4}
 
-	- Wording is now relative to [[n4778]].
-	- Minor typo and tweak fixes.
+- Wording is now relative to [[n4778]].
+- Minor typo and tweak fixes.
 
 
 
 ## Revision 3 - November 26<sup>th</sup>, 2018 ## {#changelog-r3}
 
-	- Change to using `consteval`.
-	- Discuss potential issues with accessing resources after full semantic analysis is performed. Prepare to poll Evolution Working Group. Reference new paper, [[p1130]], about resource management.
+- Change to using `consteval`.
+- Discuss potential issues with accessing resources after full semantic analysis is performed. Prepare to poll Evolution Working Group. Reference new paper, [[p1130]], about resource management.
 
 
 
 ## Revision 2 - October 10<sup>th</sup>, 2018 ## {#changelog-r2}
 
-	- Destroy `embed_options` and `alignment` options: if the function is materialized only at compile-time through `constexpr` or the upcoming "immediate functions" (`constexpr!`), there is no reason to make this part of the function. Instead, the user can choose their own alignment when they pin this down into a std::array or some form of C array / C++ storage.
+- Destroy `embed_options` and `alignment` options: if the function is materialized only at compile-time through `constexpr` or the upcoming "immediate functions" (`constexpr!`), there is no reason to make this part of the function. Instead, the user can choose their own alignment when they pin this down into a std::array or some form of C array / C++ storage.
 
 
 
 ## Revision 1 - June 10<sup>th</sup>, 2018 ## {#changelog-r1}
 
-	- Create future directions section, follow up on Library Evolution Working Group comments.
-	- Change `std::embed_options::null_terminated` to `std::embed_options::null_terminate`.
-	- Add more code demonstrating the old way and motivating examples.
-	- Incorporate LEWG feedback, particularly alignment requirements illuminated by Odin Holmes and Niall Douglass. Add a feature macro on top of having `__has_include( <embed> )`.
+- Create future directions section, follow up on Library Evolution Working Group comments.
+- Change `std::embed_options::null_terminated` to `std::embed_options::null_terminate`.
+- Add more code demonstrating the old way and motivating examples.
+- Incorporate LEWG feedback, particularly alignment requirements illuminated by Odin Holmes and Niall Douglass. Add a feature macro on top of having `__has_include( <embed> )`.
 
 
 
 ## Revision 0 - May 11<sup>th</sup>, 2018 ## {#changelog-r0}
 
-	Initial release.
+- Initial release. 🎉
 
 
 
@@ -219,230 +227,73 @@ Make std::embed ill-formed inside of a module interface (with a plan to revisit 
 
 > I'm very keen on std::embed. I've been hand-embedding data in executables for NEARLY FORTY YEARS now. — <cite>Guy "Hatcat" Davidson, June 15, 2018</cite>
 
-<table>
-	<tr>
-		<th>Currently</th>
-		<th>With Proposal</th>
-	</tr>
-	<tr>
-		<td>
+The primary motivation is to allow for not only accessing data at compile-time, but providing seamless, optimizable data loading that can access that information and respond to that information **while embedding data based on what is read at constant evaluation time**. In particular, given two Lua files:
 
-```
-se-shell@virt-deb> python strfy.py \
-	fxaa.spirv \
-	stringified_fxaa.spirv.h
+`core/base.lua`:
+```lua
+base = {
+	["value"] = 30
+}
 ```
 
-```c++
+`main.lua`
+```lua
+require 'core/base.lua'
+
+function main()
+	return 1 + base.value
+end
+```
+
+A C++ program would be capable of doing this:
+
+```cpp
 #include <span>
+#include <phd/make_array.hpp>
+#include <phd/embed.hpp>
 
-constexpr inline 
-const auto& fxaa_spirv_data =
-#include "stringified_fxaa.spirv.h"
-;
+int main(int, char*[]) {
+	constexpr auto original_file_span = phd::embed<char>("resources/main.lua");
 
-// prevent embedded nulls from
-// ruining everything with 
-// char_traits<char>::length
-// or strlen
-template <typename T, std::size_t N>
-constexpr std::size_t 
-string_array_size(const T (&)\[N]) {
-	return N - 1;
-}
+	std::printf("original file (\"%s\"):\n\n%s", "resources/main.lua", original_file.data());
+	std::printf("\n\n=================================================================================\n");
 
-int main (int char*[]) {
-	constexpr std::span<const std::byte> 
-	fxaa_binary{ 
-		fxaa_spirv_data, 
-		string_array_size(fxaa_spirv_data)
-	};
-
-	// assert this is a SPIRV 
-	// file, at compile-time	
-	static_assert(fxaa_binary[0] == 0x03 
-		&& fxaa_binary[1] == 0x02
-		&& fxaa_binary[2] == 0x23 
-		&& fxaa_binary[3] == 0x07, 
-		"given wrong SPIRV data, "
-		"check rebuild or check "
-		"the binaries!")
-
-	auto context = make_vulkan_context();
-
-	// data kept around and made
-	// available for binary
-	// to use at runtime
-	auto fxaa_shader = make_shader( 
-		context, fxaa_binary );
-
-	for (;;) {
-		// ...
-		// and we're off!
-		// ...
-	}
+	constexpr auto original_file = comptime_make_string_array<original_file_span.size()>(original_file_span);
+	constexpr auto final_glob = recursive_parse_lua("resources/main.lua");
+	std::printf("`consteval recursive_parse_lua` result:\n\n%s", glob.data());
 
 	return 0;
 }
 ```
-</td>
-<td>
 
-<br/>
-<br/>
-<br/>
-<br/>
+Without needing any additional build tool-based concatenation or partial-embedded with `#embed` before having those data globs engineered together through string table manipulation or -- worse -- runtime-based coordination such as with GLSL's `#include`-proxy system. Particularly, the output of the program would be:
 
-```c++
-#include <embed>
+```sh
+original file ("resources/main.lua"):
 
+require 'core/base.lua'
 
-
+function main()
+	return 1 + base.value
+end
 
 
+=================================================================================
+`consteval recursive_parse_lua` result:
 
-
-
-
-
-
-
-
-
-
-
-int main (int, char*[]) {
-	constexpr std::span<const std::byte> 
-	fxaa_binary = 
-		std::embed( "fxaa.spirv" );
-	
-
-
-	// assert this is a SPIRV 
-	// file, at compile-time	
-	static_assert(fxaa_binary[0] == 0x03 
-		&& fxaa_binary[1] == 0x02
-		&& fxaa_binary[2] == 0x23 
-		&& fxaa_binary[3] == 0x07, 
-		"given wrong SPIRV data, "
-		"check rebuild or check "
-		"the binaries!")
-
-	auto context = make_vulkan_context();
-
-	// data kept around and made
-	// available for binary
-	// to use at runtime
-	auto fxaa_shader = make_shader( 
-		context, fxaa_binary );
-
-	for (;;) {
-		// ...
-		// and we're off!
-		// ...
-	}
-
-	return 0;
-}
-```
-		</td>
-	</tr>
-	<tr>
-		<td>
-```
-se-shell@virt-deb> python gen_cxx_random_data.py \
-	-o include/gen/random_data.h
-```
-
-```c++
-#include <cstdint>
-#include <utility>
-
-
-constexpr std::uint64_t val_64_const 
-	= 0xcbf29ce484222325u;
-constexpr std::uint64_t prime_64_const 
-	= 0x100000001b3u;
-
-inline constexpr std::uint64_t
-hash_64_fnv1a_const(const char* const ptr, 
-	std::size_t ptr_size, 
-	const std::uint64_t value = val_64_const
-) noexcept {
-	return (ptr_size == 1) 
-	  ? value 
-	  : hash_64_fnv1a_const(
-		&ptr[1],
-		ptr_size - 1, 
-		(value ^ static_cast<std::uint64_t>(*ptr)) 
-		* prime_64_const
-		);
-}
-
-#include <gen/random_data.h>
-
-int main () {
-
-
-	constexpr std::uint64_t actual
-		= hash_64_fnv1a_const(&random_data[0],
-			std::size(random_data));
-
-	return static_cast<int>(actual);
-}
-```
-		</td>
-		<td>
-```
-
-
-```
-```c++
-#include <embed>
-#include <cstdint>
-
-
-
-constexpr std::uint64_t val_64_const
-	= 0xcbf29ce484222325u;
-constexpr std::uint64_t prime_64_const
-	= 0x100000001b3u;
-
-inline constexpr std::uint64_t
-hash_64_fnv1a_const(const char* const ptr, 
-	std::size_t ptr_size, 
-	const std::uint64_t value = val_64_const
-) noexcept {
-	return (ptr_size == 1) 
-	  ? value 
-	  : hash_64_fnv1a_const(
-		&ptr[1],
-		ptr_size - 1, 
-		(value ^ static_cast<std::uint64_t>(*ptr)) 
-		* prime_64_const
-		);
+-- core/base.lua
+base = {
+	["value"] = 30
 }
 
 
-
-
-int main () {
-	constexpr std::span<const char> art_data 
-		= std::embed("/dev/urandom", 32);
-	constexpr std::uint64_t actual 
-		= hash_64_fnv1a_const(art_data.data(), 
-			art_data.size());
-
-	return static_cast<int>(actual);
-}
+function main()
+	return 1 + base.value;
+end
 ```
-([Works here.](https://godbolt.org/z/zqsvWD))
-		</td>
-	</tr>
-</table>
 
 
-A very large amount of C and C++ programmer -- at some point -- attempts to `#include` large chunks of non-C++ data into their code. Of course, `#include` expects the format of the data to be source code, and thusly the program fails with spectacular lexer errors. Thusly, many different tools and practices were adapted to handle this, as far back as 1995 with the `xxd` tool. Many industries need such functionality, including (but hardly limited to):
+A very large amount of C and C++ programmer -- at some point -- attempts to `#include` large chunks of non-C++ data into their code. Of course, `#include` expects the format of the data to be source code, and thusly the program fails with spectacular lexer errors. Many different tools and practices were adapted to handle this, as far back as 1995 with the `xxd` tool. Many industries need such functionality, including (but hardly limited to):
 
 - Financial Development
 	- representing coefficients and numeric constants for performance-critical algorithms;
@@ -466,6 +317,10 @@ In the pursuit of this goal, these tools have proven to have inadequacies and co
 
 The request for some form of `#include_string` or similar dates back quite a long time, with one of the oldest stack overflow questions asked-and-answered about it dating back nearly 10 years. Predating even that is a plethora of mailing list posts and forum posts asking how to get script code and other things that are not likely to change into the binary.
 
+A simpler, C-friendly, preprocessor-only version of this functionality was standardized in C++26 and C23 with `#embed <file> params...`, which solved the problem for C and C-adjacent use cases. However, many of the use cases above -- Application Development, Server Development, Embedded Development, and Game Development in particular -- rely on files that rely on other files and feature some form of file-awareness for use of packaging and re-packing reusable bits of code. Whether it is `require '...'` in Lua or `#include <>` in HLSL, many of these data files rely on other data files in order to be complete: in this way, `#embed` is only useful for the simplest and easiest data files which are wholly uncomplicated and feature-complete on their own. Many, many more data formats and their resulting files need to be parsed and stitched together in part or in whole to be usable without a pre-determined build system step.
+
+Additionally, the ability to validate data files at compile-time or -- even more powerfully -- rely on C++26 reflection to generate pitch-perfect interoperation functionality for Python, Go, Java, Lua, and more can all be achieved fairly powerfully if the C++ code could understand such files. The possibility to fully and completely cover much of the value proposition of SWIG, sol2, cons_expr, C-Python, JNI, and many other interface-generation driven by manual labor is fully tied to the ability to be able to on a basic level parse and handle interface declarations at compile-time and hang that off to further `constexpr`, `consteval`, and `template` processing in C++.
+
 This paper proposes `<embed>` to make this process much more efficient, portable, recursive, non-dependent on fixed preprocessor strings and streamlined.
 
 
@@ -473,36 +328,20 @@ This paper proposes `<embed>` to make this process much more efficient, portable
 
 # Scope and Impact # {#scope}
 
-`template <typename T = byte> consteval span<const T> embed( string_view resource_identifier )` is an extension to the language proposed entirely as a library construct. The goal is to have it implemented with compiler intrinsics, builtins, or other suitable mechanisms. It does not affect the language. The proposed header to expose this functionality is `<embed>`, making the feature entirely-opt-in by checking if either the proposed feature test macro exists.
+`std::embed` is an extension to the language proposed entirely as a library construct. The goal is to have it implemented with compiler intrinsics, builtins, or other suitable mechanisms. It does not affect the language. The proposed header to expose this functionality is `<embed>`, making the feature entirely-opt-in by checking if either the proposed feature test macro exists.
 
 
 
 
-# Design Decisions # {#design}
+# Implementation Experience & Current Practice # {#implementation}
 
-`<embed>` avoids using the preprocessor or defining new string literal syntax like its predecessors, preferring the use of a free function in the `std` namespace. This gives `std::embed` a greater degree of power and advantage over `#embed`'s design is derived heavily from community feedback plus the rejection of the prior art up to this point, as well as the community needs demonstrated by existing practice and their pit falls.
+There are a few cross-platform (and not-so-cross-platform) paths for getting data into an executable. We also scrutinized the performance, with numbers for both [[#implementation-memory|memory overhead]] and [[#implementation-speed|speed overhead]] available at the repository that houses the [current implementation](https://github.com/ThePhD/embed). For ease of access, the numbers as of January 2020 with the latest versions of the indicated compilers and tools are replicated below.
 
-
-
-## Primary Benefit: Recursive Processing and Composible String File Names ## {#design-recursive.composible}
-
-One of the biggest benefits of `std::embed` is that it's a normal, regular `consteval` function call. This means that when processing data, it can be called recursively after reading the data from inside of the embedded file. This allows someone much greater degrees of freedom and power than is capable with either `#embed` or `_Pragma("embed ...")`, as it allows someone to use other constant expression parsing facilities along the introduction of file-based data. Among the primary use cases for this are:
-
-- the ability to embed data recursively, such as processing sister language's that have their own `#include` or `import` statements like CG, HLSL, GLSL, etc.
-- and, the ability to respond to the contents of the data and perform other compile-time data processing, such as search for certain records or performing deserialization or serialization.
-
-Such behaviors can also be combined with the approach `meta` and Reflection facilities that are coming to C++, which would also allow for generative reflection in a set of files determined at constant evaluation time (rather than a fixed set at preprocessing time). This would enable to do things such as enable the generation of C++ code from data files or other languages, such as automatic binding layers to Lua tables/functions, Python objects/scripts/modules, and other robust integrations (such as Rust, JavaScsript, etc.). Many of these languages have `require`, `include`, `import`, or other things which require multi-file coordination that `#embed` cannot handle.
+Finally, a proper implementation has been completed in LLVM/Clang trunk and in GCC trunk as of April 25th, 2026, though they are not integrated into main/trunk of either compiler yet. They can be viewed [here: https://github.com/ThePhD/embed/tree/main/patches](https://github.com/ThePhD/embed/tree/main/patches).
 
 
 
-## Implementation Experience & Current Practice ## {#design-practice}
-
-Here, we examine current practice, their benefits, and their pitfalls. There are a few cross-platform (and not-so-cross-platform) paths for getting data into an executable. We also scrutinize the performance, with numbers for both [memory overhead](https://github.com/ThePhD/embed#memory-size-results) and [speed overhead](https://github.com/ThePhD/embed#speed-results) available at the repository that houses the [current implementation](https://github.com/ThePhD/embed). For ease of access, the numbers as of January 2020 with the latest versions of the indicated compilers and tools are replicated below.
-
-All three major implementations were explored, plus an early implementation of this functionality in GCC. A competing implementation in a separate C++-like meta language called [Circle](https://www.circle-lang.org/) was also looked at by the behest of Study Group 7.
-
-
-### Speed Results ### {#design-practice-speed}
+## Speed Results ## {#implementation-speed}
 
 Below are timing results for a file of random bytes using a specific strategy. The file is of the size specified at the top of the column. Files are kept the same between strategies and tests.
 
@@ -698,7 +537,8 @@ Below are timing results for a file of random bytes using a specific strategy. T
 </p>
 
 
-### Memory Size Results ### {#design-practice-memory}
+
+## Memory Size Results ## {#implementation-memory}
 
 Below is the peak memory usage (heap usage) for a file of random bytes using a specific strategy. The file is of the size specified at the top of the column. Files are kept the same between strategies and tests.
 
@@ -894,7 +734,8 @@ Below is the peak memory usage (heap usage) for a file of random bytes using a s
 </p>
 
 
-### Results Analysis ### {#design-practice-analysis}
+
+## Results Analysis ## {#implementation-analysis}
 
 The above clearly demonstrates the superiority of `std::embed` over latest optimized trunk builds of various compilers. It is also notable that originally the Circle language did not have an `@embed` keyword, but it was added in December 2019. When the compiler author was spoken to about Study Group 7's aspirations for a more generic way of representing data from a file, the ultimate response was this:
 
@@ -917,42 +758,23 @@ Is this really the best use of compiler developer energy?
 To provide a backdrop against which a big departure from current AST handling in can be compared, an implementation of the built-in necessary for this proposal is -- for an experienced developer -- at most a few day's work in either GCC or Clang. Other compiler engineers have reported similar ease of implementation and integration. Should this really be delegated to Quality of Implementation that will be need to be solved N times over by every implementation in their own particularly special way? Chipping away at what is essentially a fundamental inefficiency required by C++'s inescapable tokenization model from the preprocessor plus the sheer cost of an ever-growing language that makes simple constructs like a brace initializer list of integer constants expensive is, in this paper's demonstrated opinion, incredibly unwise.
 
 
-### Manual Work ### {#design-practice-manual}
 
-Many developers also hand-wrap their files in (raw) string literals, or similar to massage their data -- binary or not -- into a conforming representation that can be parsed at source code:
 
-0. Have a file `data.json` with some data, for example:
+# Design Decisions # {#design}
 
-```
-{ "Hello": "World!" }
-```
+`<embed>` avoids using the preprocessor or defining new string literal syntax like its predecessors, preferring the use of a free function in the `std` namespace. This gives `std::embed` a greater degree of power and advantage over `#embed`'s design is derived heavily from community feedback plus the rejection of the prior art up to this point, as well as the community needs demonstrated by existing practice and their pit falls.
 
-1. Mangle that file with raw string literals, and save it as `raw_include_data.h`:
 
-```
-R"json({ "Hello": "World!" })json"
-```
 
-1. Include it into a variable, optionally made `constexpr`, and use it in the program:
+## Primary Benefit: Recursive Processing and Composible String File Names ## {#design-recursive.composible}
 
-```cpp
-#include <iostream>
-#include <string_view>
+One of the biggest benefits of `std::embed` is that it's a normal, regular `consteval` function call. This means that when processing data, it can be called recursively after reading the data from inside of the embedded file. This allows someone much greater degrees of freedom and power than is capable with either `#embed` or `_Pragma("embed ...")`, as it allows someone to use other constant expression parsing facilities along the introduction of file-based data. Among the primary use cases for this are:
 
-int main() {
-	constexpr std::string_view json_view =
-#include "raw_include_data.h"
-		;
-		
-	// { "Hello": "World!" }
-	std::cout << json_view << std::endl;
-	return 0;
-}
-```
+- the ability to embed data recursively, such as processing sister language's that have their own `#include` or `import` statements like CG, HLSL, GLSL, etc.
+- and, the ability to respond to the contents of the data and perform other compile-time data processing, such as search for certain records or performing deserialization or serialization.
 
-This happens often in the case of people who have not yet taken the "add a build step" mantra to heart. The biggest problem is that the above C++-ready source file is no longer valid in as its original representation, meaning the file as-is cannot be passed to any validation tools, schema checkers, or otherwise. This hurts the portability and interop story of C++ with other tools and languages.
+Such behaviors can also be combined with the approach `meta` and Reflection facilities that are coming to C++, which would also allow for generative reflection in a set of files determined at constant evaluation time (rather than a fixed set at preprocessing time). This would enable to do things such as enable the generation of C++ code from data files or other languages, such as automatic binding layers to Lua tables/functions, Python objects/scripts/modules, and other robust integrations (such as Rust, JavaScsript, etc.). Many of these languages have `require`, `include`, `import`, or other things which require multi-file coordination that `#embed` cannot handle.
 
-Furthermore, if the string literal is too big vendors such as VC++ will hard error [[nonius-visual-c-error|the build (example from Nonius, benchmarking framework)]].
 
 
 ### Processing Tools ### {#design-practice-tools}
@@ -973,7 +795,7 @@ There is a tool called [[incbin]] which is a 3rd party attempt at pulling files 
 
 ## Prior Art ## {#design-prior}
 
-There has been a lot of discussion over the years in many arenas, from Stack Overflow to mailing lists to meetings with the Committee itself. The latest advancements that had been brought to WG21's attention was [[p0373r0|p0373r0 - File String Literals]]. It proposed the syntax `F"my_file.txt"` and `bF"my_file.txt"`, with a few other amenities, to load files at compilation time. The following is an analysis of the previous proposal.
+There has been a lot of discussion over the years in many arenas, from Stack Overflow to mailing lists to meetings with the Committee itself. The latest advancements that had been brought to WG21's attention was [[p0373r0|p0373r0 - File String Literals]]. It proposed the syntax `F"my_file.txt"` and `bF"my_file.txt"`, with a few other amenities, to load files at compilation time. The following is an analysis of the previous proposal. Additionally, some prior art and understanding comes from [[p1967]].
 
 
 ### Literal-Based, constexpr ### {#design-prior-literal}
@@ -1091,6 +913,8 @@ Due to Windows being a pile of garbage for `FindFirstFile`-style directory itera
 
 `#depend` uses both the chevron-delimited `<foo.txt>` and the quote-delimited `"foo.txt"` formats. This is because one is for resources that are found only on the system / implementation paths similar to `-I` and `-isystem`, and then one that uses local look up plus the aforementioned resource paths. This can be useful for e.g. files that get embedded from system SDKs, like icons from Windows or Android build-time graphical resources or similar.
 
+NOTE: It is also imperative to note that the way Include Directories and Embed Resource Directories work in all implementations is such that they work as-if by recursive glob. That is, `-I/mnt/code/boost-1.56.0/include` provides access to `<boost/soped_ptr.hpp>`, not just the singular folder `<boost>`. That is, every resource and every include underneath boost is allowed, such that they are effectively doing the equivalent of `#depend <boost/**>` to allow, recursively, for any file to be used. `#depend` is modeled off of that same access.
+
 
 ### Modules ### {#design-goals-modules}
 
@@ -1119,7 +943,7 @@ Note that as per [[#design-goals-templated]], the limit is specified in terms of
 Additionally, a user can provide a template argument `N` of type `std::size_t` to return a `span<T, N>`. This requires at _least_ `N` elements, but maybe more can exist. One can use both of these to request "exactly this many" elements, e.g. a call `std::embed<32>("/dev/infinity");` requires up to but not more than 32 elements (the `limit` parameter passed to the function) and that the returned span has at least 32 elements (the template parameter passed between the `<` and the `>`). Similarly, one could use `std::embed("/dev/infinity", 0, 32).first<32>();`. This fully covers the design space for what making a subset of the data is currently used for (e.g., prefixed data in a common model format that then has "back references" to the data contained in the first `n` elements).
 
 
-### Optional Offset ### {#design-goals-offset}
+### Offset ### {#design-goals-offset}
 
 There is also an `offset` parameter. While this can be achieved by calling `subspan(...)` on the returned value, it does not aid in how MUCH storage is stored on the code-behind and would require optimization to know that the edge(s) of the static storage data array to trim off. Having both `offset` and `limit` allow for the compiler itself to know how much data to retain *without* the use of optimization. It also allows a compiler frontend to merge potentially different calls which pull data offsets from various locations.
 
@@ -1137,65 +961,9 @@ Unfortunately, implementation experience attemping this found that there were a 
 
 It is important to note that, insofar as security is concerned, `#depend` that use glob-style syntax is **not** what triggers the full consumption of files from the file system, nor their transport to e.g. a CI server in order to make using `std::embed` on remote conglomerate build servers and similar work. `#depend` is a **whitelist** of files: it does not put any data into the program. You cannot "glob" files into the program, and there is no file system search capabilities built into this program: if a file is not found, the program is **ill-formed**, which is different from finding a file that is empty (in which case the returned `std::span<T>` is empty).
 
-Additionally, security prospects are slightly improved by the fact that a failure to find a resource results in an ill-formed program. This means that a bad actor cannot continuously probe for a set of files until it finds one at build-time; any failed search stops compilation. This is not a full-proof security or defense measure, but provides a slight check against code that would see to simply slurp up the contents of a file system. However, this does not stop an attacker from simply guessing all of the right files correctly, so it is only a small mitigation. This problem is better solved by build system sandboxing and proper data handling practices.
+Additionally, security prospects are slightly improved by the fact that a failure to find a resource results in an ill-formed program. This means that a bad actor cannot continuously probe for a set of files until it finds one at build-time; any failed search stops compilation. This is not a fool-proof security or defense measure, but provides a slight check against code that would see to simply slurp up the contents of a file system. However, this does not stop an attacker from simply guessing all of the right files correctly, so it is only a small mitigation. This problem is better solved by build system sandboxing and proper data handling practices.
 
 Either way, if this is not deemed as important enough, it is completely viable to change the ill-formed in the future to a thrown `constexpr` exception, now that C++26 allows for those. We would leave this determination to a future paper after it considers the arguments for and against such compile-time programmability.
-
-
-
-
-# Previous Implementations # {#previous}
-
-This section is primarily to address feedback from polls wherein different forms and implementation strategies were asked for by the Evolution Working Group and other implementers. A tour of the design and implementation these cases helps show what has been considered.
-
-
-
-## `#depend` Soft Warnings, Hard Errors? ## {#previous-#depend}
-
-The current specification makes it a hard error if a file has not been identified previously by a `#depend` directive. This makes the simple case of including a single file a bit more annoying than it needs to be, but also makes the case of general development with a non-distributed build system a pain. To be perfectly transparent, the author of this paper and almost 100% of the author's clients do not use distributed anything to build their code: errors at "file not found" are generally useful enough. Making the lack of matching `#depend` a hard error seems like pushing an important but nevertheless Committee-over-represented concern (i.e. distributed build tool users) onto all C++ users.
-
-While the author feels a lot better about it being a soft warning that can be turned into a hard error by use of `-Werror-depend` for distributed build users, we leave the specification to strongly encourage implementations to hard error on an inability to not only find the resource but match it with a previous `#depend` declaration.
-
-
-
-## String Table / Virtual File System ## {#previous-virtual}
-
-This implementation idea was floated twice, once during SG-7 discussion at the November 2019 Belfast meeting and again during the February 2020 Prague meeting. The crux of this version of `std::embed` is that it does not take resource identifiers related to e.g. the file system directly: a directive is used to build a "String Table" or "Translation Table" from system-specific paths to "friendly" names:
-
-```cpp
-// map "foo.txt" to file name "foo"
-#depend_name "foo.txt" "foo"
-
-#ifdef _WIN32
-	// map Windows-specific resource
-	// "win/bazunga.bin" to file name "baz"
-	#depend_name "win/bazunga.bin" "baz"
-#else
-	// map Unix-specific resource
-	// "nix/bazooka.bin" to file name "baz"
-	#depend_name "nix/bazooka.bin" "baz"
-#endif
-
-#include <embed>
-
-int main () {
-	// pulls foo.txt
-	constexpr std::span<std::byte> foo = std::embed("foo");
-	// pulls either bazunga or bazooka
-	constexpr std::span<std::byte> baz = std::embed("baz");
-	return foo[0] == 'f' && baz[2] == '\x3';
-}
-```
-
-On the tin, this seems to bring nice properties to the table. We get to "erase" platform-specific paths and give them common names, we have a static list of names that we always pull from, and more. However, there are several approaches to this problem. Consider one of the primary use cases for `std::embed` as a `constexpr` function: reading a resource and, based on its contents, `std::embed`-ing other resources.
-
-This becomes a problem: if `foo.txt` has a `get: bar.doc` line of text in it, we read that line from `foo.txt`, and then attempt to `std::embed("bar.doc")`, we get an error because we did not give `bar.doc` a string table name. This means we need to go back and not only mark it as a dependency with `#depend`, but also give it a static string-table based name.
-
-Even conquering that problem (with, e.g., glob-based `#depend` families of dependencies), we face another: resource files -- JSON, SPIR-V, Wavefront OBJ, HLSL/GLSL, python, Lua, HSAIL, whatever -- do not speak "C++ String Table" to name their identifiers. Generally, these speak "File System": we are adding a level of indirection that makes it difficult to keep working with the file system, especially when it comes to working with external resources. Most tools communicate and traffic interchange information VIA URIs or relative / local file paths. Forcing users to either adapt their code to play nice with this new C++ file system or maintaining a translation table to and from "C++ String Table" to "C++ File System" is an order of magnitude additional complexity.
-
-There is absolutely room for a (potentially `constexpr`) Virtual File System in C++. This is not the feature that should bring us there. As the current implementation does, manipulating `--embed-dir=` similar to the way `#include` is handled alongside `-I` flags is a much better use of not only implementer time, but programmer time. It fits perfectly into the mental model ("include, but for resources") and lets users keep their file names as the unit of interchange as far as names go.
-
-C++ does not need to make for itself a reputation of trying to be an extremely unique snowflake at the cost of usability and user friendliness.
 
 
 
@@ -1336,7 +1104,7 @@ An attempt is then made to form a header-name preprocessing token ([lex.header])
 
 <div class="wording-numbered">
 
-An *input dependency check* takes an input that is a sequence of Unicode code points and yields either success or failure according to the following matching algorithm. For each dependency pattern, it's sequence of Unicode code points is converted to an Standard Ecma 262 (called ECMA-262 in this clause) regular expression pattern (see ECMA-262 subclause 15.10) in the following way.
+An *input dependency check* takes an input that is a sequence of Unicode code points and yields either success or failure according to the following matching algorithm. For each dependency pattern, its sequence of Unicode code points is converted to an Standard Ecma 262 (called ECMA-262 in this clause) regular expression pattern (see ECMA-262 subclause 15.10) in the following way.
 
 For each Unicode code point in the dependency pattern:
 
@@ -1345,9 +1113,11 @@ For each Unicode code point in the dependency pattern:
 	- Otherwise, if it not followed by another `*` (U+002A ASTERISK), then the single asterisk is replaced by the ECMA-262 regular expression *CharacterClass* of <code>[^*path-separators*]\*</code> (U+005B LEFT SQUARE BRACKET, U+005E CIRCUMFLEX ACCENT, *path-separators*, U+005D RIGHT SQUARE BRACKET, U+002A ASTERISK), where *path-separators* are the appropriate ECMA-262 regular expression *ClassAtoms* for a slash (U+002F SOLIDUS), a backslash (U+005C REVERSE SOLIDUS), or any other corresponding implementation-defined directory-separator ([<a href="https://eel.is/c++draft/fs.path.generic#nt:directory-separator">fs.path.generic</a>]).
 - Otherwise, it is replaced by an appropriate ECMA-262 regular expression *Atom* representing the Unicode code point of the sequence.
 
+Finally, the ECMA-262 regular expression *CharacterClass* `$` (U+0024 DOLLAR SIGN) is appended to the pattern.
+
 [ *Note—* The *ClassAtom* and *Atom* placed into these regular expressions representing a plain Unicode code point appropriately escapes any Unicode code point that would otherwise be interpreted as non-*ClassAtom* or non-*Atom* in the overall regular expression. *— end Note* ]
 
-The input is then matched against the regular expression using the algorithm specified in ECMA-262 15.10. If the input matches the converted dependency pattern, then the input dependency check yields success. Otherwise, the input is checked against the next dependency pattern as described previously. If all dependency patterns in the input dependencies are checked against the input and none yield success, then the input dependency check yields failure.
+The input is then matched against the constructed ECMA-262 regular expression using the algorithm specified in ECMA-262 15.10. If the input matches the converted dependency pattern, then the input dependency check yields success. Otherwise, the input is checked against the next dependency pattern as described previously. If all dependency patterns in the input dependencies are checked against the input and none yield success, then the input dependency check yields failure.
 </div>
 
 <div class="wording-numbered">
@@ -1514,7 +1284,7 @@ Let *resource-count* be `max(0, min(implementation-resource-count - resource-off
 
 <div class="wording-numbered">
 
-*Remarks:* A `std::embed` call considers the input dependencies of the translation unit where the call lexically appears.
+*Remarks:* A `std::embed` call considers the input dependencies of the translation unit where the call lexically appears. If any `#depend` appears after where a `std::embed` call lexically appears, it is implementation-defined whether or not any of those `#depend` directives's patterns contribute to the input dependencies.
 </div>
 
 <div class="wording-numbered">
@@ -1665,7 +1435,7 @@ This would make the behavior opt-in and predictable. We do not include it in the
 
 
 
-## Alternative ## {#appendix-Alternative}
+## Alternative ## {#appendix-alternative}
 
 Other techniques used include pre-processing data, link-time based tooling, and assembly-time runtime loading. They are detailed below, for a complete picture of today's sad landscape of options.
 
@@ -1835,9 +1605,101 @@ This scales a little bit better in terms of raw compilation time but is shocking
 N.B.: Because these declarations are `extern`, the values in the array cannot be accessed at compilation/translation-time.
 
 
+### Manual Work ### {#appendix-alternative-manual}
+
+Many developers also hand-wrap their files in (raw) string literals, or similar to massage their data -- binary or not -- into a conforming representation that can be parsed at source code:
+
+0. Have a file `data.json` with some data, for example:
+
+```
+{ "Hello": "World!" }
+```
+
+1. Mangle that file with raw string literals, and save it as `raw_include_data.h`:
+
+```
+R"json({ "Hello": "World!" })json"
+```
+
+1. Include it into a variable, optionally made `constexpr`, and use it in the program:
+
+```cpp
+#include <iostream>
+#include <string_view>
+
+int main() {
+	constexpr std::string_view json_view =
+#include "raw_include_data.h"
+		;
+		
+	// { "Hello": "World!" }
+	std::cout << json_view << std::endl;
+	return 0;
+}
+```
+
+This happens often in the case of people who have not yet taken the "add a build step" mantra to heart. The biggest problem is that the above C++-ready source file is no longer valid in as its original representation, meaning the file as-is cannot be passed to any validation tools, schema checkers, or otherwise. This hurts the portability and interop story of C++ with other tools and languages.
+
+Furthermore, if the string literal is too big vendors such as VC++ will hard error [[nonius-visual-c-error|the build (example from Nonius, benchmarking framework)]].
+
+
+## Previous Implementations ## {#appendix-previous}
+
+This section is primarily to address feedback from polls wherein different forms and implementation strategies were asked for by the Evolution Working Group and other implementers. A tour of the design and implementation these cases helps show what has been considered.
+
+
+### `#depend` Soft Warnings, Hard Errors? ### {#appendix-previous-#depend}
+
+The current specification makes it a hard error if a file has not been identified previously by a `#depend` directive. This makes the simple case of including a single file a bit more annoying than it needs to be, but also makes the case of general development with a non-distributed build system a pain. To be perfectly transparent, the author of this paper and almost 100% of the author's clients do not use distributed anything to build their code: errors at "file not found" are generally useful enough. Making the lack of matching `#depend` a hard error seems like pushing an important but nevertheless Committee-over-represented concern (i.e. distributed build tool users) onto all C++ users.
+
+While the author feels a lot better about it being a soft warning that can be turned into a hard error by use of `-Werror-depend` for distributed build users, we leave the specification to strongly encourage implementations to hard error on an inability to not only find the resource but match it with a previous `#depend` declaration.
+
+
+### String Table / Virtual File System ### {#appendix-previous-virtual}
+
+This implementation idea was floated twice, once during SG-7 discussion at the November 2019 Belfast meeting and again during the February 2020 Prague meeting. The crux of this version of `std::embed` is that it does not take resource identifiers related to e.g. the file system directly: a directive is used to build a "String Table" or "Translation Table" from system-specific paths to "friendly" names:
+
+```cpp
+// map "foo.txt" to file name "foo"
+#depend_name "foo.txt" "foo"
+
+#ifdef _WIN32
+	// map Windows-specific resource
+	// "win/bazunga.bin" to file name "baz"
+	#depend_name "win/bazunga.bin" "baz"
+#else
+	// map Unix-specific resource
+	// "nix/bazooka.bin" to file name "baz"
+	#depend_name "nix/bazooka.bin" "baz"
+#endif
+
+#include <embed>
+
+int main () {
+	// pulls foo.txt
+	constexpr std::span<std::byte> foo = std::embed("foo");
+	// pulls either bazunga or bazooka
+	constexpr std::span<std::byte> baz = std::embed("baz");
+	return foo[0] == 'f' && baz[2] == '\x3';
+}
+```
+
+On the tin, this seems to bring nice properties to the table. We get to "erase" platform-specific paths and give them common names, we have a static list of names that we always pull from, and more. However, there are several approaches to this problem. Consider one of the primary use cases for `std::embed` as a `constexpr` function: reading a resource and, based on its contents, `std::embed`-ing other resources.
+
+This becomes a problem: if `foo.txt` has a `get: bar.doc` line of text in it, we read that line from `foo.txt`, and then attempt to `std::embed("bar.doc")`, we get an error because we did not give `bar.doc` a string table name. This means we need to go back and not only mark it as a dependency with `#depend`, but also give it a static string-table based name.
+
+Even conquering that problem (with, e.g., glob-based `#depend` families of dependencies), we face another: resource files -- JSON, SPIR-V, Wavefront OBJ, HLSL/GLSL, python, Lua, HSAIL, whatever -- do not speak "C++ String Table" to name their identifiers. Generally, these speak "File System": we are adding a level of indirection that makes it difficult to keep working with the file system, especially when it comes to working with external resources. Most tools communicate and traffic interchange information VIA URIs or relative / local file paths. Forcing users to either adapt their code to play nice with this new C++ file system or maintaining a translation table to and from "C++ String Table" to "C++ File System" is an order of magnitude additional complexity.
+
+There is absolutely room for a (potentially `constexpr`) Virtual File System in C++. This is not the feature that should bring us there. As the current implementation does, manipulating `--embed-dir=` similar to the way `#include` is handled alongside `-I` flags is a much better use of not only implementer time, but programmer time. It fits perfectly into the mental model ("include, but for resources") and lets users keep their file names as the unit of interchange as far as names go.
+
+C++ does not need to make for itself a reputation of trying to be an extremely unique snowflake at the cost of usability and user friendliness.
+
+
 
 
 # Acknowledgements # {#acknowledgements}
+
+Thank you to Hana Dusíková for helping jumpstart and kick off the final public Clang Implementation / Patches and the newer design ideas for C++29.
 
 A big thank you to Andrew Tomazos for replying to the author's e-mails about the prior art. Thank you to Arthur O'Dwyer for providing the author with incredible insight into the Committee's previous process for how they interpreted the Prior Art.
 
@@ -1860,6 +1722,14 @@ For all this hard work, it is the author's hope to carry this into C++. It would
 		"title": "Module Resource Requirement Propagation",
 		"href": "https://thephd.dev/_vendor/future_cxx/papers/d1130.html",
 		"date": "November 26th, 2018"
+	},
+	"p1967": {
+		"authors": [
+			"JeanHeyd Meneide"
+		],
+		"title": "Module Resource Requirement Propagation",
+		"href": "https://thephd.dev/_vendor/future_cxx/papers/d1967.html",
+		"date": "February 14th, 2025"
 	},
 	"constexpr-all-the-things": {
 		"authors": [
