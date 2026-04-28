@@ -28,11 +28,13 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 10 - March 25<sup>th</sup>, 2026 ## {#changelog-r10}
+## Revision 10 - May 15<sup>th</sup>, 2026 ## {#changelog-r10}
 
 - Prepare for an EWG presentation at the request of the CWG chair by changing a significant portion (particularly the Tony Table and later parapgraphs) of the [[#motivation]].
 - Once more point to existing implementation completed at ThePhD/embed GitHub repository and the existing patches for both GCC and Clang in [[#implementation]].
-- 
+- Highlight that the recursive and similar bits of the proposal about their value have been talked about since 2019 in Belfast, shown in [[#design-recursive.composable]].
+- Mention that, as it always has been, it does not provide a unique address [[#design-goals-non.unique]]. Formalize this in the wording.
+- Adjust wording to handle implementations which do partial preprocessing and do not fully honor the steps of a compiler such as Clang in [[#design-dependencies-quirk]].
 
 
 
@@ -83,7 +85,7 @@ path: resources/css/bikeshed-wording.html
 ## Revision 6 - March 2<sup>nd</sup>, 2020 ## {#changelog-r6}
 
 - Add new section [[#polls]].
-- Add new section [[#design-goals-dependencies]].
+- Add new section [[#design-dependencies]].
 - Add new section [[#appendix-modules]].
 - Improve section [[#design-goals-templated]].
 - Add new section [[#design-goals-limit]].
@@ -766,7 +768,7 @@ To provide a backdrop against which a big departure from current AST handling in
 
 
 
-## Primary Benefit: Recursive Processing and Composible String File Names ## {#design-recursive.composible}
+## Primary Benefit: Recursive Processing and Composable String File Names ## {#design-recursive.composable}
 
 One of the biggest benefits of `std::embed` is that it's a normal, regular `consteval` function call. This means that when processing data, it can be called recursively after reading the data from inside of the embedded file. This allows someone much greater degrees of freedom and power than is capable with either `#embed` or `_Pragma("embed ...")`, as it allows someone to use other constant expression parsing facilities along the introduction of file-based data. Among the primary use cases for this are:
 
@@ -775,27 +777,17 @@ One of the biggest benefits of `std::embed` is that it's a normal, regular `cons
 
 Such behaviors can also be combined with the approach `meta` and Reflection facilities that are coming to C++, which would also allow for generative reflection in a set of files determined at constant evaluation time (rather than a fixed set at preprocessing time). This would enable to do things such as enable the generation of C++ code from data files or other languages, such as automatic binding layers to Lua tables/functions, Python objects/scripts/modules, and other robust integrations (such as Rust, JavaScsript, etc.). Many of these languages have `require`, `include`, `import`, or other things which require multi-file coordination that `#embed` cannot handle.
 
+This benefit has been discussed since the [November 2019 Belfast C++ Meeting](https://thephd.dev/_presentations/standards/C++/2019%20November%20Belfast/p1040/P1040%20-%20std%20embed.html) and at no point was it ever unambiguous what the fully-intentional reason for this proposal was:
 
-
-### Processing Tools ### {#design-practice-tools}
-
-Other developers use pre-processors for data that can't be easily hacked into a C++ source-code appropriate state (e.g., binary). The most popular one is `xxd -i my_data.bin`, which outputs an array in a file which developers then include. This is problematic because it turns binary data in C++ source. In many cases, this results in a larger file due to having to restructure the data to fit grammar requirements. It also results in needing an extra build step, which throws any programmer immediately at the mercy of build tools and project management. An example and further analysis can be found in the [[#appendix-tools]] and the [[#appendix-mongo]] section.
-
-
-### `ld`, resource files, and other vendor-specific link-time tools ### {#design-practice-vendor}
-
-Resource files and other "link time" or post-processing measures have one benefit over the previous method: they are fast to perform in terms of compilation time. A example can be seen in the [[#appendix-ld]] section.
-
-
-### The `incbin` tool ### {#design.practice.incbin}
-
-There is a tool called [[incbin]] which is a 3rd party attempt at pulling files in at "assembly time". Its approach is incredibly similar to `ld`, with the caveat that files must be shipped with their binary. It unfortunately falls prey to the same problems of cross-platform woes when dealing with VC++, requiring additional pre-processing to work out in full.
-
-
+<a href="https://thephd.dev/_presentations/standards/C++/2019%20November%20Belfast/p1040/P1040%20-%20std%20embed.html#/3">
+<pre class=include>
+path: assets/d1040/2019.11 Belfast Presentation.bs
+</pre>
+</a>
 
 ## Prior Art ## {#design-prior}
 
-There has been a lot of discussion over the years in many arenas, from Stack Overflow to mailing lists to meetings with the Committee itself. The latest advancements that had been brought to WG21's attention was [[p0373r0|p0373r0 - File String Literals]]. It proposed the syntax `F"my_file.txt"` and `bF"my_file.txt"`, with a few other amenities, to load files at compilation time. The following is an analysis of the previous proposal. Additionally, some prior art and understanding comes from [[p1967]].
+There has been a lot of discussion over the years in many arenas, from Stack Overflow to mailing lists to meetings with the Committee itself. The latest advancements that had been brought to WG21's attention was [[p0373r0|p0373r0 - File String Literals]]. It proposed the syntax `F"my_file.txt"` and `bF"my_file.txt"`, with a few other amenities, to load files at compilation time. The following is an analysis of the previous proposal. Additionally, some prior art and understanding comes from [[p1967|#embed]].
 
 
 ### Literal-Based, constexpr ### {#design-prior-literal}
@@ -859,7 +851,7 @@ consteval span<const T, N> embed(
 );
 ```
 
-`resource_identifier` is a `string_view` processed in an implementation-defined manner to find and pull resources into C++ at constexpr time. `limit` is the maximum number of elements the function call can produce (but it may produce less). The most obvious source will be the file system, with the intention of having this evaluated as a core constant expression. We do not attempt to restrict the `string_view` to a specific subset: whatever the implementation accepts (typically expected to be a relative or absolute file path, but can be other identification scheme), the implementation should use. The `N` template parameter is for specifying that the returned span has _at least_ `N` elements (to fit in the statically-sized `span`).
+`resource_identifier` is a `string_view` processed in an implementation-defined manner to find and pull resources into C++ at constexpr time. `limit` is the maximum number of elements the function call can produce (but it may produce less). The most obvious source will be the file system, with the intention of having this evaluated as a core constant expression. We do not attempt to restrict the `string_view` to a specific subset: whatever the implementation accepts (typically expected to be a relative or absolute file path, but can be other identification scheme), the implementation should use. The `N` template parameter is for specifying that the returned span has *at least* `N` elements (to fit in the statically-sized `span`).
 
 
 ### Implementation Defined ### {#design-goals-impldefn}
@@ -881,41 +873,6 @@ Creating two separate forms or options for loading data that is meant to be a "s
 The entire implementation must be usable in a `constexpr` context. It is not just for the purposes of processing the data at compile time, but because it matches existing implementations that store strings and huge array literals into a variable via `#include`. These variables can be `constexpr`: to not have a constexpr implementation is to leave many of the programmers who utilize this behavior without a proper standardized tool.
 
 
-### Dependency-Scanning Friendly with `#depend` ### {#design-goals-dependencies}
-
-One of the biggest hurdles to generating consensus was the deep-seated issues with dependency scanning. The model with only dealing with `#include` as a way of adding extra code or data-as-code means that all dependencies -- at the time of compiler invocation -- can be completely and statically known by the end of Phase 4 of compilation. This greatly aided in speedy dependency pulling. `std::embed` throws a wrench in that model as it can affect the generation of code at Phase 7 time, which is when `constexpr` is evaluated. By taking a `std::(u8)string_view`, it makes it impossible to know all files which may be used by a translation or module unit.
-
-For this purpose, a new `#depend` preprocessor directive was introduced. It is intended to inform the compiler which translation units it depends on in order to make it simpler to retrieve all necessary dependencies. An advanced implementation can also replace all `#depend` directives with magical compiler builtins which instruct the compiler to cache the file's data as part of the translation unit.
-
-This makes it possible to send minimal compiler reproductions and test cases for bug vetting, as well as allow distributed systems to continue to use the `-fdirectives-only` or `-frewrite-includes` flags (or similar preprocessor flags). For example, the GCC and Clang implementations linked above have `__builtin_init_array` and `__builtin_cache_array` methods that allow single translation units to be self-sufficient, while the compiler built-ins `__builtin_embed` will search the internally populated data cache from these entries in order to furnish data. This allows a complete system that keeps current tools working exactly as expected without any issues at all.
-
-The `#depend` directive works by allowing a user to specify a what are effectively globs that can be used later to filter out allowed calls to retrieve resources from `std::embed`:
-
-```cpp
-// single-dependency directives
-#depend <config/graph.bin>
-#depend <foo.txt>
-// family-dependencies
-// do not "recurse" into directories
-#depend "art/*"
-#depend "art/mocks/*.json"
-// recursive-family-dependency
-// recurse through directories and similar
-#depend "assets/**"
-// mixed: all resources starting with
-// "translation/", with all files that end in ".po",
-// that have at least one "/" (one directory)
-// after the "translation/", found recursively
-#depend "translation/**/*.po"
-```
-
-Due to Windows being a pile of garbage for `FindFirstFile`-style directory iteration, it was voted to remove `**` as the recursive-family-dependency (see [[#polls]]). However, the manifest existence of CMake's new `GLOB_RECURSE` in conjunction with `CONFIGURE_DEPENDS` very strongly nullifies the arguments brought up during the taking of that poll, which was that build systems could not do this fast enough on certain platforms (such as Windows). `GLOB_RECURSE` with `CONFIGURE_DEPENDS` was only allowed into CMake after benchmarks proved against conventional wisdom that this could be done swiftly. This was also backed up by the author of Boost's Low-Level File I/O library. Therefore, we feel compelled to ask the Committee to reconsider this now that there is sufficient data in the positive for such behavior.
-
-`#depend` uses both the chevron-delimited `<foo.txt>` and the quote-delimited `"foo.txt"` formats. This is because one is for resources that are found only on the system / implementation paths similar to `-I` and `-isystem`, and then one that uses local look up plus the aforementioned resource paths. This can be useful for e.g. files that get embedded from system SDKs, like icons from Windows or Android build-time graphical resources or similar.
-
-NOTE: It is also imperative to note that the way Include Directories and Embed Resource Directories work in all implementations is such that they work as-if by recursive glob. That is, `-I/mnt/code/boost-1.56.0/include` provides access to `<boost/soped_ptr.hpp>`, not just the singular folder `<boost>`. That is, every resource and every include underneath boost is allowed, such that they are effectively doing the equivalent of `#depend <boost/**>` to allow, recursively, for any file to be used. `#depend` is modeled off of that same access.
-
-
 ### Modules ### {#design-goals-modules}
 
 Per the EWG vote for direction in the [[#polls]] section, modules need more care and consideration and would need further consideration. There were two options presented to EWG:
@@ -924,7 +881,9 @@ Per the EWG vote for direction in the [[#polls]] section, modules need more care
 2. (NOT CHOSEN) Accumulate dependencies from the root function invocation in the constant evaluation context, creating a stack of accessible `#depend`s with each invoked function during constant evaluation.
 3. (NOT CHOSEN) #2, but with the caveat that only `#depend export ...`s contribute to accessible depends and the others are "private" to the translation unit.
 
-EWG chose to use the current translation unit. This is a simple, forwards-compatible choice while a separate paper will explore and nail down the semantics of use with modules (likely a repurposed version of the previously closed [[p1130]] which tried to address this problem many, many years too early).
+EWG chose to use the current translation unit. This is a simple, forwards-compatible choice while a separate paper will explore and nail down the semantics of use with modules. An early revision of [[p1130r1]] (revisions 0 and 1) tried to address this problem many, many years too early.
+
+Now that modules have more well-defined semantics, the problem of dependency transfer can be more fully engaged with starting in [[p1130r2|Revision 2]] and further versions of [[p1130]].
 
 
 ### Statically Polymorphic ### {#design-goals-templated}
@@ -948,6 +907,11 @@ Additionally, a user can provide a template argument `N` of type `std::size_t` t
 There is also an `offset` parameter. While this can be achieved by calling `subspan(...)` on the returned value, it does not aid in how MUCH storage is stored on the code-behind and would require optimization to know that the edge(s) of the static storage data array to trim off. Having both `offset` and `limit` allow for the compiler itself to know how much data to retain *without* the use of optimization. It also allows a compiler frontend to merge potentially different calls which pull data offsets from various locations.
 
 
+### Non-Unique / Shared Data ### {#design-goals-non.unique}
+
+The data that comes from `std::embed` is not unique. It is a matter of quality-of-implementation whether repeat calls with the exact same parameters produce the exact same data pointer. The data that comes from these types can point inside other static data. We make a small carve out in the wording, similar to that of String Literals, to allow for this.
+
+
 ### UTF-8 Only? ### {#design-goals-utf8}
 
 This is related to a serious problem for string literals, particularly those of Translation Phase 7. When a user types a string literal such as `"Fáuncy.softłer"`, that string literal -- at Phase 5 of compilation -- gets translated from an idealized internal compiler character set to the "Execution Source Character Set". What this means is that the compiler is allowed to perform an implementation-defined translation from the string literal's ideal compiler representation to the execution character set (often, the presumed target execution character set). While this is not a problem for Clang -- which always uses UTF-8 -- and GCC -- which always uses UTF-8 unless someone specifically passes `-fexec-charset={something}` -- other compilers will take the string `"Fáuncy.softłer"` and mangle it. This mangling does not have to come with warnings: in fact, MSVC will often times replace characters it cannot translate to the execution character set with either Mojibake or `"?"`.
@@ -957,6 +921,56 @@ The solution that Study Group 16 recommended was to allow `std::u8string_view` a
 Unfortunately, implementation experience attemping this found that there were a small subsection of files on all deployed operating systems (Windows, Linux-based, and MacOS (both normal and Linux through Asahi Linux)) that needed users to be precise about the byte sequence used to address storage on disk. As a backstop to the primary `std::u8string_view` template that we expect most users to employ with `u8""` string literals, we expect users to occasionally need to reach for `L""` (on fringe non-Windows and Windows machines) as well as `""` (to get an **exact** byte sequence to match specific platform peculiarities, like the absolute mess of file system issues that come from MacOS normalized vs. non-normalized file paths). We did not think this would be important in earlier revisions of the paper, but recently had to address the unfortunate reality of computing at the moment.
 
 
+## Dependency-Scanning Friendly with `#depend` ## {#design-dependencies}
+
+One of the biggest hurdles to generating consensus was the deep-seated issues with dependency scanning. The model with only dealing with `#include` as a way of adding extra code or data-as-code means that all dependencies -- at the time of compiler invocation -- can be completely and statically known by the end of Phase 4 of compilation. This greatly aided in speedy dependency pulling. `std::embed` throws a wrench in that model as it can affect the generation of code at Phase 7 time, which is when `constexpr` is evaluated. By taking a `std::(u8)string_view`, it makes it impossible to know all files which may be used by a translation or module unit.
+
+For this purpose, a new `#depend` preprocessor directive was introduced. It is intended to inform the compiler which translation units it depends on in order to make it simpler to retrieve all necessary dependencies. An advanced implementation can also replace all `#depend` directives with magical compiler builtins which instruct the compiler to cache the file's data as part of the translation unit. This makes it possible to send minimal compiler reproductions and test cases for bug vetting, as well as allow distributed systems to continue to use the `-fdirectives-only` or `-frewrite-includes` flags (or similar preprocessor flags).
+
+The `#depend` directive works by allowing a user to specify a what are effectively globs that can be used later to filter out allowed calls to retrieve resources from `std::embed`:
+
+```cpp
+// single-dependency directives
+#depend <config/graph.bin>
+#depend <foo.txt>
+// family-dependencies
+// do not "recurse" into directories
+#depend "art/*"
+#depend "art/mocks/*.json"
+// recursive-family-dependency
+// recurse through directories and similar
+#depend "assets/**"
+// mixed: all resources starting with
+// "translation/", with all files that end in ".po",
+// that have at least one "/" (one directory)
+// after the "translation/", found recursively
+#depend "translation/**/*.po"
+```
+
+Some blame was placed on Windows by stating that recursive directory iteration was too slow, and thus that `**` should not be part of the feature set (see [[#polls]]). However, the manifest existence of CMake's new `GLOB_RECURSE` in conjunction with `CONFIGURE_DEPENDS` very strongly nullifies the arguments brought up during the taking of that poll, which was that build systems could not do this fast enough on certain platforms (such as Windows). `GLOB_RECURSE` with `CONFIGURE_DEPENDS` was only allowed into CMake after benchmarks proved against conventional wisdom that this could be done swiftly. This was also backed up by the author of Boost's Low-Level File I/O library. Therefore, we feel compelled to ask the Committee to reconsider this now that there is sufficient data in the positive for such behavior.
+
+`#depend` uses both the chevron-delimited `<foo.txt>` and the quote-delimited `"foo.txt"` formats. This is because one is for resources that are found only on the system / implementation paths similar to `-I` and `-isystem`, and then one that uses local look up plus the aforementioned resource paths. This can be useful for e.g. files that get embedded from system SDKs, like icons from Windows or Android build-time graphical resources or similar.
+
+NOTE: It is also imperative to note that the way Include Directories and Embed Resource Directories work in all implementations is such that they work as-if by recursive glob. That is, `-I/mnt/code/boost-1.56.0/include` provides access to `<boost/soped_ptr.hpp>`, not just the singular folder `<boost>`. That is, every resource and every include underneath boost is allowed, such that they are effectively doing the equivalent of `#depend <boost/**>` to allow, recursively, for any file to be used. `#depend` is modeled off of that same access.
+
+
+### Implementation Quirk: Clang and `#depend` and the Preprocessor ### {#design-dependencies-quirk}
+
+As specified by the standard, a full translation unit is preprocessed before the later stages of compilation are reached. Therefore, this program:
+
+```cpp
+int main () {
+	std::embed("foo.txt");
+}
+
+#depend "foo.txt"
+```
+
+is supposed to be fully legal. However, due to the quirks of how C and C++ work as well as the preprocessor, implementations do not actually have to preprocess input fully before moving on to parsing and type checking. Because there is currently no preprocessor directive which could possibly affect preceding preprocessing tokens or Phase 7+ elements, this program is supposed to be well-formed. Unfortunately, testing in Clang with large enough files triggered a failure if there was simply enough tokens before the `#depend` was encountered, resulting in spurious failures that were hard to track down where `std::embed("foo.txt")` would fail.
+
+Therefore, the allowance of `#depend` that lexically follows its use from `std::embed` is conditionally supported. Separated preprocessors in the style of e.g. [[eĿlipsis]] or similar might work as expected, but implementations like Clang get to choose whether or not. The reason we do this is because it would be a serious change in Clang's implementation to let this work, even if technically -- by the description of the standard -- it should.
+
+
 ### Security: Globs and Otherwise ### {#design-goals-security}
 
 It is important to note that, insofar as security is concerned, `#depend` that use glob-style syntax is **not** what triggers the full consumption of files from the file system, nor their transport to e.g. a CI server in order to make using `std::embed` on remote conglomerate build servers and similar work. `#depend` is a **whitelist** of files: it does not put any data into the program. You cannot "glob" files into the program, and there is no file system search capabilities built into this program: if a file is not found, the program is **ill-formed**, which is different from finding a file that is empty (in which case the returned `std::span<T>` is empty).
@@ -964,6 +978,11 @@ It is important to note that, insofar as security is concerned, `#depend` that u
 Additionally, security prospects are slightly improved by the fact that a failure to find a resource results in an ill-formed program. This means that a bad actor cannot continuously probe for a set of files until it finds one at build-time; any failed search stops compilation. This is not a fool-proof security or defense measure, but provides a slight check against code that would see to simply slurp up the contents of a file system. However, this does not stop an attacker from simply guessing all of the right files correctly, so it is only a small mitigation. This problem is better solved by build system sandboxing and proper data handling practices.
 
 Either way, if this is not deemed as important enough, it is completely viable to change the ill-formed in the future to a thrown `constexpr` exception, now that C++26 allows for those. We would leave this determination to a future paper after it considers the arguments for and against such compile-time programmability.
+
+Finally, the additional security comes from the use of an anchoring `$` at the end of the "dependency pattern" that is used to perform the "input dependency check". This does not allow arbitrary paths that just "happen" to include the depended-on pattern: each `#depend` is anchored as being responsible for describing the tail end of a file. This in conjunction with the `--embed-dir=` resource-finding flags of existing implementations is enough to keep the directory use well-scoped.
+
+NOTE: If an attacker has control of your build flags to make this a problem, you have MUCH bigger problems than the behavior of `std::embed`.
+
 
 
 
@@ -1643,6 +1662,13 @@ This happens often in the case of people who have not yet taken the "add a build
 Furthermore, if the string literal is too big vendors such as VC++ will hard error [[nonius-visual-c-error|the build (example from Nonius, benchmarking framework)]].
 
 
+### The `incbin` tool ### {#design-alternative-incbin}
+
+There is a tool called [[incbin]] which is a 3rd party attempt at pulling files in at "assembly time". Its approach is incredibly similar to `ld`, with the caveat that files must be shipped with their binary. It unfortunately falls prey to the same problems of cross-platform woes when dealing with VC++, requiring additional pre-processing to work out in full.
+
+
+
+
 ## Previous Implementations ## {#appendix-previous}
 
 This section is primarily to address feedback from polls wherein different forms and implementation strategies were asked for by the Evolution Working Group and other implementers. A tour of the design and implementation these cases helps show what has been considered.
@@ -1782,6 +1808,14 @@ For all this hard work, it is the author's hope to carry this into C++. It would
 		],
 		"title": "@embed added to Circle",
 		"href": "https://twitter.com/seanbax/status/1205195567003045888"
+	},
+	"eĿlipsis": {
+		"authors": [
+			"Jens Gustedt"
+		],
+		"title": "eĿlipsis, a language independent preprocessor",
+		"date": "April 28th, 2026",
+		"href": "https://gustedt.gitlabpages.inria.fr/ellipsis"
 	}
 }
 </pre>
