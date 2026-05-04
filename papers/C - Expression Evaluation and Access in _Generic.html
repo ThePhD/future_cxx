@@ -1506,7 +1506,7 @@ Possible extra rowspan handling
   <meta content="Bikeshed version c3a8ac783, updated Wed Jul 24 12:20:06 2024 -0700" name="generator">
   <link href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Expression%20Evaluation%20and%20Access%20in%20_Generic.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="5fecab666b3f355dcacbd7a227fd012d1713ba3f" name="revision">
+  <meta content="60189ac209d8b16fd0749ac35a4a57efdb6ec670" name="revision">
   <meta content="dark light" name="color-scheme">
 <style>
 :root {
@@ -2815,7 +2815,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    </ul>
    <p class="note" role="note"><span class="marker">NOTE:</span> It is important to understand that the type used to find a match is separate from the type a <em>generic-declaration-name</em> has.</p>
    <h3 class="heading settled" data-level="3.4" id="design-lifetime.scope"><span class="secno">3.4. </span><span class="content">Identifier Scope and Lifetime</span><a class="self-link" href="#design-lifetime.scope"></a></h3>
-   <p>The scope of the identifier introduced by this is from the <code class="highlight"><c- o>:</c-></code> and to the terminating <code class="highlight"><c- p>,</c-></code>. This is different from every other kind of identifier, so it needs a special carve out in §6.2.1 Scopes. We’re calling it <em>generic association scope</em>, for now. Just like labels, they’re a one-use-case kind of variable. This is just going to be called "generic lifetime" for the time being, because that’s the simplest possible way to call it. If we had statement expressions, we could simply say the scope is as-if the identifier was declared at the top of a statement expression that surrounds the <em>assignment-expression</em> that comes after the <code class="highlight"><c- o>:</c-></code> and before the <code class="highlight"><c- p>,</c-></code>, like so:</p>
+   <p>The scope of the identifier introduced by this is from the <code class="highlight"><c- o>:</c-></code> and to the terminating <code class="highlight"><c- p>,</c-></code>. This is different from every other kind of identifier, so it needs a special carve out in §6.2.1 Scopes. We’re calling it <em>generic association scope</em>, for now. This quietly shifts the scope of all things defined in the branch of a generic; this is, technically, a change because things like e.g. <code class="highlight"><c- k>enum</c-></code>s bled outside of the scope of the generic selection expression and the generic association branch they were in. If we had statement expressions, we could simply say the scope is as-if the identifier was declared at the top of a statement expression that surrounds the <em>assignment-expression</em> that comes after the <code class="highlight"><c- o>:</c-></code> and before the <code class="highlight"><c- p>,</c-></code>, like so:</p>
 <pre class="language-cpp highlight"><c- b>int</c-> <c- n>r</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c->
 <c- n>_Generic</c-><c- p>(</c-><c- n>r</c-><c- p>,</c->
   <c- b>int</c-> <c- n>v</c-><c- o>:</c-> <c- n>v</c-> <c- o>*</c-> <c- n>v</c-> <c- o>+</c-> <c- mi>35</c-> <c- o>/</c-> <c- p>(</c-><c- n>v</c-> <c- o>+=</c-> <c- mi>2</c-><c- p>)</c->
@@ -2849,6 +2849,14 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
   <c- n>puts</c-><c- p>(</c-><c- n>f</c-><c- p>.</c-><c- n>name</c-><c- p>);</c-> <c- c1>// prints "something"</c->
 <c- p>}</c->
 </pre>
+   <p>Similarly, because of how the new <em>generic association scope</em> is defined, <code class="highlight"><c- n>v</c-></code> here is now considered a redefinition rather than permitted:</p>
+<pre class="language-cpp highlight"><c- b>int</c-> <c- nf>main</c-><c- p>(</c-><c- b>int</c-><c- p>,</c-> <c- b>char</c-><c- o>*</c-><c- p>[])</c-> <c- p>{</c->
+  <c- k>return</c-> <c- n>_Generic</c-><c- p>(</c-><c- mi>1</c-><c- p>,</c->
+    <c- b>int</c-> <c- n>v</c-><c- o>:</c-> <c- p>(</c-><c- k>enum</c-> <c- nc>e</c-> <c- p>{</c-><c- n>v</c-> <c- o>=</c-> <c- mi>1</c-><c- p>})</c-><c- n>v</c->
+  <c- p>);</c-> <c- c1>// constraint violation: redefinition of `v` in `enum e`</c->
+<c- p>}</c->
+</pre>
+   <p>(See the <a href="https://godbolt.org/z/oq5onxPzY">example implementation diagnostic here: https://godbolt.org/z/oq5onxPzY</a>.) We consider this to be a safe and healthy improvement for how <code class="highlight"><c- k>_Generic</c-></code> is used in code for both vendors and users.</p>
    <h3 class="heading settled" data-level="3.5" id="design-syntax"><span class="secno">3.5. </span><span class="content">Other Potential Syntaxes</span><a class="self-link" href="#design-syntax"></a></h3>
    <p>We settled on simply adding the <em>declaration-name</em> branch to the <em>generic-association</em> syntax because it is, as we understand it, the least problematic and easiest to handle. It does present some issues with comprehension, unfortunately: the use of a declaration-like syntax implies that a new variable is being created, which doesn’t feel proper with the ability of generic selection to yield an l-value based on what the resulting expression computes.</p>
    <p>There are other ways to introduce the identifier in the sequence.</p>
@@ -2858,7 +2866,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    <p>Finally, because of scoping rules, some folks have suggested that the new name-based syntax be surrounded in <code class="highlight"><c- p>{</c-></code> and <code class="highlight"><c- p>}</c-></code>. This is meant to improve the mental association with a new "scope" for typical C users. At the time of writing, someone already implemented it using the same semantics without the <code class="highlight"><c- p>{</c-></code> or <code class="highlight"><c- p>}</c-></code> around the <em>generic-association</em> (March 2, 2026) and found no issue with it, but we are including it so we can get WG14 feedback about it.</p>
    <h2 class="heading settled" data-level="4" id="prior"><span class="secno">4. </span><span class="content">Prior Art</span><a class="self-link" href="#prior"></a></h2>
    <p>Other than the "contravariant transformation" detailed in <a href="#intro">§ 2 Introduction and Motivation</a>, there is no direct prior art for this feature in compilers as a language feature.</p>
-   <p>A University Professor Will Hawkins <a data-link-type="biblio" href="#biblio-will-hawkins-llvm" title="LLVM Project: Implement N38X3 Evaluation and Access in Generic">implemented this feature in LLVM</a>.</p>
+   <p>Will Hawkins, a C enthusiast and eager open source contributor, <a data-link-type="biblio" href="#biblio-will-hawkins-llvm" title="LLVM Project: Implement N38X3 Evaluation and Access in Generic">implemented this feature in LLVM</a>, and it can be <a href="https://godbolt.org/z/71f3xxcYh">played with live here: https://godbolt.org/z/71f3xxcYh</a>.</p>
    <h2 class="heading settled" data-level="5" id="wording"><span class="secno">5. </span><span class="content">Wording</span><a class="self-link" href="#wording"></a></h2>
    <p>The wording is relative to the latest Working Draft at time of publication, <a data-link-type="biblio" href="#biblio-n3854" title="C2y: Working Draft (Post-Brno)">[n3854]</a>.</p>
    <h3 class="heading settled" data-level="5.1" id="wording-intent"><span class="secno">5.1. </span><span class="content">Intent</span><a class="self-link" href="#wording-intent"></a></h3>
@@ -3316,6 +3324,18 @@ either have different scopes or are in different name spaces. There are
   <c- c1>// assignment with `const` object</c->
 <c- p>}</c->
 </pre>
+      </div>
+     </ins>
+     <ins>
+      <div class="wording-numbered wording-numbered-17">
+       <p>EXAMPLE    Generic association scope means that certain types of identifiers may clash with the introduction of the identifier for the generic association:</p>
+<pre class="language-cpp highlight"><c- b>int</c-> <c- nf>main</c-><c- p>(</c-><c- b>int</c-><c- p>,</c-> <c- b>char</c-><c- o>*</c-><c- p>[])</c-> <c- p>{</c->
+  <c- k>return</c-> <c- n>_Generic</c-><c- p>(</c-><c- mi>1</c-><c- p>,</c->
+    <c- b>int</c-> <c- n>v</c-><c- o>:</c-> <c- p>(</c-><c- k>enum</c-> <c- nc>e</c-> <c- p>{</c-><c- n>v</c-> <c- o>=</c-> <c- mi>1</c-><c- p>})</c-><c- n>v</c->
+  <c- p>);</c-> <c- c1>// constraint violation: redefinition of `v` in `enum e`</c->
+<c- p>}</c->
+</pre>
+       <p>Thus, this function returns <code class="highlight"><c- mi>5</c-></code>.</p>
       </div>
      </ins>
     </div>

@@ -140,7 +140,13 @@ This is being taken as weak consensus that may improve with some degree of expla
 
 This is interpreted as not wanting the predefined macros about affinity for the properties of conversion. However, during discussion it was specifically noted that affinities were the problem and that perhaps a more general-purpose macro without any specific details about representation would meet less resistance.
 
-One vendor noted that an implementation-defined value for the predefined macros would be preferred, stating that other kinds of conversions (such as partial or address-space non-conserving) could be represented (and perhaps standardized in the future). However, given the strong resistance to affinities and getting into "implementation details" with the macro values, we have flattened all of this information down and removed all information about affinities from the proposal. We hope that, in the future, this vendor could come forth and add new representation-specific macros. For this proposal, all of the predefined macros have been changed to talk explicitly about whether convertibility is valid or not, and uses the `__STDC_PTR_CONV_*`-style names now, to leave the `_STDC_REPR_*` macros open for that vendor to work with in a future proposal.
+One vendor noted that an implementation-defined value for the predefined macros would be preferred, stating that other kinds of conversions. Other kinds of conversions could be:
+
+- One-way partial conversion (okay in one direction, not okay in the other)
+- Address-space non-preserving conversions (i.e. pointer value remains okay, but address spaces are dropped because the pointer is transferred/mirrored in another address space)
+- Expansion preserving and safe (32-bit to 64-bit)
+
+... and more. These could be represented and perhaps standardized in the future. However, given the strong resistance to affinities and getting into "implementation details" with the macro values, we have flattened all of this information down and removed all information about affinities from the proposal. We hope that, in the future, this vendor could come forth and add new representation-specific macros. For this proposal, all of the predefined macros have been changed to talk explicitly about whether convertibility is valid or not, and uses the `__STDC_PTR_CONV_*`-style names now, to leave the `_STDC_REPR_*` macros open for that vendor to work with in a future proposal.
 
 
 
@@ -159,7 +165,7 @@ Finally, library changes are made to follow along with all of the appropriate ch
 
 It is NOT callable.
 
-KnR functions had a serious flaw where despite being usable as "omni" function pointer types (ignoring the issue of return values and potential mismatches there): KnR functions had a different ABI than `...` functions and were not required to have the same ABI as other function types. For example, a function `int func(int arg0, double arg1);` is not required to have the exact same calling convention, register allocation, and other important binary details as a KnR function `int func2();`. Similarly, a function `int func3(...);` or `int func4(int arg0, ...);` is not required to have the same ABI details as either `func` or `func2`, even under the circumstances that they were all called like so:
+KnR functions[[knr-functions]] had a serious flaw where despite being usable as "omni" function pointer types (ignoring the issue of return values and potential mismatches there): KnR functions had a different ABI than `...` functions and were not required to have the same ABI as other function types. For example, a function `int func(int arg0, double arg1);` is not required to have the exact same calling convention, register allocation, and other important binary details as a KnR function `int func2();`. Similarly, a function `int func3(...);` or `int func4(int arg0, ...);` is not required to have the same ABI details as either `func` or `func2`, even under the circumstances that they were all called like so:
 
 ```cpp
 int a = 0;
@@ -212,25 +218,15 @@ Compiler returned: 0
 Similar things happen with many other compilers and other alternatives. It's very clear that this is something that many compilers assume is the default behavior, and the standard should give them an option to reflect that and make it simple while letting more far-out platforms have ways of directly erroring on specific failure conditions (by making it an explicit constraint violation, but only in those cases).
 
 
+## Macros ## {#design.macros}
 
-
-## But Seriously, Why The Macros? ## {#design.macros}
-
-There are three reasons: the principle of conditional features in C, it's ubiquitous use in FFI, and finally how utterly cheap and harmless it is to implement.
-
-The principle is that this is a conditional feature. Conditionally supported features in C typically come with a feature test macro. Some previous feature test macros were slightly misguided because they purported to provide language knowledge that was actually library knowledge (e.g., `__STDC_ISO_10646__`). Otherwise, conditional features that can change how code is compiled and allowed is reserved for use by the compiler, such as `__STDC_NO_THREADS__`, `__STDC_HOSTED__`, `__STDC_NO_ATOMICS__`, `__STDC_NO_VLA__`, and others. If your code requires atomic support or relies on the ability to byte-copy `void*` pointers or function pointers, it is just as important as these other conditional features and thus deserves the same level of macro support.
-
-For FFI, it's doubly important. Knowing that a `void*` is suitable transfer for a function pointer means that FFI layers can save on conversion routines when setting up function call stacks for foreign function interfaces.
-
-It is cheap to implement because compilers already know the answer to the questions asked here. They **have** to know for every platform they support; therefore, they can provide the macros with accurate answers. For 90% of compilers, all of these will simply report `1`, because that is what all modern compilers and platforms give: full `void*` and `_Any_func*` interoperability and complete amnesty for `void*` to function pointers and back, even in the case of direct use of `memcpy` and even for `memcpy` of arrays of structures.
-
-NOTE: As this paper no longer includes affinities, there is no portable way to determine if the copying of an array of `void*` pointers to an array of `_Any_func*` using `memcpy` or similar byte-level copy functions is appropriate or suitable. It is also impossible to tell if this is possible for regular `void*` and `T*` generally as well. Removing affinities and the macros to do coarse detection and adjustment of code based on these actions was seen as preferable, since it is a much simpler design. This can also disrupt FFI, where -- especially for function pointers -- additional conversions may be performed on the pointer value before it is serialized to something like `(u)intfuncptr_t`. The authors of this paper strongly disagree with the Committee's consensus and believe it user-hostile to consider users too simplistic to understand the implications of these macros, or that it was too complicated for a dedicated C programmer to want to wield them. Nevertheless, they have been removed.
+Because these are conditional features, we provide the flattest, simplest allowance of macro values here that either approve or disapprove of the conversion. It does not say anything about the validity or success of such a conversion, only that it can roundtrip successfully in certain cases. This removes knowing if the conversion is `memcpy` or "dumb copy" safe. The convention for these new pointers is `__STDC_PTR_CONV_*`, and only provide a value `0` or `1`.
 
 
 
 ## Naming ## {#design.naming}
 
-The name chosen here is the one that had the no clashes in both its reserved form `_Foo_bar` and it's header form `foo_bar`. The following **other** names were considered and searched for in public (and some private) code repositories for their prevalence as possible name candidates:
+The name chosen here is the one that had the no clashes in both its reserved form `_Foo_bar` and its header form `foo_bar`. The following **other** names were considered and searched for in public (and some private) code repositories for their prevalence as possible name candidates:
 
 - `_Func_ptr_t` with `func_ptr_t` (with no `*` required for use)
 - `_Any_func_ptr_t` with `any_func_ptr_t` (with no `*` required for use)
@@ -1226,6 +1222,21 @@ which expands to `_Any_func`.
 Things that were either changed or scrapped about this paper, as well as additional supporting details, are contained in this appendix.
 
 
+
+## But Seriously, Why The Macros? ## {#appendix.macros}
+
+There are three reasons: the principle of conditional features in C, it's ubiquitous use in FFI, and finally how utterly cheap and harmless it is to implement.
+
+The principle is that this is a conditional feature. Conditionally supported features in C typically come with a feature test macro. Some previous feature test macros were slightly misguided because they purported to provide language knowledge that was actually library knowledge (e.g., `__STDC_ISO_10646__`). Otherwise, conditional features that can change how code is compiled and allowed is reserved for use by the compiler, such as `__STDC_NO_THREADS__`, `__STDC_HOSTED__`, `__STDC_NO_ATOMICS__`, `__STDC_NO_VLA__`, and others. If your code requires atomic support or relies on the ability to byte-copy `void*` pointers or function pointers, it is just as important as these other conditional features and thus deserves the same level of macro support.
+
+For FFI, it's doubly important. Knowing that a `void*` is suitable transfer for a function pointer means that FFI layers can save on conversion routines when setting up function call stacks for foreign function interfaces.
+
+It is cheap to implement because compilers already know the answer to the questions asked here. They **have** to know for every platform they support; therefore, they can provide the macros with accurate answers. For 90% of compilers, all of these will simply report `1`, because that is what all modern compilers and platforms give: full `void*` and `_Any_func*` interoperability and complete amnesty for `void*` to function pointers and back, even in the case of direct use of `memcpy` and even for `memcpy` of arrays of structures.
+
+NOTE: As this paper no longer includes affinities, there is no portable way to determine if the copying of an array of `void*` pointers to an array of `_Any_func*` using `memcpy` or similar byte-level copy functions is appropriate or suitable. It is also impossible to tell if this is possible for regular `void*` and `T*` generally as well. Removing affinities and the macros to do coarse detection and adjustment of code based on these actions was seen as preferable, since it is a much simpler design. This can also disrupt FFI, where -- especially for function pointers -- additional conversions may be performed on the pointer value before it is serialized to something like `(u)intfuncptr_t`. The authors of this paper strongly disagree with the Committee's consensus and believe it user-hostile to consider users too simplistic to understand the implications of these macros, or that it was too complicated for a dedicated C programmer to want to wield them. Nevertheless, they have been removed.
+
+
+
 ## Giving `void*` Additional Powers with Predefined Macros ## {#appendix-voidptr}
 
 While we retained some of the power that `void*` gives, all of the predefined macros and representation affinity work has been abandoned due to the lack of interest in the Committee. Many simply believed that it is "overengineered" and "overcomplicated" to expose these details to users, and others stated that they do not trust users to make use of this information. While some voied support for this and said it was extremely useful for Lingua Franca purposes (shuttling information between languages, being aware of the layout and ABI of pointer types, and so on and so forth), it was not enough to convince people that this was worth the effort and they decided that such platform details should not be obserable by standard means. The below text was lifted from the previons design section about this.
@@ -1286,6 +1297,15 @@ However, conversion between `void*` and `_Any_func*` need not be supported (repo
 		"title": "Printing capabilities with the printf(4) API family",
 		"date": "Friday, March 20th, 2026",
 		"href": "https://ctsrd-cheri.github.io/cheri-c-programming/printf/printf.html"
+	},
+	"knr-functions": {
+		"authors" : [
+			"GCC Contributors",
+			"GNU C Steering Committee"
+		],
+		"title": "PGNU C Manual: Old-Style C Function Definitions",
+		"date": "Friday, May 4th, 2026",
+		"href": "https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Old_002dStyle-Function-Definitions.html"
 	}
 }
 </pre>
