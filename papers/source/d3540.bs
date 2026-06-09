@@ -1,12 +1,12 @@
 <pre class='metadata'>
 Title: #embed offset parameter
 H1: <code>#embed</code> offset parameter
-Shortname: P3540
-Revision: 2
+Shortname: D3540
+Revision: 3
 Status: P
-Date: 2025-06-05
+Date: 2026-06-09
 Group: WG21
-Audience: EWG
+Audience: CWG
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
 Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
 URL: https://thephd.dev/_vendor/future_cxx/papers/d3540.html
@@ -37,6 +37,13 @@ path: resources/css/bikeshed-wording.html
 
 # Changelog # {#changelog}
 
+
+
+## Revision 3 - June <sup>9th</sup>, 2026 ## {#changelog-r3}
+
+- Slightly adjust the Intent section of the paper to be more clear.
+- Move wording for resource-offset and resource-count jointly into [[cpp.embed.gen](#cpp.embed.gen)] rather than having it in the [[cpp.embed.param.offset](#cpp.embed.param.offset)] section.
+- Clean up extraneous examples and tighten up the `static_assert`s/variable names of the `offset` examples.
 
 
 ## Revision 2 - June <sup>5th</sup>, 2025 ## {#changelog-r2}
@@ -98,7 +105,7 @@ This wording is relative to C++'s latest working draft.
 The intent of the wording is to provide a preprocessing directive that:
 
 - allows an `offset` parameter skipping over a number of elements before beginning to write out elements to the comma-delimited list;
-- and, applies to the actual size of the resource (and not to any applied `limit`).
+- and, applies to the actual size of the resource (i.e., before any applied `limit` parameter).
 
 
 
@@ -123,6 +130,65 @@ The intent of the wording is to provide a preprocessing directive that:
 </blockquote>
 
 
+### Modify and add paragraphs in §15.4.1 General [**cpp.embed.gen**] ### {#wording-specification-cpp.embed.gen}
+
+<blockquote>
+<div id="cpp.embed.gen" class="wording-section">
+<div class="wording-section-header">
+<span class="wording-clause-number">15.4.1</span>
+<span class="wording-clause-title">General</span>
+<span class="wording-clause-stable-tag">[<b>cpp.embed.gen</b>]</span>
+</div>
+
+<div class="wording-numbered">
+
+...
+</div>
+
+...
+
+<div class="wording-numbered wording-numbered-9">
+
+A resource is a source of data accessible from the translation environment. A resource has an *implementation-resource-width*, which is the implementation-defined size in bits of the resource. If the *implementation-resource-width* is not an integral multiple of `CHAR_BIT`, the program is ill-formed. Let *implementation-resource-count* be implementation-resource-width divided by `CHAR_BIT`.<del>Every resource also has a *resource-count*, which is</del>
+
+<del>
+
+- the value as computed from the optionally-provided `limit` *embed-parameter* ([[cpp.embed.param.limit](https://wg21.link/cpp.embed.param.limit)]), if present;
+- otherwise, the implementation-resource-count.
+
+</del>
+<ins>
+
+Every resource has a *resource-offset*, which is:
+
+- the value as computed from the optionally-provided `offset` embed-parameter ([[cpp.embed.param.offset](#cpp.embed.param.offset)]), if present.
+- Otherwise, 0.
+
+Every resource also has a *resource-count*, which is
+
+- $max(min(\text{limit-value}, \text{implementation-resource-count} - \text{resource-offset}), 0)$ if the `limit` *embed-parameter* ([<a href="https://wg21.link/cpp.embed.param.limit">cpp.embed.param.limit</a>]) is present, where the value computed by the `limit` *embed-parameter* is *limit-value*.
+- Otherwise, $max(\text{implementation-resource-count} - \text{resource-offset}, 0)$.
+
+</ins>
+</div>
+
+<div class="wording-numbered">
+
+...
+</div>
+
+..
+
+<div class="wording-numbered wording-numbered-12">
+
+The integer literals in the comma-separated list correspond to<ins> resource-offset plus</ins> resource-count consecutive calls to `std​::​fgetc` ([[cstdio.syn](https://wg21/link/cstdio.syn)]) from the resource, as a binary file.<ins> The first resource-offset calls to `std::fgetc` have their result discarded and ignored. The next resource-count consecutive calls to `std::fgetc` are the values of the comma-separated list of integer literals. If any the resource-count calls to `std​::​fgetc` return `EOF`, the program is ill-formed.</ins><del>If any call to `std​::​fgetc` returns `EOF`, the program is ill-formed.</del>
+</div>
+
+</div>
+
+</blockquote>
+
+
 ### Add a new sub-clause §15.4.2.✨ under Resource Inclusion for Embed parameters for the new `offset` parameter [**cpp.embed.param.offset**] ### {#wording-specification-cpp.embed.param.offset}
 
 <blockquote class="quote-ins">
@@ -141,35 +207,32 @@ An *embed-parameter* of the form <code>offset ( *pp-balanced-token-seq* )</code>
 
 <div class="wording-numbered">
 
-The *pp-balanced-token-seq* is evaluated as a *constant-expression* using the rules as described in conditional inclusion ([<a href="http://eel.is/c++draft/cpp.cond">cpp.cond</a>]), but without being processed as in normal text an additional time.
+The *pp-balanced-token-seq* is evaluated as a *constant-expression* using the rules as described in conditional inclusion ([<a href="https://wg21.link/cpp.cond">cpp.cond</a>]), but without being processed as in normal text an additional time.
 </div>
 
 <div class="wording-numbered">
 
-The *constant-expression* shall be an integral constant expression whose value is greater than or equal to zero. It provides the value for *resource-offset*. The embed directive performs resource-offset consecutive calls to `std::fgetc` ([<a href="http://eel.is/c++draft/cstdio.syn">cstdio.syn</a>]) from the resource, as a binary file. If a call to `std::fgetc` returns `EOF`, the resouce is considered empty. Otherwise, the result of the call is discarded. The resource-count is changed to be
-
-- the value is computed using the `limit` *embed-parameter* ([<a href="https://thephd.dev/_vendor/future_cxx/papers/d1967.html#cpp.embed.param.limit">cpp.embed.param.limit</a>]), if the `limit` *embed-parameter* is present. Let the value computed by the `limit` *embed-parameter* be *limit-value*. resource-count becomes $max(min(\text{limit-value}, \text{implementation-resource-count} - \text{resource-offset}), 0)$.
-- Otherwise, $max(\text{implementation-resource-count} - \text{resource-offset}, 0)$.
+The *constant-expression* shall be an integral constant expression whose value is greater than or equal to zero.
 
 </div>
 
 [*Example*:
 
 ```cpp
-constexpr const unsigned char sound_signature[] = {
-	// a hypothetical resource capable of expanding to four or more elements
-#embed <sdk/jump.wav> limit(2+2)
+constexpr const unsigned char arr[] = {
+	// a hypothetical resource capable of expanding to
+	// four or more elements
+#embed <sdk/jump.wav>
 };
 
-constexpr const unsigned char truncated_sound_signature[] = {
-	// the same hypothetical resource capable of expanding to four or more elements
-#embed <sdk/jump.wav> offset(2) limit(2)
+constexpr const unsigned char offset_arr[] = {
+	// the same hypothetical resource capable of expanding
+	// to four or more elements
+#embed <sdk/jump.wav> offset(2)
 };
 
-static_assert(sizeof(sound_signature) == 4);
-static_assert(sizeof(truncated_sound_signature) == 2);
-static_assert(sound_signature[2] == truncated_sound_signature[0]);
-static_assert(sound_signature[3] == truncated_sound_signature[1]);
+static_assert(arr[2] == offset_arr[0]);
+static_assert(arr[3] == offset_arr[1]);
 ```
 
 – *end example*]
@@ -190,7 +253,7 @@ static_assert(sound_signature[3] == truncated_sound_signature[1]);
 
 ```cpp
 #embed <single_byte> offset(1) if_empty(44203)
-#embed <single_byte> limit(0)  offset(1) if_empty(44203)
+#embed <single_byte> limit(1)  offset(1) if_empty(44203)
 ```
 
 are replaced with:
@@ -198,25 +261,6 @@ are replaced with:
 ```cpp
 42203
 42203
-```
-
-– *end example*]
-
-
-[*Example*: Given a resource `<single_byte>` that has an implementation-resource-count of 1, `__has_embed` will be considered empty despite `limit(1)`, as `offset(1)` has exhausted the implementation-resource-count:
-
-```cpp
-int infinity_zero () {
-#if __has_embed(<single_byte> limit(1) offset(1) prefix(some tokens)) == __STDC_EMBED_EMPTY__
-	// if <single_byte> exists, this
-	// conditional inclusion branch is taken and the function
-	// returns 0.
-	return 0;
-#else
-	// otherwise, the resource does not exist
-#error "The resource does not exist"
-#endif
-}
 ```
 
 – *end example*]
