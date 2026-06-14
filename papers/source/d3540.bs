@@ -1,10 +1,10 @@
 <pre class='metadata'>
 Title: #embed offset parameter
 H1: <code>#embed</code> offset parameter
-Shortname: D3540
+Shortname: P3540
 Revision: 3
 Status: P
-Date: 2026-06-09
+Date: 2026-06-12
 Group: WG21
 Audience: CWG
 Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
@@ -19,13 +19,6 @@ Toggle Diffs: no
 Abstract: An additional, user-supported embed parameter implemented in Clang and GCC for providing an offset.
 </pre>
 
-<script>
-MathJax = {
-	tex: {inlineMath: [['$', '$'], ['\\(', '\\)']]}
-};
-</script>
-<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
-
 <pre class="include-raw">
 path: resources/css/bikeshed-wording.html
 </pre>
@@ -39,7 +32,7 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 3 - June <sup>9th</sup>, 2026 ## {#changelog-r3}
+## Revision 3 - June <sup>12th</sup>, 2026 ## {#changelog-r3}
 
 - Slightly adjust the Intent section of the paper to be more clear.
 - Move wording for resource-offset and resource-count jointly into [[cpp.embed.gen](#cpp.embed.gen)] rather than having it in the [[cpp.embed.param.offset](#cpp.embed.param.offset)] section.
@@ -109,6 +102,12 @@ The intent of the wording is to provide a preprocessing directive that:
 
 
 
+## Feature Test Macro ## {#wording-feature.test.macro}
+
+The feature test macro `__cpp_pp_embed` should be increased from `202502L` to `${PROPER_VALUE}`, where `PROPER_VALUE`. is determined by the Editors.
+
+
+
 ## Proposed Language Wording ## {#wording-specification}
 
 
@@ -149,27 +148,22 @@ The intent of the wording is to provide a preprocessing directive that:
 
 <div class="wording-numbered wording-numbered-9">
 
-A resource is a source of data accessible from the translation environment. A resource has an *implementation-resource-width*, which is the implementation-defined size in bits of the resource. If the *implementation-resource-width* is not an integral multiple of `CHAR_BIT`, the program is ill-formed. Let *implementation-resource-count* be implementation-resource-width divided by `CHAR_BIT`.<del>Every resource also has a *resource-count*, which is</del>
+A resource is a source of data accessible from the translation environment. A resource has an *implementation-resource-width*, which is the implementation-defined size in bits of the resource. If the *implementation-resource-width* is not an integral multiple of `CHAR_BIT`, the program is ill-formed. Let *implementation-resource-count* be implementation-resource-width divided by `CHAR_BIT`. <ins>Every resource has a *resource-offset*, which is</ins>
 
-<del>
-
-- the value as computed from the optionally-provided `limit` *embed-parameter* ([[cpp.embed.param.limit](https://wg21.link/cpp.embed.param.limit)]), if present;
-- otherwise, the implementation-resource-count.
-
-</del>
 <ins>
 
-Every resource has a *resource-offset*, which is:
+- the value as computed from the optionally-provided `offset` *embed-parameter* ([[cpp.embed.param.offset](#cpp.embed.param.offset)]), if present;
+- otherwise, 0.
 
-- the value as computed from the optionally-provided `offset` embed-parameter ([[cpp.embed.param.offset](#cpp.embed.param.offset)]), if present.
-- Otherwise, 0.
+</ins>
 
 Every resource also has a *resource-count*, which is
 
-- $max(min(\text{limit-value}, \text{implementation-resource-count} - \text{resource-offset}), 0)$ if the `limit` *embed-parameter* ([<a href="https://wg21.link/cpp.embed.param.limit">cpp.embed.param.limit</a>]) is present, where the value computed by the `limit` *embed-parameter* is *limit-value*.
-- Otherwise, $max(\text{implementation-resource-count} - \text{resource-offset}, 0)$.
+- <ins><math><mi>max</mi><mo>(</mo><mi>min</mi><mo>(</mo><mi>limit-value</mi><mo>,</mo><mi>implementation-resource-count</mi><mo>-</mo><mi>resource-offset</mi><mo>)</mo><mo>,</mo><mn>0</mn><mo>)</mo></math> if the `limit` *embed-parameter* ([<a href="https://wg21.link/cpp.embed.param.limit">cpp.embed.param.limit</a>]) is present, where the value computed from the `limit` *embed-parameter* is *limit-value*</ins><del>the value as computed from the optionally-provided `limit` *embed-parameter* ([[cpp.embed.param.limit](https://wg21.link/cpp.embed.param.limit)]), if present</del>;
+- otherwise, <ins><math><mi>max</mi><mo>(</mo></mo><mi>implementation-resource-count</mi><mo>-</mo><mi>resource-offset</mi><mo>,</mo><mn>0</mn><mo>)</mo></math></ins><del>the implementation-resource-count</del>.
 
-</ins>
+A resource is empty if the resource-count is zero.
+
 </div>
 
 <div class="wording-numbered">
@@ -181,7 +175,7 @@ Every resource also has a *resource-count*, which is
 
 <div class="wording-numbered wording-numbered-12">
 
-The integer literals in the comma-separated list correspond to<ins> resource-offset plus</ins> resource-count consecutive calls to `std​::​fgetc` ([[cstdio.syn](https://wg21/link/cstdio.syn)]) from the resource, as a binary file.<ins> The first resource-offset calls to `std::fgetc` have their result discarded and ignored. The next resource-count consecutive calls to `std::fgetc` are the values of the comma-separated list of integer literals. If any the resource-count calls to `std​::​fgetc` return `EOF`, the program is ill-formed.</ins><del>If any call to `std​::​fgetc` returns `EOF`, the program is ill-formed.</del>
+<del>The integer literals in the comma-separated list correspond to resource-count consecutive calls to `std​::​fgetc` ([[cstdio.syn](https://wg21/link/cstdio.syn)]) from the resource, as a binary file.</del><ins> First, resource-offset calls to `std::fgetc` from the resource as a binary file have their result discarded and ignored. Next, resource-count consecutive calls to `std::fgetc` produce the elements of the comma-separated list of integer literals, in order. If any of the resource-count calls to `std​::​fgetc` returns `EOF`, the program is ill-formed.</ins><del>If any call to `std​::​fgetc` returns `EOF`, the program is ill-formed.</del>
 </div>
 
 </div>
@@ -231,8 +225,15 @@ constexpr const unsigned char offset_arr[] = {
 #embed <sdk/jump.wav> offset(2)
 };
 
+constexpr const unsigned char offset_limit_arr[] = {
+	// the same hypothetical resource capable of expanding
+	// to four or more elements
+#embed <sdk/jump.wav> offset(1) limit(1)
+};
+
 static_assert(arr[2] == offset_arr[0]);
 static_assert(arr[3] == offset_arr[1]);
+static_assert(arr[1] == offset_limit_arr[0]);
 ```
 
 – *end example*]
@@ -243,8 +244,19 @@ static_assert(arr[3] == offset_arr[1]);
 </blockquote>
 
 
+## Remove the following text from [cpp.embed.param.limit], ❡3 ## {#wording-specification-cpp.embed.param.limit}
 
-## Add a new example to the `if_empty` embed parameter [cpp.embed.if.empty] section ## {#wording-specification-if_empty.example}
+<blockquote>
+<div class="wording-section">
+
+<div class="wording-numbered wording-numbered-3">
+
+The *constant-expression* shall be an integral constant expression whose value is greater than or equal to zero. <del>The resource-count ([[cpp.embed.gen](#cpp.embed.gen)]) becomes implementation-resource-count, if the value of the constant-expression is greater than implementation-resource-count; otherwise, the value of the constant-expression.</del>
+</div>
+</div>
+</blockquote>
+
+## Add a new example to the `if_empty` embed parameter [cpp.embed.param.if.empty] section ## {#wording-specification-cpp.embed.param.if.empty}
 
 <blockquote class="quote-ins">
 <ins>
@@ -252,14 +264,12 @@ static_assert(arr[3] == offset_arr[1]);
 [*Example*: Given a resource `<single_byte>` that has an implementation-resource-count of 1, the following directives:
 
 ```cpp
-#embed <single_byte> offset(1) if_empty(44203)
-#embed <single_byte> limit(1)  offset(1) if_empty(44203)
+#embed <single_byte> offset(1) if_empty(42203)
 ```
 
 are replaced with:
 
 ```cpp
-42203
 42203
 ```
 
