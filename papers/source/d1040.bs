@@ -6,7 +6,7 @@ Audience: LEWG, LWG, CWG
 Status: P
 Group: WG21
 URL: https://thephd.dev/_vendor/future_cxx/papers/d1040.html
-Date: 2026-06-14
+Date: 2026-06-23
 !Latest: <a href="https://thephd.dev/_vendor/future_cxx/papers/d1040.html">https://thephd.dev/_vendor/future_cxx/papers/d1040.html</a>
 !Implementation: <a href="https://github.com/ThePhD/embed">https://github.com/ThePhD/embed</a>
 Repository: ThePhD/future_cxx
@@ -28,14 +28,15 @@ path: resources/css/bikeshed-wording.html
 
 
 
-## Revision 11 - June 12<sup>th</sup>, 2026 ## {#changelog-r11}
+## Revision 11 - June 23<sup>rd</sup>, 2026 ## {#changelog-r11}
 
 - Fix typos and finalization presentation found [here: https://thephd.dev/_presentations/standards/C++/2026%20June%20Brno/p1040/P1040%20-%20std%20embed.html](https://thephd.dev/_presentations/standards/C++/2026%20June%20Brno/p1040/P1040%20-%20std%20embed.html).
 - Fix typo with `glob` and `glob_code` identifiers in the code example here.
-- Prepend all `#depend` patterns with `(.*[\\/])?` (or equivalent) to prevent file prefixing (thanks, Dr. Lisa Lippincott), update Wording and Presentation to reflect this.
+- Prepend all `#depend` patterns with `^([\\/])?` (or equivalent) to prevent file prefixing (thanks, Dr. Lisa Lippincott), update Wording and Presentation to reflect this.
+- Add and update wording to reflect and emphasize implementation-defined checks in the input dependency check and how it can be used VIA an example in the Recommended Practice.
 - LEWG voted to use exceptions for error reporting. Added two new types to the wording and a short explanation in [[#design-goals-exceptions]].
+- Explain the use of a Mandates (e.g. compile-time precondition) for the fixed-size embeds in [[#design-goals-exceptions-span]].
 - Update relevant polls from LEWG and EWG at [[#polls-brno.2026]].
-
 
 
 ## Revision 10 - May 12<sup>th</sup>, 2026 ## {#changelog-r10}
@@ -1016,7 +1017,25 @@ NOTE: If an attacker has control of your build flags to make this a problem, you
 
 ### Exceptions ### {#design-goals-exceptions}
 
-After C++26 added `constexpr` exceptions and `std::meta::` added a `std::meta::exception` type for `consteval` reporting of errors, LEWG strongly voted to allow `std::embed` to provide `constexpr` errors. Two error types are now part of the wording synopsis -- `std::dependency_error` and `std::file_not_found_error`. The first one corresponds to a failed input dependency check. THe second one corresponds to not finding the file. Both allow for recovering from a failed `std::embed` call; this is useful for e.g. processing a compile-time `require "foo"` call which checks for a file named `foo`, then a file named `foo.lua`, and then actually rethrowing the exception to just fail.
+After C++26 added `constexpr` exceptions and `std::meta::` added a `std::meta::exception` type for `consteval` reporting of errors, LEWG strongly voted to allow `std::embed` to provide `constexpr` errors. Two error types are now part of the wording synopsis -- `std::dependency_error` and `std::file_not_found_error`. The first one corresponds to a failed input dependency check. The second one corresponds to not finding the file. Both allow for recovering from a failed `std::embed` call; this is useful for e.g. processing a compile-time `require "foo"` call which checks for a file named `foo`, then a file named `foo.lua`, and then actually rethrowing the exception to just fail.
+
+#### What about an exception for when the `span<T, Fixed>` is too Small? #### {#design-goals-exceptions-span}
+
+During discussion at the Brno 2026 meetings, some noted that it would be advantageous to have an exception tossed when an explicitly-provided `N` integral constant expression provided to `std::embed<N>(...)` was too large to be filled out by the file, that this should be an exception too. It was said they could programmatically work with the fact that an e.g. `constexpr auto x = std::embed<5000>(file);` could be worked around and so tossing an exception is better to allow for recovery of such a situation rather than a precondition / mandates violation.
+
+We disagree. Ignoring the fact that throwing an exception here with require successive hard-coded guesses (or programmatically increasing some exact-sized limit with a recursive call or otherwise) in order to get `std::embed<N>` to compile, the same behavior could be achieved much more succinctly and safely by simply programming with a non-fixed-size span, and then using a fixed-size-one of the appropriate width after the programming is done.
+
+Additionally, it is also not how `std::span<T, FixedExtent>(too_small_ptr, too_small_size)`'s constructor or similar works right now. Right now in [views.span], the way an incorrect size for `too_small_size` is handled is:
+
+> Hardened preconditions: If `extent` is not equal to `dynamic_extent`, then `count` == `extent` is true.
+
+It is simply a (hardened) precondition. The only reason we provide an additional mandate rather than a hardened precondition is:
+
+- there is no reason to have undefined behavior at compile-time;
+- there is no reason to let this explode inside of the `span` constructor or manifest as undefiend behavior with a pointer-too-far access at compile-time-but-much-later-than-the-`embed`-call;
+- and, there is no reasonable recovery case that is any different than how hardened preconditions might handle this.
+
+Therefore, we do not turn this mandates into a throws operation. We consider this to be a precondition and consider it a hard programmer error to do so, just like `std::span` would handle (and does handle it in debug / hardened implementations) during constant evaluation.
 
 
 
