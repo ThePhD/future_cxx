@@ -1,11 +1,11 @@
 <pre class='metadata'>
 Title: Expression Evaluation and Access in _Generic
 H1: Expression Evaluation and Access in <code>_Generic</code>
-Shortname: 3888
-Revision: 1
-!Previous Revisions: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3785.htm">n3785 (r0)</a>
+Shortname: 3XY9
+Revision: 2
+!Previous Revisions: <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3888.htm">n3888 (r1)</a>, <a href="https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3785.htm">n3785 (r0)</a>
 Status: P
-Date: 2026-05-10
+Date: 2026-06-28
 Group: WG14
 !Proposal Category: Change Request, Feature Request  
 !Target: C2y
@@ -33,12 +33,22 @@ path: resources/css/bikeshed-wording.html
 
 
 
+## Revision 2 - June 26<sup>th</sup>, 2026 ## {#changelog-r2}
+
+- Add new wording to allow for usage of the attribute in [[#wording-6.7.12.4]].
+- Modify Primary expression wording to allow for the use of this identifier as a [[#wording-6.5.2]].
+- Handling of the new *generic replacement* mechanism is discussed in [[#design-generic.replacement]].
+- Update the wording in 6.5.2.1 to rest on top of the changes to Discarded. Try to propagate constant expression-ness of the input expression, where reasonable, in [[#wording-6.5.2]].
+- Try to adjust wording and provide order-of-operation, conversion, and r-value/l-value usage in the updated wording for [[#wording-6.5.2.1]].
+
+
+
 ## Revision 1 - May 10<sup>th</sup>, 2026 ## {#changelog-r1}
 
 - Add implementation from Professor Will Hawkins in [[#prior]]. Thanks, Professor!
 - Add a second choice for Syntax in [[#design-syntax]] and wording for it in [[#wording-syntax]].
 - Add a second example for nested `_Generic`s.
-- Adjust the wording for the newer version of the working draft (add the "*Generic replacement*..." paragraph).
+- Adjust the wording for the newer version of the working draft for generic replacement and similar.
 - Fix the "generic association scope" wording so it applies to everything within the generic association and not just the variable [[#wording-6.5.2.1]]
 
 
@@ -445,6 +455,22 @@ Thus, as a baseline, we are simply not introducing `auto` into this grammar what
 
 
 
+## Generic Replacement ## {#design-generic.replacement}
+
+Generic replacement retaining its constant expression properties is conditionally supported. This is because simple implementations may not be able to propagate that information further up the chain. For example, the simple implementation in Clang cannot propagate this information up the chain and so provokes a failure:
+
+```cpp
+int main () {
+	constexpr const char works1[] = _Generic("meow", char*: "meow");
+	constexpr const char fails[] = _Generic("meow", char* s: s);
+	return 0;
+}
+```
+
+[Godbolt (https://godbolt.org/z/jj8Pbfcr1)](https://godbolt.org/z/jj8Pbfcr1). If, within 5 or 10 years, compilers come to the conlusion that they can handle this case with ease, we are happy to raise the minimum required level of support insofar as the standard is concerned. But, for right now, we do not see this as necessary as this was never really meant to propagate things such as `constexpr`-ness, literal-ness, or constant-ness. `_Generic` replacement was always pitched as a more or less syntactic removal of parentheses; adding semantic digging to unearth constant expressions seems like something better left to Quality of Implementation.
+
+
+
 
 # Prior Art # {#prior}
 
@@ -508,6 +534,42 @@ The same identifier can denote different entities at different points in the pro
 
 
 
+## Modify §6.5.2 Primary expressions ## {#wording-6.5.2}
+
+<blockquote>
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.5.2</span> <span class="wording-clause-title">Primary expressions</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-numbered">
+...
+</div>
+
+<div>
+...
+</div>
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+The identifier in an identifier primary expression shall have a visible declaration as an ordinary identifier that declares an object<ins>, a generic association name,</ins> or a function.
+</div>
+
+<div class="wording-numbered">
+...
+</div>
+
+...
+</div>
+</blockquote>
+
+
+
 ## PICK ONE OPTION: SYNTAX ## {#wording-syntax}
 
 
@@ -551,10 +613,9 @@ Syntax
 
 *generic-declaration-specifier*:
 :: *type-specifier-qualifier*
-:: *function-specifier*
 
 *generic-declaration-specifiers*:
-:: *generic-declaration-specifiers* *attribute-specifier-sequence*<sub>opt</sub>
+:: *generic-declaration-specifier* *attribute-specifier-sequence*<sub>opt</sub>
 :: *generic-declaration-specifier* *generic-declaration-specifiers*
 
 </ins>
@@ -660,7 +721,7 @@ Syntax
 :: *function-specifier*
 
 *generic-declaration-specifiers*:
-:: *generic-declaration-specifiers* *attribute-specifier-sequence*<sub>opt</sub>
+:: *generic-declaration-specifier* *attribute-specifier-sequence*<sub>opt</sub>
 :: *generic-declaration-specifier* *generic-declaration-specifiers*
 
 </ins>
@@ -760,30 +821,36 @@ If a generic selection has a generic association with a type name that is compat
 <ins>
 <div class="wording-newnumbered">
 
-The generic controlling operand is evaluated if and only if both the generic controlling operand is an assignment expression and the selected generic association has a generic association name. If the generic association name is present but is unused in the selected generic association, the generic controlling operand's expression behaves as if placed in a void expression (6.8.4) evaluated just before evaluating the selected generic association. Otherwise, it is not evaluated.
+The generic controlling operand is evaluated if and only if both the generic controlling operand is an assignment expression and the selected generic association has a generic association name. If there is no generic assiciation name present in the selected generic association, the generic controlling operand's expression, if it is an assignment expression, is not evaluated. In all other cases, the generic controlling expression's operand is not evaluated.
 </div>
-</ins>
 
-<ins>
 <div class="wording-newnumbered">
 
-NOTE&emsp;&emsp;&emsp;If evaluated, the generic controlling operand's expression is evaluated once and only once, regardless of the number of times the generic association name is used or if its even used at all.
-</div>
-</ins>
-
-<ins>
-<div class="wording-newnumbered">
-
-If present, the generic association name has the value of the generic controlling operand's expression and is an lvalue, a function designator, or a void expression if the generic controlling operand is. Its type is:
+If present, the generic association name's type is:
 
 - the generic controlling operand's type if it is the `default` generic association;
 - the generic association type if it is not the selected generic association;
 - or, the generic controlling operand's type.
 
 </div>
-</ins>
 
-<ins>
+<div class="wording-newnumbered">
+
+If present in the selected generic association, the generic association name's value is an lvalue, a function designator, or a void expression if the generic controlling operand is.
+</div>
+
+<div class="wording-newnumbered">
+
+If a generic association name is present and is used in the selected generic association's expression as part of any evaluation, the value of that generic association name is the evaluation of the generic controlling operand's expression sequenced immediately before the evaluation of the selected generic association's expression. Additionally, if the generic controlling operand's expression is an lvalue, each use of the generic association name is also an lvalue that designates the same object as the previously sequenced generic controlling operand's expression.
+
+If the generic association name is present but not used in a context in which it is evaluated in the selected generic association, the generic controlling operand's expression behaves as if placed in a void expression (6.8.4) whose evaluation is sequenced immediately before the evaluation of the selected generic association's expression.
+</div>
+
+<div class="wording-newnumbered">
+
+NOTE&emsp;&emsp;&emsp;If evaluated, the generic controlling operand's expression is evaluated once and only once, regardless of the number of times the generic association name is used or if its even used at all. For lvalues, the address is effectively evaluated and each use of the generic association name refers to the the same object, including if and when that object is updated.
+</div>
+
 <div class="wording-newnumbered">
 
 EXAMPLE&emsp;&emsp;&emsp;The use of the generic association name in the selected generic expression can change the semantics of a program.
@@ -820,7 +887,7 @@ int main () {
 }
 ```
 
-This program returns `2` (`3 - 1`).
+This program returns `2` (the result of evaluating `x -= v ` with `x` having a value of `3` and `v` having a value of `1`).
 </div>
 </ins>
 
@@ -831,9 +898,23 @@ The type and value of a generic selection are identical to those of its result e
 
 <div class="wording-numbered">
 
-*Generic replacement* is the process of replacing a generic selection by its result expression, enclosed in parentheses if the expression is not a primary expression (therefore, the result of generic replacement is always a primary expression). When the term is applied to an expression, it means the repeated application of generic replacement to the generic selections within it until no generic selections remain.
+*Generic replacement* is the process of replacing a generic selection by its result expression, enclosed in parentheses if the expression is not a primary expression (therefore, the result of generic replacement is always a primary expression). When the term is applied to an expression, it means the repeated application of generic replacement to the generic selections within it until no generic selections remain.<ins> If a generic association name is involved in the result expression of the generic replacement process, it is conditionally supported whether or not a literal, compound literal constant, or named constant used in the generic controlling operand is considered an immediate constant (6.6.1).</ins>
 </div>
 
+<div class="wording-newnumbered">
+
+EXAMPLE&emsp;&emsp;&emsp; In the following snippet:
+
+```cpp
+int main () {
+	constexpr const char v1[] = _Generic("meow", char*: "meow");
+	constexpr const char v2[] = _Generic("meow", char* s: s);
+	return 0;
+}
+```
+
+`v1` is always properly initialized with `"meow"` and has a type of `const char[5]`, while `v2` is a possible constraint violation during initialization (i.e. not a constant expression after generic replacement).
+</div>
 
 <div class="wording-numbered">
 
@@ -998,9 +1079,55 @@ int main(int, char*[]) {
 
 
 
-## Add a new example to §6.7.12.4 The `maybe_unused` attribute ## {#wording-6.7.12.4}
+## Modify §6.7.12.4 The `maybe_unused` attribute ## {#wording-6.7.12.4}
 
 <blockquote>
+
+<div class="wording-clause-header">
+<span class="wording-clause-number">6.7.12.4</span> <span class="wording-clause-title">The `maybe_unused` attribute</span>
+</div>
+
+<div class="wording-section">
+
+<div class="wording-clause-section-title">
+Constraints
+</div>
+
+<div class="wording-numbered">
+
+The maybe_unused attribute shall be applied to the declaration of a structure, a union, a typedef
+name, an object, a structure or union member, a function,<ins> a generic association name</ins>, an enumeration, an enumerator, or a label. No attribute argument clause shall be present.
+</div>
+
+<div class="wording-clause-section-title">
+Semantics
+</div>
+
+<div class="wording-numbered">
+
+The maybe_unused attribute indicates that a name or entity is possibly intentionally unused.
+</div>
+
+<div class="wording-numbered">
+
+The `__has_c_attribute` conditional inclusion expression (6.10.2) shall return the value <del>`202311L`</del><ins>202608L</ins> when given `maybe_unused` as the pp-tokens operand if the implementation supports the attribute.
+
+A name or entity declared without the `maybe_unused` attribute can later be redeclared with the
+attribute and vice versa. An entity is considered marked with the attribute after the first declaration that marks it.
+</div>
+
+<div class="wording-clause-section-title">
+Recommended practice
+</div>
+
+<div class="wording-numbered">
+
+...
+</div>
+
+...
+
+<div class="wording-newnumbered wording-numbered-6">
 
 ```cpp
 int main () {
@@ -1009,6 +1136,11 @@ int main () {
 ```
 
 Implementations are encouraged to not diagnose that `v` is unsued.
+
+</div>
+
+</div>
+
 </blockquote>
 
 <pre class="biblio">
