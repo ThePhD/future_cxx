@@ -418,7 +418,7 @@ bool f() {
 }
 ```
 
-#example() It is not defined if defer statements#index[defer statement] execute their deferred blocks if the exiting / non-returning functions detailed previously#index("program termination") are called.
+#example() The following use of ```c exit()``` will leak resources.
 
 ```c
 #include <stdlib.h>
