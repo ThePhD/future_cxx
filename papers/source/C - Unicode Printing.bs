@@ -1,0 +1,206 @@
+<pre class='metadata'>
+Title: Unicode Printing
+Shortname: 4008
+Revision: 0
+!Previous Revisions: None
+Status: P
+Date: 2026-10-19
+Group: WG14
+!Proposal Category: Change Request, Feature Request  
+!Target: C2y
+Editor: JeanHeyd Meneide, phdofthehouse@gmail.com
+Editor: Shepherd (Shepherd's Oasis LLC), shepherd@soasis.org
+URL: https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Thread%20Attributes%20-%20Implementation%20Extensible%20and%20ABI-Resistant.html
+!Paper Source: <a href="https://thephd.dev/_vendor/future_cxx/papers/C%20-%20Thread%20Attributes%20-%20Implementation%20Extensible%20and%20ABI-Resistant.bs">GitHub</a>
+Issue Tracking: GitHub https://github.com/ThePhD/future_cxx/issues
+Metadata Order: Previous Revisions, Editor, This Version, Paper Source, Implementation, Issue Tracking, Project, Audience, Proposal Category, Target
+Markup Shorthands: markdown yes
+Toggle Diffs: no
+Abstract: 
+</pre>
+
+<pre class="include-raw">
+path: resources/css/bikeshed-wording.html
+</pre>
+
+<div class="pagebreak"></div>
+
+
+
+
+
+# Revision History # {#changelog}
+
+
+## Revision 0 - October 20<sup>th</sup>, 2026 ## {#changelog-r0}
+
+- Initial release. ✨
+
+
+
+
+# Introduction & Motivation # {#motivation}
+
+We should be able to print our Unicode strings to the console, to a file, or to various other `FILE`-connected interfaces without having to store that conversion in a temporary location. The best layer of the library for this would be the `stdio.h` layer, where conversion specifiers are used to convert strings to the internal execution encoding.
+
+There are other implementation-specific and implementation-internal mechanisms that a user cannot easily access, asides from just the internal execution encoding, that makes the C Standard Library the appropriate layer for Unicode character printing. This proposal puts forth 3 new conversion specifiers, `l8`, `l16`, and `l32`, for the reasons enumerated in the following [[#design]].
+
+
+
+
+# Design # {#design}
+
+There's no fancy design choices to be made, here. We simply do the same thing as the other wording for `<stdio.h>` printing primitives for `l`, where it triggers the use of `wcrtomb`. Of course, due to the [[shortfalls-of-wchar|well-documented issues this set of functions has]], we instead use the recently standardized `<stdmchar.h>` functions for this functionality. This requires a bit more of an in-depth description in the wording than its `wcrtomb` counterparts, but it should be sufficiently useful.
+
+We provide a small extension on `l` by allowing for `l{decimal-numeric}`, where the `{decimal-numeric}` is just one of `8`, `16`, or `32` (so `l8`, `l16`, and `l32`). This appears to work well enough and does not compete with the grammar. We can't use `c` or `u` instead of `l` because this can clash with the parsing grammar and make things ambiguous or change the meaning of existing code, whereas adding a numeric designation to `l` does not do this. We have precedent for doing this with <code>w*N*</code> and <code>wf*N*</code> in C23 for the arbitrarily-wide integer types.
+
+We do NOT propose a new `fc8print` or similar set of functionality (e.g., guarantees printing that goes into a UTF-8 stream). There is no appetite to fork the existing stream infrastructures a third time (see: Wide Streams for the second time) to support this. This does run the risk that the output to all of these streams is likely to be mangled by calls to either `fprintf` or `fwprintf`.
+
+The solution to that is to move C code towards using a UTF-8 execution encoding. A [[n3539|paper by Corentin Jabot, n3539]] attempts to do that. That paper and its alternatives should be fully explored and implemented more and more often in C implementations to provide high quality, internationalization-ready interfaces that are not just "8 bit clean" but also multibyte encoding prepared.
+
+
+
+
+# Implementation Experience # {#implementation}
+
+While the direct integration into `stdio.h` and its various reading and writing facilities has not been done in an existing libc before, Unicode Printing has been proposed and implemented in a spinoff library previously championed by Marcus Johnson in [[n3016]].
+
+The conversion functions in `<stdmchar.h>` for C2y were successfully used to print Unicode strings to (standard) input/output files in the [[ztd.cuneicode]] library.
+
+
+
+
+# Wording # {#wording}
+
+The following wording is against the latest draft of the C standard.
+
+
+
+## Modify §7.24.6.2 "The `fprintf` function", paragraphs 7 and 8 ## {#wording-7.24.6.2}
+
+> ...
+>
+> <sup>7</sup> The length modifiers and their meanings are:
+>
+> :: ...
+>
+> :: `l` (ell) ...
+>
+> :: `ll` (ell-ell) &emsp;&emsp; Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a `long long int` or `unsigned long long int` argument; or that a following n conversion specifier applies to a pointer to a `long long int` argument.
+>
+> :: <ins><code>l<i>N</i></code> (ell-*N*) &emsp;&emsp; Specifies: that a following `c` conversion specifier applies to an argument of <code>char<i>N</i>_t</code>, where <code><i>N</i></code> is `32` and denotes `char32_t` type (7.32); or, that a following `s` conversion specifier applies to a pointer to an argument of <code>char<i>N</i>_t</code>, where <code><i>N</i></code> is exactly one of `8`, `16`, or `32` and denotes `char8_t`, `char16_t`, or `char32_t` type (7.32), respectively.</ins>
+>
+> :: `j` ...
+>
+> :: ...
+>
+> ...
+
+> <sup>*</sup> The conversion specifiers and their meanings are:
+>
+> :: ...
+>
+> :: `a`,`A` ...
+>
+> :: `c` &emsp;&emsp; If no `l` length modifier is present, the `int` argument is converted to an `unsigned char` ...
+>
+> :: :: If an `l` length modifier is present, the `wint_t` argument is converted as if by a call to the `wcrtomb` function with a pointer to storage of at least `MB_CUR_MAX` bytes, the `wint_t` argument converted to `wchar_t`, and an initial shift state.
+>
+> :: :: <ins>If an `l32` length modifier is present, the `char32_t` argument is converted as if by a call to the `stdc_c32nrtomcn` function with the following arguments: an output pointer to storage suitable for a sequence of at least `STDC_MC_MAX` `char` objects, an output size with a value of at least `STDC_MC_MAX`, the `char32_t` argument used as input, an input size of 1, and an `mbstate_t` initialized to the initial shift state.</ins>
+>
+> :: `s` &emsp;&emsp; If no `l` length modifier is present, the argument shall be a pointer to storage of character type. ...
+>
+> :: :: If an `l` length modifier is present, the argument shall be a pointer to storage of `wchar_t` type. ...
+>
+> :: :: <ins>If an <code>l*N*</code> length modifier is present, the argument shall be a pointer to storage of <code>char*N*_t</code> type, where <code>*N*</code> is one of `8`, `16` or `32`. The argument of the pointed to <code>char*N*_t</code> storage is converted as if by the following algorithm. Zero or more sequential calls to <code>stdc_c*N*nrtomcn</code> convert the argument. The initial input is the argument of the pointer to storage. The initial input size is either the null terminated length of the argument (not including its null terminating character) or, if a precision is specified, the precision value. The inital state is an `mbstate_t` object initialized to the initial shift sequence. The output is a pointer to an appropriately typed storage suitable for a sequence of at least `STDC_MC_MAX` `char` objects. The output size for every call is at least `STDC_MC_MAX`. A series of successful sequential calls to <code>stdc_c*N*nrtomcn</code> then uses the input, input size, output, and state -- initialized to their initial values stated previously -- to convert the argument up until the input size is exhausted. If any of these calls do not result in success, the behavior is undefined. In no case is an incomplete or partial output written.</ins>
+>
+> :: `p` ...
+>
+> :: ...
+
+
+
+## Modify §7.33.2.2 "The `fwprintf` function", paragraphs 7 and 8 ## {#wording-7.33.2.2}
+
+> ...
+>
+> <sup>7</sup> The length modifiers and their meanings are:
+>
+> :: ...
+>
+> :: `l` (ell) ...
+>
+> :: `ll` (ell-ell) &emsp;&emsp; Specifies that a following `b`, `B`, `d`, `i`, `o`, `u`, `x`, or `X` conversion specifier applies to a `long long int` or `unsigned long long int` argument; or that a following n conversion specifier applies to a pointer to a `long long int` argument.
+>
+> :: <ins><code>l<i>N</i></code> (ell-*N*) &emsp;&emsp; Specifies: that a following `c` conversion specifier applies to an argument of <code>char<i>N</i>_t</code>, where <code><i>N</i></code> is `32` and denotes `char32_t` type (7.32) or that a following `s` conversion specifier applies to a pointer to an argument of <code>char<i>N</i>_t</code>, where <code><i>N</i></code> is exactly one of `8`, `16`, or `32` and denotes pointer to `char8_t`, `char16_t`, or `char32_t` type (7.32), respectively.</ins>
+>
+> :: `j` ...
+>
+> :: ...
+>
+> ...
+
+> <sup>*</sup> The conversion specifiers and their meanings are:
+>
+> :: ...
+>
+> :: `a`,`A` ...
+>
+> :: `c` &emsp;&emsp; If no `l` length modifier is present, the `int` argument is converted to a wide ...
+>
+> :: :: If an `l` length modifier is present, the `wint_t` argument is converted to `wchar_t` ...
+>
+> :: :: <ins>If an `l32` length modifier is present, the `char32_t` argument is converted as if by a call to the `stdc_c32nrtomwcn` function with the following arguments: an output pointer to storage suitable for a sequence of at least `STDC_MWC_MAX` `wchar_t` objects, an output size with a value of at least `STDC_MWC_MAX`, the `char32_t` argument used as the pointed to input, an input size of 1, and an `mbstate_t` object initialized to the initial shift state.</ins>
+>
+> :: `s` &emsp;&emsp; If no `l` length modifier is present, the argument shall be a pointer to storage of character ...
+>
+> :: :: If an `l` length modifier is present, the argument shall be a pointer to storage of `wchar_t` ...
+>
+> :: :: <ins>If an <code>l*N*</code> length modifier is present, the argument shall be a pointer to storage of <code>char*N*_t</code> type, where <code>*N*</code> is one of `8`, `16` or `32`. The argument of the pointed to <code>char*N*_t</code> storage is converted as if by the following algorithm. Zero or more sequential calls to <code>stdc_c*N*nrtomwcn</code> convert the argument. The initial input is the argument of the pointer to storage. The initial input size is either the null terminated length of the argument (not including its null terminating character) or, if a precision is specified, the precision value. The inital state is an `mbstate_t` object initialized to the initial shift sequence. The output is a pointer to an appropriately typed storage suitable for a sequence of at least `STDC_MWC_MAX` `wchar_t` objects. The output size for every call is at least `STDC_MWC_MAX`. A series of successful sequential calls to <code>stdc_c*N*nrtomwcn</code> then uses the input, input size, output, and state -- initialized to their initial values stated previously -- to convert the argument up until the input size is exhausted. If any of these calls do not result in success, the behavior is undefined. In no case is an incomplete or partial output written.</ins>
+>
+> :: `p` ...
+>
+> :: ...
+
+
+<pre class="biblio">
+{
+	"ztd.cuneicode": {
+		"authors": [
+			"Shepherd's Oasis, LLC",
+			"JeanHeyd Meneide"
+		],
+		"title": "ztd.cuneicode - \"io.h\" printing header",
+		"publisher": "Shepherd's Oasis, LLC",
+		"href": "https://github.com/soasis/cuneicode/blob/main/include/ztd/cuneicode/io.h",
+		"date": "May 29th, 2025"
+	},
+	"shortfalls-of-wchar": {
+		"authors": [
+			"JeanHeyd Meneide"
+		],
+		"title": "cuneicode, and the Future of Text in C: C and wchar_t (Anchored Link)",
+		"publisher": "ISO/IEC JTC1 SC22 WG14",
+		"href": "https://thephd.dev/cuneicode-and-the-future-of-text-in-c#this-one-definition-means-that-if-you-have-an-input-into-mbrtowc",
+		"date": "June 7th, 2023"
+	},
+	"n3016": {
+		"authors": [
+			"Marcus Johnson"
+		],
+		"title": "N3016 - Unicode Length Modifiers, v3",
+		"publisher": "ISO/IEC JTC1 SC22 WG14",
+		"href": "https://www.open-std.org/JTC1/SC22/WG14/www/docs/n3016.pdf",
+		"date": "July 6th, 2022"
+	},
+	"n3016": {
+		"authors": [
+			"Corentin Jabot"
+		],
+		"title": "n3539 - Preserving LC_CTYPE at program start for UTF-8 locales",
+		"publisher": "ISO/IEC JTC1 SC22 WG14",
+		"href": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3539.pdf",
+		"date": "May 4th, 2025"
+	}
+}
+</pre>
